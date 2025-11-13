@@ -67,29 +67,47 @@ Scope remains: focus on pipeline and feasibility, not on specific effects.
 
 ---
 
-## 2. Immediate Next Steps (v0 Prototyping Targets)
+### 2. Immediate Next Steps (v0 Prototyping Targets)
 
-These are still “prototype-level” goals, but guided by the updated model.
+The early prototypes focus on **Vulkan layer capture first**. Compositor-based capture is a later fallback and is **not** part of the initial prototypes. 
 
-### 2.1 Prototype 1: Fallback capture → Vulkan window
+#### 2.1 Prototype 1: Vulkan Layer Skeleton
 
-* Use compositor-based capture (Wayland + PipeWire) to get a frame stream.
-* Import frames into Vulkan and present them 1:1 in a separate window (no effects).
-* Measure basic latency and stability.
+* Implement a minimal Vulkan layer shared object that can be injected into a Vulkan application.
+* Hook only the basics:
 
-### 2.2 Prototype 2: Simple RetroArch-style pass via Slang
+  * `vkCreateInstance`, `vkCreateDevice`
+  * `vkCreateSwapchainKHR`
+  * `vkQueuePresentKHR`
+* Behavior: log or count presents, nothing more.
+* Goal: verify stable hooking in real apps/games.
 
-* Add a single post-processing pass implemented in Slang, compiled to SPIR-V.
-* Apply it to the captured image in the Vulkan render loop.
-* Structure the code so it looks like “pass 0 of a RetroArch-like pipeline,” not a one-off effect.
+#### 2.2 Prototype 2: Vulkan Layer Frame Metadata
 
-### 2.3 Prototype 3: Vulkan layer skeleton
+* Extend the layer to collect frame metadata:
 
-* Set up a separate Vulkan layer shared object that:
+  * Width, height, format, timing.
+* Still no image sharing and no connection to the Goggles app.
+* Goal: confirm the layer sees correct swapchain properties per frame.
 
-  * Hooks creation of swapchains in a target Vulkan app.
-  * For now, just logs or counts presented frames.
-* No frame transfer or IPC yet; just confirm hooking correctness and stability.
+#### 2.3 Prototype 3: Goggles Vulkan Window
+
+* In the Goggles app, create a basic Vulkan instance/device and swapchain.
+* Render a clear color or simple triangle.
+* No capture, no shaders yet.
+* Goal: validate our own render/present loop separately from the layer.
+
+#### 2.4 Prototype 4: Layer → Goggles Metadata Path
+
+* Add a minimal IPC or message path from the layer process to the Goggles app.
+* Send only frame metadata (no image data) from the hooked app.
+* Goal: prove multi-process communication and basic coordination.
+
+#### 2.5 Prototype 5: First Shader Pass (RetroArch-style)
+
+* Add a simple Slang-based shader pass in the Goggles app that runs on a dummy texture.
+* Structure it as “pass 0” of a RetroArch-style pipeline (multi-pass capable, even if only one is used).
+* Goal: validate the shader pipeline model before plugging in real captured frames.
 
 ---
 

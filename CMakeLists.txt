@@ -50,6 +50,36 @@ CPMAddPackage(
         "CATCH_INSTALL_EXTRAS OFF"
 )
 
+# Threading & Concurrency dependencies
+# Uncomment when implementing multi-threading (see docs/threading_architecture.md)
+
+# BS::thread_pool - Simple job submission
+# CPMAddPackage(
+#     NAME BS_thread_pool
+#     GITHUB_REPOSITORY bshoshany/thread-pool
+#     VERSION 3.5.0
+#     OPTIONS
+#         "BUILD_TESTS OFF"
+#         "BUILD_EXAMPLES OFF"
+# )
+
+# rigtorp::SPSCQueue - Wait-free queue for real-time IPC
+# CPMAddPackage(
+#     NAME rigtorp_SPSCQueue
+#     GITHUB_REPOSITORY rigtorp/SPSCQueue
+#     VERSION 1.2.0
+# )
+
+# Taskflow - Dependency-aware task scheduling (upgrade path)
+# CPMAddPackage(
+#     NAME taskflow
+#     GITHUB_REPOSITORY taskflow/taskflow
+#     VERSION 3.10.0
+#     OPTIONS
+#         "TF_BUILD_EXAMPLES OFF"
+#         "TF_BUILD_TESTS OFF"
+# )
+
 # Complex dependencies via vcpkg (slang)
 # These are found via find_package() when CMAKE_TOOLCHAIN_FILE is set to vcpkg
 # find_package(slang CONFIG REQUIRED)

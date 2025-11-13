@@ -199,7 +199,8 @@ Define project-specific macros wrapping spdlog:
 
 - **Render backend** (`goggles::render`) runs on main thread.
 - **Pipeline execution** runs on main thread.
-- **No thread pool** in initial prototypes.
+- **No thread pool** in initial prototypes (Prototype 1-3).
+- **Phased approach:** Threading introduced only when profiling justifies it (see `docs/threading_architecture.md`).
 
 ### E.2 Capture Layer Threading
 
@@ -209,21 +210,76 @@ Define project-specific macros wrapping spdlog:
 - **No blocking** in hooks (especially `vkQueuePresentKHR`).
 - **Thread-safe state:** Use atomics or locks for shared layer state.
 
-### E.3 Optional Threading
+### E.3 Multi-Threading Implementation (Phase 1+)
 
-**Dedicated capture processing thread may be added later:**
+**When threading is introduced (Prototype 4+):**
 
-- **Decision deferred** until Prototype 4+ (IPC implementation).
-- **If added:** Must use `std::jthread` (RAII, auto-join).
-- **No detached threads** (impossible to reason about lifetime).
+- **Trigger:** Main thread CPU time consistently exceeds 8ms per frame.
+- **Phased rollout:**
+  - Phase 1: Offload blocking tasks (encode, I/O) to worker threads
+  - Phase 2: Parallelize Vulkan command buffer generation
+- **See:** `docs/threading_architecture.md` for complete implementation roadmap.
 
-### E.4 Cross-Thread Communication
+### E.4 Main Thread Responsibilities
 
-**When threading is introduced:**
+**The main thread owns:**
 
-- **Use explicit message queues** (lock-free SPSC/MPSC preferred).
-- **No shared mutable state** across threads (prefer message passing).
-- **Synchronization primitives:** `std::mutex`, `std::condition_variable`, or lock-free atomics only.
+- Vulkan instance, device, swapchain lifecycle
+- Queue submission (`vkQueueSubmit` - NOT thread-safe)
+- Window events and user input
+- Job coordination (submit, wait, synchronize)
+
+**The main thread MUST NOT:**
+
+- Block on I/O operations
+- Perform heavy computation (>1ms CPU time)
+- Allocate memory in per-frame code paths
+
+### E.5 Job System & Task Parallelism
+
+**All concurrent processing MUST use the project's central job system.**
+
+- **Phase 1 library:** BS::thread_pool (simple job submission)
+- **Phase 2 library:** Taskflow (dependency-aware task scheduling)
+- **Wrapper interface:** `goggles::util::JobSystem` in `src/util/job_system.hpp`
+
+**Direct use of `std::thread` or `std::jthread` for pipeline work is PROHIBITED.**
+
+**Exception:** External integration code (networking, IPC) outside the real-time path may use `std::jthread` with RAII guarantees.
+
+### E.6 Real-Time Code Constraints
+
+**Per-frame code paths (main thread render loop) MUST NOT:**
+
+- Perform dynamic memory allocations (`new`, `malloc`, `std::make_shared`)
+- Use blocking synchronization primitives (`std::mutex`, `std::condition_variable`)
+- Exceed 8ms CPU time budget (excluding GPU sync)
+
+**Worker thread code paths SHOULD:**
+
+- Pre-allocate resources during initialization
+- Use lock-free/wait-free primitives for coordination
+- Bound worst-case execution time
+
+### E.7 Inter-Thread Communication
+
+**All real-time inter-thread communication MUST use:**
+
+- **rigtorp::SPSCQueue** for fixed producer-consumer pairs (wait-free guarantee)
+- **Never MPMC queues** in latency-critical paths (variable latency under contention)
+
+**Communication pattern:**
+
+- Use pointer passing with shared, pre-allocated buffers
+- Producer pushes pointer to frame metadata into queue
+- Consumer pops pointer, processes data, releases buffer
+- No data copying across thread boundaries
+
+**Performance requirements:**
+
+- SPSC queue operations: <100ns push/pop
+- Queue sizing: Based on worst-case latency × frame rate
+- No blocking: All queue operations must be non-blocking (`try_push`, `try_pop`)
 
 ---
 
