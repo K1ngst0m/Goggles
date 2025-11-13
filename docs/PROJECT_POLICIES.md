@@ -146,6 +146,13 @@ Define project-specific macros wrapping spdlog:
   5. Project headers (same module)
 - **Sort alphabetically** within each group.
 
+### C.6 Comments
+
+- **Minimal comments:** Code should be self-explanatory.
+- **No obvious comments:** Don't state what the code clearly does.
+- **No redundant explanations:** Avoid verbose justifications.
+- **Comment only when:** Non-obvious algorithm, workaround, or API constraint.
+
 ---
 
 ## D) Ownership & Resource Lifetime Rules

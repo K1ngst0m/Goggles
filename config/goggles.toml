@@ -1,0 +1,42 @@
+# Goggles Configuration File
+# Format: TOML (https://toml.io/)
+
+# =============================================================================
+# Capture Settings
+# =============================================================================
+[capture]
+# Backend to use for frame capture
+# Options: "vulkan_layer" (primary), "compositor" (fallback)
+backend = "vulkan_layer"
+
+# =============================================================================
+# Pipeline Settings
+# =============================================================================
+[pipeline]
+# Path to shader preset file (relative to this config or absolute)
+# Leave empty to skip shader processing initially
+shader_preset = ""
+
+# =============================================================================
+# Render Settings
+# =============================================================================
+[render]
+# Enable VSync (synchronize with display refresh rate)
+vsync = true
+
+# Target frame rate (frames per second)
+# Only applies when vsync = false
+target_fps = 60
+
+# =============================================================================
+# Logging Settings
+# =============================================================================
+[logging]
+# Log level threshold
+# Options: "trace", "debug", "info", "warn", "error", "critical"
+# Note: trace/debug are disabled in release builds by default
+level = "debug"
+
+# Log file path (empty = console output only)
+# Example: "logs/goggles.log"
+file = ""
