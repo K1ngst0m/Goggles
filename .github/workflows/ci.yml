@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake clang-format clang-tidy
+
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
+
+    - name: Build
+      run: cmake --build build
+
+    - name: Check clang-format
+      run: |
+        find src -name '*.cpp' -o -name '*.hpp' | xargs clang-format --dry-run -Werror
+
+    - name: Run clang-tidy
+      run: |
+        find src -name '*.cpp' | xargs clang-tidy -p build

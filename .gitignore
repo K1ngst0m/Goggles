@@ -1,0 +1,90 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+install_manifest.txt
+
+# Compiled binaries and libraries
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.kate-swp
+.clangd/
+.cache/
+
+# Qt Creator
+*.user
+*.user.*
+
+# Visual Studio / VSCode
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.sln
+
+# Debugging and profiling
+*.log
+*.dSYM/
+*.su
+*.idb
+*.pdb
+vgcore.*
+callgrind.out.*
+perf.data*
+
+# Package managers
+.conan/
+vcpkg_installed/
+
+# Documentation build
+docs/_build/
+docs/html/
+docs/latex/
+
+# Temporary and backup files
+*.bak
+*.tmp
+*.temp
+*~
+.*.swp
+
+# OS files
+Thumbs.db
+.DS_Store
+._*
+
+# Research and scratch files
+scratch/
+research/
+notes/
+*.notes
+TODO.local
+
+# Sanitizer outputs
+*.asan
+*.ubsan
+*.tsan
+
+# Core dumps
+core
+core.*
