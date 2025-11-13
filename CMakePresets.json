@@ -19,6 +19,16 @@
       }
     },
     {
+      "name": ".vcpkg",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": {
+          "type": "FILEPATH",
+          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        }
+      }
+    },
+    {
       "name": ".debug",
       "hidden": true,
       "inherits": ".common",
@@ -60,37 +70,37 @@
       "name": "debug",
       "displayName": "Debug",
       "description": "Debug build with no optimizations",
-      "inherits": [".debug"]
+      "inherits": [".debug", ".vcpkg"]
     },
     {
       "name": "release",
       "displayName": "Release",
       "description": "Release build with optimizations",
-      "inherits": [".release"]
+      "inherits": [".release", ".vcpkg"]
     },
     {
       "name": "relwithdebinfo",
       "displayName": "RelWithDebInfo",
       "description": "Release with debug symbols for profiling",
-      "inherits": [".relwithdebinfo"]
+      "inherits": [".relwithdebinfo", ".vcpkg"]
     },
     {
       "name": "asan",
       "displayName": "Debug + AddressSanitizer",
       "description": "Debug build with AddressSanitizer for memory issues",
-      "inherits": [".debug", ".asan"]
+      "inherits": [".debug", ".asan", ".vcpkg"]
     },
     {
       "name": "ubsan",
       "displayName": "Debug + UndefinedBehaviorSanitizer",
       "description": "Debug build with UBSan for undefined behavior",
-      "inherits": [".debug", ".ubsan"]
+      "inherits": [".debug", ".ubsan", ".vcpkg"]
     },
     {
       "name": "asan-ubsan",
       "displayName": "Debug + ASAN + UBSAN",
       "description": "Debug build with both sanitizers",
-      "inherits": [".debug", ".asan", ".ubsan"]
+      "inherits": [".debug", ".asan", ".ubsan", ".vcpkg"]
     }
   ],
   "buildPresets": [

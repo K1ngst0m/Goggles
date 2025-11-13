@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "goggles",
+  "version": "0.1.0",
+  "description": "Real-time game capture and GPU post-processing system for Linux",
+  "dependencies": [
+    "slang"
+  ]
+}
