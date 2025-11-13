@@ -10,6 +10,7 @@ cmake_install.cmake
 compile_commands.json
 CTestTestfile.cmake
 install_manifest.txt
+CMakeUserPresets.json
 
 # Compiled binaries and libraries
 *.o

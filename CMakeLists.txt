@@ -18,16 +18,20 @@ add_compile_options(
     -Wconversion
 )
 
-# Optional sanitizer toggles (empty options for now)
+# Optional sanitizer toggles
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 
 if(ENABLE_ASAN)
-    message(STATUS "AddressSanitizer enabled (not yet implemented)")
+    message(STATUS "AddressSanitizer enabled")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address)
 endif()
 
 if(ENABLE_UBSAN)
-    message(STATUS "UndefinedBehaviorSanitizer enabled (not yet implemented)")
+    message(STATUS "UndefinedBehaviorSanitizer enabled")
+    add_compile_options(-fsanitize=undefined)
+    add_link_options(-fsanitize=undefined)
 endif()
 
 # Add subdirectories
