@@ -70,36 +70,72 @@
       "name": "debug",
       "displayName": "Debug",
       "description": "Debug build with no optimizations",
+      "inherits": ".debug"
+    },
+    {
+      "name": "debug-vcpkg",
+      "displayName": "Debug (with vcpkg)",
+      "description": "Debug build with vcpkg toolchain",
       "inherits": [".debug", ".vcpkg"]
     },
     {
       "name": "release",
       "displayName": "Release",
       "description": "Release build with optimizations",
+      "inherits": ".release"
+    },
+    {
+      "name": "release-vcpkg",
+      "displayName": "Release (with vcpkg)",
+      "description": "Release build with vcpkg toolchain",
       "inherits": [".release", ".vcpkg"]
     },
     {
       "name": "relwithdebinfo",
       "displayName": "RelWithDebInfo",
       "description": "Release with debug symbols for profiling",
+      "inherits": ".relwithdebinfo"
+    },
+    {
+      "name": "relwithdebinfo-vcpkg",
+      "displayName": "RelWithDebInfo (with vcpkg)",
+      "description": "RelWithDebInfo build with vcpkg toolchain",
       "inherits": [".relwithdebinfo", ".vcpkg"]
     },
     {
       "name": "asan",
       "displayName": "Debug + AddressSanitizer",
       "description": "Debug build with AddressSanitizer for memory issues",
+      "inherits": [".debug", ".asan"]
+    },
+    {
+      "name": "asan-vcpkg",
+      "displayName": "Debug + AddressSanitizer (with vcpkg)",
+      "description": "Debug build with ASAN and vcpkg toolchain",
       "inherits": [".debug", ".asan", ".vcpkg"]
     },
     {
       "name": "ubsan",
       "displayName": "Debug + UndefinedBehaviorSanitizer",
       "description": "Debug build with UBSan for undefined behavior",
+      "inherits": [".debug", ".ubsan"]
+    },
+    {
+      "name": "ubsan-vcpkg",
+      "displayName": "Debug + UndefinedBehaviorSanitizer (with vcpkg)",
+      "description": "Debug build with UBSAN and vcpkg toolchain",
       "inherits": [".debug", ".ubsan", ".vcpkg"]
     },
     {
       "name": "asan-ubsan",
       "displayName": "Debug + ASAN + UBSAN",
       "description": "Debug build with both sanitizers",
+      "inherits": [".debug", ".asan", ".ubsan"]
+    },
+    {
+      "name": "asan-ubsan-vcpkg",
+      "displayName": "Debug + ASAN + UBSAN (with vcpkg)",
+      "description": "Debug build with both sanitizers and vcpkg toolchain",
       "inherits": [".debug", ".asan", ".ubsan", ".vcpkg"]
     }
   ],
@@ -109,24 +145,48 @@
       "configurePreset": "debug"
     },
     {
+      "name": "debug-vcpkg",
+      "configurePreset": "debug-vcpkg"
+    },
+    {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "release-vcpkg",
+      "configurePreset": "release-vcpkg"
     },
     {
       "name": "relwithdebinfo",
       "configurePreset": "relwithdebinfo"
     },
     {
+      "name": "relwithdebinfo-vcpkg",
+      "configurePreset": "relwithdebinfo-vcpkg"
+    },
+    {
       "name": "asan",
       "configurePreset": "asan"
+    },
+    {
+      "name": "asan-vcpkg",
+      "configurePreset": "asan-vcpkg"
     },
     {
       "name": "ubsan",
       "configurePreset": "ubsan"
     },
     {
+      "name": "ubsan-vcpkg",
+      "configurePreset": "ubsan-vcpkg"
+    },
+    {
       "name": "asan-ubsan",
       "configurePreset": "asan-ubsan"
+    },
+    {
+      "name": "asan-ubsan-vcpkg",
+      "configurePreset": "asan-ubsan-vcpkg"
     }
   ]
 }
