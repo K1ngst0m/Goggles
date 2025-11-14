@@ -1,6 +1,9 @@
 #pragma once
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winterference-size"
 #include <rigtorp/SPSCQueue.h>
+#pragma GCC diagnostic pop
 #include <cstddef>
 #include <memory>
 #include <optional>

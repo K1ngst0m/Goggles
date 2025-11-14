@@ -31,7 +31,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
 
     // [capture]
     if (data.contains("capture")) {
-        const auto& capture = toml::find(data, "capture");
+        const auto capture = toml::find(data, "capture");
         if (capture.contains("backend")) {
             config.capture.backend = toml::find<std::string>(capture, "backend");
 
@@ -48,7 +48,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
 
     // [pipeline]
     if (data.contains("pipeline")) {
-        const auto& pipeline = toml::find(data, "pipeline");
+        const auto pipeline = toml::find(data, "pipeline");
         if (pipeline.contains("shader_preset")) {
             config.pipeline.shader_preset =
                 toml::find<std::string>(pipeline, "shader_preset");
@@ -57,7 +57,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
 
     // [render]
     if (data.contains("render")) {
-        const auto& render = toml::find(data, "render");
+        const auto render = toml::find(data, "render");
         if (render.contains("vsync")) {
             config.render.vsync = toml::find<bool>(render, "vsync");
         }
@@ -75,7 +75,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
 
     // [logging]
     if (data.contains("logging")) {
-        const auto& logging = toml::find(data, "logging");
+        const auto logging = toml::find(data, "logging");
         if (logging.contains("level")) {
             config.logging.level = toml::find<std::string>(logging, "level");
 
