@@ -16,13 +16,16 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake clang-format clang-tidy
+        sudo apt-get install -y cmake clang-format clang-tidy ninja-build
 
-    - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
+    - name: Configure with Test Preset
+      run: cmake --preset test
 
-    - name: Build
-      run: cmake --build build
+    - name: Build with Test Preset  
+      run: cmake --build --preset test
+
+    - name: Run Tests
+      run: ctest --preset test
 
     - name: Check clang-format
       run: |
@@ -30,4 +33,4 @@ jobs:
 
     - name: Run clang-tidy
       run: |
-        find src -name '*.cpp' | xargs clang-tidy -p build
+        find src -name '*.cpp' | xargs clang-tidy -p build/test
