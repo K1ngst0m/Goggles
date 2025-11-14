@@ -1,61 +1,36 @@
 #pragma once
 
-// Threading & Job System Interface
-// Status: Skeleton (to be implemented when threading is needed)
-// See: docs/threading_architecture.md for design rationale
-
+#include <BS_thread_pool.hpp>
 #include <cstddef>
 #include <functional>
 #include <future>
+#include <memory>
 
 namespace goggles::util {
 
 class JobSystem {
 public:
-    static void initialize([[maybe_unused]] size_t thread_count = 0) {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement BS::thread_pool initialization
-#endif
-    }
-
-    static void shutdown() {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement thread pool shutdown
-#endif
-    }
+    static void initialize(size_t thread_count = 0);
+    static void shutdown();
 
     template <typename Func, typename... Args>
-    static auto submit([[maybe_unused]] Func&& func, [[maybe_unused]] Args&&... args) -> std::future<void> {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement job submission
-        return std::future<void>();
-#else
-        std::promise<void> promise;
-        promise.set_value();
-        return promise.get_future();
-#endif
+    static auto submit(Func&& func, Args&&... args) -> std::future<std::invoke_result_t<Func, Args...>> {
+        ensure_initialized();
+        return s_pool->submit(std::forward<Func>(func), std::forward<Args>(args)...);
     }
 
-    static void wait_all() {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement wait for all jobs
-#endif
-    }
-
-    static auto thread_count() -> size_t {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Return actual thread count
-        return 0;
-#else
-        return 1;
-#endif
-    }
+    static void wait_all();
+    static auto thread_count() -> size_t;
+    static auto is_initialized() -> bool { return s_pool != nullptr; }
 
 private:
     JobSystem() = delete;
     ~JobSystem() = delete;
     JobSystem(const JobSystem&) = delete;
     JobSystem& operator=(const JobSystem&) = delete;
+
+    static void ensure_initialized();
+    static std::unique_ptr<BS::thread_pool> s_pool;
 };
 
 } // namespace goggles::util

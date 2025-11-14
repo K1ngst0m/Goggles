@@ -51,24 +51,23 @@ CPMAddPackage(
 )
 
 # Threading & Concurrency dependencies
-# Uncomment when implementing multi-threading (see docs/threading_architecture.md)
 
 # BS::thread_pool - Simple job submission
-# CPMAddPackage(
-#     NAME BS_thread_pool
-#     GITHUB_REPOSITORY bshoshany/thread-pool
-#     VERSION 3.5.0
-#     OPTIONS
-#         "BUILD_TESTS OFF"
-#         "BUILD_EXAMPLES OFF"
-# )
+CPMAddPackage(
+    NAME BS_thread_pool
+    GITHUB_REPOSITORY bshoshany/thread-pool
+    VERSION 3.5.0
+    OPTIONS
+        "BUILD_TESTS OFF"
+        "BUILD_EXAMPLES OFF"
+)
 
 # rigtorp::SPSCQueue - Wait-free queue for real-time IPC
-# CPMAddPackage(
-#     NAME rigtorp_SPSCQueue
-#     GITHUB_REPOSITORY rigtorp/SPSCQueue
-#     VERSION 1.2.0
-# )
+CPMAddPackage(
+    NAME rigtorp_SPSCQueue
+    GITHUB_REPOSITORY rigtorp/SPSCQueue
+    VERSION 1.1
+)
 
 # Taskflow - Dependency-aware task scheduling (upgrade path)
 # CPMAddPackage(

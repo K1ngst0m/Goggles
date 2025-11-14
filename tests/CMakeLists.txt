@@ -17,6 +17,8 @@ target_sources(goggles_tests PRIVATE
     util/test_error.cpp
     util/test_config.cpp
     util/test_logging.cpp
+    util/test_job_system.cpp
+    util/test_queues.cpp
     
     # Future: Pipeline module tests (when implemented)
     # pipeline/graph/test_pipeline_graph.cpp

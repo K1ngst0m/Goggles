@@ -1,21 +1,21 @@
 #pragma once
 
-// Lock-Free Queue Interfaces
-// Status: Skeleton (to be implemented when threading is needed)
-// See: docs/threading_architecture.md for design rationale
-
+#include <rigtorp/SPSCQueue.h>
 #include <cstddef>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 
 namespace goggles::util {
 
 template <typename T>
 class SPSCQueue {
 public:
-    explicit SPSCQueue([[maybe_unused]] size_t capacity) {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement rigtorp::SPSCQueue construction
-#endif
+    explicit SPSCQueue(size_t capacity) : m_queue(capacity) {
+        // Note: rigtorp::SPSCQueue requires power-of-2 capacity
+        if ((capacity & (capacity - 1)) != 0) {
+            throw std::invalid_argument("SPSCQueue capacity must be power of 2");
+        }
     }
 
     ~SPSCQueue() = default;
@@ -25,56 +25,34 @@ public:
     SPSCQueue(SPSCQueue&&) = delete;
     SPSCQueue& operator=(SPSCQueue&&) = delete;
 
-    auto try_push([[maybe_unused]] const T& item) -> bool {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement rigtorp::SPSCQueue::try_push
-        return false;
-#else
-        return false;
-#endif
+    auto try_push(const T& item) -> bool {
+        return m_queue.try_push(item);
     }
 
-    auto try_push([[maybe_unused]] T&& item) -> bool {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement rigtorp::SPSCQueue::try_push
-        return false;
-#else
-        return false;
-#endif
+    auto try_push(T&& item) -> bool {
+        return m_queue.try_push(std::move(item));
     }
 
-    auto try_pop() -> T* {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement rigtorp::SPSCQueue::try_pop
-        return nullptr;
-#else
-        return nullptr;
-#endif
+    auto try_pop() -> std::optional<T> {
+        T* front_item = m_queue.front();
+        if (front_item) {
+            T item = std::move(*front_item);
+            m_queue.pop();
+            return std::move(item);
+        }
+        return std::nullopt;
     }
 
     auto size() const -> size_t {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement rigtorp::SPSCQueue::size
-        return 0;
-#else
-        return 0;
-#endif
+        return m_queue.size();
     }
 
     auto capacity() const -> size_t {
-#ifdef GOGGLES_THREADING_ENABLED
-        // TODO: Implement rigtorp::SPSCQueue::capacity
-        return 0;
-#else
-        return 1;
-#endif
+        return m_queue.capacity();
     }
 
 private:
-#ifdef GOGGLES_THREADING_ENABLED
-    struct Impl;
-    std::unique_ptr<Impl> m_impl;
-#endif
+    rigtorp::SPSCQueue<T> m_queue;
 };
 
 } // namespace goggles::util

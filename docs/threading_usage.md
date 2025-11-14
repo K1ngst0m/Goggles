@@ -1,41 +1,53 @@
 # Threading Usage Guide
 
-> **Status:** Ready for activation when performance triggers it
-> **Trigger:** Main thread CPU time consistently exceeds 8ms per frame
+> **Status:** Fully implemented and tested
+> **Libraries:** BS::thread_pool v3.5.0, rigtorp::SPSCQueue v1.1
 
 ## Overview
 
-This document provides practical examples for using Goggles' threading infrastructure. The threading system is designed with **skeleton interfaces** that compile to no-ops until activated via CMake configuration.
+This document provides practical examples for using Goggles' threading infrastructure. The threading system is fully implemented with real BS::thread_pool and rigtorp::SPSCQueue integrations, ready for use in capture and pipeline modules.
 
 ---
 
-## Activation Process
+## Quick Start
 
-### 1. Performance Trigger
+The threading system is already enabled and ready to use:
 
-Threading should only be enabled when profiling shows the need:
+```cpp
+#include "src/util/job_system.hpp"
+#include "src/util/queues.hpp"
+
+// Initialize threading (usually done at app startup)
+goggles::util::JobSystem::initialize(4);
+
+// Submit jobs to worker threads  
+auto future = goggles::util::JobSystem::submit([]() {
+    // Your work here
+});
+
+// Create lock-free queues for inter-thread communication
+goggles::util::SPSCQueue<FrameData*> queue(16);
+
+// Cleanup (usually done at app exit)
+goggles::util::JobSystem::shutdown();
+```
+
+## Testing
+
+The threading system includes comprehensive tests that verify functionality:
 
 ```bash
-# Profile your application first
-# Look for main thread CPU time > 8ms per frame
-# Only proceed if threading is justified
+# Run all threading tests
+cd build/debug && ./tests/goggles_tests "[job_system]"
+cd build/debug && ./tests/goggles_tests "[queues]"
+
+# Run full test suite (includes threading + other modules)  
+cd build/debug && ./tests/goggles_tests
 ```
 
-### 2. Enable Threading Dependencies
-
-```cmake
-# In your CMakeLists.txt, add:
-include(cmake/Threading.cmake)
-enable_goggles_threading()
-```
-
-### 3. Recompile
-
-```bash
-cmake --build --preset debug
-```
-
-After recompilation, all threading functionality becomes active.
+**Test Coverage:**
+- **JobSystem:** Initialization, job submission, wait operations, exception handling, performance
+- **SPSCQueue:** Basic operations, move semantics, FIFO ordering, multi-threading, performance
 
 ---
 
