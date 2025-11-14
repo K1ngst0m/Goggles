@@ -18,12 +18,15 @@ public:
         : m_capacity(capacity), 
           m_buffer_size(capacity * 2), // Use 2x for simple implementation (trades memory for simplicity)
           m_capacity_mask(m_buffer_size - 1), 
-          m_buffer(static_cast<T*>(std::aligned_alloc(alignof(T), sizeof(T) * m_buffer_size))) {
+          m_buffer(nullptr) {
         // Require power-of-2 capacity for efficient modulo via bitwise AND
+        // Validate BEFORE allocating memory to avoid leaks on exception
         if (capacity == 0 || (capacity & (capacity - 1)) != 0) {
             throw std::invalid_argument("SPSCQueue capacity must be power of 2");
         }
         
+        // Only allocate after validation passes
+        m_buffer = static_cast<T*>(std::aligned_alloc(alignof(T), sizeof(T) * m_buffer_size));
         if (!m_buffer) {
             throw std::bad_alloc();
         }

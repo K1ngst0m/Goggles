@@ -7,26 +7,121 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  format-check:
+    name: Code Formatting
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
+    - name: Install clang-format
+      run: sudo apt-get update && sudo apt-get install -y clang-format
+
+    - name: Check formatting
+      run: |
+        find src tests -name '*.cpp' -o -name '*.hpp' | xargs clang-format --dry-run -Werror
+
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Cache CPM dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/CPM
+        key: ${{ runner.os }}-cpm-${{ hashFiles('cmake/Dependencies.cmake') }}
+        restore-keys: |
+          ${{ runner.os }}-cpm-
+
+    - name: Cache apt packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
+
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake clang-format clang-tidy ninja-build
+        sudo apt-get install -y cmake ninja-build ccache
 
-    - name: Configure with Test Preset
-      run: cmake --preset test
+    - name: Setup ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
 
-    - name: Build with Test Preset  
-      run: cmake --build --preset test
+    - name: Configure ccache
+      run: |
+        ccache --set-config=max_size=500M
+        ccache --set-config=compression=true
+        ccache --zero-stats
+
+    - name: Configure with ASAN preset
+      run: cmake --preset asan
+
+    - name: Build
+      run: cmake --build --preset asan
+
+    - name: Show ccache statistics
+      run: ccache --show-stats
 
     - name: Run Tests
-      run: ctest --preset test
+      run: ctest --preset asan --output-on-failure
 
-    - name: Check clang-format
+  static-analysis:
+    name: Static Analysis (clang-tidy)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Cache CPM dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/CPM
+        key: ${{ runner.os }}-cpm-${{ hashFiles('cmake/Dependencies.cmake') }}
+        restore-keys: |
+          ${{ runner.os }}-cpm-
+
+    - name: Cache apt packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
+
+    - name: Install dependencies
       run: |
-        find src -name '*.cpp' -o -name '*.hpp' | xargs clang-format --dry-run -Werror
+        sudo apt-get update
+        sudo apt-get install -y cmake clang-tidy ninja-build ccache
+
+    - name: Setup ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-tidy-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-tidy-
+
+    - name: Configure ccache
+      run: |
+        ccache --set-config=max_size=500M
+        ccache --set-config=compression=true
+        ccache --zero-stats
+
+    - name: Configure with Test preset (includes clang-tidy)
+      run: cmake --preset test
+
+    - name: Build with clang-tidy
+      run: cmake --build --preset test
+
+    - name: Show ccache statistics
+      run: ccache --show-stats

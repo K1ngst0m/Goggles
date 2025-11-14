@@ -71,7 +71,7 @@
       "hidden": true,
       "cacheVariables": {
         "BUILD_TESTING": "ON",
-        "CMAKE_BUILD_PARALLEL_LEVEL": "0"
+        "CMAKE_BUILD_PARALLEL_LEVEL": "4"
       }
     },
 
@@ -185,6 +185,20 @@
       "displayName": "Test Execution (with parallel execution)",
       "description": "Optimized test execution with AddressSanitizer",
       "configurePreset": "test",
+      "output": {
+        "verbosity": "verbose"
+      },
+      "execution": {
+        "parallel": {
+          "level": 0
+        }
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "ASAN Test Execution",
+      "description": "Test execution with AddressSanitizer",
+      "configurePreset": "asan",
       "output": {
         "verbosity": "verbose"
       },
