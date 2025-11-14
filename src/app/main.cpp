@@ -17,16 +17,17 @@ auto main() -> int {
     const auto config_path = std::filesystem::path("config/goggles.toml");
     auto config_result = goggles::load_config(config_path);
 
+    goggles::Config config;
     if (!config_result) {
         const auto& error = config_result.error();
         GOGGLES_LOG_ERROR("Failed to load configuration: {} ({})",
                           error.message, goggles::error_code_name(error.code));
         GOGGLES_LOG_INFO("Using default configuration");
         // Fall back to defaults
-        config_result = goggles::default_config();
+        config = goggles::default_config();
+    } else {
+        config = config_result.value();
     }
-
-    const auto& config = config_result.value();
 
     // Apply log level from config
     if (config.logging.level == "trace") {

@@ -28,10 +28,12 @@ Checks: >
   -readability-identifier-length
 
 WarningsAsErrors: ''
-HeaderFilterRegex: '.*'
+# Filter out third-party library warnings from CPM cache
+HeaderFilterRegex: '^(?!.*\.cache/CPM).*$'
 FormatStyle: file
 
 CheckOptions:
+  # PROJECT_POLICIES.md: snake_case for namespaces, functions, variables, parameters
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case
   - key: readability-identifier-naming.ClassCase
@@ -39,17 +41,27 @@ CheckOptions:
   - key: readability-identifier-naming.StructCase
     value: CamelCase
   - key: readability-identifier-naming.FunctionCase
-    value: camelBack
+    value: lower_case
   - key: readability-identifier-naming.VariableCase
-    value: camelBack
+    value: lower_case
   - key: readability-identifier-naming.ParameterCase
-    value: camelBack
+    value: lower_case
   - key: readability-identifier-naming.MemberCase
-    value: camelBack
+    value: lower_case
   - key: readability-identifier-naming.PrivateMemberPrefix
     value: 'm_'
+  # Only true constants (static const, constexpr) should be UPPER_CASE
   - key: readability-identifier-naming.ConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstexprVariableCase
     value: UPPER_CASE
+  # Static const members should be UPPER_CASE
+  - key: readability-identifier-naming.ClassConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.StaticConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.EnumConstantCase
+    value: lower_case
   - key: readability-function-size.LineThreshold
     value: 150
 ...

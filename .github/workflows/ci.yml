@@ -30,7 +30,3 @@ jobs:
     - name: Check clang-format
       run: |
         find src -name '*.cpp' -o -name '*.hpp' | xargs clang-format --dry-run -Werror
-
-    - name: Run clang-tidy
-      run: |
-        find src -name '*.cpp' | xargs clang-tidy -p build/test

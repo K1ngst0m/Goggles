@@ -22,3 +22,5 @@ target_link_libraries(goggles_util PUBLIC
 target_include_directories(goggles_util PUBLIC
     ${BS_thread_pool_SOURCE_DIR}/include
 )
+
+goggles_enable_clang_tidy(goggles_util)

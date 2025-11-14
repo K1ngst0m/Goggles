@@ -74,6 +74,14 @@
         "CMAKE_BUILD_PARALLEL_LEVEL": "0"
       }
     },
+
+    {
+      "name": ".clang-tidy",
+      "hidden": true,
+      "cacheVariables": {
+        "ENABLE_CLANG_TIDY": "ON"
+      }
+    },
     {
       "name": "debug",
       "displayName": "Debug",
@@ -118,9 +126,16 @@
 
     {
       "name": "test",
-      "displayName": "Test (Debug + ASAN)",
-      "description": "Optimized for testing with AddressSanitizer and parallel builds",
-      "inherits": [".debug", ".asan", ".test"]
+      "displayName": "Test (Debug + ASAN + Clang-Tidy)",
+      "description": "Optimized for testing with AddressSanitizer, parallel builds, and static analysis",
+      "inherits": [".debug", ".asan", ".test", ".clang-tidy"]
+    },
+
+    {
+      "name": "quality", 
+      "displayName": "Quality Assurance (Debug + ASAN + Clang-Tidy)",
+      "description": "Debug build with comprehensive code quality checks",
+      "inherits": [".debug", ".asan", ".clang-tidy"]
     }
   ],
   "buildPresets": [
@@ -157,6 +172,11 @@
     {
       "name": "test",
       "configurePreset": "test"
+    },
+
+    {
+      "name": "quality",
+      "configurePreset": "quality"
     }
   ],
   "testPresets": [

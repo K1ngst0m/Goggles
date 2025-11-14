@@ -23,12 +23,12 @@ public:
     static auto thread_count() -> size_t;
     static auto is_initialized() -> bool { return s_pool != nullptr; }
 
-private:
     JobSystem() = delete;
     ~JobSystem() = delete;
     JobSystem(const JobSystem&) = delete;
     JobSystem& operator=(const JobSystem&) = delete;
 
+private:
     static void ensure_initialized();
     static std::unique_ptr<BS::thread_pool> s_pool;
 };

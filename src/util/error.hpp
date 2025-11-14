@@ -2,6 +2,7 @@
 
 #include <nonstd/expected.hpp>
 
+#include <cstdint>
 #include <source_location>
 #include <string>
 #include <utility>
@@ -9,7 +10,7 @@
 namespace goggles {
 
 // Error codes for categorizing failures
-enum class ErrorCode {
+enum class ErrorCode : std::uint8_t {
     ok,
     file_not_found,
     file_read_failed,
