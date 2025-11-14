@@ -62,13 +62,6 @@ CPMAddPackage(
         "BUILD_EXAMPLES OFF"
 )
 
-# rigtorp::SPSCQueue - Wait-free queue for real-time IPC
-CPMAddPackage(
-    NAME rigtorp_SPSCQueue
-    GITHUB_REPOSITORY rigtorp/SPSCQueue
-    VERSION 1.1
-)
-
 # Taskflow - Dependency-aware task scheduling (upgrade path)
 # CPMAddPackage(
 #     NAME taskflow

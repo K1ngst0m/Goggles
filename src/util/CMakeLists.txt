@@ -21,5 +21,4 @@ target_link_libraries(goggles_util PUBLIC
 # Add include directories for header-only threading libraries
 target_include_directories(goggles_util PUBLIC
     ${BS_thread_pool_SOURCE_DIR}/include
-    ${rigtorp_SPSCQueue_SOURCE_DIR}/include
 )

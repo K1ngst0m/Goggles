@@ -300,3 +300,185 @@ TEST_CASE("SPSCQueue with pointer types for zero-copy patterns", "[queues]") {
         }
     }
 }
+
+TEST_CASE("SPSCQueue edge cases and boundary conditions", "[queues]") {
+    SECTION("Zero capacity is rejected") {
+        REQUIRE_THROWS_AS(SPSCQueue<int>(0), std::invalid_argument);
+    }
+
+    SECTION("Capacity 1 handles full/empty correctly") {
+        SPSCQueue<int> queue(1);
+        
+        REQUIRE(queue.size() == 0);
+        REQUIRE(queue.try_push(42));
+        REQUIRE(queue.size() == 1);
+        REQUIRE_FALSE(queue.try_push(43)); // Should fail when full
+        
+        auto result = queue.try_pop();
+        REQUIRE(result.has_value());
+        REQUIRE(*result == 42);
+        REQUIRE(queue.size() == 0);
+        
+        auto empty_result = queue.try_pop();
+        REQUIRE_FALSE(empty_result.has_value());
+    }
+
+    SECTION("Large capacity queue wraps around correctly") {
+        SPSCQueue<int> queue(4);
+        
+        // Fill queue completely
+        for (int i = 0; i < 4; ++i) {
+            REQUIRE(queue.try_push(i));
+        }
+        REQUIRE_FALSE(queue.try_push(999)); // Should fail when full
+        
+        // Empty half
+        for (int i = 0; i < 2; ++i) {
+            auto result = queue.try_pop();
+            REQUIRE(result.has_value());
+            REQUIRE(*result == i);
+        }
+        
+        // Fill again to test wrap-around
+        for (int i = 100; i < 102; ++i) {
+            REQUIRE(queue.try_push(i));
+        }
+        
+        // Verify correct order with wrap-around
+        std::vector<int> expected = {2, 3, 100, 101};
+        for (int expected_val : expected) {
+            auto result = queue.try_pop();
+            REQUIRE(result.has_value());
+            REQUIRE(*result == expected_val);
+        }
+    }
+}
+
+TEST_CASE("SPSCQueue memory ordering stress test", "[queues]") {
+    SECTION("High contention producer-consumer") {
+        SPSCQueue<int> queue(32);
+        const int num_items = 10000;
+        std::atomic<bool> test_failed{false};
+        std::atomic<int> items_produced{0};
+        std::atomic<int> items_consumed{0};
+        
+        // Producer thread - aggressive pushing
+        std::thread producer([&]() {
+            for (int i = 0; i < num_items; ++i) {
+                while (!queue.try_push(i)) {
+                    // Busy wait to create high contention
+                    for (int j = 0; j < 10; ++j) {
+                        asm volatile("" ::: "memory"); // Prevent optimization
+                    }
+                }
+                items_produced.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+        
+        // Consumer thread - aggressive popping
+        std::thread consumer([&]() {
+            int expected = 0;
+            while (expected < num_items) {
+                auto result = queue.try_pop();
+                if (result.has_value()) {
+                    if (*result != expected) {
+                        test_failed = true;
+                        break;
+                    }
+                    expected++;
+                    items_consumed.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    // Busy wait to create high contention
+                    for (int j = 0; j < 10; ++j) {
+                        asm volatile("" ::: "memory"); // Prevent optimization
+                    }
+                }
+            }
+        });
+        
+        producer.join();
+        consumer.join();
+        
+        REQUIRE_FALSE(test_failed.load());
+        REQUIRE(items_produced.load() == num_items);
+        REQUIRE(items_consumed.load() == num_items);
+        REQUIRE(queue.size() == 0);
+    }
+}
+
+// Test helper for complex types testing
+struct Resource {
+    static std::atomic<int> instances;
+    int id;
+    
+    Resource(int i) : id(i) { instances.fetch_add(1); }
+    Resource(const Resource& other) : id(other.id) { instances.fetch_add(1); }
+    Resource(Resource&& other) noexcept : id(other.id) { instances.fetch_add(1); }
+    Resource& operator=(const Resource&) = default;
+    Resource& operator=(Resource&&) noexcept = default;
+    ~Resource() { instances.fetch_sub(1); }
+};
+std::atomic<int> Resource::instances{0};
+
+TEST_CASE("SPSCQueue with complex types", "[queues]") {
+    
+    SECTION("Non-trivial types with destructors") {
+        Resource::instances.store(0);
+        
+        {
+            SPSCQueue<Resource> queue(4);
+            
+            // Push some resources
+            queue.try_push(Resource(1));
+            queue.try_push(Resource(2));
+            REQUIRE(Resource::instances.load() == 2);
+            
+            // Pop one resource
+            auto result = queue.try_pop();
+            REQUIRE(result.has_value());
+            REQUIRE(result->id == 1);
+            
+            // Resource should still exist until result goes out of scope
+            REQUIRE(Resource::instances.load() == 2);
+        }
+        
+        // All resources should be destroyed
+        REQUIRE(Resource::instances.load() == 0);
+    }
+    
+    SECTION("Types with custom move semantics") {
+        struct MoveOnlyType {
+            int value;
+            bool moved_from = false;
+            
+            MoveOnlyType(int v) : value(v) {}
+            MoveOnlyType(const MoveOnlyType&) = delete;
+            MoveOnlyType& operator=(const MoveOnlyType&) = delete;
+            
+            MoveOnlyType(MoveOnlyType&& other) noexcept 
+                : value(other.value), moved_from(false) {
+                other.moved_from = true;
+            }
+            
+            MoveOnlyType& operator=(MoveOnlyType&& other) noexcept {
+                if (this != &other) {
+                    value = other.value;
+                    moved_from = false;
+                    other.moved_from = true;
+                }
+                return *this;
+            }
+        };
+        
+        SPSCQueue<MoveOnlyType> queue(4);
+        
+        MoveOnlyType item(42);
+        REQUIRE(queue.try_push(std::move(item)));
+        REQUIRE(item.moved_from); // Should be moved from
+        
+        auto result = queue.try_pop();
+        REQUIRE(result.has_value());
+        REQUIRE(result->value == 42);
+        REQUIRE_FALSE(result->moved_from);
+    }
+}
