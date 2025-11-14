@@ -1,0 +1,4 @@
+# Partial test configuration file (should use defaults for missing values)
+
+[render]
+vsync = true

@@ -98,7 +98,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Export compile commands for clang-tidy
+# Export compile commands
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Strict warning flags
@@ -128,3 +128,7 @@ endif()
 
 # Add subdirectories
 add_subdirectory(src)
+
+# Enable testing
+enable_testing()
+add_subdirectory(tests)

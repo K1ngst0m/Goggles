@@ -1,0 +1,15 @@
+# Valid test configuration file
+
+[capture]
+backend = "vulkan_layer"
+
+[pipeline]
+shader_preset = "shaders/test.glsl"
+
+[render]
+vsync = false
+target_fps = 120
+
+[logging]
+level = "debug"
+file = "test.log"
