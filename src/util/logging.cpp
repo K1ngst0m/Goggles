@@ -1,8 +1,7 @@
 #include "logging.hpp"
 
-#include <spdlog/sinks/stdout_color_sinks.h>
-
 #include <memory>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 namespace goggles {
 

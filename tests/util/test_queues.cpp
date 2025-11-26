@@ -1,9 +1,10 @@
-#include <catch2/catch_test_macros.hpp>
-#include <thread>
-#include <atomic>
-#include <chrono>
-#include <vector>
 #include "../../src/util/queues.hpp"
+
+#include <atomic>
+#include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <thread>
+#include <vector>
 
 using namespace goggles::util;
 
@@ -74,7 +75,7 @@ TEST_CASE("SPSCQueue move semantics", "[queues]") {
 TEST_CASE("SPSCQueue with different types", "[queues]") {
     SECTION("String queue") {
         SPSCQueue<std::string> queue(4);
-        
+
         REQUIRE(queue.try_push("hello"));
         REQUIRE(queue.try_push(std::string("world")));
 
@@ -90,16 +91,14 @@ TEST_CASE("SPSCQueue with different types", "[queues]") {
     SECTION("Struct queue") {
         struct TestStruct {
             int x, y;
-            bool operator==(const TestStruct& other) const {
-                return x == other.x && y == other.y;
-            }
+            bool operator==(const TestStruct& other) const { return x == other.x && y == other.y; }
         };
 
         SPSCQueue<TestStruct> queue(2);
         TestStruct item{10, 20};
 
         REQUIRE(queue.try_push(item));
-        
+
         auto result = queue.try_pop();
         REQUIRE(result.has_value());
         REQUIRE(*result == item);
@@ -111,10 +110,10 @@ TEST_CASE("SPSCQueue capacity and size tracking", "[queues]") {
 
     SECTION("Size increases with pushes") {
         REQUIRE(queue.size() == 0);
-        
+
         queue.try_push(1);
         REQUIRE(queue.size() == 1);
-        
+
         queue.try_push(2);
         REQUIRE(queue.size() == 2);
     }
@@ -135,7 +134,7 @@ TEST_CASE("SPSCQueue capacity and size tracking", "[queues]") {
         for (size_t i = 0; i < queue.capacity(); ++i) {
             queue.try_push(static_cast<int>(i));
         }
-        
+
         REQUIRE(queue.size() == queue.capacity());
     }
 }
@@ -145,7 +144,7 @@ TEST_CASE("SPSCQueue FIFO ordering", "[queues]") {
 
     SECTION("Items are retrieved in FIFO order") {
         std::vector<int> pushed_items = {1, 2, 3, 4, 5};
-        
+
         // Push items
         for (int item : pushed_items) {
             REQUIRE(queue.try_push(item));
@@ -165,42 +164,42 @@ TEST_CASE("SPSCQueue single-threaded stress test", "[queues]") {
 
     SECTION("Many push/pop cycles") {
         const int iterations = 1000;
-        
+
         for (int i = 0; i < iterations; ++i) {
             REQUIRE(queue.try_push(i));
             auto result = queue.try_pop();
             REQUIRE(result.has_value());
             REQUIRE(*result == i);
         }
-        
+
         REQUIRE(queue.size() == 0);
     }
 
     SECTION("Fill and empty cycles") {
         const int cycles = 100;
-        
+
         for (int cycle = 0; cycle < cycles; ++cycle) {
             // Fill queue
             for (size_t i = 0; i < queue.capacity(); ++i) {
                 REQUIRE(queue.try_push(static_cast<int>(cycle * 100 + i)));
             }
-            
+
             REQUIRE(queue.size() == queue.capacity());
-            
+
             // Empty queue
             for (size_t i = 0; i < queue.capacity(); ++i) {
                 auto result = queue.try_pop();
                 REQUIRE(result.has_value());
                 REQUIRE(*result == static_cast<int>(cycle * 100 + i));
             }
-            
+
             REQUIRE(queue.size() == 0);
         }
     }
 }
 
 TEST_CASE("SPSCQueue multi-threaded producer-consumer", "[queues]") {
-    SPSCQueue<int> queue(64);  // Larger queue for multi-threaded test
+    SPSCQueue<int> queue(64); // Larger queue for multi-threaded test
 
     SECTION("Single producer, single consumer") {
         const int num_items = 1000;
@@ -211,7 +210,7 @@ TEST_CASE("SPSCQueue multi-threaded producer-consumer", "[queues]") {
         std::thread producer([&queue, num_items, &producer_done]() {
             for (int i = 0; i < num_items; ++i) {
                 while (!queue.try_push(i)) {
-                    std::this_thread::yield();  // Spin until we can push
+                    std::this_thread::yield(); // Spin until we can push
                 }
             }
             producer_done = true;
@@ -223,11 +222,10 @@ TEST_CASE("SPSCQueue multi-threaded producer-consumer", "[queues]") {
             while (!producer_done.load() || queue.size() > 0) {
                 auto result = queue.try_pop();
                 if (result.has_value()) {
-                    REQUIRE(*result == consumed);  // Verify FIFO order
+                    REQUIRE(*result == consumed); // Verify FIFO order
                     consumed++;
-                }
-                else {
-                    std::this_thread::yield();  // Queue empty, yield briefly
+                } else {
+                    std::this_thread::yield(); // Queue empty, yield briefly
                 }
             }
             items_consumed = consumed;
@@ -242,13 +240,13 @@ TEST_CASE("SPSCQueue multi-threaded producer-consumer", "[queues]") {
 }
 
 TEST_CASE("SPSCQueue performance characteristics", "[queues]") {
-    SPSCQueue<int> queue(1024);  // Large queue for performance test
+    SPSCQueue<int> queue(1024); // Large queue for performance test
 
     SECTION("Push/pop operations are fast") {
         const int num_operations = 10000;
-        
+
         auto start = std::chrono::high_resolution_clock::now();
-        
+
         // Interleaved push/pop operations
         for (int i = 0; i < num_operations; ++i) {
             queue.try_push(i);
@@ -256,11 +254,11 @@ TEST_CASE("SPSCQueue performance characteristics", "[queues]") {
             REQUIRE(result.has_value());
             REQUIRE(*result == i);
         }
-        
+
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-        auto avg_ns_per_op = duration.count() / (num_operations * 2);  // 2 ops per iteration
-        
+        auto avg_ns_per_op = duration.count() / (num_operations * 2); // 2 ops per iteration
+
         // Each operation (push or pop) should take less than 1000ns on average
         REQUIRE(avg_ns_per_op < 1000);
     }
@@ -277,7 +275,7 @@ TEST_CASE("SPSCQueue with pointer types for zero-copy patterns", "[queues]") {
     for (int i = 0; i < 4; ++i) {
         auto frame = std::make_unique<FrameData>();
         frame->id = i;
-        frame->data.resize(1024);  // Simulate frame data
+        frame->data.resize(1024); // Simulate frame data
         frame_buffers.push_back(std::move(frame));
     }
 
@@ -293,7 +291,7 @@ TEST_CASE("SPSCQueue with pointer types for zero-copy patterns", "[queues]") {
         for (size_t expected_id = 0; expected_id < frame_buffers.size(); ++expected_id) {
             auto result = queue.try_pop();
             REQUIRE(result.has_value());
-            
+
             FrameData* frame = *result;
             REQUIRE(frame->id == expected_id);
             REQUIRE(frame->data.size() == 1024);
@@ -308,42 +306,42 @@ TEST_CASE("SPSCQueue edge cases and boundary conditions", "[queues]") {
 
     SECTION("Capacity 1 handles full/empty correctly") {
         SPSCQueue<int> queue(1);
-        
+
         REQUIRE(queue.size() == 0);
         REQUIRE(queue.try_push(42));
         REQUIRE(queue.size() == 1);
         REQUIRE_FALSE(queue.try_push(43)); // Should fail when full
-        
+
         auto result = queue.try_pop();
         REQUIRE(result.has_value());
         REQUIRE(*result == 42);
         REQUIRE(queue.size() == 0);
-        
+
         auto empty_result = queue.try_pop();
         REQUIRE_FALSE(empty_result.has_value());
     }
 
     SECTION("Large capacity queue wraps around correctly") {
         SPSCQueue<int> queue(4);
-        
+
         // Fill queue completely
         for (int i = 0; i < 4; ++i) {
             REQUIRE(queue.try_push(i));
         }
         REQUIRE_FALSE(queue.try_push(999)); // Should fail when full
-        
+
         // Empty half
         for (int i = 0; i < 2; ++i) {
             auto result = queue.try_pop();
             REQUIRE(result.has_value());
             REQUIRE(*result == i);
         }
-        
+
         // Fill again to test wrap-around
         for (int i = 100; i < 102; ++i) {
             REQUIRE(queue.try_push(i));
         }
-        
+
         // Verify correct order with wrap-around
         std::vector<int> expected = {2, 3, 100, 101};
         for (int expected_val : expected) {
@@ -361,7 +359,7 @@ TEST_CASE("SPSCQueue memory ordering stress test", "[queues]") {
         std::atomic<bool> test_failed{false};
         std::atomic<int> items_produced{0};
         std::atomic<int> items_consumed{0};
-        
+
         // Producer thread - aggressive pushing
         std::thread producer([&]() {
             for (int i = 0; i < num_items; ++i) {
@@ -374,7 +372,7 @@ TEST_CASE("SPSCQueue memory ordering stress test", "[queues]") {
                 items_produced.fetch_add(1, std::memory_order_relaxed);
             }
         });
-        
+
         // Consumer thread - aggressive popping
         std::thread consumer([&]() {
             int expected = 0;
@@ -395,10 +393,10 @@ TEST_CASE("SPSCQueue memory ordering stress test", "[queues]") {
                 }
             }
         });
-        
+
         producer.join();
         consumer.join();
-        
+
         REQUIRE_FALSE(test_failed.load());
         REQUIRE(items_produced.load() == num_items);
         REQUIRE(items_consumed.load() == num_items);
@@ -410,7 +408,7 @@ TEST_CASE("SPSCQueue memory ordering stress test", "[queues]") {
 struct Resource {
     static std::atomic<int> instances;
     int id;
-    
+
     Resource(int i) : id(i) { instances.fetch_add(1); }
     Resource(const Resource& other) : id(other.id) { instances.fetch_add(1); }
     Resource(Resource&& other) noexcept : id(other.id) { instances.fetch_add(1); }
@@ -421,45 +419,44 @@ struct Resource {
 std::atomic<int> Resource::instances{0};
 
 TEST_CASE("SPSCQueue with complex types", "[queues]") {
-    
+
     SECTION("Non-trivial types with destructors") {
         Resource::instances.store(0);
-        
+
         {
             SPSCQueue<Resource> queue(4);
-            
+
             // Push some resources
             queue.try_push(Resource(1));
             queue.try_push(Resource(2));
             REQUIRE(Resource::instances.load() == 2);
-            
+
             // Pop one resource
             auto result = queue.try_pop();
             REQUIRE(result.has_value());
             REQUIRE(result->id == 1);
-            
+
             // Resource should still exist until result goes out of scope
             REQUIRE(Resource::instances.load() == 2);
         }
-        
+
         // All resources should be destroyed
         REQUIRE(Resource::instances.load() == 0);
     }
-    
+
     SECTION("Types with custom move semantics") {
         struct MoveOnlyType {
             int value;
             bool moved_from = false;
-            
+
             MoveOnlyType(int v) : value(v) {}
             MoveOnlyType(const MoveOnlyType&) = delete;
             MoveOnlyType& operator=(const MoveOnlyType&) = delete;
-            
-            MoveOnlyType(MoveOnlyType&& other) noexcept 
-                : value(other.value), moved_from(false) {
+
+            MoveOnlyType(MoveOnlyType&& other) noexcept : value(other.value), moved_from(false) {
                 other.moved_from = true;
             }
-            
+
             MoveOnlyType& operator=(MoveOnlyType&& other) noexcept {
                 if (this != &other) {
                     value = other.value;
@@ -469,13 +466,13 @@ TEST_CASE("SPSCQueue with complex types", "[queues]") {
                 return *this;
             }
         };
-        
+
         SPSCQueue<MoveOnlyType> queue(4);
-        
+
         MoveOnlyType item(42);
         REQUIRE(queue.try_push(std::move(item)));
         REQUIRE(item.moved_from); // Should be moved from
-        
+
         auto result = queue.try_pop();
         REQUIRE(result.has_value());
         REQUIRE(result->value == 42);

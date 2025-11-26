@@ -1,4 +1,5 @@
 #include "job_system.hpp"
+
 #include <thread>
 
 namespace goggles::util {
@@ -9,11 +10,11 @@ void JobSystem::initialize(size_t thread_count) {
     if (s_pool) {
         return; // Already initialized
     }
-    
+
     if (thread_count == 0) {
         thread_count = std::thread::hardware_concurrency();
     }
-    
+
     s_pool = std::make_unique<BS::thread_pool>(thread_count);
 }
 

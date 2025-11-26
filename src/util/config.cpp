@@ -1,8 +1,7 @@
 #include "config.hpp"
 
-#include <toml.hpp>
-
 #include <fstream>
+#include <toml.hpp>
 
 namespace goggles {
 
@@ -14,7 +13,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
     // Check if file exists
     if (!std::filesystem::exists(path)) {
         return make_error<Config>(ErrorCode::file_not_found,
-                                   "Configuration file not found: " + path.string());
+                                  "Configuration file not found: " + path.string());
     }
 
     // Parse TOML file
@@ -23,7 +22,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         data = toml::parse(path);
     } catch (const std::exception& e) {
         return make_error<Config>(ErrorCode::parse_error,
-                                   "Failed to parse TOML: " + std::string(e.what()));
+                                  "Failed to parse TOML: " + std::string(e.what()));
     }
 
     // Start with defaults
@@ -38,10 +37,9 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
             // Validate backend value
             if (config.capture.backend != "vulkan_layer" &&
                 config.capture.backend != "compositor") {
-                return make_error<Config>(
-                    ErrorCode::invalid_config,
-                    "Invalid capture backend: " + config.capture.backend +
-                        " (expected: vulkan_layer or compositor)");
+                return make_error<Config>(ErrorCode::invalid_config,
+                                          "Invalid capture backend: " + config.capture.backend +
+                                              " (expected: vulkan_layer or compositor)");
             }
         }
     }
@@ -50,8 +48,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
     if (data.contains("pipeline")) {
         const auto pipeline = toml::find(data, "pipeline");
         if (pipeline.contains("shader_preset")) {
-            config.pipeline.shader_preset =
-                toml::find<std::string>(pipeline, "shader_preset");
+            config.pipeline.shader_preset = toml::find<std::string>(pipeline, "shader_preset");
         }
     }
 
@@ -64,10 +61,9 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         if (render.contains("target_fps")) {
             auto fps = toml::find<int64_t>(render, "target_fps");
             if (fps <= 0 || fps > 1000) {
-                return make_error<Config>(
-                    ErrorCode::invalid_config,
-                    "Invalid target_fps: " + std::to_string(fps) +
-                        " (expected: 1-1000)");
+                return make_error<Config>(ErrorCode::invalid_config,
+                                          "Invalid target_fps: " + std::to_string(fps) +
+                                              " (expected: 1-1000)");
             }
             config.render.target_fps = static_cast<uint32_t>(fps);
         }
@@ -81,8 +77,8 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
 
             // Validate log level
             const auto& level = config.logging.level;
-            if (level != "trace" && level != "debug" && level != "info" &&
-                level != "warn" && level != "error" && level != "critical") {
+            if (level != "trace" && level != "debug" && level != "info" && level != "warn" &&
+                level != "error" && level != "critical") {
                 return make_error<Config>(
                     ErrorCode::invalid_config,
                     "Invalid log level: " + level +

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <nonstd/expected.hpp>
-
 #include <cstdint>
+#include <nonstd/expected.hpp>
 #include <source_location>
 #include <string>
 #include <utility>
@@ -43,41 +42,41 @@ using Result = nonstd::expected<T, Error>;
 
 // Helper function to create an error Result
 template <typename T>
-[[nodiscard]] inline auto make_error(
-    ErrorCode code, std::string message,
-    std::source_location loc = std::source_location::current()) -> Result<T> {
+[[nodiscard]] inline auto make_error(ErrorCode code, std::string message,
+                                     std::source_location loc = std::source_location::current())
+    -> Result<T> {
     return nonstd::make_unexpected(Error{code, std::move(message), loc});
 }
 
 // Helper function to get error code name as string (for logging)
 [[nodiscard]] constexpr auto error_code_name(ErrorCode code) -> const char* {
     switch (code) {
-        case ErrorCode::ok:
-            return "ok";
-        case ErrorCode::file_not_found:
-            return "file_not_found";
-        case ErrorCode::file_read_failed:
-            return "file_read_failed";
-        case ErrorCode::file_write_failed:
-            return "file_write_failed";
-        case ErrorCode::parse_error:
-            return "parse_error";
-        case ErrorCode::invalid_config:
-            return "invalid_config";
-        case ErrorCode::vulkan_init_failed:
-            return "vulkan_init_failed";
-        case ErrorCode::vulkan_device_lost:
-            return "vulkan_device_lost";
-        case ErrorCode::shader_compile_failed:
-            return "shader_compile_failed";
-        case ErrorCode::shader_load_failed:
-            return "shader_load_failed";
-        case ErrorCode::capture_init_failed:
-            return "capture_init_failed";
-        case ErrorCode::capture_frame_failed:
-            return "capture_frame_failed";
-        case ErrorCode::unknown_error:
-            return "unknown_error";
+    case ErrorCode::ok:
+        return "ok";
+    case ErrorCode::file_not_found:
+        return "file_not_found";
+    case ErrorCode::file_read_failed:
+        return "file_read_failed";
+    case ErrorCode::file_write_failed:
+        return "file_write_failed";
+    case ErrorCode::parse_error:
+        return "parse_error";
+    case ErrorCode::invalid_config:
+        return "invalid_config";
+    case ErrorCode::vulkan_init_failed:
+        return "vulkan_init_failed";
+    case ErrorCode::vulkan_device_lost:
+        return "vulkan_device_lost";
+    case ErrorCode::shader_compile_failed:
+        return "shader_compile_failed";
+    case ErrorCode::shader_load_failed:
+        return "shader_load_failed";
+    case ErrorCode::capture_init_failed:
+        return "capture_init_failed";
+    case ErrorCode::capture_frame_failed:
+        return "capture_frame_failed";
+    case ErrorCode::unknown_error:
+        return "unknown_error";
     }
     return "unknown";
 }

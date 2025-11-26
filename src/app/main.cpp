@@ -1,11 +1,10 @@
 // Goggles - Real-time game capture and GPU post-processing
 
+#include <cstdlib>
+#include <filesystem>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/logging.hpp>
-
-#include <cstdlib>
-#include <filesystem>
 
 auto main() -> int {
     // Initialize logging system
@@ -20,8 +19,8 @@ auto main() -> int {
     goggles::Config config;
     if (!config_result) {
         const auto& error = config_result.error();
-        GOGGLES_LOG_ERROR("Failed to load configuration: {} ({})",
-                          error.message, goggles::error_code_name(error.code));
+        GOGGLES_LOG_ERROR("Failed to load configuration: {} ({})", error.message,
+                          goggles::error_code_name(error.code));
         GOGGLES_LOG_INFO("Using default configuration");
         // Fall back to defaults
         config = goggles::default_config();
