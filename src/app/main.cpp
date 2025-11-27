@@ -2,6 +2,9 @@
 
 #include <cstdlib>
 #include <filesystem>
+
+#include <SDL3/SDL.h>
+
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/logging.hpp>
@@ -49,13 +52,53 @@ auto main() -> int {
     GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
     GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
 
-    // TODO: Initialize subsystems based on config
-    // - Capture backend
-    // - Pipeline
-    // - Render backend
+    // Initialize SDL3
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        GOGGLES_LOG_CRITICAL("Failed to initialize SDL3: {}", SDL_GetError());
+        return EXIT_FAILURE;
+    }
+    GOGGLES_LOG_INFO("SDL3 initialized");
 
-    GOGGLES_LOG_INFO("Goggles initialized successfully");
-    GOGGLES_LOG_INFO("No functional implementation yet (bootstrap phase)");
+    // Create window with Vulkan support
+    SDL_Window* window = SDL_CreateWindow("Goggles", 1280, 720, SDL_WINDOW_VULKAN);
+    if (window == nullptr) {
+        GOGGLES_LOG_CRITICAL("Failed to create window: {}", SDL_GetError());
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+    GOGGLES_LOG_INFO("Window created (1280x720, Vulkan-enabled)");
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
+    if (renderer == nullptr) {
+        GOGGLES_LOG_CRITICAL("Failed to create renderer: {}", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+    GOGGLES_LOG_INFO("Renderer created");
+
+    // Event loop
+    bool running = true;
+    while (running) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                GOGGLES_LOG_INFO("Quit event received");
+                running = false;
+            }
+        }
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        SDL_RenderPresent(renderer);
+    }
+
+    // Cleanup
+    GOGGLES_LOG_INFO("Shutting down...");
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    GOGGLES_LOG_INFO("Goggles terminated successfully");
 
     return EXIT_SUCCESS;
 }

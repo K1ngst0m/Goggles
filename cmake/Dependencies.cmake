@@ -89,6 +89,7 @@ CPMAddPackage(
         "SDL_VULKAN ON"
         "SDL_WAYLAND ON"
         "SDL_X11 ON"
+        "SDL_PIPEWIRE OFF"
 )
 
 # ============================================================================

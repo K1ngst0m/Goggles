@@ -10,6 +10,7 @@ target_include_directories(goggles PRIVATE
 
 target_link_libraries(goggles PRIVATE
     goggles_util
+    SDL3::SDL3-static
 )
 
 goggles_enable_clang_tidy(goggles)
