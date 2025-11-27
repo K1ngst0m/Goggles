@@ -189,9 +189,7 @@
         "verbosity": "verbose"
       },
       "execution": {
-        "parallel": {
-          "level": 0
-        }
+        "jobs": 0
       }
     },
     {
@@ -203,9 +201,7 @@
         "verbosity": "verbose"
       },
       "execution": {
-        "parallel": {
-          "level": 0
-        }
+        "jobs": 0
       }
     }
   ]
