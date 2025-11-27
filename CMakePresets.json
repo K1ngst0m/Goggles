@@ -19,16 +19,6 @@
       }
     },
     {
-      "name": ".vcpkg",
-      "hidden": true,
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": {
-          "type": "FILEPATH",
-          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        }
-      }
-    },
-    {
       "name": ".debug",
       "hidden": true,
       "inherits": ".common",

@@ -73,10 +73,28 @@ CPMAddPackage(
 # )
 
 # ============================================================================
-# Complex Dependencies (via vcpkg)
+# Windowing & Platform Dependencies
 # ============================================================================
 
-# These are found via find_package() when CMAKE_TOOLCHAIN_FILE is set to vcpkg
+CPMAddPackage(
+    NAME SDL3
+    GITHUB_REPOSITORY libsdl-org/SDL
+    GIT_TAG release-3.2.0
+    OPTIONS
+        "SDL_SHARED OFF"
+        "SDL_STATIC ON"
+        "SDL_TEST OFF"
+        "SDL_TESTS OFF"
+        "SDL_EXAMPLES OFF"
+        "SDL_VULKAN ON"
+        "SDL_WAYLAND ON"
+        "SDL_X11 ON"
+)
+
+# ============================================================================
+# Complex Dependencies (via conan - reserved for future use)
+# ============================================================================
+
 # find_package(slang CONFIG REQUIRED)
 # Uncommented when actually needed in Prototype 5+
 

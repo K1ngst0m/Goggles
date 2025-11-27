@@ -55,7 +55,6 @@ perf.data*
 
 # Package managers
 .conan/
-vcpkg_installed/
 
 # Documentation build
 docs/_build/

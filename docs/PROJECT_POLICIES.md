@@ -335,10 +335,10 @@ file = ""  # empty = console only
 
 ### G.1 Package Manager Strategy
 
-**Use a hybrid approach combining CPM.cmake and vcpkg.**
+**Use a hybrid approach combining CPM.cmake and Conan.**
 
 - **CPM.cmake** for simple and header-only dependencies
-- **vcpkg** for complex compiled dependencies
+- **Conan** for complex compiled dependencies
 - **System packages** for platform-specific libraries (Vulkan SDK)
 
 ### G.2 CPM.cmake Usage
@@ -361,6 +361,7 @@ CPMAddPackage(
 - spdlog
 - toml11
 - Catch2
+- SDL3 (window creation and Vulkan surface support)
 
 **Benefits:**
 - Zero setup for developers (included in repo)
@@ -368,15 +369,14 @@ CPMAddPackage(
 - Fast for small/header-only libraries
 - Cached in `~/.cache/CPM`
 
-### G.3 vcpkg Usage
+### G.3 Conan Usage
 
 **For complex dependencies with build requirements:**
 
-1. **Add to `vcpkg.json` manifest:**
-   ```json
-   {
-     "dependencies": ["slang"]
-   }
+1. **Add to `conanfile.txt` or `conanfile.py`:**
+   ```ini
+   [requires]
+   slang/2024.x
    ```
 
 2. **Find in CMake:**
@@ -384,19 +384,19 @@ CPMAddPackage(
    find_package(slang CONFIG REQUIRED)
    ```
 
-**Managed via vcpkg:**
+**Managed via Conan:**
 - Slang
 
 **Setup requirement:**
-- Developers must install vcpkg and set `VCPKG_ROOT` environment variable
-- CMakePresets.json automatically configures toolchain file
+- Developers must install Conan (`pip install conan`)
+- Run `conan install` before CMake configure
 
 ### G.4 Version Pinning
 
 **All dependencies must have explicit versions:**
 
 - **CPM:** Specify `VERSION` parameter (Git tag or commit hash)
-- **vcpkg:** Use versioning in vcpkg.json (builtin-baseline or version>=)
+- **Conan:** Use versioning in conanfile (explicit version specifiers)
 - **Document rationale** for version changes in commit messages
 
 ### G.5 Adding New Dependencies
@@ -411,7 +411,7 @@ CPMAddPackage(
 
 **Selection criteria:**
 - Choose CPM for header-only or simple build systems
-- Choose vcpkg for complex dependencies (requires Vulkan, LLVM, etc.)
+- Choose Conan for complex dependencies (requires Vulkan, LLVM, etc.)
 - Use system packages for OS/platform libraries (Vulkan SDK, X11, Wayland)
 
 ### G.6 Dependency Update Policy
@@ -508,7 +508,7 @@ These policies establish:
 4. **Ownership:** RAII, `std::unique_ptr` default, no raw `new`/`delete`.
 5. **Threading:** Single-threaded default, `std::jthread` when needed, no detached threads.
 6. **Configuration:** TOML format, `config/goggles.toml` for development.
-7. **Dependencies:** Hybrid CPM.cmake + vcpkg, version pinning required, justify additions.
+7. **Dependencies:** Hybrid CPM.cmake + conan, version pinning required, justify additions.
 8. **Testing:** Catch2 v3, non-GPU logic only initially, structure mirrors `src/`.
 
 All contributors must read and follow these policies. Questions or proposed changes should be discussed with the team.
