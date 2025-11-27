@@ -42,9 +42,9 @@ using Result = nonstd::expected<T, Error>;
 
 // Helper function to create an error Result
 template <typename T>
-[[nodiscard]] inline auto make_error(ErrorCode code, std::string message,
-                                     std::source_location loc = std::source_location::current())
-    -> Result<T> {
+[[nodiscard]] inline auto
+make_error(ErrorCode code, std::string message,
+           std::source_location loc = std::source_location::current()) -> Result<T> {
     return nonstd::make_unexpected(Error{code, std::move(message), loc});
 }
 
