@@ -43,6 +43,16 @@ if(ENABLE_ASAN)
     message(STATUS "AddressSanitizer enabled")
     add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address)
+
+    # LSAN suppressions for external libraries (generated at configure time)
+    file(WRITE ${CMAKE_BINARY_DIR}/lsan_suppressions.cpp
+        "extern \"C\" const char* __lsan_default_suppressions() {\n"
+        "    return \"leak:lib\";\n"
+        "}\n"
+    )
+    add_library(lsan_suppressions STATIC ${CMAKE_BINARY_DIR}/lsan_suppressions.cpp)
+    link_libraries(lsan_suppressions)
+    add_link_options(-Wl,--undefined=__lsan_default_suppressions)
 endif()
 
 if(ENABLE_UBSAN)
