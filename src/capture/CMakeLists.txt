@@ -24,3 +24,4 @@ target_include_directories(goggles_capture INTERFACE
 )
 
 goggles_enable_clang_tidy(goggles_vklayer)
+goggles_enable_sanitizers(goggles_vklayer)

@@ -39,24 +39,30 @@ add_compile_options(
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 
+add_library(goggles_sanitizer_options INTERFACE)
+
 if(ENABLE_ASAN)
     message(STATUS "AddressSanitizer enabled")
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
-    add_link_options(-fsanitize=address)
-
-    # LSAN suppressions for external libraries (generated at configure time)
-    file(WRITE ${CMAKE_BINARY_DIR}/lsan_suppressions.cpp
-        "extern \"C\" const char* __lsan_default_suppressions() {\n"
-        "    return \"leak:lib\";\n"
-        "}\n"
+    target_compile_options(goggles_sanitizer_options INTERFACE
+        -fsanitize=address
+        -fno-omit-frame-pointer
     )
-    add_library(lsan_suppressions STATIC ${CMAKE_BINARY_DIR}/lsan_suppressions.cpp)
-    link_libraries(lsan_suppressions)
-    add_link_options(-Wl,--undefined=__lsan_default_suppressions)
+    target_link_options(goggles_sanitizer_options INTERFACE
+        -fsanitize=address
+    )
 endif()
 
 if(ENABLE_UBSAN)
     message(STATUS "UndefinedBehaviorSanitizer enabled")
-    add_compile_options(-fsanitize=undefined)
-    add_link_options(-fsanitize=undefined)
+    target_compile_options(goggles_sanitizer_options INTERFACE
+        -fsanitize=undefined
+    )
+    target_link_options(goggles_sanitizer_options INTERFACE
+        -fsanitize=undefined
+    )
 endif()
+
+# Helper function to enable sanitizers on a target
+function(goggles_enable_sanitizers target)
+    target_link_libraries(${target} PRIVATE goggles_sanitizer_options)
+endfunction()

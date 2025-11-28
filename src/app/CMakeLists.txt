@@ -14,3 +14,4 @@ target_link_libraries(goggles PRIVATE
 )
 
 goggles_enable_clang_tidy(goggles)
+goggles_enable_sanitizers(goggles)

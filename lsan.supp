@@ -1,0 +1,17 @@
+# LeakSanitizer suppressions
+# Run: LSAN_OPTIONS=suppressions=lsan.supp:fast_unwind_on_malloc=0 ./build/asan/src/app/goggles
+
+# SDL DBus integration
+# libdbus allocates global state (connection pools, auth buffers) that requires
+# dbus_shutdown() to free. SDL intentionally does NOT call dbus_shutdown() because
+# other parts of the process may still be using dbus.
+# Ref: https://github.com/libsdl-org/SDL/issues/8272
+#      https://github.com/libsdl-org/SDL/pull/12190
+leak:SDL_DBus_Init
+
+# SDL EGL/OpenGL initialization
+# Mesa/EGL drivers allocate global dispatch tables and ICU converters via
+# pthread_once() - one-time initializations that are never freed. No public API
+# exists to clean up EGL global state; eglTerminate() doesn't free everything.
+# Ref: https://github.com/libsdl-org/SDL/issues/10322
+leak:SDL_EGL_LoadLibrary
