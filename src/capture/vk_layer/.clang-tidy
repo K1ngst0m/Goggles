@@ -1,0 +1,19 @@
+---
+# Vulkan layer code - relaxed rules for loader interop and C ABI requirements
+InheritParentConfig: true
+
+Checks: >
+  -bugprone-branch-clone,
+  -clang-diagnostic-*,
+  -modernize-avoid-c-arrays,
+  -modernize-use-auto,
+  -modernize-use-designated-initializers,
+  -modernize-use-nodiscard,
+  -modernize-use-scoped-lock,
+  -performance-enum-size,
+  -readability-identifier-naming,
+  -readability-implicit-bool-conversion
+
+# Layer code: warnings only, not errors
+WarningsAsErrors: ''
+...

@@ -6,32 +6,32 @@
 using namespace goggles;
 
 TEST_CASE("ErrorCode enum values are correct", "[error]") {
-    REQUIRE(static_cast<int>(ErrorCode::ok) == 0);
-    REQUIRE(ErrorCode::file_not_found != ErrorCode::ok);
-    REQUIRE(ErrorCode::vulkan_init_failed != ErrorCode::parse_error);
+    REQUIRE(static_cast<int>(ErrorCode::OK) == 0);
+    REQUIRE(ErrorCode::FILE_NOT_FOUND != ErrorCode::OK);
+    REQUIRE(ErrorCode::VULKAN_INIT_FAILED != ErrorCode::PARSE_ERROR);
 }
 
 TEST_CASE("error_code_name returns correct strings", "[error]") {
-    REQUIRE(std::string(error_code_name(ErrorCode::ok)) == "ok");
-    REQUIRE(std::string(error_code_name(ErrorCode::file_not_found)) == "file_not_found");
-    REQUIRE(std::string(error_code_name(ErrorCode::vulkan_init_failed)) == "vulkan_init_failed");
-    REQUIRE(std::string(error_code_name(ErrorCode::shader_compile_failed)) ==
-            "shader_compile_failed");
-    REQUIRE(std::string(error_code_name(ErrorCode::unknown_error)) == "unknown_error");
+    REQUIRE(std::string(error_code_name(ErrorCode::OK)) == "OK");
+    REQUIRE(std::string(error_code_name(ErrorCode::FILE_NOT_FOUND)) == "FILE_NOT_FOUND");
+    REQUIRE(std::string(error_code_name(ErrorCode::VULKAN_INIT_FAILED)) == "VULKAN_INIT_FAILED");
+    REQUIRE(std::string(error_code_name(ErrorCode::SHADER_COMPILE_FAILED)) ==
+            "SHADER_COMPILE_FAILED");
+    REQUIRE(std::string(error_code_name(ErrorCode::UNKNOWN_ERROR)) == "UNKNOWN_ERROR");
 }
 
 TEST_CASE("Error struct construction", "[error]") {
     SECTION("Basic construction") {
-        Error error{ErrorCode::file_not_found, "Test message"};
-        REQUIRE(error.code == ErrorCode::file_not_found);
+        Error error{ErrorCode::FILE_NOT_FOUND, "Test message"};
+        REQUIRE(error.code == ErrorCode::FILE_NOT_FOUND);
         REQUIRE(error.message == "Test message");
         REQUIRE(error.location.file_name() != nullptr); // source_location should be populated
     }
 
     SECTION("Construction with custom source location") {
         auto loc = std::source_location::current();
-        Error error{ErrorCode::parse_error, "Parse failed", loc};
-        REQUIRE(error.code == ErrorCode::parse_error);
+        Error error{ErrorCode::PARSE_ERROR, "Parse failed", loc};
+        REQUIRE(error.code == ErrorCode::PARSE_ERROR);
         REQUIRE(error.message == "Parse failed");
         REQUIRE(error.location.line() == loc.line());
     }
@@ -62,17 +62,17 @@ TEST_CASE("Result<T> success cases", "[error]") {
 
 TEST_CASE("Result<T> error cases", "[error]") {
     SECTION("Error result") {
-        auto result = make_error<int>(ErrorCode::file_not_found, "File missing");
+        auto result = make_error<int>(ErrorCode::FILE_NOT_FOUND, "File missing");
         REQUIRE(!result.has_value());
-        REQUIRE(result.error().code == ErrorCode::file_not_found);
+        REQUIRE(result.error().code == ErrorCode::FILE_NOT_FOUND);
         REQUIRE(result.error().message == "File missing");
     }
 
     SECTION("Boolean conversion for error") {
-        auto result = make_error<std::string>(ErrorCode::parse_error, "Invalid syntax");
+        auto result = make_error<std::string>(ErrorCode::PARSE_ERROR, "Invalid syntax");
         REQUIRE(!static_cast<bool>(result));
         if (!result) {
-            REQUIRE(result.error().code == ErrorCode::parse_error);
+            REQUIRE(result.error().code == ErrorCode::PARSE_ERROR);
             REQUIRE(result.error().message == "Invalid syntax");
         }
     }
@@ -80,17 +80,17 @@ TEST_CASE("Result<T> error cases", "[error]") {
 
 TEST_CASE("make_error helper function", "[error]") {
     SECTION("Creates error Result correctly") {
-        auto error_result = make_error<double>(ErrorCode::vulkan_device_lost, "Device lost");
+        auto error_result = make_error<double>(ErrorCode::VULKAN_DEVICE_LOST, "Device lost");
 
         REQUIRE(!error_result.has_value());
-        REQUIRE(error_result.error().code == ErrorCode::vulkan_device_lost);
+        REQUIRE(error_result.error().code == ErrorCode::VULKAN_DEVICE_LOST);
         REQUIRE(error_result.error().message == "Device lost");
         REQUIRE(error_result.error().location.file_name() != nullptr);
     }
 
     SECTION("Source location is captured") {
         auto line_before = static_cast<uint32_t>(__LINE__);
-        auto error_result = make_error<int>(ErrorCode::unknown_error, "Test");
+        auto error_result = make_error<int>(ErrorCode::UNKNOWN_ERROR, "Test");
         auto line_after = static_cast<uint32_t>(__LINE__);
 
         REQUIRE(error_result.error().location.line() > line_before);
@@ -108,11 +108,11 @@ TEST_CASE("Result<T> chaining operations", "[error]") {
     }
 
     SECTION("Transform error case") {
-        auto result = make_error<int>(ErrorCode::file_not_found, "Missing");
+        auto result = make_error<int>(ErrorCode::FILE_NOT_FOUND, "Missing");
         auto transformed = result.transform([](int value) { return value * 2; });
 
         REQUIRE(!transformed.has_value());
-        REQUIRE(transformed.error().code == ErrorCode::file_not_found);
+        REQUIRE(transformed.error().code == ErrorCode::FILE_NOT_FOUND);
         REQUIRE(transformed.error().message == "Missing");
     }
 
@@ -127,13 +127,13 @@ TEST_CASE("Result<T> chaining operations", "[error]") {
     }
 
     SECTION("and_then error propagation") {
-        auto result = make_error<int>(ErrorCode::parse_error, "Bad input");
+        auto result = make_error<int>(ErrorCode::PARSE_ERROR, "Bad input");
         auto chained = result.and_then([](int value) -> Result<std::string> {
             return Result<std::string>{std::to_string(value)};
         });
 
         REQUIRE(!chained.has_value());
-        REQUIRE(chained.error().code == ErrorCode::parse_error);
+        REQUIRE(chained.error().code == ErrorCode::PARSE_ERROR);
         REQUIRE(chained.error().message == "Bad input");
     }
 }

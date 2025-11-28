@@ -50,27 +50,19 @@ VkDeviceData* ObjectTracker::get_device(VkDevice device) {
 
 VkDeviceData* ObjectTracker::get_device_by_queue(VkQueue queue) {
     std::lock_guard lock(mutex_);
-    // Try dispatch table lookup first
-    void* queue_ldt = GET_LDT(queue);
-    auto queue_it = queue_to_device_.find(queue_ldt);
-    if (queue_it == queue_to_device_.end()) {
-        // Fallback: search all devices for matching queue family
-        // For now, just return first device (single-device assumption)
-        if (!devices_.empty()) {
-            LAYER_DEBUG("get_device_by_queue: fallback to first device");
-            return &devices_.begin()->second;
-        }
-        LAYER_DEBUG("get_device_by_queue: no devices found");
-        return nullptr;
+    // VkQueue shares the same dispatch table as VkDevice at this layer level,
+    // so we can directly look up using the queue's LDT
+    void* ldt = GET_LDT(queue);
+    auto dev_it = devices_.find(ldt);
+    if (dev_it != devices_.end()) {
+        return &dev_it->second;
     }
-    VkDevice device = queue_it->second;
-    void* dev_ldt = GET_LDT(device);
-    auto dev_it = devices_.find(dev_ldt);
-    if (dev_it == devices_.end()) {
-        LAYER_DEBUG("get_device_by_queue: device=%p (ldt=%p) NOT FOUND", (void*)device, dev_ldt);
-        return nullptr;
+    // Fallback for single-device case
+    if (!devices_.empty()) {
+        return &devices_.begin()->second;
     }
-    return &dev_it->second;
+    LAYER_DEBUG("get_device_by_queue: no devices found");
+    return nullptr;
 }
 
 void ObjectTracker::remove_device(VkDevice device) {

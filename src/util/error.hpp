@@ -10,19 +10,19 @@ namespace goggles {
 
 // Error codes for categorizing failures
 enum class ErrorCode : std::uint8_t {
-    ok,
-    file_not_found,
-    file_read_failed,
-    file_write_failed,
-    parse_error,
-    invalid_config,
-    vulkan_init_failed,
-    vulkan_device_lost,
-    shader_compile_failed,
-    shader_load_failed,
-    capture_init_failed,
-    capture_frame_failed,
-    unknown_error
+    OK,
+    FILE_NOT_FOUND,
+    FILE_READ_FAILED,
+    FILE_WRITE_FAILED,
+    PARSE_ERROR,
+    INVALID_CONFIG,
+    VULKAN_INIT_FAILED,
+    VULKAN_DEVICE_LOST,
+    SHADER_COMPILE_FAILED,
+    SHADER_LOAD_FAILED,
+    CAPTURE_INIT_FAILED,
+    CAPTURE_FRAME_FAILED,
+    UNKNOWN_ERROR
 };
 
 // Lightweight error type for use with tl::expected
@@ -51,32 +51,32 @@ make_error(ErrorCode code, std::string message,
 // Helper function to get error code name as string (for logging)
 [[nodiscard]] constexpr auto error_code_name(ErrorCode code) -> const char* {
     switch (code) {
-    case ErrorCode::ok:
-        return "ok";
-    case ErrorCode::file_not_found:
-        return "file_not_found";
-    case ErrorCode::file_read_failed:
-        return "file_read_failed";
-    case ErrorCode::file_write_failed:
-        return "file_write_failed";
-    case ErrorCode::parse_error:
-        return "parse_error";
-    case ErrorCode::invalid_config:
-        return "invalid_config";
-    case ErrorCode::vulkan_init_failed:
-        return "vulkan_init_failed";
-    case ErrorCode::vulkan_device_lost:
-        return "vulkan_device_lost";
-    case ErrorCode::shader_compile_failed:
-        return "shader_compile_failed";
-    case ErrorCode::shader_load_failed:
-        return "shader_load_failed";
-    case ErrorCode::capture_init_failed:
-        return "capture_init_failed";
-    case ErrorCode::capture_frame_failed:
-        return "capture_frame_failed";
-    case ErrorCode::unknown_error:
-        return "unknown_error";
+    case ErrorCode::OK:
+        return "OK";
+    case ErrorCode::FILE_NOT_FOUND:
+        return "FILE_NOT_FOUND";
+    case ErrorCode::FILE_READ_FAILED:
+        return "FILE_READ_FAILED";
+    case ErrorCode::FILE_WRITE_FAILED:
+        return "FILE_WRITE_FAILED";
+    case ErrorCode::PARSE_ERROR:
+        return "PARSE_ERROR";
+    case ErrorCode::INVALID_CONFIG:
+        return "INVALID_CONFIG";
+    case ErrorCode::VULKAN_INIT_FAILED:
+        return "VULKAN_INIT_FAILED";
+    case ErrorCode::VULKAN_DEVICE_LOST:
+        return "VULKAN_DEVICE_LOST";
+    case ErrorCode::SHADER_COMPILE_FAILED:
+        return "SHADER_COMPILE_FAILED";
+    case ErrorCode::SHADER_LOAD_FAILED:
+        return "SHADER_LOAD_FAILED";
+    case ErrorCode::CAPTURE_INIT_FAILED:
+        return "CAPTURE_INIT_FAILED";
+    case ErrorCode::CAPTURE_FRAME_FAILED:
+        return "CAPTURE_FRAME_FAILED";
+    case ErrorCode::UNKNOWN_ERROR:
+        return "UNKNOWN_ERROR";
     }
     return "unknown";
 }

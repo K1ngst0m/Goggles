@@ -27,7 +27,7 @@ Checks: >
   -modernize-use-trailing-return-type,
   -readability-identifier-length
 
-WarningsAsErrors: ''
+WarningsAsErrors: '*'
 # Filter out third-party library warnings from CPM cache
 HeaderFilterRegex: '^(?!.*\.cache/CPM).*$'
 FormatStyle: file
@@ -61,7 +61,7 @@ CheckOptions:
   - key: readability-identifier-naming.StaticConstantCase
     value: UPPER_CASE
   - key: readability-identifier-naming.EnumConstantCase
-    value: lower_case
+    value: UPPER_CASE
   - key: readability-function-size.LineThreshold
     value: 150
 ...

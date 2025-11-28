@@ -12,7 +12,7 @@ auto default_config() -> Config {
 auto load_config(const std::filesystem::path& path) -> Result<Config> {
     // Check if file exists
     if (!std::filesystem::exists(path)) {
-        return make_error<Config>(ErrorCode::file_not_found,
+        return make_error<Config>(ErrorCode::FILE_NOT_FOUND,
                                   "Configuration file not found: " + path.string());
     }
 
@@ -21,7 +21,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
     try {
         data = toml::parse(path);
     } catch (const std::exception& e) {
-        return make_error<Config>(ErrorCode::parse_error,
+        return make_error<Config>(ErrorCode::PARSE_ERROR,
                                   "Failed to parse TOML: " + std::string(e.what()));
     }
 
@@ -37,7 +37,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
             // Validate backend value
             if (config.capture.backend != "vulkan_layer" &&
                 config.capture.backend != "compositor") {
-                return make_error<Config>(ErrorCode::invalid_config,
+                return make_error<Config>(ErrorCode::INVALID_CONFIG,
                                           "Invalid capture backend: " + config.capture.backend +
                                               " (expected: vulkan_layer or compositor)");
             }
@@ -61,7 +61,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         if (render.contains("target_fps")) {
             auto fps = toml::find<int64_t>(render, "target_fps");
             if (fps <= 0 || fps > 1000) {
-                return make_error<Config>(ErrorCode::invalid_config,
+                return make_error<Config>(ErrorCode::INVALID_CONFIG,
                                           "Invalid target_fps: " + std::to_string(fps) +
                                               " (expected: 1-1000)");
             }
@@ -80,7 +80,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
             if (level != "trace" && level != "debug" && level != "info" && level != "warn" &&
                 level != "error" && level != "critical") {
                 return make_error<Config>(
-                    ErrorCode::invalid_config,
+                    ErrorCode::INVALID_CONFIG,
                     "Invalid log level: " + level +
                         " (expected: trace, debug, info, warn, error, critical)");
             }

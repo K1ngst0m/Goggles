@@ -46,14 +46,14 @@ public:
     bool poll_frame();
 
     // Get current frame (valid after poll_frame returns true)
-    const CaptureFrame& get_frame() const { return frame_; }
+    [[nodiscard]] const CaptureFrame& get_frame() const { return m_frame; }
 
     // Create or update SDL texture from current frame
     SDL_Texture* update_texture(SDL_Renderer* renderer, SDL_Texture* existing);
 
     // State
-    bool is_connected() const { return client_fd_ >= 0; }
-    bool has_frame() const { return frame_.data != nullptr; }
+    [[nodiscard]] bool is_connected() const { return m_client_fd >= 0; }
+    [[nodiscard]] bool has_frame() const { return m_frame.data != nullptr; }
 
 private:
     bool accept_client();
@@ -61,10 +61,10 @@ private:
     void cleanup_frame();
     void unmap_frame();
 
-    int listen_fd_ = -1;     // Listening socket
-    int client_fd_ = -1;     // Connected client (layer)
-    CaptureFrame frame_{};
-    capture::CaptureTextureData last_texture_{};
+    int m_listen_fd = -1;     // Listening socket
+    int m_client_fd = -1;     // Connected client (layer)
+    CaptureFrame m_frame{};
+    capture::CaptureTextureData m_last_texture{};
 };
 
 } // namespace goggles

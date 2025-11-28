@@ -76,7 +76,7 @@ bool LayerSocketClient::connect() {
         exe_path[len] = '\0';
         const char* name = strrchr(exe_path, '/');
         name = name ? name + 1 : exe_path;
-        strncpy(hello.exe_name, name, sizeof(hello.exe_name) - 1);
+        strncpy(hello.exe_name.data(), name, hello.exe_name.size() - 1);
     }
 
     ssize_t sent = send(socket_fd_, &hello, sizeof(hello), MSG_NOSIGNAL);

@@ -105,10 +105,12 @@ auto main() -> int {
         if (capture_receiver.poll_frame()) {
             // Check if actual pixel data changed
             const auto& frame = capture_receiver.get_frame();
-            if (frame.data) {
+            if (frame.data != nullptr) {
                 uint64_t hash = 0;
                 auto* p = static_cast<const uint64_t*>(frame.data);
-                for (int i = 0; i < 8; ++i) hash ^= p[i];  // Quick hash of first 64 bytes
+                for (int i = 0; i < 8; ++i) {
+                    hash ^= p[i];  // Quick hash of first 64 bytes
+                }
                 
                 if (hash != last_data_hash) {
                     ++frame_num;

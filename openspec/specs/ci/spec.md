@@ -45,3 +45,27 @@ The build system SHALL configure LSAN suppressions via external file rather than
 - **AND** leaks originating entirely within suppressed patterns are not reported
 - **AND** leaks in first-party code ARE reported even if called via third-party APIs
 
+### Requirement: Scoped Clang-Tidy Configuration
+
+The build system SHALL apply clang-tidy static analysis with per-directory configuration, allowing different strictness levels for different code categories.
+
+#### Scenario: Application code with clang-tidy enabled
+- **WHEN** building with `ENABLE_CLANG_TIDY=ON`
+- **AND** the source file is in `src/app/` or `src/capture/capture_protocol.hpp`
+- **THEN** the file is analyzed with the root `.clang-tidy` configuration
+- **AND** all checks are enforced with `-warnings-as-errors`
+
+#### Scenario: Vulkan layer code with clang-tidy enabled
+- **WHEN** building with `ENABLE_CLANG_TIDY=ON`
+- **AND** the source file is in `src/capture/vk_layer/`
+- **THEN** the file is analyzed with `src/capture/vk_layer/.clang-tidy`
+- **AND** naming and modernization checks are relaxed for Vulkan interop compatibility
+- **AND** safety-related checks remain enabled
+
+#### Scenario: Root clang-tidy enforces project conventions
+- **WHEN** the root `.clang-tidy` is used
+- **THEN** private members MUST use `m_` prefix
+- **AND** enum constants MUST use `UPPER_SNAKE_CASE`
+- **AND** functions MUST use `snake_case`
+- **AND** C-style arrays are forbidden in favor of `std::array`
+

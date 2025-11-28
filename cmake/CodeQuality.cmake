@@ -11,7 +11,6 @@ if(ENABLE_CLANG_TIDY)
         set(GOGGLES_CLANG_TIDY_CONFIG
             ${CLANG_TIDY_EXE};
             --header-filter=${CMAKE_SOURCE_DIR}/src/.*;
-            --warnings-as-errors=*;
         )
         
         # Helper function to apply clang-tidy to project targets

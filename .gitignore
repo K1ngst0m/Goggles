@@ -88,3 +88,5 @@ TODO.local
 # Core dumps
 core
 core.*
+
+openspec/changes/archive/*

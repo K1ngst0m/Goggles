@@ -1,5 +1,8 @@
-## ADDED Requirements
+# vk-layer-capture Specification
 
+## Purpose
+TBD - created by archiving change add-vk-layer-capture-minimal. Update Purpose after archive.
+## Requirements
 ### Requirement: Vulkan Layer Registration
 The capture layer SHALL provide a valid Vulkan layer manifest that allows the Vulkan loader to discover and load the layer.
 
@@ -118,3 +121,4 @@ The layer SHALL follow project logging policies for capture layer code.
 #### Scenario: Initialization logging
 - **WHEN** `vkCreateInstance` or `vkCreateDevice` is hooked
 - **THEN** the layer MAY log at info level with `[goggles_vklayer]` prefix
+
