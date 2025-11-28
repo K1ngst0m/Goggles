@@ -103,5 +103,4 @@ CPMAddPackage(
 # System Dependencies
 # ============================================================================
 
-# find_package(Vulkan REQUIRED)
-# Uncommented when needed in Prototype 1
+find_package(Vulkan REQUIRED)

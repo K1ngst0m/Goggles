@@ -1,5 +1,7 @@
 // Goggles - Real-time game capture and GPU post-processing
 
+#include "capture_receiver.hpp"
+
 #include <cstdlib>
 #include <filesystem>
 
@@ -77,6 +79,14 @@ auto main() -> int {
     }
     GOGGLES_LOG_INFO("Renderer created");
 
+    // Initialize capture receiver
+    goggles::CaptureReceiver capture_receiver;
+    if (!capture_receiver.init()) {
+        GOGGLES_LOG_WARN("Failed to initialize capture receiver");
+    }
+
+    SDL_Texture* capture_texture = nullptr;
+
     // Event loop
     bool running = true;
     while (running) {
@@ -88,10 +98,45 @@ auto main() -> int {
             }
         }
 
+        // Poll for captured frames
+        static uint64_t last_data_hash = 0;
+        static uint64_t frame_num = 0;
+        
+        if (capture_receiver.poll_frame()) {
+            // Check if actual pixel data changed
+            const auto& frame = capture_receiver.get_frame();
+            if (frame.data) {
+                uint64_t hash = 0;
+                auto* p = static_cast<const uint64_t*>(frame.data);
+                for (int i = 0; i < 8; ++i) hash ^= p[i];  // Quick hash of first 64 bytes
+                
+                if (hash != last_data_hash) {
+                    ++frame_num;
+                    if (frame_num % 30 == 1) {
+                        GOGGLES_LOG_DEBUG("Frame {}: data changed, hash={:016x}", frame_num, hash);
+                    }
+                    last_data_hash = hash;
+                }
+            }
+            capture_texture = capture_receiver.update_texture(renderer, capture_texture);
+        }
+        
+        // Render
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
+
+        if (capture_texture != nullptr) {
+            SDL_RenderTexture(renderer, capture_texture, nullptr, nullptr);
+        }
+
         SDL_RenderPresent(renderer);
     }
+
+    // Cleanup capture
+    if (capture_texture != nullptr) {
+        SDL_DestroyTexture(capture_texture);
+    }
+    capture_receiver.shutdown();
 
     // Cleanup
     GOGGLES_LOG_INFO("Shutting down...");

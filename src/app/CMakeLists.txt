@@ -2,6 +2,7 @@
 
 add_executable(goggles
     main.cpp
+    capture_receiver.cpp
 )
 
 target_include_directories(goggles PRIVATE
