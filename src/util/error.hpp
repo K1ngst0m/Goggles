@@ -8,7 +8,6 @@
 
 namespace goggles {
 
-// Error codes for categorizing failures
 enum class ErrorCode : std::uint8_t {
     OK,
     FILE_NOT_FOUND,
@@ -25,7 +24,6 @@ enum class ErrorCode : std::uint8_t {
     UNKNOWN_ERROR
 };
 
-// Lightweight error type for use with tl::expected
 struct Error {
     ErrorCode code;
     std::string message;
@@ -36,11 +34,9 @@ struct Error {
         : code(error_code), message(std::move(msg)), location(loc) {}
 };
 
-// Alias for expected type using nonstd::expected (expected-lite)
 template <typename T>
 using Result = nonstd::expected<T, Error>;
 
-// Helper function to create an error Result
 template <typename T>
 [[nodiscard]] inline auto
 make_error(ErrorCode code, std::string message,
@@ -48,7 +44,6 @@ make_error(ErrorCode code, std::string message,
     return nonstd::make_unexpected(Error{code, std::move(message), loc});
 }
 
-// Helper function to get error code name as string (for logging)
 [[nodiscard]] constexpr auto error_code_name(ErrorCode code) -> const char* {
     switch (code) {
     case ErrorCode::OK:

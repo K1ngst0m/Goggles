@@ -10,13 +10,11 @@ auto default_config() -> Config {
 }
 
 auto load_config(const std::filesystem::path& path) -> Result<Config> {
-    // Check if file exists
     if (!std::filesystem::exists(path)) {
         return make_error<Config>(ErrorCode::FILE_NOT_FOUND,
                                   "Configuration file not found: " + path.string());
     }
 
-    // Parse TOML file
     toml::value data;
     try {
         data = toml::parse(path);
@@ -25,10 +23,8 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
                                   "Failed to parse TOML: " + std::string(e.what()));
     }
 
-    // Start with defaults
     Config config = default_config();
 
-    // [capture]
     if (data.contains("capture")) {
         const auto capture = toml::find(data, "capture");
         if (capture.contains("backend")) {
@@ -44,7 +40,6 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         }
     }
 
-    // [pipeline]
     if (data.contains("pipeline")) {
         const auto pipeline = toml::find(data, "pipeline");
         if (pipeline.contains("shader_preset")) {
@@ -52,7 +47,6 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         }
     }
 
-    // [render]
     if (data.contains("render")) {
         const auto render = toml::find(data, "render");
         if (render.contains("vsync")) {
@@ -69,7 +63,6 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         }
     }
 
-    // [logging]
     if (data.contains("logging")) {
         const auto logging = toml::find(data, "logging");
         if (logging.contains("level")) {

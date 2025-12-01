@@ -1,5 +1,3 @@
-// Vulkan layer hook function declarations
-
 #pragma once
 
 #include <vulkan/vulkan.h>

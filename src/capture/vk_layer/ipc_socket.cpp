@@ -1,5 +1,3 @@
-// IPC socket implementation for Vulkan layer
-
 #include "ipc_socket.hpp"
 
 #include <cerrno>
@@ -14,18 +12,10 @@
 
 namespace goggles::capture {
 
-// =============================================================================
-// Global Instance
-// =============================================================================
-
 LayerSocketClient& get_layer_socket() {
     static LayerSocketClient client;
     return client;
 }
-
-// =============================================================================
-// Implementation
-// =============================================================================
 
 LayerSocketClient::~LayerSocketClient() {
     disconnect();
@@ -36,20 +26,17 @@ bool LayerSocketClient::connect() {
         return true;
     }
 
-    // Rate-limit connection attempts (1 second)
     auto now = std::chrono::steady_clock::now().time_since_epoch().count();
     if (now - last_connect_attempt_ < 1'000'000'000) {
         return false;
     }
     last_connect_attempt_ = now;
 
-    // Create socket
     socket_fd_ = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
     if (socket_fd_ < 0) {
         return false;
     }
 
-    // Connect to abstract socket
     sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     std::memcpy(addr.sun_path, CAPTURE_SOCKET_PATH, CAPTURE_SOCKET_PATH_LEN);
@@ -64,12 +51,10 @@ bool LayerSocketClient::connect() {
         return false;
     }
 
-    // Send hello message
     CaptureClientHello hello{};
     hello.type = CaptureMessageType::CLIENT_HELLO;
     hello.version = 1;
 
-    // Get executable name
     char exe_path[256];
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (len > 0) {
@@ -102,7 +87,6 @@ bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_
         return false;
     }
 
-    // Set up message with ancillary data for fd passing
     msghdr msg{};
     iovec iov{};
     iov.iov_base = const_cast<CaptureTextureData*>(&data);
@@ -110,7 +94,6 @@ bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
 
-    // Control message buffer for SCM_RIGHTS
     char cmsg_buf[CMSG_SPACE(sizeof(int))];
     msg.msg_control = cmsg_buf;
     msg.msg_controllen = sizeof(cmsg_buf);
@@ -145,7 +128,6 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
     }
 
     if (received == 0) {
-        // Connection closed
         disconnect();
     } else if (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
         disconnect();

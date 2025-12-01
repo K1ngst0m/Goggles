@@ -1,5 +1,3 @@
-// Vulkan layer hook implementations
-
 #include "vk_hooks.hpp"
 #include "vk_capture.hpp"
 #include "vk_dispatch.hpp"
@@ -13,10 +11,6 @@
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
-
-// =============================================================================
-// Helper: Check if layer link info
-// =============================================================================
 
 static inline bool is_instance_link_info(VkLayerInstanceCreateInfo* info) {
     return info->sType == VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO &&
@@ -37,7 +31,6 @@ VkResult VKAPI_CALL Goggles_CreateInstance(
     const VkAllocationCallbacks* pAllocator,
     VkInstance* pInstance) {
 
-    // Find the layer link info in the chain
     auto* link_info = reinterpret_cast<VkLayerInstanceCreateInfo*>(
         const_cast<void*>(pCreateInfo->pNext));
     while (link_info && !is_instance_link_info(link_info)) {
@@ -49,18 +42,13 @@ VkResult VKAPI_CALL Goggles_CreateInstance(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // Get the next layer's vkGetInstanceProcAddr
     PFN_vkGetInstanceProcAddr gipa = link_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
-
-    // Advance the link info for the next layer
     link_info->u.pLayerInfo = link_info->u.pLayerInfo->pNext;
 
-    // Add required extensions for external memory
     std::vector<const char*> extensions(
         pCreateInfo->ppEnabledExtensionNames,
         pCreateInfo->ppEnabledExtensionNames + pCreateInfo->enabledExtensionCount);
 
-    // Add VK_KHR_external_memory_capabilities if not present
     bool has_ext_mem_caps = false;
     for (const auto* ext : extensions) {
         if (strcmp(ext, VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME) == 0) {
@@ -72,30 +60,25 @@ VkResult VKAPI_CALL Goggles_CreateInstance(
         extensions.push_back(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
     }
 
-    // Create modified create info
     VkInstanceCreateInfo modified_info = *pCreateInfo;
     modified_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     modified_info.ppEnabledExtensionNames = extensions.data();
 
-    // Call the next layer's vkCreateInstance
     auto create_func = reinterpret_cast<PFN_vkCreateInstance>(
         gipa(nullptr, "vkCreateInstance"));
     VkResult result = create_func(&modified_info, pAllocator, pInstance);
 
     if (result != VK_SUCCESS) {
-        // Try again with original extensions
         result = create_func(pCreateInfo, pAllocator, pInstance);
         if (result != VK_SUCCESS) {
             return result;
         }
     }
 
-    // Store instance data
     VkInstData inst_data{};
     inst_data.instance = *pInstance;
     inst_data.valid = true;
 
-    // Get instance function pointers
     auto& funcs = inst_data.funcs;
 #define GETADDR(name) \
     funcs.name = reinterpret_cast<PFN_vk##name>(gipa(*pInstance, "vk" #name))
@@ -110,7 +93,6 @@ VkResult VKAPI_CALL Goggles_CreateInstance(
 
 #undef GETADDR
 
-    // Enumerate physical devices and map them to this instance
     uint32_t phys_count = 0;
     funcs.EnumeratePhysicalDevices(*pInstance, &phys_count, nullptr);
     if (phys_count > 0) {
@@ -155,7 +137,6 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // Find the layer link info
     auto* link_info = reinterpret_cast<VkLayerDeviceCreateInfo*>(
         const_cast<void*>(pCreateInfo->pNext));
     while (link_info && !is_device_link_info(link_info)) {
@@ -169,11 +150,8 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
 
     PFN_vkGetInstanceProcAddr gipa = link_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     PFN_vkGetDeviceProcAddr gdpa = link_info->u.pLayerInfo->pfnNextGetDeviceProcAddr;
-
-    // Advance the link info
     link_info->u.pLayerInfo = link_info->u.pLayerInfo->pNext;
 
-    // Add required device extensions for DMA-BUF export
     std::vector<const char*> extensions(
         pCreateInfo->ppEnabledExtensionNames,
         pCreateInfo->ppEnabledExtensionNames + pCreateInfo->enabledExtensionCount);
@@ -197,32 +175,27 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
         }
     }
 
-    // Create modified create info
     VkDeviceCreateInfo modified_info = *pCreateInfo;
     modified_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     modified_info.ppEnabledExtensionNames = extensions.data();
 
-    // Call next layer's vkCreateDevice
     auto create_func = reinterpret_cast<PFN_vkCreateDevice>(
         gipa(inst_data->instance, "vkCreateDevice"));
     VkResult result = create_func(physicalDevice, &modified_info, pAllocator, pDevice);
 
     if (result != VK_SUCCESS) {
-        // Try again with original extensions
         result = create_func(physicalDevice, pCreateInfo, pAllocator, pDevice);
         if (result != VK_SUCCESS) {
             return result;
         }
     }
 
-    // Store device data
     VkDeviceData dev_data{};
     dev_data.device = *pDevice;
     dev_data.physical_device = physicalDevice;
     dev_data.inst_data = inst_data;
     dev_data.valid = true;
 
-    // Get device function pointers
     auto& funcs = dev_data.funcs;
 #define GETADDR(name) \
     funcs.name = reinterpret_cast<PFN_vk##name>(gdpa(*pDevice, "vk" #name))
@@ -261,7 +234,6 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
 
 #undef GETADDR
 
-    // Find graphics queue
     uint32_t queue_family_count = 0;
     inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(
         physicalDevice, &queue_family_count, nullptr);
@@ -270,7 +242,6 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
     inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(
         physicalDevice, &queue_family_count, queue_families.data());
 
-    // Enumerate queues and find graphics queue
     for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; ++i) {
         const auto& queue_info = pCreateInfo->pQueueCreateInfos[i];
         uint32_t family = queue_info.queueFamilyIndex;
@@ -280,7 +251,6 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
             funcs.GetDeviceQueue(*pDevice, family, j, &queue);
             get_object_tracker().add_queue(queue, *pDevice);
 
-            // Store first graphics queue
             if ((queue_families[family].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
                 dev_data.graphics_queue == VK_NULL_HANDLE) {
                 dev_data.graphics_queue = queue;
@@ -326,7 +296,7 @@ VkResult VKAPI_CALL Goggles_CreateSwapchainKHR(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // Add TRANSFER_SRC_BIT to allow copying from swapchain images
+    // TRANSFER_SRC required for capturing swapchain images
     VkSwapchainCreateInfoKHR modified_info = *pCreateInfo;
     modified_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
@@ -334,12 +304,10 @@ VkResult VKAPI_CALL Goggles_CreateSwapchainKHR(
         device, &modified_info, pAllocator, pSwapchain);
 
     if (result != VK_SUCCESS) {
-        // Fall back to original flags
         result = data->funcs.CreateSwapchainKHR(
             device, pCreateInfo, pAllocator, pSwapchain);
     }
 
-    // Store swapchain data for capture
     get_capture_manager().on_swapchain_created(device, *pSwapchain, pCreateInfo, data);
 
     return result;
@@ -355,7 +323,6 @@ void VKAPI_CALL Goggles_DestroySwapchainKHR(
         return;
     }
 
-    // Cleanup swapchain capture data
     get_capture_manager().on_swapchain_destroyed(device, swapchain);
 
     data->funcs.DestroySwapchainKHR(device, swapchain, pAllocator);
@@ -381,7 +348,6 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(
         return VK_ERROR_DEVICE_LOST;
     }
 
-    // Capture frame before present
     VkPresentInfoKHR modified_present = *pPresentInfo;
     get_capture_manager().on_present(queue, &modified_present, data);
 

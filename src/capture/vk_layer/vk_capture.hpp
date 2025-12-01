@@ -1,6 +1,3 @@
-// Vulkan capture state and DMA-BUF export
-// Based on obs-vkcapture architecture
-
 #pragma once
 
 #include "vk_dispatch.hpp"
@@ -14,10 +11,6 @@
 
 namespace goggles::capture {
 
-// =============================================================================
-// Per-Frame Resources (for synchronization)
-// =============================================================================
-
 struct FrameData {
     VkCommandPool cmd_pool = VK_NULL_HANDLE;
     VkCommandBuffer cmd_buffer = VK_NULL_HANDLE;
@@ -25,10 +18,6 @@ struct FrameData {
     VkSemaphore semaphore = VK_NULL_HANDLE;
     bool cmd_buffer_busy = false;
 };
-
-// =============================================================================
-// Per-Swapchain Capture Data
-// =============================================================================
 
 struct SwapData {
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
@@ -60,46 +49,29 @@ struct SwapData {
     bool capture_active = false;
 };
 
-// =============================================================================
-// Capture Manager
-// =============================================================================
-
 class CaptureManager {
 public:
-    // Swapchain lifecycle
     void on_swapchain_created(VkDevice device, VkSwapchainKHR swapchain,
                               const VkSwapchainCreateInfoKHR* create_info,
                               VkDeviceData* dev_data);
     void on_swapchain_destroyed(VkDevice device, VkSwapchainKHR swapchain);
-
-    // Frame capture
     void on_present(VkQueue queue, const VkPresentInfoKHR* present_info,
                     VkDeviceData* dev_data);
-
-    // Access swap data
     SwapData* get_swap_data(VkSwapchainKHR swapchain);
 
 private:
-    // Initialize export image with DMA-BUF support
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
-
-    // Create per-frame resources
     void create_frame_resources(SwapData* swap, VkDeviceData* dev_data,
                                 uint32_t count);
     void destroy_frame_resources(SwapData* swap, VkDeviceData* dev_data);
-
-    // Perform GPU copy from swapchain to export image
     void capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue,
                        VkDeviceData* dev_data, VkPresentInfoKHR* present_info);
-
-    // Cleanup
     void cleanup_swap_data(SwapData* swap, VkDeviceData* dev_data);
 
     std::mutex mutex_;
     std::unordered_map<VkSwapchainKHR, SwapData> swaps_;
 };
 
-// Global capture manager
 CaptureManager& get_capture_manager();
 
 } // namespace goggles::capture

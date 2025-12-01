@@ -8,7 +8,7 @@ std::unique_ptr<BS::thread_pool> JobSystem::s_pool = nullptr;
 
 void JobSystem::initialize(size_t thread_count) {
     if (s_pool) {
-        return; // Already initialized
+        return;
     }
 
     if (thread_count == 0) {

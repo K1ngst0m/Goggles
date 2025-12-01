@@ -1,5 +1,3 @@
-// Vulkan capture implementation - DMA-BUF export and GPU copy
-
 #include "vk_capture.hpp"
 #include "ipc_socket.hpp"
 
@@ -7,7 +5,6 @@
 #include <cstring>
 #include <unistd.h>
 
-// Debug logging macro
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
@@ -38,7 +35,7 @@ void CaptureManager::on_swapchain_created(
     swap.format = create_info->imageFormat;
     swap.composite_alpha = create_info->compositeAlpha;
 
-    // Check composite alpha - we only fully support opaque windows
+    // Only fully support opaque windows; alpha blending may be ignored
     if (create_info->compositeAlpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
         const char* alpha_name = "UNKNOWN";
         switch (create_info->compositeAlpha) {
@@ -53,7 +50,6 @@ void CaptureManager::on_swapchain_created(
         LAYER_DEBUG("WARNING: Swapchain uses compositeAlpha=%s, capture may ignore alpha blending", alpha_name);
     }
 
-    // Get swapchain images
     uint32_t image_count = 0;
     if (dev_data->funcs.GetSwapchainImagesKHR) {
         VkResult res = dev_data->funcs.GetSwapchainImagesKHR(device, swapchain, &image_count, nullptr);
@@ -104,8 +100,7 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
-    // Create exportable image with LINEAR tiling for mmap compatibility
-    // Use B8G8R8A8_UNORM for consistent format (vkCmdBlitImage will convert)
+    // LINEAR tiling required for mmap; same format as swapchain (no blit conversion)
     VkExternalMemoryImageCreateInfo ext_mem_info{};
     ext_mem_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
     ext_mem_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
@@ -131,11 +126,10 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
         return false;
     }
 
-    // Get memory requirements
     VkMemoryRequirements mem_reqs;
     funcs.GetImageMemoryRequirements(device, swap->export_image, &mem_reqs);
 
-    // Find memory type with HOST_VISIBLE for LINEAR tiling
+    // HOST_VISIBLE required for LINEAR tiling
     auto* inst_data = dev_data->inst_data;
     VkPhysicalDeviceMemoryProperties mem_props;
     inst_data->funcs.GetPhysicalDeviceMemoryProperties(dev_data->physical_device,
@@ -158,7 +152,6 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
         return false;
     }
 
-    // Allocate exportable memory
     VkExportMemoryAllocateInfo export_info{};
     export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
     export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
@@ -176,7 +169,6 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
         return false;
     }
 
-    // Bind memory to image
     res = funcs.BindImageMemory(device, swap->export_image, swap->export_mem, 0);
     if (res != VK_SUCCESS) {
         funcs.FreeMemory(device, swap->export_mem, nullptr);
@@ -186,7 +178,6 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
         return false;
     }
 
-    // Export as DMA-BUF fd
     VkMemoryGetFdInfoKHR fd_info{};
     fd_info.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
     fd_info.memory = swap->export_mem;
@@ -202,7 +193,6 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
         return false;
     }
 
-    // Get image layout (stride, offset) for LINEAR tiling
     VkImageSubresource subres{};
     subres.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     subres.mipLevel = 0;
@@ -233,29 +223,23 @@ void CaptureManager::create_frame_resources(SwapData* swap,
     swap->frames.resize(count);
 
     for (auto& frame : swap->frames) {
-        // Create command pool
         VkCommandPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         pool_info.queueFamilyIndex = dev_data->graphics_queue_family;
-
         funcs.CreateCommandPool(device, &pool_info, nullptr, &frame.cmd_pool);
 
-        // Allocate command buffer
         VkCommandBufferAllocateInfo cmd_info{};
         cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         cmd_info.commandPool = frame.cmd_pool;
         cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cmd_info.commandBufferCount = 1;
-
         funcs.AllocateCommandBuffers(device, &cmd_info, &frame.cmd_buffer);
 
-        // Create fence
         VkFenceCreateInfo fence_info{};
         fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         funcs.CreateFence(device, &fence_info, nullptr, &frame.fence);
 
-        // Create semaphore
         VkSemaphoreCreateInfo sem_info{};
         sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         funcs.CreateSemaphore(device, &sem_info, nullptr, &frame.semaphore);
@@ -295,7 +279,6 @@ void CaptureManager::on_present(VkQueue queue,
         return;
     }
 
-    // For now, capture first swapchain only
     VkSwapchainKHR swapchain = present_info->pSwapchains[0];
     uint32_t image_index = present_info->pImageIndices[0];
 
@@ -308,7 +291,6 @@ void CaptureManager::on_present(VkQueue queue,
 
     SwapData* swap = &it->second;
 
-    // Initialize export image if needed
     if (!swap->export_initialized) {
         LAYER_DEBUG("Initializing export image...");
         if (!init_export_image(swap, dev_data)) {
@@ -319,7 +301,6 @@ void CaptureManager::on_present(VkQueue queue,
                                static_cast<uint32_t>(swap->swap_images.size()));
     }
 
-    // Try to connect if not connected
     static bool logged_connect = false;
     auto& socket = get_layer_socket();
     if (!socket.is_connected()) {
@@ -329,11 +310,9 @@ void CaptureManager::on_present(VkQueue queue,
         }
     }
 
-    // Check for control messages
     CaptureControl ctrl{};
     socket.poll_control(ctrl);
 
-    // Use a copy of present_info that we can modify
     VkPresentInfoKHR modified_present = *present_info;
     capture_frame(swap, image_index, queue, dev_data, &modified_present);
 }
@@ -348,19 +327,16 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
         return;
     }
 
-    // Get frame resources (round-robin)
     uint32_t frame_idx = swap->frame_index;
     swap->frame_index = (frame_idx + 1) % static_cast<uint32_t>(swap->frames.size());
     FrameData& frame = swap->frames[frame_idx];
 
-    // Wait for previous use of this frame's command buffer
     if (frame.cmd_buffer_busy) {
         funcs.WaitForFences(device, 1, &frame.fence, VK_TRUE, UINT64_MAX);
         funcs.ResetFences(device, 1, &frame.fence);
         frame.cmd_buffer_busy = false;
     }
 
-    // Reset and begin command buffer
     funcs.ResetCommandPool(device, frame.cmd_pool, 0);
 
     VkCommandBufferBeginInfo begin_info{};
@@ -372,7 +348,6 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
     VkImage src_image = swap->swap_images[image_index];
     VkImage dst_image = swap->export_image;
 
-    // Transition source from PRESENT_SRC to TRANSFER_SRC
     VkImageMemoryBarrier src_barrier{};
     src_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     src_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
@@ -388,7 +363,6 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
     src_barrier.subresourceRange.baseArrayLayer = 0;
     src_barrier.subresourceRange.layerCount = 1;
 
-    // Transition dest to TRANSFER_DST
     VkImageMemoryBarrier dst_barrier{};
     dst_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     dst_barrier.srcAccessMask = 0;
@@ -410,7 +384,6 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                              0, 0, nullptr, 0, nullptr, 2, barriers);
 
-    // Copy image (same format, no conversion needed)
     VkImageCopy copy_region{};
     copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copy_region.srcSubresource.mipLevel = 0;
@@ -429,13 +402,12 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
                        dst_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                        1, &copy_region);
 
-    // Transition source back to PRESENT_SRC
     src_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     src_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
     src_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     src_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    // Transition dest to GENERAL for external access
+    // GENERAL layout for external (DMA-BUF) access
     dst_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     dst_barrier.dstAccessMask = 0;
     dst_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -451,8 +423,6 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
 
     funcs.EndCommandBuffer(frame.cmd_buffer);
 
-    // Submit without intercepting present's semaphores (simpler, less sync issues)
-    // The copy happens after present's semaphores are signaled by the app
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
@@ -464,13 +434,9 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
         return;
     }
     
-    // Wait for GPU copy to complete before sending to app
-    // This ensures the DMA-BUF contains valid data when app reads it
+    // Synchronous wait ensures DMA-BUF contains valid data before IPC send
     funcs.WaitForFences(device, 1, &frame.fence, VK_TRUE, UINT64_MAX);
     funcs.ResetFences(device, 1, &frame.fence);
-    // Don't set cmd_buffer_busy since we already waited
-
-    // Send texture data to Goggles app
     auto& socket = get_layer_socket();
     if (socket.is_connected()) {
         CaptureTextureData tex_data{};

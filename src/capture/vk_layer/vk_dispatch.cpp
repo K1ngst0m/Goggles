@@ -1,15 +1,9 @@
-// Vulkan layer object tracking implementation
-
 #include "vk_dispatch.hpp"
 
 #include <cstdio>
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
-
-// =============================================================================
-// ObjectTracker Implementation
-// =============================================================================
 
 void ObjectTracker::add_instance(VkInstance instance, VkInstData data) {
     std::lock_guard lock(mutex_);
@@ -50,14 +44,12 @@ VkDeviceData* ObjectTracker::get_device(VkDevice device) {
 
 VkDeviceData* ObjectTracker::get_device_by_queue(VkQueue queue) {
     std::lock_guard lock(mutex_);
-    // VkQueue shares the same dispatch table as VkDevice at this layer level,
-    // so we can directly look up using the queue's LDT
+    // VkQueue shares same dispatch table as VkDevice at layer level
     void* ldt = GET_LDT(queue);
     auto dev_it = devices_.find(ldt);
     if (dev_it != devices_.end()) {
         return &dev_it->second;
     }
-    // Fallback for single-device case
     if (!devices_.empty()) {
         return &devices_.begin()->second;
     }
@@ -93,7 +85,6 @@ void ObjectTracker::add_physical_device(VkPhysicalDevice phys, VkInstance inst) 
     phys_to_instance_[GET_LDT(phys)] = inst;
 }
 
-// Global instance
 ObjectTracker& get_object_tracker() {
     static ObjectTracker tracker;
     return tracker;
