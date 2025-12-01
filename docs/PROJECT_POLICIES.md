@@ -107,6 +107,8 @@ Define project-specific macros wrapping spdlog:
 
 ## C) Naming & Layout Conventions
 
+**PRIORITY:** Section C.7 (Commenting Policy) takes precedence over all other style considerations. Violations will block code review approval.
+
 ### C.1 Namespaces
 
 - **Top-level:** `goggles`
@@ -146,12 +148,134 @@ Define project-specific macros wrapping spdlog:
   5. Project headers (same module)
 - **Sort alphabetically** within each group.
 
-### C.6 Comments
+### C.6 Comments (Summary)
 
 - **Minimal comments:** Code should be self-explanatory.
 - **No obvious comments:** Don't state what the code clearly does.
-- **No redundant explanations:** Avoid verbose justifications.
-- **Comment only when:** Non-obvious algorithm, workaround, or API constraint.
+- **See C.7** for comprehensive commenting policy.
+
+### C.7 Code Commenting Policy
+
+#### C.7.1 Philosophy
+
+- Code explains **what**; comments explain **why** (only when non-obvious)
+- Self-documenting code > commented code
+- No comment is better than a bad comment
+- Comments rot faster than code
+
+#### C.7.2 Absolutely Forbidden Patterns
+
+**1. Narration comments** - restating what code does:
+
+```cpp
+// BAD
+// Create command pool
+vk::CommandPoolCreateInfo pool_info{};
+
+// GOOD - no comment needed
+vk::CommandPoolCreateInfo pool_info{};
+```
+
+**2. LLM-style justifications** - verbose explanations of standard practices:
+
+```cpp
+// BAD
+// We use std::vector here because we need dynamic sizing and
+// the number of images is not known at compile time
+std::vector<vk::Image> images;
+
+// GOOD - no comment
+std::vector<vk::Image> images;
+```
+
+**3. Step-by-step tutorials**:
+
+```cpp
+// BAD
+// 1. Get memory requirements
+auto mem_reqs = device.getImageMemoryRequirements(image);
+// 2. Find suitable memory type
+uint32_t type_index = find_memory_type(mem_reqs);
+// 3. Allocate memory
+auto memory = device.allocateMemory(alloc_info);
+
+// GOOD - let code speak
+auto mem_reqs = device.getImageMemoryRequirements(image);
+uint32_t type_index = find_memory_type(mem_reqs);
+auto memory = device.allocateMemory(alloc_info);
+```
+
+**4. Inline explanations of current line**:
+
+```cpp
+// BAD
+auto result = device.waitIdle();  // Wait for GPU to finish
+
+// GOOD
+auto result = device.waitIdle();
+```
+
+#### C.7.3 Required Comments
+
+**1. Non-obvious constraints** - external API requirements:
+
+```cpp
+// Vulkan takes ownership of fd on success; caller must dup() to retain
+import_info.fd = dup(dmabuf_fd);
+```
+
+**2. Workarounds** - explain why unusual approach needed:
+
+```cpp
+// vkGetMemoryFdPropertiesKHR not in static export table, requires dynamic dispatch
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
+```
+
+**3. Invariants** - constraints not enforceable by types:
+
+```cpp
+// Must be power-of-2 for lock-free modulo (bitwise AND)
+static_assert((CAPACITY & (CAPACITY - 1)) == 0);
+```
+
+**4. Section dividers** - in files >200 lines:
+
+```cpp
+// =============================================================================
+// DMA-BUF Import
+// =============================================================================
+```
+
+#### C.7.4 Optional Comments (Prefer Refactoring)
+
+1. **Complex algorithms** - but first try extracting to named function
+2. **File headers** - one-line purpose for interface files
+3. **Public API docs** - brief purpose for exported functions
+
+#### C.7.5 Format Rules
+
+- Section dividers: blank line before and after
+- Constraint comments: immediately above relevant code
+- No trailing comments explaining current line
+- No `/* */` block comments for code documentation
+
+#### C.7.6 Review Checklist
+
+Before committing, delete any comment where:
+
+- [ ] Removing it wouldn't affect understanding in 6 months
+- [ ] It explains **what** instead of **why**
+- [ ] The code could be refactored to be self-explanatory
+- [ ] It's longer than the code it describes
+
+#### C.7.7 Rationale
+
+Over-commenting causes:
+
+1. **Maintenance burden** - comments drift from code
+2. **Visual noise** - harder to scan actual logic
+3. **False confidence** - outdated comments mislead
+4. **Crutch for bad code** - encourages unclear implementations
 
 ---
 
@@ -165,7 +289,51 @@ Define project-specific macros wrapping spdlog:
 - **File handles, sockets, etc.:** Use RAII wrappers (`std::fstream`, custom types).
 - **No manual cleanup** in destructors unless encapsulated in RAII.
 
-### D.2 Dynamic Memory Management
+### D.2 Vulkan API Usage
+
+**Application code MUST use vulkan-hpp (C++ bindings), NOT the raw Vulkan C API.**
+
+- **Library:** `vulkan-hpp` from Vulkan SDK (header-only, ships with SDK)
+- **Namespace:** Use `vk::` types (e.g., `vk::Instance`, `vk::Device`, `vk::Image`)
+- **No raw C handles:** Do not use `VkInstance`, `VkDevice`, etc. in application code
+
+**Required Configuration:**
+
+```cpp
+#define VULKAN_HPP_NO_EXCEPTIONS           // Use vk::ResultValue returns, not exceptions
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1  // Dynamic dispatch for extension functions
+#include <vulkan/vulkan.hpp>
+```
+
+- **No exceptions:** Vulkan-hpp exceptions are disabled. Functions return `vk::ResultValue<T>` which contains both result code and value. Convert to `nonstd::expected` at public API boundaries.
+- **Dynamic dispatch:** Required for Vulkan extension functions (DMA-BUF, external memory). Initialize dispatcher with `vkGetInstanceProcAddr`, then instance-level and device-level functions after creation.
+
+**RAII Handle Guidelines:**
+
+Due to the async nature of GPU execution, RAII handles (`vk::Unique*`) cannot automatically handle synchronization. Use them selectively:
+
+| Resource Type | Handle Type | Rationale |
+|---------------|-------------|-----------|
+| Instance, Device, Surface | `vk::Unique*` | Long-lived singletons, destroyed at shutdown when GPU idle |
+| Swapchain, Pipelines, Layouts | `vk::Unique*` | Created once, destroyed with explicit sync or at shutdown |
+| Command buffers from pools | `vk::CommandBuffer` (plain) | Pooled lifetime, reused across frames |
+| Per-frame sync primitives | `vk::Fence`, `vk::Semaphore` (plain) | Reused every frame, explicit lifetime |
+| Imported external images | `vk::Image` (plain) | Requires explicit sync before destruction |
+
+**Exception - Capture Layer Code:**
+
+The Vulkan capture layer (`src/capture/vk_layer/`) is exempt and MUST use the raw Vulkan C API because:
+- Layer dispatch tables require C function pointers
+- Layer must intercept C API calls from host applications
+- Minimal dependencies required for injection into arbitrary applications
+
+**Rationale:**
+- Type safety: C++ types prevent handle misuse
+- Zero overhead: Static dispatch compiles to identical code as raw C API
+- Cleaner code: Method syntax, no manual struct initialization
+- Selective RAII: Automatic cleanup where safe, explicit control where GPU async matters
+
+### D.3 Dynamic Memory Management
 
 - **No raw `new`/`delete`** in application code.
 - **Prefer `std::unique_ptr`** for exclusive ownership.
@@ -174,7 +342,7 @@ Define project-specific macros wrapping spdlog:
   - Object lifetime extends beyond single scope.
 - **Prefer `std::make_unique`/`std::make_shared`** over explicit `new`.
 
-### D.3 Ownership Transfer
+### D.4 Ownership Transfer
 
 - **Mark factory functions** with `[[nodiscard]]`:
   ```cpp
@@ -183,11 +351,13 @@ Define project-specific macros wrapping spdlog:
 - **Document ownership** in function comments when non-obvious.
 - **Use move semantics** for transferring ownership (prefer `std::move` over copying).
 
-### D.4 Vulkan Resource Management
+### D.5 Vulkan Resource Management
 
-- **Create wrapper types** for Vulkan handles (e.g., `VkDeviceRAII`, `VkImageRAII`).
+- **Follow RAII guidelines in D.2:** Use `vk::Unique*` only for appropriate resource types (see table in D.2).
+- **Explicit sync before destruction:** For resources with GPU-async lifetime, call `device.waitIdle()` or wait on appropriate fences before destroying.
 - **Store creation info** with resources for debugging/recreation.
 - **Never leak Vulkan objects:** Ensure proper destruction order (devices before instances, etc.).
+- **Member ordering:** When using `vk::Unique*` members, declare in reverse destruction order (device before instance, etc.) so destructors run correctly.
 
 ---
 
@@ -504,7 +674,7 @@ These policies establish:
 
 1. **Error handling:** `tl::expected<T, Error>`, no silent failures, log at boundaries.
 2. **Logging:** `spdlog`, standard levels, minimal logging in capture layer.
-3. **Naming:** `snake_case` functions/files, `PascalCase` types, `m_` private members.
+3. **Naming & Comments:** `snake_case` functions/files, `PascalCase` types, `m_` private members. Comments explain **why**, never **what**. No narration. No LLM-style verbosity.
 4. **Ownership:** RAII, `std::unique_ptr` default, no raw `new`/`delete`.
 5. **Threading:** Single-threaded default, `std::jthread` when needed, no detached threads.
 6. **Configuration:** TOML format, `config/goggles.toml` for development.

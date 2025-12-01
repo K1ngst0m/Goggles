@@ -11,6 +11,7 @@ target_include_directories(goggles PRIVATE
 
 target_link_libraries(goggles PRIVATE
     goggles_util
+    goggles_render
     SDL3::SDL3-static
 )
 

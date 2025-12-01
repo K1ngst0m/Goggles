@@ -16,6 +16,7 @@ Goggles is a real-time game capture and GPU post-processing application for Linu
     - `toml11` for configuration
     - `Catch2` v3 for testing
     - `rigtorp::SPSCQueue` for inter-thread communication
+    - `vulkan-hpp` for Vulkan C++ bindings (application code only, not capture layer)
 
 ## Project Conventions
 
@@ -37,6 +38,7 @@ Goggles is a real-time game capture and GPU post-processing application for Linu
 - **Modular Design:** The system is split into clear boundaries: `capture`, `pipeline`, `render`, and `app/control`.
 - **Error Handling:** All fallible operations MUST return `tl::expected<T, Error>`. Exceptions are only for unrecoverable programming errors. Errors are logged once at subsystem boundaries.
 - **Ownership:** Strict RAII is mandated for all resources. `std::unique_ptr` is the default for exclusive ownership; `std::shared_ptr` is used sparingly. No raw `new`/`delete`.
+- **Vulkan API:** Application code MUST use vulkan-hpp with `VULKAN_HPP_NO_EXCEPTIONS` and dynamic dispatch. Use `vk::Unique*` for long-lived resources, plain handles for per-frame/GPU-async resources. Exception: capture layer uses raw C API.
 - **Shader Pipeline:** A multi-pass pipeline model designed for compatibility with RetroArch shader semantics (passes, LUTs, parameters).
 - **Threading Model:** Defaults to a single-threaded render loop on the main thread. A central job system (`goggles::util::JobSystem`) will be used for any future task parallelism, with inter-thread communication handled by lock-free SPSC queues.
 
