@@ -45,6 +45,8 @@ auto VulkanBackend::init(SDL_Window* window) -> Result<void> {
     }
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vk_get_instance_proc_addr);
 
+    m_window = window;
+
     int width = 0;
     int height = 0;
     SDL_GetWindowSize(window, &width, &height);
@@ -347,6 +349,35 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height) -> Result<
     return {};
 }
 
+void VulkanBackend::cleanup_swapchain() {
+    m_swapchain_image_views.clear();
+    m_swapchain_images.clear();
+    m_swapchain.reset();
+}
+
+auto VulkanBackend::recreate_swapchain() -> Result<void> {
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSize(m_window, &width, &height);
+
+    while (width == 0 || height == 0) {
+        SDL_GetWindowSize(m_window, &width, &height);
+        SDL_WaitEvent(nullptr);
+    }
+
+    static_cast<void>(m_device->waitIdle());
+    cleanup_swapchain();
+
+    auto result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    if (!result) {
+        return result;
+    }
+
+    m_needs_resize = false;
+    GOGGLES_LOG_INFO("Swapchain recreated: {}x{}", width, height);
+    return {};
+}
+
 auto VulkanBackend::create_command_resources() -> Result<void> {
     vk::CommandPoolCreateInfo pool_info{};
     pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
@@ -554,15 +585,18 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     auto [result, image_index] = m_device->acquireNextImageKHR(
         *m_swapchain, UINT64_MAX, m_image_available_sems[m_current_frame], nullptr);
 
-    if (result == vk::Result::eErrorOutOfDateKHR) {
-        return make_error<uint32_t>(ErrorCode::VULKAN_INIT_FAILED, "Swapchain out of date");
+    if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
+        m_needs_resize = true;
+        if (result == vk::Result::eErrorOutOfDateKHR) {
+            return make_error<uint32_t>(ErrorCode::VULKAN_INIT_FAILED, "Swapchain out of date");
+        }
     }
     if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         return make_error<uint32_t>(ErrorCode::VULKAN_DEVICE_LOST,
                                      "Failed to acquire swapchain image: " + vk::to_string(result));
     }
 
-    m_device->resetFences(m_in_flight_fences[m_current_frame]);
+    static_cast<void>(m_device->resetFences(m_in_flight_fences[m_current_frame]));
     return image_index;
 }
 
@@ -717,15 +751,17 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     auto present_result = m_graphics_queue.presentKHR(present_info);
     if (present_result == vk::Result::eErrorOutOfDateKHR ||
         present_result == vk::Result::eSuboptimalKHR) {
-        return false;
+        m_needs_resize = true;
     }
-    if (present_result != vk::Result::eSuccess) {
+    if (present_result != vk::Result::eSuccess &&
+        present_result != vk::Result::eSuboptimalKHR &&
+        present_result != vk::Result::eErrorOutOfDateKHR) {
         return make_error<bool>(ErrorCode::VULKAN_DEVICE_LOST,
                                  "Present failed: " + vk::to_string(present_result));
     }
 
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-    return true;
+    return !m_needs_resize;
 }
 
 auto VulkanBackend::render_frame(const FrameInfo& frame) -> Result<bool> {
@@ -761,6 +797,17 @@ auto VulkanBackend::render_clear() -> Result<bool> {
 
     record_clear_commands(m_command_buffers[m_current_frame], image_index);
     return submit_and_present(image_index);
+}
+
+auto VulkanBackend::handle_resize() -> Result<void> {
+    if (!m_initialized) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
+    }
+
+    if (m_needs_resize) {
+        return recreate_swapchain();
+    }
+    return {};
 }
 
 } // namespace goggles::render

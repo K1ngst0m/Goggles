@@ -54,7 +54,7 @@ auto main() -> int {
     }
     GOGGLES_LOG_INFO("SDL3 initialized");
 
-    SDL_Window* window = SDL_CreateWindow("Goggles", 1280, 720, SDL_WINDOW_VULKAN);
+    SDL_Window* window = SDL_CreateWindow("Goggles", 1280, 720, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
     if (window == nullptr) {
         GOGGLES_LOG_CRITICAL("Failed to create window: {}", SDL_GetError());
         SDL_Quit();

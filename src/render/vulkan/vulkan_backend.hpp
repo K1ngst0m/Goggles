@@ -34,6 +34,7 @@ public:
 
     [[nodiscard]] auto render_frame(const FrameInfo& frame) -> Result<bool>;
     [[nodiscard]] auto render_clear() -> Result<bool>;
+    [[nodiscard]] auto handle_resize() -> Result<void>;
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 
 private:
@@ -42,6 +43,8 @@ private:
     [[nodiscard]] auto select_physical_device() -> Result<void>;
     [[nodiscard]] auto create_device() -> Result<void>;
     [[nodiscard]] auto create_swapchain(uint32_t width, uint32_t height) -> Result<void>;
+    [[nodiscard]] auto recreate_swapchain() -> Result<void>;
+    void cleanup_swapchain();
     [[nodiscard]] auto create_command_resources() -> Result<void>;
     [[nodiscard]] auto create_sync_objects() -> Result<void>;
 
@@ -80,7 +83,9 @@ private:
     vk::ImageView m_imported_image_view;
     FrameInfo m_current_import{};
 
+    SDL_Window* m_window = nullptr;
     bool m_initialized = false;
+    bool m_needs_resize = false;
 };
 
 } // namespace goggles::render
