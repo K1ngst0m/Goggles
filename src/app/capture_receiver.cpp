@@ -188,22 +188,21 @@ bool CaptureReceiver::receive_message() {
                                 tex_data->height != m_last_texture.height ||
                                 tex_data->format != m_last_texture.format);
 
+        // Always accept the new fd - the old one may point to freed memory
+        // after swapchain recreation (even if dimensions are the same)
+        if (m_frame.dmabuf_fd >= 0) {
+            close(m_frame.dmabuf_fd);
+        }
+        m_frame.dmabuf_fd = new_fd;
+        m_frame.width = tex_data->width;
+        m_frame.height = tex_data->height;
+        m_frame.stride = tex_data->stride;
+        m_frame.format = static_cast<uint32_t>(tex_data->format);
+        m_last_texture = *tex_data;
+
         if (texture_changed) {
-            if (m_frame.dmabuf_fd >= 0) {
-                close(m_frame.dmabuf_fd);
-            }
-
-            m_frame.dmabuf_fd = new_fd;
-            m_frame.width = tex_data->width;
-            m_frame.height = tex_data->height;
-            m_frame.stride = tex_data->stride;
-            m_frame.format = static_cast<uint32_t>(tex_data->format);
-            m_last_texture = *tex_data;
-
             GOGGLES_LOG_INFO("Capture texture: {}x{}, format={}", 
                             m_frame.width, m_frame.height, m_frame.format);
-        } else {
-            close(new_fd);
         }
 
         return m_frame.dmabuf_fd >= 0;

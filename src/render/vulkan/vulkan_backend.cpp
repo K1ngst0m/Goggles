@@ -439,8 +439,13 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
 }
 
 auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
-    if (m_imported_image && m_current_import.width == frame.width &&
-        m_current_import.height == frame.height && m_current_import.format == frame.format) {
+    // Re-import if dimensions/format change OR if fd changed (swapchain recreated)
+    bool same_config = m_imported_image && 
+                       m_current_import.width == frame.width &&
+                       m_current_import.height == frame.height && 
+                       m_current_import.format == frame.format &&
+                       m_current_import_fd == frame.dmabuf_fd;
+    if (same_config) {
         return {};
     }
 
@@ -551,6 +556,7 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
 
     m_current_import = frame;
     m_current_import.dmabuf_fd = -1;
+    m_current_import_fd = frame.dmabuf_fd;
 
     GOGGLES_LOG_INFO("DMA-BUF imported: {}x{}, format={}", frame.width, frame.height,
                      vk::to_string(frame.format));
@@ -573,6 +579,7 @@ void VulkanBackend::cleanup_imported_image() {
         }
     }
     m_current_import = {};
+    m_current_import_fd = -1;
 }
 
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {

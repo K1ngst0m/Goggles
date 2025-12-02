@@ -82,6 +82,7 @@ private:
     vk::DeviceMemory m_imported_memory;
     vk::ImageView m_imported_image_view;
     FrameInfo m_current_import{};
+    int m_current_import_fd = -1;
 
     SDL_Window* m_window = nullptr;
     bool m_initialized = false;
