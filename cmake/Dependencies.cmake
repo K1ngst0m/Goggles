@@ -93,11 +93,30 @@ CPMAddPackage(
 )
 
 # ============================================================================
-# Complex Dependencies (via conan - reserved for future use)
+# Shader Compilation Dependencies
 # ============================================================================
 
-# find_package(slang CONFIG REQUIRED)
-# Uncommented when actually needed in Prototype 5+
+set(SLANG_VERSION "2025.23.2")
+
+# Always use release binary (debug-info tarball is separate debug symbols only)
+set(SLANG_ARCHIVE "slang-${SLANG_VERSION}-linux-x86_64.tar.gz")
+set(SLANG_URL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/${SLANG_ARCHIVE}")
+
+CPMAddPackage(
+    NAME slang
+    URL ${SLANG_URL}
+    DOWNLOAD_ONLY YES
+)
+
+if(slang_ADDED)
+    set(SLANG_ROOT "${slang_SOURCE_DIR}")
+
+    # Use the bundled cmake config
+    list(APPEND CMAKE_PREFIX_PATH "${SLANG_ROOT}/lib/cmake/slang")
+    find_package(slang REQUIRED CONFIG)
+
+    message(STATUS "Slang ${SLANG_VERSION} configured from: ${SLANG_ROOT}")
+endif()
 
 # ============================================================================
 # System Dependencies

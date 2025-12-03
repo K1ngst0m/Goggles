@@ -532,6 +532,7 @@ CPMAddPackage(
 - toml11
 - Catch2
 - SDL3 (window creation and Vulkan surface support)
+- Slang (shader-slang prebuilt binaries for shader compilation)
 
 **Benefits:**
 - Zero setup for developers (included in repo)
@@ -555,7 +556,7 @@ CPMAddPackage(
    ```
 
 **Managed via Conan:**
-- Slang
+- (none currently)
 
 **Setup requirement:**
 - Developers must install Conan (`pip install conan`)

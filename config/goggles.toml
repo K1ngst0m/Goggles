@@ -35,7 +35,7 @@ target_fps = 60
 # Log level threshold
 # Options: "trace", "debug", "info", "warn", "error", "critical"
 # Note: trace/debug are disabled in release builds by default
-level = "debug"
+level = "info"
 
 # Log file path (empty = console output only)
 # Example: "logs/goggles.log"

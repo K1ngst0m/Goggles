@@ -2,6 +2,7 @@
 
 add_library(goggles_render STATIC
     vulkan/vulkan_backend.cpp
+    vulkan/blit_pipeline.cpp
 )
 
 target_include_directories(goggles_render PUBLIC
@@ -11,6 +12,7 @@ target_include_directories(goggles_render PUBLIC
 
 target_link_libraries(goggles_render PUBLIC
     goggles_util
+    goggles_pipeline
     Vulkan::Vulkan
     SDL3::SDL3-static
 )

@@ -32,7 +32,8 @@ VulkanBackend::~VulkanBackend() {
     shutdown();
 }
 
-auto VulkanBackend::init(SDL_Window* window) -> Result<void> {
+auto VulkanBackend::init(SDL_Window* window,
+                         const std::filesystem::path& shader_dir) -> Result<void> {
     if (m_initialized) {
         return {};
     }
@@ -46,6 +47,7 @@ auto VulkanBackend::init(SDL_Window* window) -> Result<void> {
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vk_get_instance_proc_addr);
 
     m_window = window;
+    m_shader_dir = shader_dir;
 
     int width = 0;
     int height = 0;
@@ -63,13 +65,17 @@ auto VulkanBackend::init(SDL_Window* window) -> Result<void> {
     result = create_device();
     if (!result) return result;
 
-    result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                              vk::Format::eB8G8R8A8Srgb);
     if (!result) return result;
 
     result = create_command_resources();
     if (!result) return result;
 
     result = create_sync_objects();
+    if (!result) return result;
+
+    result = init_blit_pipeline();
     if (!result) return result;
 
     m_initialized = true;
@@ -86,6 +92,8 @@ void VulkanBackend::shutdown() {
         static_cast<void>(m_device->waitIdle());
     }
 
+    m_blit_pipeline.shutdown();
+    m_shader_runtime.shutdown();
     cleanup_imported_image();
 
     if (m_device) {
@@ -259,7 +267,8 @@ auto VulkanBackend::create_device() -> Result<void> {
     return {};
 }
 
-auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height) -> Result<void> {
+auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height,
+                                     vk::Format preferred_format) -> Result<void> {
     auto [cap_result, capabilities] = m_physical_device.getSurfaceCapabilitiesKHR(*m_surface);
     if (cap_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to query surface capabilities");
@@ -272,7 +281,7 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height) -> Result<
 
     vk::SurfaceFormatKHR chosen_format = formats[0];
     for (const auto& format : formats) {
-        if (format.format == vk::Format::eB8G8R8A8Srgb &&
+        if (format.format == preferred_format &&
             format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
             chosen_format = format;
             break;
@@ -368,14 +377,70 @@ auto VulkanBackend::recreate_swapchain() -> Result<void> {
     static_cast<void>(m_device->waitIdle());
     cleanup_swapchain();
 
-    auto result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    auto result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                                   m_swapchain_format);
     if (!result) {
         return result;
     }
 
+    std::vector<vk::ImageView> views;
+    views.reserve(m_swapchain_image_views.size());
+    for (const auto& view : m_swapchain_image_views) {
+        views.push_back(*view);
+    }
+    m_blit_pipeline.recreate_framebuffers(m_swapchain_extent, views);
+
     m_needs_resize = false;
     GOGGLES_LOG_INFO("Swapchain recreated: {}x{}", width, height);
     return {};
+}
+
+auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> Result<void> {
+    vk::Format target_format = get_matching_swapchain_format(source_format);
+    if (target_format == m_swapchain_format) {
+        return {};
+    }
+
+    GOGGLES_LOG_INFO("Source format changed to {}, recreating swapchain with {}",
+                     vk::to_string(source_format), vk::to_string(target_format));
+
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSize(m_window, &width, &height);
+
+    static_cast<void>(m_device->waitIdle());
+    m_blit_pipeline.shutdown();
+    cleanup_swapchain();
+
+    auto result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                                   target_format);
+    if (!result) {
+        return result;
+    }
+
+    return init_blit_pipeline();
+}
+
+auto VulkanBackend::get_matching_swapchain_format(vk::Format source_format) -> vk::Format {
+    if (is_srgb_format(source_format)) {
+        return vk::Format::eB8G8R8A8Srgb;
+    }
+    return vk::Format::eB8G8R8A8Unorm;
+}
+
+auto VulkanBackend::is_srgb_format(vk::Format format) -> bool {
+    switch (format) {
+    case vk::Format::eR8Srgb:
+    case vk::Format::eR8G8Srgb:
+    case vk::Format::eR8G8B8Srgb:
+    case vk::Format::eB8G8R8Srgb:
+    case vk::Format::eR8G8B8A8Srgb:
+    case vk::Format::eB8G8R8A8Srgb:
+    case vk::Format::eA8B8G8R8SrgbPack32:
+        return true;
+    default:
+        return false;
+    }
 }
 
 auto VulkanBackend::create_command_resources() -> Result<void> {
@@ -438,6 +503,22 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
     return {};
 }
 
+auto VulkanBackend::init_blit_pipeline() -> Result<void> {
+    auto shader_result = m_shader_runtime.init();
+    if (!shader_result) {
+        return shader_result;
+    }
+
+    std::vector<vk::ImageView> views;
+    views.reserve(m_swapchain_image_views.size());
+    for (const auto& view : m_swapchain_image_views) {
+        views.push_back(*view);
+    }
+
+    return m_blit_pipeline.init(*m_device, m_swapchain_format, m_swapchain_extent,
+                                views, m_shader_runtime, m_shader_dir);
+}
+
 auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     // Re-import if dimensions/format change OR if fd changed (swapchain recreated)
     bool same_config = m_imported_image && 
@@ -467,7 +548,7 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     image_info.arrayLayers = 1;
     image_info.samples = vk::SampleCountFlagBits::e1;
     image_info.tiling = vk::ImageTiling::eLinear;
-    image_info.usage = vk::ImageUsageFlagBits::eTransferSrc;
+    image_info.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled;
     image_info.sharingMode = vk::SharingMode::eExclusive;
     image_info.initialLayout = vk::ImageLayout::eUndefined;
 
@@ -558,7 +639,7 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     m_current_import.dmabuf_fd = -1;
     m_current_import_fd = frame.dmabuf_fd;
 
-    GOGGLES_LOG_INFO("DMA-BUF imported: {}x{}, format={}", frame.width, frame.height,
+    GOGGLES_LOG_DEBUG("DMA-BUF imported: {}x{}, format={}", frame.width, frame.height,
                      vk::to_string(frame.format));
     return {};
 }
@@ -607,7 +688,7 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     return image_index;
 }
 
-void VulkanBackend::record_blit_commands(vk::CommandBuffer cmd, uint32_t image_index) {
+void VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index) {
     static_cast<void>(cmd.reset());
 
     vk::CommandBufferBeginInfo begin_info{};
@@ -616,9 +697,9 @@ void VulkanBackend::record_blit_commands(vk::CommandBuffer cmd, uint32_t image_i
 
     vk::ImageMemoryBarrier src_barrier{};
     src_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
-    src_barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+    src_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
     src_barrier.oldLayout = vk::ImageLayout::eUndefined;
-    src_barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+    src_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     src_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     src_barrier.image = m_imported_image;
@@ -628,56 +709,12 @@ void VulkanBackend::record_blit_commands(vk::CommandBuffer cmd, uint32_t image_i
     src_barrier.subresourceRange.baseArrayLayer = 0;
     src_barrier.subresourceRange.layerCount = 1;
 
-    vk::ImageMemoryBarrier dst_barrier{};
-    dst_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
-    dst_barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-    dst_barrier.oldLayout = vk::ImageLayout::eUndefined;
-    dst_barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
-    dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    dst_barrier.image = m_swapchain_images[image_index];
-    dst_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    dst_barrier.subresourceRange.baseMipLevel = 0;
-    dst_barrier.subresourceRange.levelCount = 1;
-    dst_barrier.subresourceRange.baseArrayLayer = 0;
-    dst_barrier.subresourceRange.layerCount = 1;
-
-    std::array barriers = {src_barrier, dst_barrier};
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                        vk::PipelineStageFlagBits::eTransfer,
-                        {}, {}, {}, barriers);
+                        vk::PipelineStageFlagBits::eFragmentShader,
+                        {}, {}, {}, src_barrier);
 
-    vk::ImageBlit blit_region{};
-    blit_region.srcSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-    blit_region.srcSubresource.mipLevel = 0;
-    blit_region.srcSubresource.baseArrayLayer = 0;
-    blit_region.srcSubresource.layerCount = 1;
-    blit_region.srcOffsets[0] = vk::Offset3D{0, 0, 0};
-    blit_region.srcOffsets[1] = vk::Offset3D{
-        static_cast<int32_t>(m_current_import.width),
-        static_cast<int32_t>(m_current_import.height), 1};
-
-    blit_region.dstSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-    blit_region.dstSubresource.mipLevel = 0;
-    blit_region.dstSubresource.baseArrayLayer = 0;
-    blit_region.dstSubresource.layerCount = 1;
-    blit_region.dstOffsets[0] = vk::Offset3D{0, 0, 0};
-    blit_region.dstOffsets[1] = vk::Offset3D{
-        static_cast<int32_t>(m_swapchain_extent.width),
-        static_cast<int32_t>(m_swapchain_extent.height), 1};
-
-    cmd.blitImage(m_imported_image, vk::ImageLayout::eTransferSrcOptimal,
-                  m_swapchain_images[image_index], vk::ImageLayout::eTransferDstOptimal,
-                  blit_region, vk::Filter::eLinear);
-
-    dst_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-    dst_barrier.dstAccessMask = vk::AccessFlagBits::eNone;
-    dst_barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-    dst_barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
-
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                        vk::PipelineStageFlagBits::eBottomOfPipe,
-                        {}, {}, {}, dst_barrier);
+    m_blit_pipeline.update_descriptor(m_imported_image_view);
+    m_blit_pipeline.record_commands(cmd, image_index, m_swapchain_extent);
 
     static_cast<void>(cmd.end());
 }
@@ -731,7 +768,7 @@ void VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
 }
 
 auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
-    vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTransfer;
+    vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
     vk::SubmitInfo submit_info{};
     submit_info.waitSemaphoreCount = 1;
@@ -776,6 +813,14 @@ auto VulkanBackend::render_frame(const FrameInfo& frame) -> Result<bool> {
         return make_error<bool>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
     }
 
+    if (m_source_format != frame.format) {
+        auto format_result = recreate_swapchain_for_format(frame.format);
+        if (!format_result) {
+            return nonstd::make_unexpected(format_result.error());
+        }
+        m_source_format = frame.format;
+    }
+
     auto import_result = import_dmabuf(frame);
     if (!import_result) {
         return nonstd::make_unexpected(import_result.error());
@@ -787,7 +832,7 @@ auto VulkanBackend::render_frame(const FrameInfo& frame) -> Result<bool> {
     }
     uint32_t image_index = acquire_result.value();
 
-    record_blit_commands(m_command_buffers[m_current_frame], image_index);
+    record_render_commands(m_command_buffers[m_current_frame], image_index);
     return submit_and_present(image_index);
 }
 

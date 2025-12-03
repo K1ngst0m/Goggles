@@ -22,6 +22,10 @@ CMakeUserPresets.json
 *.exe
 *.out
 
+# Compiled shaders
+*.spv
+*.spv.cache
+
 # IDE and editor files
 .vscode/
 .idea/
