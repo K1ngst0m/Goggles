@@ -20,7 +20,7 @@ enum class CaptureMessageType : uint32_t {
 struct CaptureClientHello {
     CaptureMessageType type = CaptureMessageType::CLIENT_HELLO;
     uint32_t version = 1;
-    std::array<char, 64> exe_name{};  // Executable name for identification
+    std::array<char, 64> exe_name{}; // Executable name for identification
 };
 
 static_assert(sizeof(CaptureClientHello) == 72);

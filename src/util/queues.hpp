@@ -15,9 +15,8 @@ template <typename T>
 class SPSCQueue {
 public:
     explicit SPSCQueue(size_t capacity)
-        : m_capacity(capacity),
-          m_buffer_size(capacity * 2),
-          m_capacity_mask(m_buffer_size - 1), m_buffer(nullptr) {
+        : m_capacity(capacity), m_buffer_size(capacity * 2), m_capacity_mask(m_buffer_size - 1),
+          m_buffer(nullptr) {
         // Power-of-2 required for efficient modulo via bitwise AND
         if (capacity == 0 || (capacity & (capacity - 1)) != 0) {
             throw std::invalid_argument("SPSCQueue capacity must be power of 2");
@@ -33,7 +32,8 @@ public:
     }
 
     ~SPSCQueue() {
-        while (try_pop()) {}
+        while (try_pop()) {
+        }
         if (m_buffer) {
             std::free(m_buffer);
         }

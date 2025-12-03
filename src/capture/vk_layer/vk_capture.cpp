@@ -1,4 +1,5 @@
 #include "vk_capture.hpp"
+
 #include "ipc_socket.hpp"
 
 #include <cstdio>
@@ -22,9 +23,9 @@ CaptureManager& get_capture_manager() {
 // Swapchain Lifecycle
 // =============================================================================
 
-void CaptureManager::on_swapchain_created(
-    VkDevice device, VkSwapchainKHR swapchain,
-    const VkSwapchainCreateInfoKHR* create_info, VkDeviceData* dev_data) {
+void CaptureManager::on_swapchain_created(VkDevice device, VkSwapchainKHR swapchain,
+                                          const VkSwapchainCreateInfoKHR* create_info,
+                                          VkDeviceData* dev_data) {
 
     std::lock_guard lock(mutex_);
 
@@ -39,20 +40,26 @@ void CaptureManager::on_swapchain_created(
     if (create_info->compositeAlpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
         const char* alpha_name = "UNKNOWN";
         switch (create_info->compositeAlpha) {
-            case VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR:
-                alpha_name = "PRE_MULTIPLIED"; break;
-            case VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR:
-                alpha_name = "POST_MULTIPLIED"; break;
-            case VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR:
-                alpha_name = "INHERIT"; break;
-            default: break;
+        case VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR:
+            alpha_name = "PRE_MULTIPLIED";
+            break;
+        case VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR:
+            alpha_name = "POST_MULTIPLIED";
+            break;
+        case VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR:
+            alpha_name = "INHERIT";
+            break;
+        default:
+            break;
         }
-        LAYER_DEBUG("WARNING: Swapchain uses compositeAlpha=%s, capture may ignore alpha blending", alpha_name);
+        LAYER_DEBUG("WARNING: Swapchain uses compositeAlpha=%s, capture may ignore alpha blending",
+                    alpha_name);
     }
 
     uint32_t image_count = 0;
     if (dev_data->funcs.GetSwapchainImagesKHR) {
-        VkResult res = dev_data->funcs.GetSwapchainImagesKHR(device, swapchain, &image_count, nullptr);
+        VkResult res =
+            dev_data->funcs.GetSwapchainImagesKHR(device, swapchain, &image_count, nullptr);
         LAYER_DEBUG("GetSwapchainImagesKHR query: res=%d, count=%u", res, image_count);
         if (res == VK_SUCCESS && image_count > 0) {
             swap.swap_images.resize(image_count);
@@ -63,14 +70,13 @@ void CaptureManager::on_swapchain_created(
         LAYER_DEBUG("GetSwapchainImagesKHR function pointer is NULL!");
     }
 
-    LAYER_DEBUG("Swapchain created: %ux%u, format=%d, images=%zu",
-                create_info->imageExtent.width, create_info->imageExtent.height,
-                static_cast<int>(create_info->imageFormat), swap.swap_images.size());
+    LAYER_DEBUG("Swapchain created: %ux%u, format=%d, images=%zu", create_info->imageExtent.width,
+                create_info->imageExtent.height, static_cast<int>(create_info->imageFormat),
+                swap.swap_images.size());
     swaps_[swapchain] = std::move(swap);
 }
 
-void CaptureManager::on_swapchain_destroyed(VkDevice device,
-                                            VkSwapchainKHR swapchain) {
+void CaptureManager::on_swapchain_destroyed(VkDevice device, VkSwapchainKHR swapchain) {
     std::lock_guard lock(mutex_);
 
     auto it = swaps_.find(swapchain);
@@ -109,18 +115,17 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.pNext = &ext_mem_info;
     image_info.imageType = VK_IMAGE_TYPE_2D;
-    image_info.format = swap->format;  // Same format as swapchain - no conversion in blit
+    image_info.format = swap->format; // Same format as swapchain - no conversion in blit
     image_info.extent = {swap->extent.width, swap->extent.height, 1};
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
     image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-    image_info.tiling = VK_IMAGE_TILING_LINEAR;  // Required for mmap
+    image_info.tiling = VK_IMAGE_TILING_LINEAR; // Required for mmap
     image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    VkResult res = funcs.CreateImage(device, &image_info, nullptr,
-                                     &swap->export_image);
+    VkResult res = funcs.CreateImage(device, &image_info, nullptr, &swap->export_image);
     if (res != VK_SUCCESS) {
         LAYER_DEBUG("CreateImage failed: %d", res);
         return false;
@@ -132,14 +137,12 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     // HOST_VISIBLE required for LINEAR tiling
     auto* inst_data = dev_data->inst_data;
     VkPhysicalDeviceMemoryProperties mem_props;
-    inst_data->funcs.GetPhysicalDeviceMemoryProperties(dev_data->physical_device,
-                                                       &mem_props);
+    inst_data->funcs.GetPhysicalDeviceMemoryProperties(dev_data->physical_device, &mem_props);
 
     uint32_t mem_type_index = UINT32_MAX;
     for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
         if ((mem_reqs.memoryTypeBits & (1u << i)) &&
-            (mem_props.memoryTypes[i].propertyFlags &
-             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+            (mem_props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
             mem_type_index = i;
             break;
         }
@@ -199,14 +202,13 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     subres.arrayLayer = 0;
 
     VkSubresourceLayout layout;
-    funcs.GetImageSubresourceLayout(device, swap->export_image, &subres,
-                                    &layout);
+    funcs.GetImageSubresourceLayout(device, swap->export_image, &subres, &layout);
     swap->dmabuf_stride = static_cast<uint32_t>(layout.rowPitch);
     swap->dmabuf_offset = static_cast<uint32_t>(layout.offset);
 
     swap->export_initialized = true;
-    LAYER_DEBUG("Export image initialized: fd=%d, stride=%u, offset=%u",
-                swap->dmabuf_fd, swap->dmabuf_stride, swap->dmabuf_offset);
+    LAYER_DEBUG("Export image initialized: fd=%d, stride=%u, offset=%u", swap->dmabuf_fd,
+                swap->dmabuf_stride, swap->dmabuf_offset);
     return true;
 }
 
@@ -214,8 +216,7 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
 // Frame Resources
 // =============================================================================
 
-void CaptureManager::create_frame_resources(SwapData* swap,
-                                            VkDeviceData* dev_data,
+void CaptureManager::create_frame_resources(SwapData* swap, VkDeviceData* dev_data,
                                             uint32_t count) {
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
@@ -246,8 +247,7 @@ void CaptureManager::create_frame_resources(SwapData* swap,
     }
 }
 
-void CaptureManager::destroy_frame_resources(SwapData* swap,
-                                             VkDeviceData* dev_data) {
+void CaptureManager::destroy_frame_resources(SwapData* swap, VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
@@ -272,8 +272,7 @@ void CaptureManager::destroy_frame_resources(SwapData* swap,
 // Frame Capture
 // =============================================================================
 
-void CaptureManager::on_present(VkQueue queue,
-                                const VkPresentInfoKHR* present_info,
+void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_info,
                                 VkDeviceData* dev_data) {
     if (present_info->swapchainCount == 0) {
         return;
@@ -297,8 +296,7 @@ void CaptureManager::on_present(VkQueue queue,
             LAYER_DEBUG("Export image init FAILED");
             return;
         }
-        create_frame_resources(swap, dev_data,
-                               static_cast<uint32_t>(swap->swap_images.size()));
+        create_frame_resources(swap, dev_data, static_cast<uint32_t>(swap->swap_images.size()));
     }
 
     static bool logged_connect = false;
@@ -317,9 +315,8 @@ void CaptureManager::on_present(VkQueue queue,
     capture_frame(swap, image_index, queue, dev_data, &modified_present);
 }
 
-void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
-                                   VkQueue queue, VkDeviceData* dev_data,
-                                   VkPresentInfoKHR* present_info) {
+void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue,
+                                   VkDeviceData* dev_data, VkPresentInfoKHR* present_info) {
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
@@ -379,10 +376,9 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
     dst_barrier.subresourceRange.layerCount = 1;
 
     VkImageMemoryBarrier barriers[2] = {src_barrier, dst_barrier};
-    funcs.CmdPipelineBarrier(frame.cmd_buffer,
-                             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             0, 0, nullptr, 0, nullptr, 2, barriers);
+    funcs.CmdPipelineBarrier(frame.cmd_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2,
+                             barriers);
 
     VkImageCopy copy_region{};
     copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -397,10 +393,8 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
     copy_region.dstOffset = {0, 0, 0};
     copy_region.extent = {swap->extent.width, swap->extent.height, 1};
 
-    funcs.CmdCopyImage(frame.cmd_buffer,
-                       src_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       dst_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       1, &copy_region);
+    funcs.CmdCopyImage(frame.cmd_buffer, src_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst_image,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
 
     src_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     src_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
@@ -415,10 +409,9 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
 
     barriers[0] = src_barrier;
     barriers[1] = dst_barrier;
-    funcs.CmdPipelineBarrier(frame.cmd_buffer,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+    funcs.CmdPipelineBarrier(frame.cmd_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
-                             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                              0, 0, nullptr, 0, nullptr, 2, barriers);
 
     funcs.EndCommandBuffer(frame.cmd_buffer);
@@ -433,7 +426,7 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
         LAYER_DEBUG("QueueSubmit failed: %d", res);
         return;
     }
-    
+
     // Synchronous wait ensures DMA-BUF contains valid data before IPC send
     funcs.WaitForFences(device, 1, &frame.fence, VK_TRUE, UINT64_MAX);
     funcs.ResetFences(device, 1, &frame.fence);
@@ -446,13 +439,12 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index,
         tex_data.format = swap->format;
         tex_data.stride = swap->dmabuf_stride;
         tex_data.offset = swap->dmabuf_offset;
-        tex_data.modifier = 0;  // LINEAR
+        tex_data.modifier = 0; // LINEAR
 
         static uint64_t frame_count = 0;
         bool sent = socket.send_texture(tex_data, swap->dmabuf_fd);
-        if (++frame_count % 60 == 1) {  // Log every 60 frames
-            LAYER_DEBUG("Frame %lu: send=%s, fd=%d, %ux%u",
-                        frame_count, sent ? "ok" : "FAIL",
+        if (++frame_count % 60 == 1) { // Log every 60 frames
+            LAYER_DEBUG("Frame %lu: send=%s, fd=%d, %ux%u", frame_count, sent ? "ok" : "FAIL",
                         swap->dmabuf_fd, tex_data.width, tex_data.height);
         }
     }

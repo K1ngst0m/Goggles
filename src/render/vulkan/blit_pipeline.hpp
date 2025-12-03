@@ -2,11 +2,10 @@
 
 #include "vulkan_config.hpp"
 
-#include <pipeline/shader_runtime/shader_runtime.hpp>
-#include <util/error.hpp>
-
 #include <cstdint>
 #include <filesystem>
+#include <pipeline/shader_runtime/shader_runtime.hpp>
+#include <util/error.hpp>
 #include <vector>
 
 namespace goggles::render {
@@ -21,8 +20,7 @@ public:
     BlitPipeline(BlitPipeline&&) = delete;
     BlitPipeline& operator=(BlitPipeline&&) = delete;
 
-    [[nodiscard]] auto init(vk::Device device,
-                            vk::Format swapchain_format,
+    [[nodiscard]] auto init(vk::Device device, vk::Format swapchain_format,
                             vk::Extent2D swapchain_extent,
                             const std::vector<vk::ImageView>& swapchain_views,
                             pipeline::ShaderRuntime& shader_runtime,
@@ -35,9 +33,7 @@ public:
 
     void update_descriptor(vk::ImageView source_view);
 
-    void record_commands(vk::CommandBuffer cmd,
-                         uint32_t framebuffer_index,
-                         vk::Extent2D extent);
+    void record_commands(vk::CommandBuffer cmd, uint32_t framebuffer_index, vk::Extent2D extent);
 
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 

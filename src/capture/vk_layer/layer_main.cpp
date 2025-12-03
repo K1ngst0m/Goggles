@@ -1,10 +1,9 @@
 #include "vk_dispatch.hpp"
 #include "vk_hooks.hpp"
 
+#include <cstring>
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
-
-#include <cstring>
 
 // Define VK_LAYER_EXPORT for symbol visibility
 #if defined(__GNUC__) && __GNUC__ >= 4
@@ -20,19 +19,17 @@ namespace goggles::capture {
 // Must match manifest JSON
 static constexpr const char* LAYER_NAME = "VK_LAYER_goggles_capture";
 
-#define GETPROCADDR(func)                                                      \
-    if (strcmp(pName, "vk" #func) == 0) {                                      \
-        return reinterpret_cast<PFN_vkVoidFunction>(&Goggles_##func);          \
+#define GETPROCADDR(func)                                                                          \
+    if (strcmp(pName, "vk" #func) == 0) {                                                          \
+        return reinterpret_cast<PFN_vkVoidFunction>(&Goggles_##func);                              \
     }
 
-static PFN_vkVoidFunction VKAPI_CALL
-Goggles_GetDeviceProcAddr(VkDevice device, const char* pName);
+static PFN_vkVoidFunction VKAPI_CALL Goggles_GetDeviceProcAddr(VkDevice device, const char* pName);
 
-static PFN_vkVoidFunction VKAPI_CALL
-Goggles_GetInstanceProcAddr(VkInstance instance, const char* pName);
+static PFN_vkVoidFunction VKAPI_CALL Goggles_GetInstanceProcAddr(VkInstance instance,
+                                                                 const char* pName);
 
-static PFN_vkVoidFunction VKAPI_CALL
-Goggles_GetDeviceProcAddr(VkDevice device, const char* pName) {
+static PFN_vkVoidFunction VKAPI_CALL Goggles_GetDeviceProcAddr(VkDevice device, const char* pName) {
     GETPROCADDR(GetDeviceProcAddr);
     GETPROCADDR(DestroyDevice);
     GETPROCADDR(CreateSwapchainKHR);
@@ -46,8 +43,8 @@ Goggles_GetDeviceProcAddr(VkDevice device, const char* pName) {
     return nullptr;
 }
 
-static PFN_vkVoidFunction VKAPI_CALL
-Goggles_GetInstanceProcAddr(VkInstance instance, const char* pName) {
+static PFN_vkVoidFunction VKAPI_CALL Goggles_GetInstanceProcAddr(VkInstance instance,
+                                                                 const char* pName) {
     GETPROCADDR(GetInstanceProcAddr);
     GETPROCADDR(CreateInstance);
     GETPROCADDR(DestroyInstance);
@@ -84,10 +81,8 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface* pVersionStruct
     }
 
     if (pVersionStruct->loaderLayerInterfaceVersion >= 2) {
-        pVersionStruct->pfnGetInstanceProcAddr =
-            goggles::capture::Goggles_GetInstanceProcAddr;
-        pVersionStruct->pfnGetDeviceProcAddr =
-            goggles::capture::Goggles_GetDeviceProcAddr;
+        pVersionStruct->pfnGetInstanceProcAddr = goggles::capture::Goggles_GetInstanceProcAddr;
+        pVersionStruct->pfnGetDeviceProcAddr = goggles::capture::Goggles_GetDeviceProcAddr;
         pVersionStruct->pfnGetPhysicalDeviceProcAddr = nullptr;
     }
 
@@ -98,13 +93,13 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface* pVersionStruct
     return VK_SUCCESS;
 }
 
-VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
+VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance,
+                                                                               const char* pName) {
     return goggles::capture::Goggles_GetInstanceProcAddr(instance, pName);
 }
 
-VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-vkGetDeviceProcAddr(VkDevice device, const char* pName) {
+VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device,
+                                                                             const char* pName) {
     return goggles::capture::Goggles_GetDeviceProcAddr(device, pName);
 }
 

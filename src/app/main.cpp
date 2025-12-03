@@ -1,14 +1,12 @@
 #include "capture_receiver.hpp"
 
+#include <SDL3/SDL.h>
+#include <cstdlib>
+#include <filesystem>
 #include <render/vulkan/vulkan_backend.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/logging.hpp>
-
-#include <SDL3/SDL.h>
-
-#include <cstdlib>
-#include <filesystem>
 
 auto main() -> int {
     goggles::initialize_logger("goggles");
@@ -54,7 +52,8 @@ auto main() -> int {
     }
     GOGGLES_LOG_INFO("SDL3 initialized");
 
-    SDL_Window* window = SDL_CreateWindow("Goggles", 1280, 720, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+    SDL_Window* window =
+        SDL_CreateWindow("Goggles", 1280, 720, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
     if (window == nullptr) {
         GOGGLES_LOG_CRITICAL("Failed to create window: {}", SDL_GetError());
         SDL_Quit();
@@ -65,8 +64,7 @@ auto main() -> int {
     goggles::render::VulkanBackend vulkan_backend;
     auto init_result = vulkan_backend.init(window);
     if (!init_result) {
-        GOGGLES_LOG_CRITICAL("Failed to initialize Vulkan: {} ({})",
-                             init_result.error().message,
+        GOGGLES_LOG_CRITICAL("Failed to initialize Vulkan: {} ({})", init_result.error().message,
                              goggles::error_code_name(init_result.error().code));
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -92,7 +90,7 @@ auto main() -> int {
 
         if (capture_receiver.has_frame()) {
             const auto& frame = capture_receiver.get_frame();
-            
+
             goggles::render::FrameInfo frame_info{};
             frame_info.width = frame.width;
             frame_info.height = frame.height;

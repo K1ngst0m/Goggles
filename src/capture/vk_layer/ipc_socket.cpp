@@ -4,9 +4,9 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
@@ -41,8 +41,8 @@ bool LayerSocketClient::connect() {
     addr.sun_family = AF_UNIX;
     std::memcpy(addr.sun_path, CAPTURE_SOCKET_PATH, CAPTURE_SOCKET_PATH_LEN);
 
-    socklen_t addr_len = static_cast<socklen_t>(
-        offsetof(sockaddr_un, sun_path) + CAPTURE_SOCKET_PATH_LEN);
+    socklen_t addr_len =
+        static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + CAPTURE_SOCKET_PATH_LEN);
 
     if (::connect(socket_fd_, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
         LAYER_DEBUG("Socket connect failed: %s (is Goggles app running?)", strerror(errno));
@@ -121,8 +121,7 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
     }
 
     ssize_t received = recv(socket_fd_, &control, sizeof(control), MSG_DONTWAIT);
-    if (received == sizeof(control) &&
-        control.type == CaptureMessageType::CONTROL) {
+    if (received == sizeof(control) && control.type == CaptureMessageType::CONTROL) {
         capturing_ = (control.capturing != 0);
         return true;
     }

@@ -1,10 +1,9 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
-
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
+#include <vulkan/vulkan.h>
 
 namespace goggles::capture {
 

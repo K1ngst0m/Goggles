@@ -14,8 +14,8 @@ public:
     static void shutdown();
 
     template <typename Func, typename... Args>
-    static auto submit(Func&& func,
-                       Args&&... args) -> std::future<std::invoke_result_t<Func, Args...>> {
+    static auto submit(Func&& func, Args&&... args)
+        -> std::future<std::invoke_result_t<Func, Args...>> {
         ensure_initialized();
         return s_pool->submit(std::forward<Func>(func), std::forward<Args>(args)...);
     }

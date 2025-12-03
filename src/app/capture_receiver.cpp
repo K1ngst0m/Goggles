@@ -1,14 +1,13 @@
 #include "capture_receiver.hpp"
 
-#include <util/logging.hpp>
-
 #include <array>
 #include <cerrno>
 #include <cstring>
-#include <utility>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <util/logging.hpp>
+#include <utility>
 
 namespace goggles {
 
@@ -35,8 +34,8 @@ bool CaptureReceiver::init() {
     addr.sun_family = AF_UNIX;
     std::memcpy(addr.sun_path, CAPTURE_SOCKET_PATH, CAPTURE_SOCKET_PATH_LEN);
 
-    auto addr_len = static_cast<socklen_t>(
-        offsetof(sockaddr_un, sun_path) + CAPTURE_SOCKET_PATH_LEN);
+    auto addr_len =
+        static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + CAPTURE_SOCKET_PATH_LEN);
 
     if (bind(m_listen_fd, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
         GOGGLES_LOG_ERROR("Failed to bind socket: {}", strerror(errno));
@@ -167,8 +166,7 @@ bool CaptureReceiver::receive_message() {
         auto* tex_data = reinterpret_cast<CaptureTextureData*>(buf.data());
 
         int new_fd = -1;
-        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr;
-             cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
             if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
                 std::memcpy(&new_fd, CMSG_DATA(cmsg), sizeof(int));
                 break;
@@ -180,13 +178,13 @@ bool CaptureReceiver::receive_message() {
             return false;
         }
 
-        GOGGLES_LOG_DEBUG("Received texture: {}x{}, fd={}, stride={}, format={}",
-                         tex_data->width, tex_data->height, new_fd, 
-                         tex_data->stride, static_cast<int>(tex_data->format));
+        GOGGLES_LOG_DEBUG("Received texture: {}x{}, fd={}, stride={}, format={}", tex_data->width,
+                          tex_data->height, new_fd, tex_data->stride,
+                          static_cast<int>(tex_data->format));
 
-        bool texture_changed = (tex_data->width != m_last_texture.width ||
-                                tex_data->height != m_last_texture.height ||
-                                tex_data->format != m_last_texture.format);
+        bool texture_changed =
+            (tex_data->width != m_last_texture.width || tex_data->height != m_last_texture.height ||
+             tex_data->format != m_last_texture.format);
 
         // Always accept the new fd - the old one may point to freed memory
         // after swapchain recreation (even if dimensions are the same)
@@ -201,8 +199,8 @@ bool CaptureReceiver::receive_message() {
         m_last_texture = *tex_data;
 
         if (texture_changed) {
-            GOGGLES_LOG_INFO("Capture texture: {}x{}, format={}", 
-                            m_frame.width, m_frame.height, m_frame.format);
+            GOGGLES_LOG_INFO("Capture texture: {}x{}, format={}", m_frame.width, m_frame.height,
+                             m_frame.format);
         }
 
         return m_frame.dmabuf_fd >= 0;

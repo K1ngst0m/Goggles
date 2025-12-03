@@ -2,12 +2,11 @@
 
 #include "vk_dispatch.hpp"
 
-#include <vulkan/vulkan.h>
-
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 namespace goggles::capture {
 
@@ -52,20 +51,17 @@ struct SwapData {
 class CaptureManager {
 public:
     void on_swapchain_created(VkDevice device, VkSwapchainKHR swapchain,
-                              const VkSwapchainCreateInfoKHR* create_info,
-                              VkDeviceData* dev_data);
+                              const VkSwapchainCreateInfoKHR* create_info, VkDeviceData* dev_data);
     void on_swapchain_destroyed(VkDevice device, VkSwapchainKHR swapchain);
-    void on_present(VkQueue queue, const VkPresentInfoKHR* present_info,
-                    VkDeviceData* dev_data);
+    void on_present(VkQueue queue, const VkPresentInfoKHR* present_info, VkDeviceData* dev_data);
     SwapData* get_swap_data(VkSwapchainKHR swapchain);
 
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
-    void create_frame_resources(SwapData* swap, VkDeviceData* dev_data,
-                                uint32_t count);
+    void create_frame_resources(SwapData* swap, VkDeviceData* dev_data, uint32_t count);
     void destroy_frame_resources(SwapData* swap, VkDeviceData* dev_data);
-    void capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue,
-                       VkDeviceData* dev_data, VkPresentInfoKHR* present_info);
+    void capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue, VkDeviceData* dev_data,
+                       VkPresentInfoKHR* present_info);
     void cleanup_swap_data(SwapData* swap, VkDeviceData* dev_data);
 
     std::mutex mutex_;

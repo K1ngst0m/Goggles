@@ -1,12 +1,12 @@
 #include "vk_hooks.hpp"
+
 #include "vk_capture.hpp"
 #include "vk_dispatch.hpp"
-
-#include <vulkan/vk_layer.h>
 
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <vulkan/vk_layer.h>
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
@@ -26,16 +26,15 @@ static inline bool is_device_link_info(VkLayerDeviceCreateInfo* info) {
 // Instance Hooks
 // =============================================================================
 
-VkResult VKAPI_CALL Goggles_CreateInstance(
-    const VkInstanceCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkInstance* pInstance) {
+VkResult VKAPI_CALL Goggles_CreateInstance(const VkInstanceCreateInfo* pCreateInfo,
+                                           const VkAllocationCallbacks* pAllocator,
+                                           VkInstance* pInstance) {
 
-    auto* link_info = reinterpret_cast<VkLayerInstanceCreateInfo*>(
-        const_cast<void*>(pCreateInfo->pNext));
+    auto* link_info =
+        reinterpret_cast<VkLayerInstanceCreateInfo*>(const_cast<void*>(pCreateInfo->pNext));
     while (link_info && !is_instance_link_info(link_info)) {
-        link_info = reinterpret_cast<VkLayerInstanceCreateInfo*>(
-            const_cast<void*>(link_info->pNext));
+        link_info =
+            reinterpret_cast<VkLayerInstanceCreateInfo*>(const_cast<void*>(link_info->pNext));
     }
 
     if (!link_info) {
@@ -45,9 +44,9 @@ VkResult VKAPI_CALL Goggles_CreateInstance(
     PFN_vkGetInstanceProcAddr gipa = link_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     link_info->u.pLayerInfo = link_info->u.pLayerInfo->pNext;
 
-    std::vector<const char*> extensions(
-        pCreateInfo->ppEnabledExtensionNames,
-        pCreateInfo->ppEnabledExtensionNames + pCreateInfo->enabledExtensionCount);
+    std::vector<const char*> extensions(pCreateInfo->ppEnabledExtensionNames,
+                                        pCreateInfo->ppEnabledExtensionNames +
+                                            pCreateInfo->enabledExtensionCount);
 
     bool has_ext_mem_caps = false;
     for (const auto* ext : extensions) {
@@ -64,8 +63,7 @@ VkResult VKAPI_CALL Goggles_CreateInstance(
     modified_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     modified_info.ppEnabledExtensionNames = extensions.data();
 
-    auto create_func = reinterpret_cast<PFN_vkCreateInstance>(
-        gipa(nullptr, "vkCreateInstance"));
+    auto create_func = reinterpret_cast<PFN_vkCreateInstance>(gipa(nullptr, "vkCreateInstance"));
     VkResult result = create_func(&modified_info, pAllocator, pInstance);
 
     if (result != VK_SUCCESS) {
@@ -80,8 +78,7 @@ VkResult VKAPI_CALL Goggles_CreateInstance(
     inst_data.valid = true;
 
     auto& funcs = inst_data.funcs;
-#define GETADDR(name) \
-    funcs.name = reinterpret_cast<PFN_vk##name>(gipa(*pInstance, "vk" #name))
+#define GETADDR(name) funcs.name = reinterpret_cast<PFN_vk##name>(gipa(*pInstance, "vk" #name))
 
     GETADDR(GetInstanceProcAddr);
     GETADDR(DestroyInstance);
@@ -108,9 +105,8 @@ VkResult VKAPI_CALL Goggles_CreateInstance(
     return VK_SUCCESS;
 }
 
-void VKAPI_CALL Goggles_DestroyInstance(
-    VkInstance instance,
-    const VkAllocationCallbacks* pAllocator) {
+void VKAPI_CALL Goggles_DestroyInstance(VkInstance instance,
+                                        const VkAllocationCallbacks* pAllocator) {
 
     auto* data = get_object_tracker().get_instance(instance);
     if (!data) {
@@ -126,22 +122,20 @@ void VKAPI_CALL Goggles_DestroyInstance(
 // Device Hooks
 // =============================================================================
 
-VkResult VKAPI_CALL Goggles_CreateDevice(
-    VkPhysicalDevice physicalDevice,
-    const VkDeviceCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDevice* pDevice) {
+VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
+                                         const VkDeviceCreateInfo* pCreateInfo,
+                                         const VkAllocationCallbacks* pAllocator,
+                                         VkDevice* pDevice) {
 
     auto* inst_data = get_object_tracker().get_instance_by_physical_device(physicalDevice);
     if (!inst_data) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    auto* link_info = reinterpret_cast<VkLayerDeviceCreateInfo*>(
-        const_cast<void*>(pCreateInfo->pNext));
+    auto* link_info =
+        reinterpret_cast<VkLayerDeviceCreateInfo*>(const_cast<void*>(pCreateInfo->pNext));
     while (link_info && !is_device_link_info(link_info)) {
-        link_info = reinterpret_cast<VkLayerDeviceCreateInfo*>(
-            const_cast<void*>(link_info->pNext));
+        link_info = reinterpret_cast<VkLayerDeviceCreateInfo*>(const_cast<void*>(link_info->pNext));
     }
 
     if (!link_info) {
@@ -152,9 +146,9 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
     PFN_vkGetDeviceProcAddr gdpa = link_info->u.pLayerInfo->pfnNextGetDeviceProcAddr;
     link_info->u.pLayerInfo = link_info->u.pLayerInfo->pNext;
 
-    std::vector<const char*> extensions(
-        pCreateInfo->ppEnabledExtensionNames,
-        pCreateInfo->ppEnabledExtensionNames + pCreateInfo->enabledExtensionCount);
+    std::vector<const char*> extensions(pCreateInfo->ppEnabledExtensionNames,
+                                        pCreateInfo->ppEnabledExtensionNames +
+                                            pCreateInfo->enabledExtensionCount);
 
     const char* required_exts[] = {
         VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
@@ -179,8 +173,8 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
     modified_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     modified_info.ppEnabledExtensionNames = extensions.data();
 
-    auto create_func = reinterpret_cast<PFN_vkCreateDevice>(
-        gipa(inst_data->instance, "vkCreateDevice"));
+    auto create_func =
+        reinterpret_cast<PFN_vkCreateDevice>(gipa(inst_data->instance, "vkCreateDevice"));
     VkResult result = create_func(physicalDevice, &modified_info, pAllocator, pDevice);
 
     if (result != VK_SUCCESS) {
@@ -197,8 +191,7 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
     dev_data.valid = true;
 
     auto& funcs = dev_data.funcs;
-#define GETADDR(name) \
-    funcs.name = reinterpret_cast<PFN_vk##name>(gdpa(*pDevice, "vk" #name))
+#define GETADDR(name) funcs.name = reinterpret_cast<PFN_vk##name>(gdpa(*pDevice, "vk" #name))
 
     GETADDR(GetDeviceProcAddr);
     GETADDR(DestroyDevice);
@@ -235,12 +228,12 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
 #undef GETADDR
 
     uint32_t queue_family_count = 0;
-    inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(
-        physicalDevice, &queue_family_count, nullptr);
+    inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queue_family_count,
+                                                            nullptr);
 
     std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-    inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(
-        physicalDevice, &queue_family_count, queue_families.data());
+    inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queue_family_count,
+                                                            queue_families.data());
 
     for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; ++i) {
         const auto& queue_info = pCreateInfo->pQueueCreateInfos[i];
@@ -264,9 +257,7 @@ VkResult VKAPI_CALL Goggles_CreateDevice(
     return VK_SUCCESS;
 }
 
-void VKAPI_CALL Goggles_DestroyDevice(
-    VkDevice device,
-    const VkAllocationCallbacks* pAllocator) {
+void VKAPI_CALL Goggles_DestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) {
 
     auto* data = get_object_tracker().get_device(device);
     if (!data) {
@@ -285,11 +276,10 @@ void VKAPI_CALL Goggles_DestroyDevice(
 // Swapchain Hooks
 // =============================================================================
 
-VkResult VKAPI_CALL Goggles_CreateSwapchainKHR(
-    VkDevice device,
-    const VkSwapchainCreateInfoKHR* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkSwapchainKHR* pSwapchain) {
+VkResult VKAPI_CALL Goggles_CreateSwapchainKHR(VkDevice device,
+                                               const VkSwapchainCreateInfoKHR* pCreateInfo,
+                                               const VkAllocationCallbacks* pAllocator,
+                                               VkSwapchainKHR* pSwapchain) {
 
     auto* data = get_object_tracker().get_device(device);
     if (!data || !data->funcs.CreateSwapchainKHR) {
@@ -300,12 +290,11 @@ VkResult VKAPI_CALL Goggles_CreateSwapchainKHR(
     VkSwapchainCreateInfoKHR modified_info = *pCreateInfo;
     modified_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
-    VkResult result = data->funcs.CreateSwapchainKHR(
-        device, &modified_info, pAllocator, pSwapchain);
+    VkResult result =
+        data->funcs.CreateSwapchainKHR(device, &modified_info, pAllocator, pSwapchain);
 
     if (result != VK_SUCCESS) {
-        result = data->funcs.CreateSwapchainKHR(
-            device, pCreateInfo, pAllocator, pSwapchain);
+        result = data->funcs.CreateSwapchainKHR(device, pCreateInfo, pAllocator, pSwapchain);
     }
 
     get_capture_manager().on_swapchain_created(device, *pSwapchain, pCreateInfo, data);
@@ -313,10 +302,8 @@ VkResult VKAPI_CALL Goggles_CreateSwapchainKHR(
     return result;
 }
 
-void VKAPI_CALL Goggles_DestroySwapchainKHR(
-    VkDevice device,
-    VkSwapchainKHR swapchain,
-    const VkAllocationCallbacks* pAllocator) {
+void VKAPI_CALL Goggles_DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
+                                            const VkAllocationCallbacks* pAllocator) {
 
     auto* data = get_object_tracker().get_device(device);
     if (!data || !data->funcs.DestroySwapchainKHR) {
@@ -332,9 +319,7 @@ void VKAPI_CALL Goggles_DestroySwapchainKHR(
 // Present Hook
 // =============================================================================
 
-VkResult VKAPI_CALL Goggles_QueuePresentKHR(
-    VkQueue queue,
-    const VkPresentInfoKHR* pPresentInfo) {
+VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
 
     static bool first_call = true;
     if (first_call) {

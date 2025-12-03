@@ -3,13 +3,11 @@
 #include "blit_pipeline.hpp"
 #include "vulkan_config.hpp"
 
-#include <pipeline/shader_runtime/shader_runtime.hpp>
-#include <util/error.hpp>
-
 #include <SDL3/SDL.h>
-
 #include <cstdint>
 #include <filesystem>
+#include <pipeline/shader_runtime/shader_runtime.hpp>
+#include <util/error.hpp>
 #include <vector>
 
 namespace goggles::render {
@@ -32,8 +30,8 @@ public:
     VulkanBackend(VulkanBackend&&) = delete;
     VulkanBackend& operator=(VulkanBackend&&) = delete;
 
-    [[nodiscard]] auto init(SDL_Window* window,
-                            const std::filesystem::path& shader_dir = "shaders") -> Result<void>;
+    [[nodiscard]] auto init(SDL_Window* window, const std::filesystem::path& shader_dir = "shaders")
+        -> Result<void>;
     void shutdown();
 
     [[nodiscard]] auto render_frame(const FrameInfo& frame) -> Result<bool>;
