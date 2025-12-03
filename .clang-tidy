@@ -25,7 +25,9 @@ Checks: >
   readability-static-accessed-through-instance,
   readability-uniqueptr-delete-release,
   -modernize-use-trailing-return-type,
-  -readability-identifier-length
+  -modernize-use-ranges,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion
 
 WarningsAsErrors: '*'
 # Filter out third-party library warnings from CPM cache

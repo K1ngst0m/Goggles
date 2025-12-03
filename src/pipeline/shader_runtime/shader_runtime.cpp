@@ -1,17 +1,15 @@
 #include "shader_runtime.hpp"
 
-#include <util/logging.hpp>
-
-#include <slang-com-helper.h>
-#include <slang-com-ptr.h>
-#include <slang.h>
-
 #include <array>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <slang-com-helper.h>
+#include <slang-com-ptr.h>
+#include <slang.h>
 #include <sstream>
+#include <util/logging.hpp>
 
 namespace goggles::pipeline {
 
@@ -50,7 +48,8 @@ auto ShaderRuntime::init() -> Result<void> {
     }
 
     if (SLANG_FAILED(slang::createGlobalSession(m_impl->global_session.writeRef()))) {
-        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED, "Failed to create Slang global session");
+        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED,
+                                "Failed to create Slang global session");
     }
 
     slang::SessionDesc session_desc = {};
@@ -61,14 +60,18 @@ auto ShaderRuntime::init() -> Result<void> {
     session_desc.targets = &target_desc;
     session_desc.targetCount = 1;
 
-    std::array<slang::CompilerOptionEntry, 1> options = {{
-        {slang::CompilerOptionName::EmitSpirvDirectly,
-         {slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}}
-    }};
+    std::array<slang::CompilerOptionEntry, 1> options = {
+        {{.name = slang::CompilerOptionName::EmitSpirvDirectly,
+          .value = {.kind = slang::CompilerOptionValueKind::Int,
+                    .intValue0 = 1,
+                    .intValue1 = 0,
+                    .stringValue0 = nullptr,
+                    .stringValue1 = nullptr}}}};
     session_desc.compilerOptionEntries = options.data();
     session_desc.compilerOptionEntryCount = options.size();
 
-    if (SLANG_FAILED(m_impl->global_session->createSession(session_desc, m_impl->session.writeRef()))) {
+    if (SLANG_FAILED(
+            m_impl->global_session->createSession(session_desc, m_impl->session.writeRef()))) {
         return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED, "Failed to create Slang session");
     }
 
@@ -119,7 +122,7 @@ auto ShaderRuntime::compile_shader(const std::filesystem::path& source_path,
     auto cached = load_cached_spirv(cache_path, source_hash);
     if (cached) {
         GOGGLES_LOG_DEBUG("Loaded cached SPIR-V: {}", cache_path.filename().string());
-        return CompiledShader{std::move(cached.value()), entry_point};
+        return CompiledShader{.spirv = std::move(cached.value()), .entry_point = entry_point};
     }
 
     auto module_name = source_path.stem().string();
@@ -134,7 +137,7 @@ auto ShaderRuntime::compile_shader(const std::filesystem::path& source_path,
     }
 
     GOGGLES_LOG_INFO("Compiled shader: {} ({})", source_path.filename().string(), entry_point);
-    return CompiledShader{std::move(compiled.value()), entry_point};
+    return CompiledShader{.spirv = std::move(compiled.value()), .entry_point = entry_point};
 }
 
 auto ShaderRuntime::get_cache_dir() const -> std::filesystem::path {
@@ -166,7 +169,8 @@ auto ShaderRuntime::compute_source_hash(const std::string& source) const -> std:
 }
 
 auto ShaderRuntime::load_cached_spirv(const std::filesystem::path& cache_path,
-                                      const std::string& expected_hash) -> Result<std::vector<uint32_t>> {
+                                      const std::string& expected_hash)
+    -> Result<std::vector<uint32_t>> {
     std::ifstream file(cache_path, std::ios::binary);
     if (!file) {
         return make_error<std::vector<uint32_t>>(ErrorCode::FILE_NOT_FOUND, "Cache miss");
@@ -175,10 +179,12 @@ auto ShaderRuntime::load_cached_spirv(const std::filesystem::path& cache_path,
     CacheHeader header{};
     file.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!file) {
-        return make_error<std::vector<uint32_t>>(ErrorCode::FILE_READ_FAILED, "Invalid cache header");
+        return make_error<std::vector<uint32_t>>(ErrorCode::FILE_READ_FAILED,
+                                                 "Invalid cache header");
     }
 
-    if (std::string_view(header.magic.data(), 4) != CACHE_MAGIC || header.version != CACHE_VERSION) {
+    if (std::string_view(header.magic.data(), 4) != CACHE_MAGIC ||
+        header.version != CACHE_VERSION) {
         return make_error<std::vector<uint32_t>>(ErrorCode::PARSE_ERROR, "Cache version mismatch");
     }
 
@@ -192,7 +198,8 @@ auto ShaderRuntime::load_cached_spirv(const std::filesystem::path& cache_path,
     file.read(reinterpret_cast<char*>(spirv.data()),
               static_cast<std::streamsize>(header.spirv_size * sizeof(uint32_t)));
     if (!file) {
-        return make_error<std::vector<uint32_t>>(ErrorCode::FILE_READ_FAILED, "Failed to read SPIR-V");
+        return make_error<std::vector<uint32_t>>(ErrorCode::FILE_READ_FAILED,
+                                                 "Failed to read SPIR-V");
     }
 
     return spirv;
@@ -225,8 +232,7 @@ auto ShaderRuntime::save_cached_spirv(const std::filesystem::path& cache_path,
     return {};
 }
 
-auto ShaderRuntime::compile_slang(const std::string& module_name,
-                                  const std::string& source,
+auto ShaderRuntime::compile_slang(const std::string& module_name, const std::string& source,
                                   const std::string& entry_point) -> Result<std::vector<uint32_t>> {
     Slang::ComPtr<slang::IBlob> diagnostics_blob;
     std::string module_path = module_name + ".slang";
@@ -234,14 +240,14 @@ auto ShaderRuntime::compile_slang(const std::string& module_name,
         module_name.c_str(), module_path.c_str(), source.c_str(), diagnostics_blob.writeRef());
     Slang::ComPtr<slang::IModule> module(module_ptr);
 
-    if (diagnostics_blob) {
+    if (diagnostics_blob != nullptr) {
         GOGGLES_LOG_DEBUG("Slang diagnostics: {}",
-                         static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+                          static_cast<const char*>(diagnostics_blob->getBufferPointer()));
     }
 
-    if (!module_ptr) {
+    if (module_ptr == nullptr) {
         std::string error_msg = "Failed to load shader module";
-        if (diagnostics_blob) {
+        if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
         return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
@@ -250,8 +256,9 @@ auto ShaderRuntime::compile_slang(const std::string& module_name,
     Slang::ComPtr<slang::IEntryPoint> entry_point_obj;
     module->findEntryPointByName(entry_point.c_str(), entry_point_obj.writeRef());
 
-    if (!entry_point_obj) {
-        return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED,
+    if (entry_point_obj == nullptr) {
+        return make_error<std::vector<uint32_t>>(
+            ErrorCode::SHADER_COMPILE_FAILED,
             "Entry point '" + entry_point + "' not found. Ensure it has [shader(...)] attribute.");
     }
 
@@ -262,7 +269,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name,
 
     if (SLANG_FAILED(result)) {
         std::string error_msg = "Failed to compose shader program";
-        if (diagnostics_blob) {
+        if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
         return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
@@ -273,7 +280,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name,
 
     if (SLANG_FAILED(result)) {
         std::string error_msg = "Failed to link shader program";
-        if (diagnostics_blob) {
+        if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
         return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
@@ -282,9 +289,9 @@ auto ShaderRuntime::compile_slang(const std::string& module_name,
     Slang::ComPtr<slang::IBlob> spirv_blob;
     result = linked->getEntryPointCode(0, 0, spirv_blob.writeRef(), diagnostics_blob.writeRef());
 
-    if (SLANG_FAILED(result) || !spirv_blob) {
+    if (SLANG_FAILED(result) || (spirv_blob == nullptr)) {
         std::string error_msg = "Failed to get compiled SPIR-V";
-        if (diagnostics_blob) {
+        if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
         return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);

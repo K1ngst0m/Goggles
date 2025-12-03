@@ -24,7 +24,7 @@ public:
         }
 
         m_buffer = static_cast<T*>(std::aligned_alloc(alignof(T), sizeof(T) * m_buffer_size));
-        if (!m_buffer) {
+        if (m_buffer == nullptr) {
             throw std::bad_alloc();
         }
 
@@ -85,13 +85,13 @@ public:
         return item;
     }
 
-    auto size() const -> size_t {
+    [[nodiscard]] auto size() const -> size_t {
         const size_t current_head = m_head.load(std::memory_order_acquire);
         const size_t current_tail = m_tail.load(std::memory_order_acquire);
         return (current_head - current_tail) & m_capacity_mask;
     }
 
-    auto capacity() const -> size_t { return m_capacity; }
+    [[nodiscard]] auto capacity() const -> size_t { return m_capacity; }
 
 private:
     alignas(64) std::atomic<size_t> m_head;

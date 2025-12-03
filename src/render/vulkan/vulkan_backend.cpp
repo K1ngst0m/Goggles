@@ -1,12 +1,10 @@
 #include "vulkan_backend.hpp"
 
-#include <util/logging.hpp>
-
 #include <SDL3/SDL_vulkan.h>
-
 #include <algorithm>
 #include <cstring>
 #include <unistd.h>
+#include <util/logging.hpp>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -32,14 +30,14 @@ VulkanBackend::~VulkanBackend() {
     shutdown();
 }
 
-auto VulkanBackend::init(SDL_Window* window,
-                         const std::filesystem::path& shader_dir) -> Result<void> {
+auto VulkanBackend::init(SDL_Window* window, const std::filesystem::path& shader_dir)
+    -> Result<void> {
     if (m_initialized) {
         return {};
     }
 
-    auto vk_get_instance_proc_addr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
-        SDL_Vulkan_GetVkGetInstanceProcAddr());
+    auto vk_get_instance_proc_addr =
+        reinterpret_cast<PFN_vkGetInstanceProcAddr>(SDL_Vulkan_GetVkGetInstanceProcAddr());
     if (vk_get_instance_proc_addr == nullptr) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
                                 "Failed to get vkGetInstanceProcAddr from SDL");
@@ -54,29 +52,45 @@ auto VulkanBackend::init(SDL_Window* window,
     SDL_GetWindowSize(window, &width, &height);
 
     auto result = create_instance();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_surface(window);
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = select_physical_device();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_device();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                               vk::Format::eB8G8R8A8Srgb);
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_command_resources();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_sync_objects();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = init_blit_pipeline();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     m_initialized = true;
     GOGGLES_LOG_INFO("Vulkan backend initialized: {}x{}", width, height);
@@ -129,12 +143,14 @@ auto VulkanBackend::create_instance() -> Result<void> {
     const char* const* sdl_extensions = SDL_Vulkan_GetInstanceExtensions(&sdl_ext_count);
     if (sdl_extensions == nullptr) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                std::string("SDL_Vulkan_GetInstanceExtensions failed: ") + SDL_GetError());
+                                std::string("SDL_Vulkan_GetInstanceExtensions failed: ") +
+                                    SDL_GetError());
     }
 
     std::vector<const char*> extensions(sdl_extensions, sdl_extensions + sdl_ext_count);
     for (const auto* ext : REQUIRED_INSTANCE_EXTENSIONS) {
-        if (std::find(extensions.begin(), extensions.end(), std::string_view(ext)) == extensions.end()) {
+        if (std::find(extensions.begin(), extensions.end(), std::string_view(ext)) ==
+            extensions.end()) {
             extensions.push_back(ext);
         }
     }
@@ -267,11 +283,12 @@ auto VulkanBackend::create_device() -> Result<void> {
     return {};
 }
 
-auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height,
-                                     vk::Format preferred_format) -> Result<void> {
+auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format preferred_format)
+    -> Result<void> {
     auto [cap_result, capabilities] = m_physical_device.getSurfaceCapabilitiesKHR(*m_surface);
     if (cap_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to query surface capabilities");
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to query surface capabilities");
     }
 
     auto [fmt_result, formats] = m_physical_device.getSurfaceFormatsKHR(*m_surface);
@@ -292,8 +309,8 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height,
     if (capabilities.currentExtent.width != UINT32_MAX) {
         extent = capabilities.currentExtent;
     } else {
-        extent.width = std::clamp(width, capabilities.minImageExtent.width,
-                                  capabilities.maxImageExtent.width);
+        extent.width =
+            std::clamp(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
         extent.height = std::clamp(height, capabilities.minImageExtent.height,
                                    capabilities.maxImageExtent.height);
     }
@@ -310,8 +327,8 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height,
     create_info.imageColorSpace = chosen_format.colorSpace;
     create_info.imageExtent = extent;
     create_info.imageArrayLayers = 1;
-    create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment |
-                             vk::ImageUsageFlagBits::eTransferDst;
+    create_info.imageUsage =
+        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst;
     create_info.imageSharingMode = vk::SharingMode::eExclusive;
     create_info.preTransform = capabilities.currentTransform;
     create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
@@ -461,7 +478,8 @@ auto VulkanBackend::create_command_resources() -> Result<void> {
 
     auto [alloc_result, buffers] = m_device->allocateCommandBuffers(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to allocate command buffers");
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to allocate command buffers");
     }
     m_command_buffers = std::move(buffers);
 
@@ -515,15 +533,14 @@ auto VulkanBackend::init_blit_pipeline() -> Result<void> {
         views.push_back(*view);
     }
 
-    return m_blit_pipeline.init(*m_device, m_swapchain_format, m_swapchain_extent,
-                                views, m_shader_runtime, m_shader_dir);
+    return m_blit_pipeline.init(*m_device, m_swapchain_format, m_swapchain_extent, views,
+                                m_shader_runtime, m_shader_dir);
 }
 
 auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     // Re-import if dimensions/format change OR if fd changed (swapchain recreated)
-    bool same_config = m_imported_image && 
-                       m_current_import.width == frame.width &&
-                       m_current_import.height == frame.height && 
+    bool same_config = m_imported_image && m_current_import.width == frame.width &&
+                       m_current_import.height == frame.height &&
                        m_current_import.format == frame.format &&
                        m_current_import_fd == frame.dmabuf_fd;
     if (same_config) {
@@ -566,7 +583,8 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     if (fd_props_result != vk::Result::eSuccess) {
         cleanup_imported_image();
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to get DMA-BUF fd properties: " + vk::to_string(fd_props_result));
+                                "Failed to get DMA-BUF fd properties: " +
+                                    vk::to_string(fd_props_result));
     }
 
     auto mem_props = m_physical_device.getMemoryProperties();
@@ -631,7 +649,8 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     if (view_result != vk::Result::eSuccess) {
         cleanup_imported_image();
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to create DMA-BUF image view: " + vk::to_string(view_result));
+                                "Failed to create DMA-BUF image view: " +
+                                    vk::to_string(view_result));
     }
     m_imported_image_view = view;
 
@@ -640,7 +659,7 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     m_current_import_fd = frame.dmabuf_fd;
 
     GOGGLES_LOG_DEBUG("DMA-BUF imported: {}x{}, format={}", frame.width, frame.height,
-                     vk::to_string(frame.format));
+                      vk::to_string(frame.format));
     return {};
 }
 
@@ -664,8 +683,8 @@ void VulkanBackend::cleanup_imported_image() {
 }
 
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
-    auto wait_result = m_device->waitForFences(m_in_flight_fences[m_current_frame],
-                                                VK_TRUE, UINT64_MAX);
+    auto wait_result =
+        m_device->waitForFences(m_in_flight_fences[m_current_frame], VK_TRUE, UINT64_MAX);
     if (wait_result != vk::Result::eSuccess) {
         return make_error<uint32_t>(ErrorCode::VULKAN_DEVICE_LOST, "Fence wait failed");
     }
@@ -681,7 +700,7 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     }
     if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         return make_error<uint32_t>(ErrorCode::VULKAN_DEVICE_LOST,
-                                     "Failed to acquire swapchain image: " + vk::to_string(result));
+                                    "Failed to acquire swapchain image: " + vk::to_string(result));
     }
 
     static_cast<void>(m_device->resetFences(m_in_flight_fences[m_current_frame]));
@@ -710,8 +729,7 @@ void VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
     src_barrier.subresourceRange.layerCount = 1;
 
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                        vk::PipelineStageFlagBits::eFragmentShader,
-                        {}, {}, {}, src_barrier);
+                        vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, src_barrier);
 
     m_blit_pipeline.update_descriptor(m_imported_image_view);
     m_blit_pipeline.record_commands(cmd, image_index, m_swapchain_extent);
@@ -740,8 +758,7 @@ void VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                        vk::PipelineStageFlagBits::eTransfer,
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
                         {}, {}, {}, barrier);
 
     vk::ClearColorValue clear_color{std::array{0.0F, 0.0F, 0.0F, 1.0F}};
@@ -752,8 +769,8 @@ void VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     range.baseArrayLayer = 0;
     range.layerCount = 1;
 
-    cmd.clearColorImage(m_swapchain_images[image_index],
-                        vk::ImageLayout::eTransferDstOptimal, clear_color, range);
+    cmd.clearColorImage(m_swapchain_images[image_index], vk::ImageLayout::eTransferDstOptimal,
+                        clear_color, range);
 
     barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
     barrier.dstAccessMask = vk::AccessFlagBits::eNone;
@@ -761,8 +778,7 @@ void VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
 
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                        vk::PipelineStageFlagBits::eBottomOfPipe,
-                        {}, {}, {}, barrier);
+                        vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, barrier);
 
     static_cast<void>(cmd.end());
 }
@@ -782,7 +798,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     auto submit_result = m_graphics_queue.submit(submit_info, m_in_flight_fences[m_current_frame]);
     if (submit_result != vk::Result::eSuccess) {
         return make_error<bool>(ErrorCode::VULKAN_DEVICE_LOST,
-                                 "Queue submit failed: " + vk::to_string(submit_result));
+                                "Queue submit failed: " + vk::to_string(submit_result));
     }
 
     vk::PresentInfoKHR present_info{};
@@ -797,11 +813,10 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
         present_result == vk::Result::eSuboptimalKHR) {
         m_needs_resize = true;
     }
-    if (present_result != vk::Result::eSuccess &&
-        present_result != vk::Result::eSuboptimalKHR &&
+    if (present_result != vk::Result::eSuccess && present_result != vk::Result::eSuboptimalKHR &&
         present_result != vk::Result::eErrorOutOfDateKHR) {
         return make_error<bool>(ErrorCode::VULKAN_DEVICE_LOST,
-                                 "Present failed: " + vk::to_string(present_result));
+                                "Present failed: " + vk::to_string(present_result));
     }
 
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;

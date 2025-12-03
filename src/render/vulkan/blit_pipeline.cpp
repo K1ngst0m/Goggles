@@ -1,8 +1,7 @@
 #include "blit_pipeline.hpp"
 
-#include <util/logging.hpp>
-
 #include <array>
+#include <util/logging.hpp>
 
 namespace goggles::render {
 
@@ -10,8 +9,7 @@ BlitPipeline::~BlitPipeline() {
     shutdown();
 }
 
-auto BlitPipeline::init(vk::Device device,
-                        vk::Format swapchain_format,
+auto BlitPipeline::init(vk::Device device, vk::Format swapchain_format,
                         vk::Extent2D swapchain_extent,
                         const std::vector<vk::ImageView>& swapchain_views,
                         pipeline::ShaderRuntime& shader_runtime,
@@ -23,22 +21,34 @@ auto BlitPipeline::init(vk::Device device,
     m_device = device;
 
     auto result = create_render_pass(swapchain_format);
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_sampler();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_descriptor_resources();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_pipeline_layout();
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_pipeline(shader_runtime, shader_dir);
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     result = create_framebuffers(swapchain_extent, swapchain_views);
-    if (!result) return result;
+    if (!result) {
+        return result;
+    }
 
     m_initialized = true;
     GOGGLES_LOG_DEBUG("BlitPipeline initialized");
@@ -89,8 +99,7 @@ void BlitPipeline::update_descriptor(vk::ImageView source_view) {
     m_device.updateDescriptorSets(write, {});
 }
 
-void BlitPipeline::record_commands(vk::CommandBuffer cmd,
-                                   uint32_t framebuffer_index,
+void BlitPipeline::record_commands(vk::CommandBuffer cmd, uint32_t framebuffer_index,
                                    vk::Extent2D extent) {
     vk::RenderPassBeginInfo begin_info{};
     begin_info.renderPass = *m_render_pass;
@@ -212,7 +221,8 @@ auto BlitPipeline::create_descriptor_resources() -> Result<void> {
     auto [layout_result, layout] = m_device.createDescriptorSetLayoutUnique(layout_info);
     if (layout_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to create descriptor set layout: " + vk::to_string(layout_result));
+                                "Failed to create descriptor set layout: " +
+                                    vk::to_string(layout_result));
     }
     m_descriptor_layout = std::move(layout);
 
@@ -240,7 +250,8 @@ auto BlitPipeline::create_descriptor_resources() -> Result<void> {
     auto [alloc_result, sets] = m_device.allocateDescriptorSets(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to allocate descriptor set: " + vk::to_string(alloc_result));
+                                "Failed to allocate descriptor set: " +
+                                    vk::to_string(alloc_result));
     }
     m_descriptor_set = sets[0];
 
@@ -281,7 +292,8 @@ auto BlitPipeline::create_pipeline(pipeline::ShaderRuntime& shader_runtime,
     auto [vert_mod_result, vert_module] = m_device.createShaderModuleUnique(vert_module_info);
     if (vert_mod_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to create vertex shader module: " + vk::to_string(vert_mod_result));
+                                "Failed to create vertex shader module: " +
+                                    vk::to_string(vert_mod_result));
     }
 
     vk::ShaderModuleCreateInfo frag_module_info{};
@@ -291,7 +303,8 @@ auto BlitPipeline::create_pipeline(pipeline::ShaderRuntime& shader_runtime,
     auto [frag_mod_result, frag_module] = m_device.createShaderModuleUnique(frag_module_info);
     if (frag_mod_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to create fragment shader module: " + vk::to_string(frag_mod_result));
+                                "Failed to create fragment shader module: " +
+                                    vk::to_string(frag_mod_result));
     }
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> stages{};
@@ -365,8 +378,8 @@ auto BlitPipeline::create_pipeline(pipeline::ShaderRuntime& shader_runtime,
     return {};
 }
 
-auto BlitPipeline::create_framebuffers(vk::Extent2D extent,
-                                       const std::vector<vk::ImageView>& views) -> Result<void> {
+auto BlitPipeline::create_framebuffers(vk::Extent2D extent, const std::vector<vk::ImageView>& views)
+    -> Result<void> {
     m_framebuffers.reserve(views.size());
 
     for (const auto& view : views) {

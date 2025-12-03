@@ -79,7 +79,7 @@ private:
     std::vector<vk::Image> m_swapchain_images;
     std::vector<vk::UniqueImageView> m_swapchain_image_views;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
-    vk::Extent2D m_swapchain_extent{};
+    vk::Extent2D m_swapchain_extent;
 
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
     std::vector<vk::CommandBuffer> m_command_buffers;
