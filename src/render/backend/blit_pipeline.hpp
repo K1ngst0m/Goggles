@@ -4,7 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <pipeline/shader_runtime/shader_runtime.hpp>
+#include <render/shader/shader_runtime.hpp>
 #include <util/error.hpp>
 #include <vector>
 
@@ -23,7 +23,7 @@ public:
     [[nodiscard]] auto init(vk::Device device, vk::Format swapchain_format,
                             vk::Extent2D swapchain_extent,
                             const std::vector<vk::ImageView>& swapchain_views,
-                            pipeline::ShaderRuntime& shader_runtime,
+                            ShaderRuntime& shader_runtime,
                             const std::filesystem::path& shader_dir) -> Result<void>;
 
     void shutdown();
@@ -41,7 +41,7 @@ private:
     [[nodiscard]] auto create_render_pass(vk::Format format) -> Result<void>;
     [[nodiscard]] auto create_descriptor_resources() -> Result<void>;
     [[nodiscard]] auto create_pipeline_layout() -> Result<void>;
-    [[nodiscard]] auto create_pipeline(pipeline::ShaderRuntime& shader_runtime,
+    [[nodiscard]] auto create_pipeline(ShaderRuntime& shader_runtime,
                                        const std::filesystem::path& shader_dir) -> Result<void>;
     [[nodiscard]] auto create_framebuffers(vk::Extent2D extent,
                                            const std::vector<vk::ImageView>& views) -> Result<void>;

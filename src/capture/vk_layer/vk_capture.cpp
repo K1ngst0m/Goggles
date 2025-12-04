@@ -299,12 +299,10 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
         create_frame_resources(swap, dev_data, static_cast<uint32_t>(swap->swap_images.size()));
     }
 
-    static bool logged_connect = false;
     auto& socket = get_layer_socket();
     if (!socket.is_connected()) {
         if (socket.connect()) {
             LAYER_DEBUG("Connected to Goggles app");
-            logged_connect = true;
         }
     }
 
@@ -316,7 +314,7 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
 }
 
 void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue,
-                                   VkDeviceData* dev_data, VkPresentInfoKHR* present_info) {
+                                   VkDeviceData* dev_data, [[maybe_unused]] VkPresentInfoKHR* present_info) {
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 

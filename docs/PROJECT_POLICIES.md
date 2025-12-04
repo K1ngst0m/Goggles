@@ -112,7 +112,7 @@ Define project-specific macros wrapping spdlog:
 ### C.1 Namespaces
 
 - **Top-level:** `goggles`
-- **Modules:** `goggles::<module>` (e.g., `goggles::capture`, `goggles::render`, `goggles::pipeline`, `goggles::util`)
+- **Modules:** `goggles::<module>` (e.g., `goggles::capture`, `goggles::render`, `goggles::util`)
 - **Sub-modules:** `goggles::<module>::<submodule>` (e.g., `goggles::capture::vk_layer`)
 - **Never** use `using namespace` in headers.
 - **Prefer** explicit namespace qualification or scoped `using` declarations.
@@ -625,9 +625,9 @@ tests/
 ├── util/
 │   ├── test_logging.cpp
 │   └── test_config.cpp
-├── pipeline/
-│   └── graph/
-│       └── test_pipeline_graph.cpp
+├── render/
+│   └── chain/
+│       └── test_filter_chain.cpp
 └── CMakeLists.txt
 ```
 

@@ -6,7 +6,7 @@
 #include <SDL3/SDL.h>
 #include <cstdint>
 #include <filesystem>
-#include <pipeline/shader_runtime/shader_runtime.hpp>
+#include <render/shader/shader_runtime.hpp>
 #include <util/error.hpp>
 #include <vector>
 
@@ -92,7 +92,7 @@ private:
     FrameInfo m_current_import{};
     int m_current_import_fd = -1;
 
-    pipeline::ShaderRuntime m_shader_runtime;
+    ShaderRuntime m_shader_runtime;
     BlitPipeline m_blit_pipeline;
     std::filesystem::path m_shader_dir;
     vk::Format m_source_format = vk::Format::eUndefined;

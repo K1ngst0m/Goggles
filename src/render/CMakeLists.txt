@@ -1,8 +1,9 @@
 # Render subsystem
 
 add_library(goggles_render STATIC
-    vulkan/vulkan_backend.cpp
-    vulkan/blit_pipeline.cpp
+    backend/vulkan_backend.cpp
+    backend/blit_pipeline.cpp
+    shader/shader_runtime.cpp
 )
 
 target_include_directories(goggles_render PUBLIC
@@ -12,9 +13,9 @@ target_include_directories(goggles_render PUBLIC
 
 target_link_libraries(goggles_render PUBLIC
     goggles_util
-    goggles_pipeline
     Vulkan::Vulkan
     SDL3::SDL3-static
+    slang::slang
 )
 
 goggles_enable_clang_tidy(goggles_render)

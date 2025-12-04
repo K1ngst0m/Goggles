@@ -3,7 +3,7 @@
 #include <SDL3/SDL.h>
 #include <cstdlib>
 #include <filesystem>
-#include <render/vulkan/vulkan_backend.hpp>
+#include <render/backend/vulkan_backend.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/logging.hpp>

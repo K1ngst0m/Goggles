@@ -5,7 +5,7 @@ TBD - created by archiving change add-render-pipeline. Update Purpose after arch
 ## Requirements
 ### Requirement: Shader Runtime Compilation
 
-The pipeline subsystem SHALL compile Slang shaders to SPIR-V at runtime using the Slang API.
+The render shader subsystem SHALL compile Slang shaders to SPIR-V at runtime using the Slang API.
 
 #### Scenario: First-run compilation
 
@@ -94,7 +94,15 @@ The render backend SHALL match swapchain format color space to source image form
 
 ### Requirement: Pipeline Extensibility
 
-The render pipeline architecture SHALL support future multi-pass RetroArch shader processing.
+The render architecture SHALL support future multi-pass RetroArch shader processing through a modular structure.
+
+#### Scenario: Module organization
+
+- **GIVEN** the render subsystem
+- **WHEN** organized into modules
+- **THEN** `render/backend/` SHALL contain Vulkan API abstraction
+- **AND** `render/shader/` SHALL contain shader compilation infrastructure
+- **AND** `render/chain/` SHALL contain filter chain and pass implementations
 
 #### Scenario: Future pipeline model
 

@@ -260,14 +260,34 @@ auto VulkanBackend::create_device() -> Result<void> {
     queue_info.queueCount = 1;
     queue_info.pQueuePriorities = &queue_priority;
 
-    vk::PhysicalDeviceFeatures features{};
+    vk::PhysicalDeviceVulkan11Features vk11_features{};
+    vk::PhysicalDeviceVulkan12Features vk12_features{};
+    vk11_features.pNext = &vk12_features;
+    vk::PhysicalDeviceFeatures2 features2{};
+    features2.pNext = &vk11_features;
+    m_physical_device.getFeatures2(&features2);
+
+    if (!vk11_features.shaderDrawParameters) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "shaderDrawParameters not supported (required for vertex shaders)");
+    }
+    if (!vk12_features.timelineSemaphore) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Timeline semaphores not supported (required for frame sync)");
+    }
+
+    vk::PhysicalDeviceVulkan11Features vk11_enable{};
+    vk11_enable.shaderDrawParameters = VK_TRUE;
+    vk::PhysicalDeviceVulkan12Features vk12_enable{};
+    vk12_enable.timelineSemaphore = VK_TRUE;
+    vk11_enable.pNext = &vk12_enable;
 
     vk::DeviceCreateInfo create_info{};
+    create_info.pNext = &vk11_enable;
     create_info.queueCreateInfoCount = 1;
     create_info.pQueueCreateInfos = &queue_info;
     create_info.enabledExtensionCount = static_cast<uint32_t>(REQUIRED_DEVICE_EXTENSIONS.size());
     create_info.ppEnabledExtensionNames = REQUIRED_DEVICE_EXTENSIONS.data();
-    create_info.pEnabledFeatures = &features;
 
     auto [result, device] = m_physical_device.createDeviceUnique(create_info);
     if (result != vk::Result::eSuccess) {

@@ -11,7 +11,7 @@
 #include <sstream>
 #include <util/logging.hpp>
 
-namespace goggles::pipeline {
+namespace goggles::render {
 
 namespace {
 
@@ -304,4 +304,4 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
     return spirv;
 }
 
-} // namespace goggles::pipeline
+} // namespace goggles::render

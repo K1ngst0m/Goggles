@@ -12,7 +12,7 @@ BlitPipeline::~BlitPipeline() {
 auto BlitPipeline::init(vk::Device device, vk::Format swapchain_format,
                         vk::Extent2D swapchain_extent,
                         const std::vector<vk::ImageView>& swapchain_views,
-                        pipeline::ShaderRuntime& shader_runtime,
+                        ShaderRuntime& shader_runtime,
                         const std::filesystem::path& shader_dir) -> Result<void> {
     if (m_initialized) {
         return {};
@@ -273,7 +273,7 @@ auto BlitPipeline::create_pipeline_layout() -> Result<void> {
     return {};
 }
 
-auto BlitPipeline::create_pipeline(pipeline::ShaderRuntime& shader_runtime,
+auto BlitPipeline::create_pipeline(ShaderRuntime& shader_runtime,
                                    const std::filesystem::path& shader_dir) -> Result<void> {
     auto vert_result = shader_runtime.compile_shader(shader_dir / "blit.vert.slang");
     if (!vert_result) {

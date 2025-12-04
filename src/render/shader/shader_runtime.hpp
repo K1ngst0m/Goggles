@@ -6,7 +6,7 @@
 #include <util/error.hpp>
 #include <vector>
 
-namespace goggles::pipeline {
+namespace goggles::render {
 
 struct CompiledShader {
     std::vector<uint32_t> spirv;
@@ -53,4 +53,4 @@ private:
     bool m_initialized = false;
 };
 
-} // namespace goggles::pipeline
+} // namespace goggles::render
