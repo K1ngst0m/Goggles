@@ -1,4 +1,4 @@
-#include "capture_receiver.hpp"
+#include "capture/capture_receiver.hpp"
 
 #include <SDL3/SDL.h>
 #include <cstdlib>

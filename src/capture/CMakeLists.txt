@@ -37,11 +37,13 @@ configure_file(
     COPYONLY
 )
 
-# Capture backends library (stub)
-add_library(goggles_capture INTERFACE)
+# Capture library
+add_library(goggles_capture STATIC capture_receiver.cpp)
 
-target_include_directories(goggles_capture INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+target_include_directories(goggles_capture PUBLIC ${CMAKE_SOURCE_DIR}/src)
+
+target_link_libraries(goggles_capture PRIVATE
+    goggles_util
 )
 
 goggles_enable_clang_tidy(goggles_vklayer)

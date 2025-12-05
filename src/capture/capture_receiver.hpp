@@ -1,6 +1,6 @@
 #pragma once
 
-#include <capture/capture_protocol.hpp>
+#include "capture_protocol.hpp"
 #include <cstdint>
 
 namespace goggles {
