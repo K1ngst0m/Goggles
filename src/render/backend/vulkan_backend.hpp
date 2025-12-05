@@ -1,11 +1,12 @@
 #pragma once
 
-#include "blit_pipeline.hpp"
 #include "vulkan_config.hpp"
 
 #include <SDL3/SDL.h>
+#include <array>
 #include <cstdint>
 #include <filesystem>
+#include <render/chain/output_pass.hpp>
 #include <render/shader/shader_runtime.hpp>
 #include <util/error.hpp>
 #include <vector>
@@ -51,7 +52,9 @@ private:
     void cleanup_swapchain();
     [[nodiscard]] auto create_command_resources() -> Result<void>;
     [[nodiscard]] auto create_sync_objects() -> Result<void>;
-    [[nodiscard]] auto init_blit_pipeline() -> Result<void>;
+    [[nodiscard]] auto create_render_pass() -> Result<void>;
+    [[nodiscard]] auto create_framebuffers() -> Result<void>;
+    [[nodiscard]] auto init_output_pass() -> Result<void>;
 
     [[nodiscard]] auto import_dmabuf(const FrameInfo& frame) -> Result<void>;
     void cleanup_imported_image();
@@ -79,11 +82,18 @@ private:
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     vk::Extent2D m_swapchain_extent;
 
+    vk::UniqueRenderPass m_render_pass;
+    std::vector<vk::UniqueFramebuffer> m_framebuffers;
+
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-    std::vector<vk::CommandBuffer> m_command_buffers;
-    std::vector<vk::Fence> m_in_flight_fences;
-    std::vector<vk::Semaphore> m_image_available_sems;
-    std::vector<vk::Semaphore> m_render_finished_sems;
+
+    struct FrameResources {
+        vk::CommandBuffer command_buffer;
+        vk::Fence in_flight_fence;
+        vk::Semaphore image_available_sem;
+        vk::Semaphore render_finished_sem;
+    };
+    std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> m_frames{};
     uint32_t m_current_frame = 0;
 
     vk::Image m_imported_image;
@@ -93,7 +103,7 @@ private:
     int m_current_import_fd = -1;
 
     ShaderRuntime m_shader_runtime;
-    BlitPipeline m_blit_pipeline;
+    OutputPass m_output_pass;
     std::filesystem::path m_shader_dir;
     vk::Format m_source_format = vk::Format::eUndefined;
 

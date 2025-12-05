@@ -2,8 +2,8 @@
 
 add_library(goggles_render STATIC
     backend/vulkan_backend.cpp
-    backend/blit_pipeline.cpp
     shader/shader_runtime.cpp
+    chain/output_pass.cpp
 )
 
 target_include_directories(goggles_render PUBLIC

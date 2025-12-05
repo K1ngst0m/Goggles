@@ -119,3 +119,69 @@ The render architecture SHALL support future multi-pass RetroArch shader process
 - **THEN** single blit pass SHALL handle both input and output roles
 - **AND** this pass SHALL become the output stage when multi-pass is added
 
+### Requirement: Pass Infrastructure
+
+The render chain subsystem SHALL provide a Pass abstraction compatible with RetroArch shader system.
+
+#### Scenario: Pass interface
+
+- **GIVEN** a Pass implementation
+- **WHEN** initialized with device, render pass, num_sync_indices, and shader runtime
+- **THEN** the pass SHALL create its pipeline and per-frame descriptor sets
+- **AND** allocate `num_sync_indices` descriptor sets from its pool
+
+#### Scenario: PassContext provides textures
+
+- **GIVEN** a PassContext for recording
+- **WHEN** passed to `Pass::record()`
+- **THEN** it SHALL contain `source_texture` (previous pass output)
+- **AND** it SHALL contain `original_texture` (normalized input)
+- **AND** it SHALL contain `frame_index` for descriptor set selection
+- **AND** it SHALL contain `target_framebuffer` for rendering
+
+#### Scenario: Per-frame descriptor isolation
+
+- **GIVEN** num_sync_indices = 2
+- **WHEN** frame N is recording while frame N-1 is still on GPU
+- **THEN** the pass SHALL update `descriptor_sets[N % 2]`
+- **AND** NOT touch `descriptor_sets[(N-1) % 2]`
+- **AND** no validation error SHALL occur
+
+### Requirement: OutputPass Behavior
+
+The `OutputPass` SHALL serve as combined normalize+output pass until multi-pass chains are implemented.
+
+#### Scenario: Direct DMA-BUF to swapchain
+
+- **GIVEN** no RetroArch shader passes are configured
+- **WHEN** OutputPass processes a frame
+- **THEN** it SHALL sample `ctx.source_texture` (the DMA-BUF import)
+- **AND** render to `ctx.target_framebuffer` (swapchain)
+- **AND** use `ctx.frame_index` for descriptor set selection
+
+#### Scenario: Backend provides framebuffers
+
+- **GIVEN** swapchain is recreated (resize)
+- **WHEN** backend recreates framebuffers
+- **THEN** OutputPass SHALL NOT need reinitialization
+- **AND** new framebuffers SHALL be passed via PassContext
+
+### Requirement: Future RetroArch Integration
+
+The Pass abstraction SHALL support future RetroArch shader passes.
+
+#### Scenario: Multi-pass chain (Phase 2+)
+
+- **GIVEN** RetroArch shader passes are configured
+- **WHEN** filter chain processes a frame
+- **THEN** NormalizePass (first) SHALL output "Original" texture
+- **AND** RetroArch passes SHALL receive Source + Original via PassContext
+- **AND** OutputPass (last) SHALL convert to swapchain format
+
+#### Scenario: PassContext extensibility
+
+- **GIVEN** RetroArch semantics require OriginalHistory, PassFeedback, etc.
+- **WHEN** PassContext is extended
+- **THEN** existing passes SHALL NOT require modification
+- **AND** new texture bindings SHALL be added to PassContext struct
+

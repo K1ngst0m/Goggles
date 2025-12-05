@@ -3,6 +3,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <cstring>
+#include <render/chain/pass.hpp>
 #include <unistd.h>
 #include <util/logging.hpp>
 
@@ -87,7 +88,17 @@ auto VulkanBackend::init(SDL_Window* window, const std::filesystem::path& shader
         return result;
     }
 
-    result = init_blit_pipeline();
+    result = create_render_pass();
+    if (!result) {
+        return result;
+    }
+
+    result = create_framebuffers();
+    if (!result) {
+        return result;
+    }
+
+    result = init_output_pass();
     if (!result) {
         return result;
     }
@@ -106,29 +117,24 @@ void VulkanBackend::shutdown() {
         static_cast<void>(m_device->waitIdle());
     }
 
-    m_blit_pipeline.shutdown();
+    m_output_pass.shutdown();
     m_shader_runtime.shutdown();
     cleanup_imported_image();
 
     if (m_device) {
-        for (auto fence : m_in_flight_fences) {
-            m_device->destroyFence(fence);
-        }
-        for (auto sem : m_image_available_sems) {
-            m_device->destroySemaphore(sem);
-        }
-        for (auto sem : m_render_finished_sems) {
-            m_device->destroySemaphore(sem);
+        for (auto& frame : m_frames) {
+            m_device->destroyFence(frame.in_flight_fence);
+            m_device->destroySemaphore(frame.image_available_sem);
+            m_device->destroySemaphore(frame.render_finished_sem);
         }
     }
-    m_in_flight_fences.clear();
-    m_image_available_sems.clear();
-    m_render_finished_sems.clear();
-    m_command_buffers.clear();
+    m_frames = {};
+    m_framebuffers.clear();
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
 
     m_command_pool.reset();
+    m_render_pass.reset();
     m_swapchain.reset();
     m_device.reset();
     m_surface.reset();
@@ -396,6 +402,7 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
 }
 
 void VulkanBackend::cleanup_swapchain() {
+    m_framebuffers.clear();
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
     m_swapchain.reset();
@@ -420,12 +427,10 @@ auto VulkanBackend::recreate_swapchain() -> Result<void> {
         return result;
     }
 
-    std::vector<vk::ImageView> views;
-    views.reserve(m_swapchain_image_views.size());
-    for (const auto& view : m_swapchain_image_views) {
-        views.push_back(*view);
+    result = create_framebuffers();
+    if (!result) {
+        return result;
     }
-    m_blit_pipeline.recreate_framebuffers(m_swapchain_extent, views);
 
     m_needs_resize = false;
     GOGGLES_LOG_INFO("Swapchain recreated: {}x{}", width, height);
@@ -446,8 +451,9 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
     SDL_GetWindowSize(m_window, &width, &height);
 
     static_cast<void>(m_device->waitIdle());
-    m_blit_pipeline.shutdown();
+    m_output_pass.shutdown();
     cleanup_swapchain();
+    m_render_pass.reset();
 
     auto result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                    target_format);
@@ -455,7 +461,17 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
         return result;
     }
 
-    return init_blit_pipeline();
+    result = create_render_pass();
+    if (!result) {
+        return result;
+    }
+
+    result = create_framebuffers();
+    if (!result) {
+        return result;
+    }
+
+    return init_output_pass();
 }
 
 auto VulkanBackend::get_matching_swapchain_format(vk::Format source_format) -> vk::Format {
@@ -501,64 +517,132 @@ auto VulkanBackend::create_command_resources() -> Result<void> {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
                                 "Failed to allocate command buffers");
     }
-    m_command_buffers = std::move(buffers);
+
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        m_frames[i].command_buffer = buffers[i];
+    }
 
     GOGGLES_LOG_DEBUG("Command pool and {} buffers created", MAX_FRAMES_IN_FLIGHT);
     return {};
 }
 
 auto VulkanBackend::create_sync_objects() -> Result<void> {
-    m_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
-    m_image_available_sems.resize(MAX_FRAMES_IN_FLIGHT);
-    m_render_finished_sems.resize(MAX_FRAMES_IN_FLIGHT);
-
     vk::FenceCreateInfo fence_info{};
     fence_info.flags = vk::FenceCreateFlagBits::eSignaled;
-
     vk::SemaphoreCreateInfo sem_info{};
 
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        auto [fence_result, fence] = m_device->createFence(fence_info);
-        if (fence_result != vk::Result::eSuccess) {
-            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to create fence");
+    for (auto& frame : m_frames) {
+        {
+            auto [result, fence] = m_device->createFence(fence_info);
+            if (result != vk::Result::eSuccess) {
+                return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to create fence");
+            }
+            frame.in_flight_fence = fence;
         }
-        m_in_flight_fences[i] = fence;
-
-        auto [sem1_result, sem1] = m_device->createSemaphore(sem_info);
-        if (sem1_result != vk::Result::eSuccess) {
-            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to create semaphore");
+        {
+            auto [result, sem] = m_device->createSemaphore(sem_info);
+            if (result != vk::Result::eSuccess) {
+                return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                        "Failed to create semaphore");
+            }
+            frame.image_available_sem = sem;
         }
-        m_image_available_sems[i] = sem1;
-
-        auto [sem2_result, sem2] = m_device->createSemaphore(sem_info);
-        if (sem2_result != vk::Result::eSuccess) {
-            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to create semaphore");
+        {
+            auto [result, sem] = m_device->createSemaphore(sem_info);
+            if (result != vk::Result::eSuccess) {
+                return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                        "Failed to create semaphore");
+            }
+            frame.render_finished_sem = sem;
         }
-        m_render_finished_sems[i] = sem2;
     }
 
     GOGGLES_LOG_DEBUG("Sync objects created");
     return {};
 }
 
-auto VulkanBackend::init_blit_pipeline() -> Result<void> {
+auto VulkanBackend::create_render_pass() -> Result<void> {
+    vk::AttachmentDescription color_attachment{};
+    color_attachment.format = m_swapchain_format;
+    color_attachment.samples = vk::SampleCountFlagBits::e1;
+    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
+    color_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    color_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+    color_attachment.initialLayout = vk::ImageLayout::eUndefined;
+    color_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
+
+    vk::AttachmentReference color_ref{};
+    color_ref.attachment = 0;
+    color_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;
+
+    vk::SubpassDescription subpass{};
+    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &color_ref;
+
+    vk::SubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcAccessMask = vk::AccessFlagBits::eNone;
+    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+
+    vk::RenderPassCreateInfo create_info{};
+    create_info.attachmentCount = 1;
+    create_info.pAttachments = &color_attachment;
+    create_info.subpassCount = 1;
+    create_info.pSubpasses = &subpass;
+    create_info.dependencyCount = 1;
+    create_info.pDependencies = &dependency;
+
+    auto [result, render_pass] = m_device->createRenderPassUnique(create_info);
+    if (result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to create render pass: " + vk::to_string(result));
+    }
+
+    m_render_pass = std::move(render_pass);
+    GOGGLES_LOG_DEBUG("Render pass created");
+    return {};
+}
+
+auto VulkanBackend::create_framebuffers() -> Result<void> {
+    m_framebuffers.reserve(m_swapchain_image_views.size());
+
+    for (const auto& view : m_swapchain_image_views) {
+        vk::FramebufferCreateInfo create_info{};
+        create_info.renderPass = *m_render_pass;
+        create_info.attachmentCount = 1;
+        create_info.pAttachments = &*view;
+        create_info.width = m_swapchain_extent.width;
+        create_info.height = m_swapchain_extent.height;
+        create_info.layers = 1;
+
+        auto [result, framebuffer] = m_device->createFramebufferUnique(create_info);
+        if (result != vk::Result::eSuccess) {
+            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                    "Failed to create framebuffer: " + vk::to_string(result));
+        }
+        m_framebuffers.push_back(std::move(framebuffer));
+    }
+
+    GOGGLES_LOG_DEBUG("Framebuffers created: {}", m_framebuffers.size());
+    return {};
+}
+
+auto VulkanBackend::init_output_pass() -> Result<void> {
     auto shader_result = m_shader_runtime.init();
     if (!shader_result) {
         return shader_result;
     }
 
-    std::vector<vk::ImageView> views;
-    views.reserve(m_swapchain_image_views.size());
-    for (const auto& view : m_swapchain_image_views) {
-        views.push_back(*view);
-    }
-
-    return m_blit_pipeline.init(*m_device, m_swapchain_format, m_swapchain_extent, views,
-                                m_shader_runtime, m_shader_dir);
+    return m_output_pass.init(*m_device, *m_render_pass, MAX_FRAMES_IN_FLIGHT, m_shader_runtime,
+                              m_shader_dir);
 }
 
 auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
-    // Re-import if dimensions/format change OR if fd changed (swapchain recreated)
     bool same_config = m_imported_image && m_current_import.width == frame.width &&
                        m_current_import.height == frame.height &&
                        m_current_import.format == frame.format &&
@@ -624,6 +708,7 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
                                 "No suitable memory type for DMA-BUF import");
     }
 
+    // Vulkan takes ownership of fd on success
     int import_fd = dup(frame.dmabuf_fd);
     if (import_fd < 0) {
         cleanup_imported_image();
@@ -703,14 +788,15 @@ void VulkanBackend::cleanup_imported_image() {
 }
 
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
-    auto wait_result =
-        m_device->waitForFences(m_in_flight_fences[m_current_frame], VK_TRUE, UINT64_MAX);
+    auto& frame = m_frames[m_current_frame];
+
+    auto wait_result = m_device->waitForFences(frame.in_flight_fence, VK_TRUE, UINT64_MAX);
     if (wait_result != vk::Result::eSuccess) {
         return make_error<uint32_t>(ErrorCode::VULKAN_DEVICE_LOST, "Fence wait failed");
     }
 
-    auto [result, image_index] = m_device->acquireNextImageKHR(
-        *m_swapchain, UINT64_MAX, m_image_available_sems[m_current_frame], nullptr);
+    auto [result, image_index] =
+        m_device->acquireNextImageKHR(*m_swapchain, UINT64_MAX, frame.image_available_sem, nullptr);
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
         m_needs_resize = true;
@@ -723,7 +809,7 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
                                     "Failed to acquire swapchain image: " + vk::to_string(result));
     }
 
-    static_cast<void>(m_device->resetFences(m_in_flight_fences[m_current_frame]));
+    static_cast<void>(m_device->resetFences(frame.in_flight_fence));
     return image_index;
 }
 
@@ -751,8 +837,14 @@ void VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
                         vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, src_barrier);
 
-    m_blit_pipeline.update_descriptor(m_imported_image_view);
-    m_blit_pipeline.record_commands(cmd, image_index, m_swapchain_extent);
+    PassContext ctx{};
+    ctx.frame_index = m_current_frame;
+    ctx.output_extent = m_swapchain_extent;
+    ctx.target_framebuffer = *m_framebuffers[image_index];
+    ctx.source_texture = m_imported_image_view;
+    ctx.original_texture = m_imported_image_view;
+
+    m_output_pass.record(cmd, ctx);
 
     static_cast<void>(cmd.end());
 }
@@ -804,18 +896,19 @@ void VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
 }
 
 auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
+    auto& frame = m_frames[m_current_frame];
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
     vk::SubmitInfo submit_info{};
     submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &m_image_available_sems[m_current_frame];
+    submit_info.pWaitSemaphores = &frame.image_available_sem;
     submit_info.pWaitDstStageMask = &wait_stage;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &m_command_buffers[m_current_frame];
+    submit_info.pCommandBuffers = &frame.command_buffer;
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &m_render_finished_sems[m_current_frame];
+    submit_info.pSignalSemaphores = &frame.render_finished_sem;
 
-    auto submit_result = m_graphics_queue.submit(submit_info, m_in_flight_fences[m_current_frame]);
+    auto submit_result = m_graphics_queue.submit(submit_info, frame.in_flight_fence);
     if (submit_result != vk::Result::eSuccess) {
         return make_error<bool>(ErrorCode::VULKAN_DEVICE_LOST,
                                 "Queue submit failed: " + vk::to_string(submit_result));
@@ -823,7 +916,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 
     vk::PresentInfoKHR present_info{};
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &m_render_finished_sems[m_current_frame];
+    present_info.pWaitSemaphores = &frame.render_finished_sem;
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &*m_swapchain;
     present_info.pImageIndices = &image_index;
@@ -843,20 +936,20 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     return !m_needs_resize;
 }
 
-auto VulkanBackend::render_frame(const FrameInfo& frame) -> Result<bool> {
+auto VulkanBackend::render_frame(const FrameInfo& frame_info) -> Result<bool> {
     if (!m_initialized) {
         return make_error<bool>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
     }
 
-    if (m_source_format != frame.format) {
-        auto format_result = recreate_swapchain_for_format(frame.format);
+    if (m_source_format != frame_info.format) {
+        auto format_result = recreate_swapchain_for_format(frame_info.format);
         if (!format_result) {
             return nonstd::make_unexpected(format_result.error());
         }
-        m_source_format = frame.format;
+        m_source_format = frame_info.format;
     }
 
-    auto import_result = import_dmabuf(frame);
+    auto import_result = import_dmabuf(frame_info);
     if (!import_result) {
         return nonstd::make_unexpected(import_result.error());
     }
@@ -867,7 +960,7 @@ auto VulkanBackend::render_frame(const FrameInfo& frame) -> Result<bool> {
     }
     uint32_t image_index = acquire_result.value();
 
-    record_render_commands(m_command_buffers[m_current_frame], image_index);
+    record_render_commands(m_frames[m_current_frame].command_buffer, image_index);
     return submit_and_present(image_index);
 }
 
@@ -882,7 +975,7 @@ auto VulkanBackend::render_clear() -> Result<bool> {
     }
     uint32_t image_index = acquire_result.value();
 
-    record_clear_commands(m_command_buffers[m_current_frame], image_index);
+    record_clear_commands(m_frames[m_current_frame].command_buffer, image_index);
     return submit_and_present(image_index);
 }
 

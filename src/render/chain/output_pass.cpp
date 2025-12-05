@@ -1,31 +1,27 @@
-#include "blit_pipeline.hpp"
+#include "output_pass.hpp"
 
 #include <array>
+#include <render/shader/shader_runtime.hpp>
 #include <util/logging.hpp>
 
 namespace goggles::render {
 
-BlitPipeline::~BlitPipeline() {
-    shutdown();
+OutputPass::~OutputPass() {
+    OutputPass::shutdown();
 }
 
-auto BlitPipeline::init(vk::Device device, vk::Format swapchain_format,
-                        vk::Extent2D swapchain_extent,
-                        const std::vector<vk::ImageView>& swapchain_views,
-                        ShaderRuntime& shader_runtime,
-                        const std::filesystem::path& shader_dir) -> Result<void> {
+auto OutputPass::init(vk::Device device, vk::RenderPass render_pass, uint32_t num_sync_indices,
+                      ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
+    -> Result<void> {
     if (m_initialized) {
         return {};
     }
 
     m_device = device;
+    m_render_pass = render_pass;
+    m_num_sync_indices = num_sync_indices;
 
-    auto result = create_render_pass(swapchain_format);
-    if (!result) {
-        return result;
-    }
-
-    result = create_sampler();
+    auto result = create_sampler();
     if (!result) {
         return result;
     }
@@ -45,51 +41,38 @@ auto BlitPipeline::init(vk::Device device, vk::Format swapchain_format,
         return result;
     }
 
-    result = create_framebuffers(swapchain_extent, swapchain_views);
-    if (!result) {
-        return result;
-    }
-
     m_initialized = true;
-    GOGGLES_LOG_DEBUG("BlitPipeline initialized");
+    GOGGLES_LOG_DEBUG("OutputPass initialized");
     return {};
 }
 
-void BlitPipeline::shutdown() {
+void OutputPass::shutdown() {
     if (!m_initialized) {
         return;
     }
 
-    m_framebuffers.clear();
     m_pipeline.reset();
     m_pipeline_layout.reset();
     m_descriptor_pool.reset();
     m_descriptor_layout.reset();
     m_sampler.reset();
-    m_render_pass.reset();
+    m_descriptor_sets.clear();
+    m_render_pass = nullptr;
     m_device = nullptr;
+    m_num_sync_indices = 0;
 
     m_initialized = false;
-    GOGGLES_LOG_DEBUG("BlitPipeline shutdown");
+    GOGGLES_LOG_DEBUG("OutputPass shutdown");
 }
 
-void BlitPipeline::recreate_framebuffers(vk::Extent2D swapchain_extent,
-                                         const std::vector<vk::ImageView>& swapchain_views) {
-    m_framebuffers.clear();
-    auto result = create_framebuffers(swapchain_extent, swapchain_views);
-    if (!result) {
-        GOGGLES_LOG_ERROR("Failed to recreate framebuffers: {}", result.error().message);
-    }
-}
-
-void BlitPipeline::update_descriptor(vk::ImageView source_view) {
+void OutputPass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
     vk::DescriptorImageInfo image_info{};
     image_info.sampler = *m_sampler;
     image_info.imageView = source_view;
     image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
     vk::WriteDescriptorSet write{};
-    write.dstSet = m_descriptor_set;
+    write.dstSet = m_descriptor_sets[frame_index];
     write.dstBinding = 0;
     write.dstArrayElement = 0;
     write.descriptorCount = 1;
@@ -99,13 +82,14 @@ void BlitPipeline::update_descriptor(vk::ImageView source_view) {
     m_device.updateDescriptorSets(write, {});
 }
 
-void BlitPipeline::record_commands(vk::CommandBuffer cmd, uint32_t framebuffer_index,
-                                   vk::Extent2D extent) {
+void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
+    update_descriptor(ctx.frame_index, ctx.source_texture);
+
     vk::RenderPassBeginInfo begin_info{};
-    begin_info.renderPass = *m_render_pass;
-    begin_info.framebuffer = *m_framebuffers[framebuffer_index];
+    begin_info.renderPass = m_render_pass;
+    begin_info.framebuffer = ctx.target_framebuffer;
     begin_info.renderArea.offset = vk::Offset2D{0, 0};
-    begin_info.renderArea.extent = extent;
+    begin_info.renderArea.extent = ctx.output_extent;
 
     std::array<vk::ClearValue, 1> clear_values{};
     clear_values[0].color = vk::ClearColorValue{std::array{0.0F, 0.0F, 0.0F, 1.0F}};
@@ -115,73 +99,27 @@ void BlitPipeline::record_commands(vk::CommandBuffer cmd, uint32_t framebuffer_i
     cmd.beginRenderPass(begin_info, vk::SubpassContents::eInline);
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline_layout, 0,
-                           m_descriptor_set, {});
+                           m_descriptor_sets[ctx.frame_index], {});
 
     vk::Viewport viewport{};
     viewport.x = 0.0F;
     viewport.y = 0.0F;
-    viewport.width = static_cast<float>(extent.width);
-    viewport.height = static_cast<float>(extent.height);
+    viewport.width = static_cast<float>(ctx.output_extent.width);
+    viewport.height = static_cast<float>(ctx.output_extent.height);
     viewport.minDepth = 0.0F;
     viewport.maxDepth = 1.0F;
     cmd.setViewport(0, viewport);
 
     vk::Rect2D scissor{};
     scissor.offset = vk::Offset2D{0, 0};
-    scissor.extent = extent;
+    scissor.extent = ctx.output_extent;
     cmd.setScissor(0, scissor);
 
     cmd.draw(3, 1, 0, 0);
     cmd.endRenderPass();
 }
 
-auto BlitPipeline::create_render_pass(vk::Format format) -> Result<void> {
-    vk::AttachmentDescription color_attachment{};
-    color_attachment.format = format;
-    color_attachment.samples = vk::SampleCountFlagBits::e1;
-    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
-    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
-    color_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    color_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    color_attachment.initialLayout = vk::ImageLayout::eUndefined;
-    color_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
-
-    vk::AttachmentReference color_ref{};
-    color_ref.attachment = 0;
-    color_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-    vk::SubpassDescription subpass{};
-    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color_ref;
-
-    vk::SubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependency.srcAccessMask = vk::AccessFlagBits::eNone;
-    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-
-    vk::RenderPassCreateInfo create_info{};
-    create_info.attachmentCount = 1;
-    create_info.pAttachments = &color_attachment;
-    create_info.subpassCount = 1;
-    create_info.pSubpasses = &subpass;
-    create_info.dependencyCount = 1;
-    create_info.pDependencies = &dependency;
-
-    auto [result, render_pass] = m_device.createRenderPassUnique(create_info);
-    if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to create render pass: " + vk::to_string(result));
-    }
-
-    m_render_pass = std::move(render_pass);
-    return {};
-}
-
-auto BlitPipeline::create_sampler() -> Result<void> {
+auto OutputPass::create_sampler() -> Result<void> {
     vk::SamplerCreateInfo create_info{};
     create_info.magFilter = vk::Filter::eLinear;
     create_info.minFilter = vk::Filter::eLinear;
@@ -207,7 +145,7 @@ auto BlitPipeline::create_sampler() -> Result<void> {
     return {};
 }
 
-auto BlitPipeline::create_descriptor_resources() -> Result<void> {
+auto OutputPass::create_descriptor_resources() -> Result<void> {
     vk::DescriptorSetLayoutBinding binding{};
     binding.binding = 0;
     binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
@@ -228,10 +166,10 @@ auto BlitPipeline::create_descriptor_resources() -> Result<void> {
 
     vk::DescriptorPoolSize pool_size{};
     pool_size.type = vk::DescriptorType::eCombinedImageSampler;
-    pool_size.descriptorCount = 1;
+    pool_size.descriptorCount = m_num_sync_indices;
 
     vk::DescriptorPoolCreateInfo pool_info{};
-    pool_info.maxSets = 1;
+    pool_info.maxSets = m_num_sync_indices;
     pool_info.poolSizeCount = 1;
     pool_info.pPoolSizes = &pool_size;
 
@@ -242,23 +180,25 @@ auto BlitPipeline::create_descriptor_resources() -> Result<void> {
     }
     m_descriptor_pool = std::move(pool);
 
+    std::vector<vk::DescriptorSetLayout> layouts(m_num_sync_indices, *m_descriptor_layout);
+
     vk::DescriptorSetAllocateInfo alloc_info{};
     alloc_info.descriptorPool = *m_descriptor_pool;
-    alloc_info.descriptorSetCount = 1;
-    alloc_info.pSetLayouts = &*m_descriptor_layout;
+    alloc_info.descriptorSetCount = m_num_sync_indices;
+    alloc_info.pSetLayouts = layouts.data();
 
     auto [alloc_result, sets] = m_device.allocateDescriptorSets(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to allocate descriptor set: " +
+                                "Failed to allocate descriptor sets: " +
                                     vk::to_string(alloc_result));
     }
-    m_descriptor_set = sets[0];
+    m_descriptor_sets = std::move(sets);
 
     return {};
 }
 
-auto BlitPipeline::create_pipeline_layout() -> Result<void> {
+auto OutputPass::create_pipeline_layout() -> Result<void> {
     vk::PipelineLayoutCreateInfo create_info{};
     create_info.setLayoutCount = 1;
     create_info.pSetLayouts = &*m_descriptor_layout;
@@ -273,8 +213,8 @@ auto BlitPipeline::create_pipeline_layout() -> Result<void> {
     return {};
 }
 
-auto BlitPipeline::create_pipeline(ShaderRuntime& shader_runtime,
-                                   const std::filesystem::path& shader_dir) -> Result<void> {
+auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
+                                 const std::filesystem::path& shader_dir) -> Result<void> {
     auto vert_result = shader_runtime.compile_shader(shader_dir / "blit.vert.slang");
     if (!vert_result) {
         return nonstd::make_unexpected(vert_result.error());
@@ -365,7 +305,7 @@ auto BlitPipeline::create_pipeline(ShaderRuntime& shader_runtime,
     create_info.pColorBlendState = &color_blend;
     create_info.pDynamicState = &dynamic_state;
     create_info.layout = *m_pipeline_layout;
-    create_info.renderPass = *m_render_pass;
+    create_info.renderPass = m_render_pass;
     create_info.subpass = 0;
 
     auto [result, pipelines] = m_device.createGraphicsPipelinesUnique(nullptr, create_info);
@@ -375,30 +315,6 @@ auto BlitPipeline::create_pipeline(ShaderRuntime& shader_runtime,
     }
 
     m_pipeline = std::move(pipelines[0]);
-    return {};
-}
-
-auto BlitPipeline::create_framebuffers(vk::Extent2D extent, const std::vector<vk::ImageView>& views)
-    -> Result<void> {
-    m_framebuffers.reserve(views.size());
-
-    for (const auto& view : views) {
-        vk::FramebufferCreateInfo create_info{};
-        create_info.renderPass = *m_render_pass;
-        create_info.attachmentCount = 1;
-        create_info.pAttachments = &view;
-        create_info.width = extent.width;
-        create_info.height = extent.height;
-        create_info.layers = 1;
-
-        auto [result, framebuffer] = m_device.createFramebufferUnique(create_info);
-        if (result != vk::Result::eSuccess) {
-            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                    "Failed to create framebuffer: " + vk::to_string(result));
-        }
-        m_framebuffers.push_back(std::move(framebuffer));
-    }
-
     return {};
 }
 

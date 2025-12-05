@@ -55,7 +55,7 @@ auto ShaderRuntime::init() -> Result<void> {
     slang::SessionDesc session_desc = {};
     slang::TargetDesc target_desc = {};
     target_desc.format = SLANG_SPIRV;
-    target_desc.profile = m_impl->global_session->findProfile("spirv_1_0");
+    target_desc.profile = m_impl->global_session->findProfile("spirv_1_3");
 
     session_desc.targets = &target_desc;
     session_desc.targetCount = 1;
