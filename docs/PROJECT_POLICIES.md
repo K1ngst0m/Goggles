@@ -359,6 +359,87 @@ The Vulkan capture layer (`src/capture/vk_layer/`) is exempt and MUST use the ra
 - **Never leak Vulkan objects:** Ensure proper destruction order (devices before instances, etc.).
 - **Member ordering:** When using `vk::Unique*` members, declare in reverse destruction order (device before instance, etc.) so destructors run correctly.
 
+### D.6 Vulkan Error Handling Rules
+
+**All vulkan-hpp calls returning `vk::Result` must be explicitly checked.**
+
+#### D.6.1 Prohibited Pattern
+
+```cpp
+// PROHIBITED - masks device loss, GPU hangs, driver bugs
+static_cast<void>(device.waitIdle());
+static_cast<void>(cmd.begin(begin_info));
+```
+
+#### D.6.2 Error Handling Macros
+
+Use the provided macros for concise, consistent error handling:
+
+**`VK_TRY` - For vk::Result early return:**
+
+```cpp
+#include <render/backend/vulkan_error.hpp>
+
+// Usage: VK_TRY(call, ErrorCode, "message")
+VK_TRY(cmd.reset(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer reset failed");
+VK_TRY(cmd.begin(begin_info), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer begin failed");
+VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST, "waitIdle failed");
+```
+
+**`GOGGLES_TRY` - For Result<T> propagation:**
+
+```cpp
+#include <util/error.hpp>
+
+// Usage: GOGGLES_TRY(result_returning_call())
+GOGGLES_TRY(create_instance());
+GOGGLES_TRY(create_surface(window));
+GOGGLES_TRY(create_device());
+```
+
+#### D.6.3 Manual Pattern (When Macros Don't Apply)
+
+For complex error handling with cleanup or special logic:
+
+```cpp
+auto [result, value] = some_vulkan_call();
+if (result != vk::Result::eSuccess) {
+    cleanup_partial_resources();
+    return make_error<T>(ErrorCode::VULKAN_INIT_FAILED,
+                         "Operation failed: " + vk::to_string(result));
+}
+```
+
+#### D.6.4 Shutdown/Cleanup Pattern
+
+For destructors and cleanup functions where propagation is impossible:
+
+```cpp
+auto result = m_device->waitIdle();
+if (result != vk::Result::eSuccess) {
+    GOGGLES_LOG_WARN("waitIdle failed during shutdown: {}", vk::to_string(result));
+}
+// Continue cleanup regardless - resources must be freed
+```
+
+#### D.6.5 Error Classification
+
+| vk::Result | Severity | Action |
+|------------|----------|--------|
+| `eErrorDeviceLost` | Fatal | Propagate error, trigger shutdown |
+| `eErrorOutOfDeviceMemory` | Fatal | Propagate error |
+| `eErrorOutOfDateKHR` | Rebuild | Recreate swapchain |
+| `eSuboptimalKHR` | Warning | Log, continue, queue resize |
+| `eTimeout` | Recoverable | Log warning, skip frame |
+
+#### D.6.6 Rationale
+
+- Silent failures mask device loss events that require application restart
+- GPU hangs become undebuggable without error context
+- Production applications (DOOM, major game engines) check all Vulkan returns
+- `static_cast<void>` provides zero information for post-mortem debugging
+- Macros reduce boilerplate while maintaining consistent error handling
+
 ---
 
 ## E) Threading Model Policy
@@ -676,7 +757,7 @@ These policies establish:
 1. **Error handling:** `tl::expected<T, Error>`, no silent failures, log at boundaries.
 2. **Logging:** `spdlog`, standard levels, minimal logging in capture layer.
 3. **Naming & Comments:** `snake_case` functions/files, `PascalCase` types, `m_` private members. Comments explain **why**, never **what**. No narration. No LLM-style verbosity.
-4. **Ownership:** RAII, `std::unique_ptr` default, no raw `new`/`delete`.
+4. **Ownership:** RAII, `std::unique_ptr` default, no raw `new`/`delete`. Vulkan errors must be checked (no `static_cast<void>`).
 5. **Threading:** Single-threaded default, `std::jthread` when needed, no detached threads.
 6. **Configuration:** TOML format, `config/goggles.toml` for development.
 7. **Dependencies:** Hybrid CPM.cmake + conan, version pinning required, justify additions.

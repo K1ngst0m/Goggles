@@ -1,5 +1,7 @@
 #include "vulkan_backend.hpp"
 
+#include "vulkan_error.hpp"
+
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <cstring>
@@ -52,56 +54,17 @@ auto VulkanBackend::init(SDL_Window* window, const std::filesystem::path& shader
     int height = 0;
     SDL_GetWindowSize(window, &width, &height);
 
-    auto result = create_instance();
-    if (!result) {
-        return result;
-    }
-
-    result = create_surface(window);
-    if (!result) {
-        return result;
-    }
-
-    result = select_physical_device();
-    if (!result) {
-        return result;
-    }
-
-    result = create_device();
-    if (!result) {
-        return result;
-    }
-
-    result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                              vk::Format::eB8G8R8A8Srgb);
-    if (!result) {
-        return result;
-    }
-
-    result = create_command_resources();
-    if (!result) {
-        return result;
-    }
-
-    result = create_sync_objects();
-    if (!result) {
-        return result;
-    }
-
-    result = create_render_pass();
-    if (!result) {
-        return result;
-    }
-
-    result = create_framebuffers();
-    if (!result) {
-        return result;
-    }
-
-    result = init_output_pass();
-    if (!result) {
-        return result;
-    }
+    GOGGLES_TRY(create_instance());
+    GOGGLES_TRY(create_surface(window));
+    GOGGLES_TRY(select_physical_device());
+    GOGGLES_TRY(create_device());
+    GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                                 vk::Format::eB8G8R8A8Srgb));
+    GOGGLES_TRY(create_command_resources());
+    GOGGLES_TRY(create_sync_objects());
+    GOGGLES_TRY(create_render_pass());
+    GOGGLES_TRY(create_framebuffers());
+    GOGGLES_TRY(init_output_pass());
 
     m_initialized = true;
     GOGGLES_LOG_INFO("Vulkan backend initialized: {}x{}", width, height);
@@ -114,7 +77,10 @@ void VulkanBackend::shutdown() {
     }
 
     if (m_device) {
-        static_cast<void>(m_device->waitIdle());
+        auto wait_result = m_device->waitIdle();
+        if (wait_result != vk::Result::eSuccess) {
+            GOGGLES_LOG_WARN("waitIdle failed during shutdown: {}", vk::to_string(wait_result));
+        }
     }
 
     m_output_pass.shutdown();
@@ -418,19 +384,13 @@ auto VulkanBackend::recreate_swapchain() -> Result<void> {
         SDL_WaitEvent(nullptr);
     }
 
-    static_cast<void>(m_device->waitIdle());
+    VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST,
+           "waitIdle failed before swapchain recreation");
     cleanup_swapchain();
 
-    auto result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                   m_swapchain_format);
-    if (!result) {
-        return result;
-    }
-
-    result = create_framebuffers();
-    if (!result) {
-        return result;
-    }
+    GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                                 m_swapchain_format));
+    GOGGLES_TRY(create_framebuffers());
 
     m_needs_resize = false;
     GOGGLES_LOG_INFO("Swapchain recreated: {}x{}", width, height);
@@ -450,26 +410,16 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
     int height = 0;
     SDL_GetWindowSize(m_window, &width, &height);
 
-    static_cast<void>(m_device->waitIdle());
+    VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST,
+           "waitIdle failed before swapchain format change");
     m_output_pass.shutdown();
     cleanup_swapchain();
     m_render_pass.reset();
 
-    auto result = create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                   target_format);
-    if (!result) {
-        return result;
-    }
-
-    result = create_render_pass();
-    if (!result) {
-        return result;
-    }
-
-    result = create_framebuffers();
-    if (!result) {
-        return result;
-    }
+    GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                                 target_format));
+    GOGGLES_TRY(create_render_pass());
+    GOGGLES_TRY(create_framebuffers());
 
     return init_output_pass();
 }
@@ -633,10 +583,7 @@ auto VulkanBackend::create_framebuffers() -> Result<void> {
 }
 
 auto VulkanBackend::init_output_pass() -> Result<void> {
-    auto shader_result = m_shader_runtime.init();
-    if (!shader_result) {
-        return shader_result;
-    }
+    GOGGLES_TRY(m_shader_runtime.init());
 
     return m_output_pass.init(*m_device, *m_render_pass, MAX_FRAMES_IN_FLIGHT, m_shader_runtime,
                               m_shader_dir);
@@ -651,10 +598,7 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
         return {};
     }
 
-    auto wait_result = m_device->waitIdle();
-    if (wait_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_DEVICE_LOST, "waitIdle failed before reimport");
-    }
+    VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST, "waitIdle failed before reimport");
     cleanup_imported_image();
 
     vk::ExternalMemoryImageCreateInfo ext_mem_info{};
@@ -809,16 +753,21 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
                                     "Failed to acquire swapchain image: " + vk::to_string(result));
     }
 
-    static_cast<void>(m_device->resetFences(frame.in_flight_fence));
+    auto reset_result = m_device->resetFences(frame.in_flight_fence);
+    if (reset_result != vk::Result::eSuccess) {
+        return make_error<uint32_t>(ErrorCode::VULKAN_DEVICE_LOST,
+                                    "Fence reset failed: " + vk::to_string(reset_result));
+    }
     return image_index;
 }
 
-void VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index) {
-    static_cast<void>(cmd.reset());
+auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index)
+    -> Result<void> {
+    VK_TRY(cmd.reset(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer reset failed");
 
     vk::CommandBufferBeginInfo begin_info{};
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    static_cast<void>(cmd.begin(begin_info));
+    VK_TRY(cmd.begin(begin_info), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer begin failed");
 
     vk::ImageMemoryBarrier src_barrier{};
     src_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
@@ -846,15 +795,18 @@ void VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
 
     m_output_pass.record(cmd, ctx);
 
-    static_cast<void>(cmd.end());
+    VK_TRY(cmd.end(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer end failed");
+
+    return {};
 }
 
-void VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index) {
-    static_cast<void>(cmd.reset());
+auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index)
+    -> Result<void> {
+    VK_TRY(cmd.reset(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer reset failed");
 
     vk::CommandBufferBeginInfo begin_info{};
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    static_cast<void>(cmd.begin(begin_info));
+    VK_TRY(cmd.begin(begin_info), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer begin failed");
 
     vk::ImageMemoryBarrier barrier{};
     barrier.srcAccessMask = vk::AccessFlagBits::eNone;
@@ -892,7 +844,9 @@ void VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
                         vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, barrier);
 
-    static_cast<void>(cmd.end());
+    VK_TRY(cmd.end(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer end failed");
+
+    return {};
 }
 
 auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
@@ -942,17 +896,11 @@ auto VulkanBackend::render_frame(const FrameInfo& frame_info) -> Result<bool> {
     }
 
     if (m_source_format != frame_info.format) {
-        auto format_result = recreate_swapchain_for_format(frame_info.format);
-        if (!format_result) {
-            return nonstd::make_unexpected(format_result.error());
-        }
+        GOGGLES_TRY(recreate_swapchain_for_format(frame_info.format));
         m_source_format = frame_info.format;
     }
 
-    auto import_result = import_dmabuf(frame_info);
-    if (!import_result) {
-        return nonstd::make_unexpected(import_result.error());
-    }
+    GOGGLES_TRY(import_dmabuf(frame_info));
 
     auto acquire_result = acquire_next_image();
     if (!acquire_result) {
@@ -960,7 +908,8 @@ auto VulkanBackend::render_frame(const FrameInfo& frame_info) -> Result<bool> {
     }
     uint32_t image_index = acquire_result.value();
 
-    record_render_commands(m_frames[m_current_frame].command_buffer, image_index);
+    GOGGLES_TRY(record_render_commands(m_frames[m_current_frame].command_buffer, image_index));
+
     return submit_and_present(image_index);
 }
 
@@ -975,7 +924,8 @@ auto VulkanBackend::render_clear() -> Result<bool> {
     }
     uint32_t image_index = acquire_result.value();
 
-    record_clear_commands(m_frames[m_current_frame].command_buffer, image_index);
+    GOGGLES_TRY(record_clear_commands(m_frames[m_current_frame].command_buffer, image_index));
+
     return submit_and_present(image_index);
 }
 

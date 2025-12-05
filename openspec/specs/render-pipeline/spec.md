@@ -98,26 +98,22 @@ The render architecture SHALL support future multi-pass RetroArch shader process
 
 #### Scenario: Module organization
 
-- **GIVEN** the render subsystem
-- **WHEN** organized into modules
-- **THEN** `render/backend/` SHALL contain Vulkan API abstraction
-- **AND** `render/shader/` SHALL contain shader compilation infrastructure
-- **AND** `render/chain/` SHALL contain filter chain and pass implementations
+- **GIVEN** the render module structure
+- **THEN** code SHALL be organized into `backend/`, `shader/`, and `chain/` directories
+- **AND** Vulkan backend SHALL be isolated from shader processing
 
-#### Scenario: Future pipeline model
+#### Scenario: Error handling macros
 
-- **GIVEN** RetroArch shader support is added
-- **WHEN** pipeline processes a frame
-- **THEN** input normalization SHALL occur first (to RGBA16F linear working format)
-- **AND** shader passes SHALL process in working format
-- **AND** output conversion SHALL occur last (to swapchain format)
+- **GIVEN** Vulkan API calls that return `vk::Result`
+- **WHEN** error checking is needed
+- **THEN** `VK_TRY(call, code, msg)` macro SHALL be used for early return
+- **AND** error message SHALL include the Vulkan result string
 
-#### Scenario: Current minimal implementation
+#### Scenario: Result propagation
 
-- **GIVEN** no RetroArch shaders are configured
-- **WHEN** pipeline processes a frame
-- **THEN** single blit pass SHALL handle both input and output roles
-- **AND** this pass SHALL become the output stage when multi-pass is added
+- **GIVEN** internal functions that return `Result<T>`
+- **WHEN** the result needs to be propagated to the caller
+- **THEN** `GOGGLES_TRY(expr)` macro SHALL be used for early return
 
 ### Requirement: Pass Infrastructure
 

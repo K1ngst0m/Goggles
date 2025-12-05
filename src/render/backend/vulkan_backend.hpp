@@ -60,8 +60,10 @@ private:
     void cleanup_imported_image();
 
     [[nodiscard]] auto acquire_next_image() -> Result<uint32_t>;
-    void record_render_commands(vk::CommandBuffer cmd, uint32_t image_index);
-    void record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index);
+    [[nodiscard]] auto record_render_commands(vk::CommandBuffer cmd, uint32_t image_index)
+        -> Result<void>;
+    [[nodiscard]] auto record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index)
+        -> Result<void>;
     [[nodiscard]] auto submit_and_present(uint32_t image_index) -> Result<bool>;
 
     [[nodiscard]] static auto get_matching_swapchain_format(vk::Format source_format) -> vk::Format;
