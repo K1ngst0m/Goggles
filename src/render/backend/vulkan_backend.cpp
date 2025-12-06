@@ -95,10 +95,13 @@ void VulkanBackend::shutdown() {
         for (auto& frame : m_frames) {
             m_device->destroyFence(frame.in_flight_fence);
             m_device->destroySemaphore(frame.image_available_sem);
-            m_device->destroySemaphore(frame.render_finished_sem);
+        }
+        for (auto sem : m_render_finished_sems) {
+            m_device->destroySemaphore(sem);
         }
     }
     m_frames = {};
+    m_render_finished_sems.clear();
     m_framebuffers.clear();
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
@@ -532,14 +535,16 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
             }
             frame.image_available_sem = sem;
         }
-        {
-            auto [result, sem] = m_device->createSemaphore(sem_info);
-            if (result != vk::Result::eSuccess) {
-                return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                        "Failed to create semaphore");
-            }
-            frame.render_finished_sem = sem;
+    }
+
+    m_render_finished_sems.resize(m_swapchain_images.size());
+    for (auto& sem : m_render_finished_sems) {
+        auto [result, new_sem] = m_device->createSemaphore(sem_info);
+        if (result != vk::Result::eSuccess) {
+            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                    "Failed to create render finished semaphore");
         }
+        sem = new_sem;
     }
 
     GOGGLES_LOG_DEBUG("Sync objects created");
@@ -887,6 +892,7 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
 auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     auto& frame = m_frames[m_current_frame];
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    vk::Semaphore render_finished_sem = m_render_finished_sems[image_index];
 
     vk::SubmitInfo submit_info{};
     submit_info.waitSemaphoreCount = 1;
@@ -895,7 +901,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &frame.command_buffer;
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &frame.render_finished_sem;
+    submit_info.pSignalSemaphores = &render_finished_sem;
 
     auto submit_result = m_graphics_queue.submit(submit_info, frame.in_flight_fence);
     if (submit_result != vk::Result::eSuccess) {
@@ -905,7 +911,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 
     vk::PresentInfoKHR present_info{};
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &frame.render_finished_sem;
+    present_info.pWaitSemaphores = &render_finished_sem;
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &*m_swapchain;
     present_info.pImageIndices = &image_index;

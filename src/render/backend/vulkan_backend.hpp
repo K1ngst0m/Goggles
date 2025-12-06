@@ -96,9 +96,9 @@ private:
         vk::CommandBuffer command_buffer;
         vk::Fence in_flight_fence;
         vk::Semaphore image_available_sem;
-        vk::Semaphore render_finished_sem;
     };
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> m_frames{};
+    std::vector<vk::Semaphore> m_render_finished_sems;
     uint32_t m_current_frame = 0;
 
     vk::Image m_imported_image;
