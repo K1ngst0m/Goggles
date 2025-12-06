@@ -44,6 +44,7 @@ auto main() -> int {
     GOGGLES_LOG_DEBUG("  Capture backend: {}", config.capture.backend);
     GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
     GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
+    GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
     GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -62,7 +63,7 @@ auto main() -> int {
     GOGGLES_LOG_INFO("Window created (1280x720, Vulkan-enabled)");
 
     goggles::render::VulkanBackend vulkan_backend;
-    auto init_result = vulkan_backend.init(window);
+    auto init_result = vulkan_backend.init(window, config.render.enable_validation);
     if (!init_result) {
         GOGGLES_LOG_CRITICAL("Failed to initialize Vulkan: {} ({})", init_result.error().message,
                              goggles::error_code_name(init_result.error().code));

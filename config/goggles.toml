@@ -28,6 +28,10 @@ vsync = true
 # Only applies when vsync = false
 target_fps = 60
 
+# Enable Vulkan validation layers for debugging
+# Set to true to enable VK_LAYER_KHRONOS_validation (requires Vulkan SDK)
+enable_validation = true
+
 # =============================================================================
 # Logging Settings
 # =============================================================================

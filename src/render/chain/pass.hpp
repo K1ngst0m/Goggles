@@ -1,8 +1,8 @@
 #pragma once
 
 #include <filesystem>
-#include <render/backend/vulkan_config.hpp>
 #include <util/error.hpp>
+#include <vulkan/vulkan.hpp>
 
 namespace goggles::render {
 

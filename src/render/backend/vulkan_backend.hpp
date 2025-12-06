@@ -1,11 +1,12 @@
 #pragma once
 
-#include "vulkan_config.hpp"
+#include "vulkan_debug.hpp"
 
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <render/chain/output_pass.hpp>
 #include <render/shader/shader_runtime.hpp>
 #include <util/error.hpp>
@@ -31,8 +32,8 @@ public:
     VulkanBackend(VulkanBackend&&) = delete;
     VulkanBackend& operator=(VulkanBackend&&) = delete;
 
-    [[nodiscard]] auto init(SDL_Window* window, const std::filesystem::path& shader_dir = "shaders")
-        -> Result<void>;
+    [[nodiscard]] auto init(SDL_Window* window, bool enable_validation = false,
+                            const std::filesystem::path& shader_dir = "shaders") -> Result<void>;
     void shutdown();
 
     [[nodiscard]] auto render_frame(const FrameInfo& frame) -> Result<bool>;
@@ -41,7 +42,8 @@ public:
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 
 private:
-    [[nodiscard]] auto create_instance() -> Result<void>;
+    [[nodiscard]] auto create_instance(bool enable_validation) -> Result<void>;
+    [[nodiscard]] auto create_debug_messenger() -> Result<void>;
     [[nodiscard]] auto create_surface(SDL_Window* window) -> Result<void>;
     [[nodiscard]] auto select_physical_device() -> Result<void>;
     [[nodiscard]] auto create_device() -> Result<void>;
@@ -70,6 +72,7 @@ private:
     [[nodiscard]] static auto is_srgb_format(vk::Format format) -> bool;
 
     vk::UniqueInstance m_instance;
+    std::optional<VulkanDebugMessenger> m_debug_messenger;
     vk::UniqueSurfaceKHR m_surface;
     vk::UniqueDevice m_device;
     vk::UniqueSwapchainKHR m_swapchain;
@@ -110,6 +113,7 @@ private:
     vk::Format m_source_format = vk::Format::eUndefined;
 
     SDL_Window* m_window = nullptr;
+    bool m_enable_validation = false;
     bool m_initialized = false;
     bool m_needs_resize = false;
 };

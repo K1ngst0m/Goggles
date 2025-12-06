@@ -61,6 +61,9 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
             }
             config.render.target_fps = static_cast<uint32_t>(fps);
         }
+        if (render.contains("enable_validation")) {
+            config.render.enable_validation = toml::find<bool>(render, "enable_validation");
+        }
     }
 
     if (data.contains("logging")) {

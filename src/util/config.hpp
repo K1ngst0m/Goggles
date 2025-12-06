@@ -20,6 +20,7 @@ struct Config {
     struct Render {
         bool vsync = true;
         uint32_t target_fps = 60;
+        bool enable_validation = false;
     } render;
 
     struct Logging {

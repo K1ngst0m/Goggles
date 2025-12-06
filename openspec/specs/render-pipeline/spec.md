@@ -181,3 +181,81 @@ The Pass abstraction SHALL support future RetroArch shader passes.
 - **THEN** existing passes SHALL NOT require modification
 - **AND** new texture bindings SHALL be added to PassContext struct
 
+### Requirement: Vulkan Validation Layer Support
+
+The render backend SHALL support optional Vulkan validation layer integration for development-time error detection.
+
+#### Scenario: Validation enabled via config
+
+- **GIVEN** `goggles.toml` has `[render] enable_validation = true`
+- **WHEN** `VulkanBackend::init()` is called
+- **THEN** `VK_LAYER_KHRONOS_validation` SHALL be enabled if available
+- **AND** `VK_EXT_debug_utils` extension SHALL be enabled
+- **AND** a debug messenger SHALL be created to capture validation messages
+
+#### Scenario: Validation disabled via config
+
+- **GIVEN** `goggles.toml` has `[render] enable_validation = false` or field is absent
+- **WHEN** `VulkanBackend::init()` is called
+- **THEN** no validation layers SHALL be enabled
+- **AND** no debug messenger SHALL be created
+
+#### Scenario: Validation layer unavailable
+
+- **GIVEN** `VK_LAYER_KHRONOS_validation` is not installed on the system
+- **WHEN** validation is requested via config
+- **THEN** a warning SHALL be logged via `GOGGLES_LOG_WARN`
+- **AND** instance creation SHALL proceed without validation
+- **AND** no error SHALL be returned
+
+#### Scenario: Validation message routing
+
+- **GIVEN** validation layer is enabled and debug messenger is active
+- **WHEN** a validation message is generated
+- **THEN** ERROR severity messages SHALL be logged via `GOGGLES_LOG_ERROR`
+- **AND** WARNING severity messages SHALL be logged via `GOGGLES_LOG_WARN`
+- **AND** INFO severity messages SHALL be logged via `GOGGLES_LOG_DEBUG`
+- **AND** VERBOSE severity messages SHALL be logged via `GOGGLES_LOG_TRACE`
+
+### Requirement: Validation Configuration Setting
+
+The application config SHALL include a setting to control Vulkan validation layer enablement.
+
+#### Scenario: Config field definition
+
+- **GIVEN** the `goggles::Config` struct
+- **WHEN** `Config::Render` is defined
+- **THEN** it SHALL include `bool enable_validation` field
+- **AND** the default value SHALL be `false`
+
+#### Scenario: TOML parsing
+
+- **GIVEN** `goggles.toml` contains `[render] enable_validation = true`
+- **WHEN** `load_config()` is called
+- **THEN** `config.render.enable_validation` SHALL be `true`
+
+#### Scenario: Missing config field
+
+- **GIVEN** `goggles.toml` does not contain `enable_validation` field
+- **WHEN** `load_config()` is called
+- **THEN** `config.render.enable_validation` SHALL default to `false`
+
+### Requirement: Debug Messenger RAII
+
+The debug messenger resource SHALL be managed via RAII wrapper class.
+
+#### Scenario: Messenger creation
+
+- **GIVEN** validation is enabled and instance is created
+- **WHEN** `VulkanDebugMessenger::create(instance)` is called
+- **THEN** a `Result<VulkanDebugMessenger>` SHALL be returned
+- **AND** on success, the messenger SHALL be active and routing messages
+- **AND** on failure, an appropriate `Error` SHALL be returned
+
+#### Scenario: Messenger destruction order
+
+- **GIVEN** `VulkanBackend` owns both instance and debug messenger
+- **WHEN** `VulkanBackend` is destroyed
+- **THEN** debug messenger SHALL be destroyed before instance
+- **AND** no use-after-free SHALL occur
+

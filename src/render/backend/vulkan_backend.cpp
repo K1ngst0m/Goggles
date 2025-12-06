@@ -20,6 +20,8 @@ constexpr std::array REQUIRED_INSTANCE_EXTENSIONS = {
     VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
 };
 
+constexpr const char* VALIDATION_LAYER_NAME = "VK_LAYER_KHRONOS_validation";
+
 constexpr std::array REQUIRED_DEVICE_EXTENSIONS = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
@@ -33,8 +35,8 @@ VulkanBackend::~VulkanBackend() {
     shutdown();
 }
 
-auto VulkanBackend::init(SDL_Window* window, const std::filesystem::path& shader_dir)
-    -> Result<void> {
+auto VulkanBackend::init(SDL_Window* window, bool enable_validation,
+                         const std::filesystem::path& shader_dir) -> Result<void> {
     if (m_initialized) {
         return {};
     }
@@ -48,13 +50,15 @@ auto VulkanBackend::init(SDL_Window* window, const std::filesystem::path& shader
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vk_get_instance_proc_addr);
 
     m_window = window;
+    m_enable_validation = enable_validation;
     m_shader_dir = shader_dir;
 
     int width = 0;
     int height = 0;
     SDL_GetWindowSize(window, &width, &height);
 
-    GOGGLES_TRY(create_instance());
+    GOGGLES_TRY(create_instance(enable_validation));
+    GOGGLES_TRY(create_debug_messenger());
     GOGGLES_TRY(create_surface(window));
     GOGGLES_TRY(select_physical_device());
     GOGGLES_TRY(create_device());
@@ -104,13 +108,14 @@ void VulkanBackend::shutdown() {
     m_swapchain.reset();
     m_device.reset();
     m_surface.reset();
+    m_debug_messenger.reset();
     m_instance.reset();
 
     m_initialized = false;
     GOGGLES_LOG_INFO("Vulkan backend shutdown");
 }
 
-auto VulkanBackend::create_instance() -> Result<void> {
+auto VulkanBackend::create_instance(bool enable_validation) -> Result<void> {
     uint32_t sdl_ext_count = 0;
     const char* const* sdl_extensions = SDL_Vulkan_GetInstanceExtensions(&sdl_ext_count);
     if (sdl_extensions == nullptr) {
@@ -127,6 +132,18 @@ auto VulkanBackend::create_instance() -> Result<void> {
         }
     }
 
+    std::vector<const char*> layers;
+
+    if (enable_validation) {
+        if (is_validation_layer_available()) {
+            layers.push_back(VALIDATION_LAYER_NAME);
+            extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            GOGGLES_LOG_INFO("Vulkan validation layer enabled");
+        } else {
+            GOGGLES_LOG_WARN("Vulkan validation layer requested but not available");
+        }
+    }
+
     vk::ApplicationInfo app_info{};
     app_info.pApplicationName = "Goggles";
     app_info.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
@@ -138,6 +155,8 @@ auto VulkanBackend::create_instance() -> Result<void> {
     create_info.pApplicationInfo = &app_info;
     create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     create_info.ppEnabledExtensionNames = extensions.data();
+    create_info.enabledLayerCount = static_cast<uint32_t>(layers.size());
+    create_info.ppEnabledLayerNames = layers.data();
 
     auto [result, instance] = vk::createInstanceUnique(create_info);
     if (result != vk::Result::eSuccess) {
@@ -148,7 +167,23 @@ auto VulkanBackend::create_instance() -> Result<void> {
     m_instance = std::move(instance);
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*m_instance);
 
-    GOGGLES_LOG_DEBUG("Vulkan instance created with {} extensions", extensions.size());
+    GOGGLES_LOG_DEBUG("Vulkan instance created with {} extensions, {} layers", extensions.size(),
+                      layers.size());
+    return {};
+}
+
+auto VulkanBackend::create_debug_messenger() -> Result<void> {
+    if (!m_enable_validation || !is_validation_layer_available()) {
+        return {};
+    }
+
+    auto messenger_result = VulkanDebugMessenger::create(*m_instance);
+    if (!messenger_result) {
+        GOGGLES_LOG_WARN("Failed to create debug messenger: {}", messenger_result.error().message);
+        return {};
+    }
+
+    m_debug_messenger = std::move(messenger_result.value());
     return {};
 }
 
