@@ -189,10 +189,7 @@ bool CaptureReceiver::receive_message() {
 
         // Always accept the new fd - the old one may point to freed memory
         // after swapchain recreation (even if dimensions are the same)
-        if (m_frame.dmabuf_fd >= 0) {
-            close(m_frame.dmabuf_fd);
-        }
-        m_frame.dmabuf_fd = new_fd;
+        m_frame.dmabuf_fd = util::UniqueFd{new_fd};
         m_frame.width = tex_data->width;
         m_frame.height = tex_data->height;
         m_frame.stride = tex_data->stride;
@@ -205,17 +202,13 @@ bool CaptureReceiver::receive_message() {
                              m_frame.height, m_frame.format, m_frame.modifier);
         }
 
-        return m_frame.dmabuf_fd >= 0;
+        return m_frame.dmabuf_fd.valid();
     }
 
     return false;
 }
 
 void CaptureReceiver::cleanup_frame() {
-    if (m_frame.dmabuf_fd >= 0) {
-        close(m_frame.dmabuf_fd);
-        m_frame.dmabuf_fd = -1;
-    }
     m_frame = {};
     m_last_texture = {};
 }

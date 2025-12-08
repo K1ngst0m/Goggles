@@ -90,17 +90,7 @@ auto main() -> int {
         capture_receiver.poll_frame();
 
         if (capture_receiver.has_frame()) {
-            const auto& frame = capture_receiver.get_frame();
-
-            goggles::render::FrameInfo frame_info{};
-            frame_info.width = frame.width;
-            frame_info.height = frame.height;
-            frame_info.stride = frame.stride;
-            frame_info.format = static_cast<vk::Format>(frame.format);
-            frame_info.dmabuf_fd = frame.dmabuf_fd;
-            frame_info.modifier = frame.modifier;
-
-            auto render_result = vulkan_backend.render_frame(frame_info);
+            auto render_result = vulkan_backend.render_frame(capture_receiver.get_frame());
             if (!render_result) {
                 GOGGLES_LOG_ERROR("Render failed: {}", render_result.error().message);
             }

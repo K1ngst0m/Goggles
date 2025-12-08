@@ -3,6 +3,7 @@
 #include "capture_protocol.hpp"
 
 #include <cstdint>
+#include <util/unique_fd.hpp>
 
 namespace goggles {
 
@@ -11,7 +12,7 @@ struct CaptureFrame {
     uint32_t height = 0;
     uint32_t stride = 0;
     uint32_t format = 0;
-    int dmabuf_fd = -1;
+    util::UniqueFd dmabuf_fd;
     uint64_t modifier = 0;
 };
 
@@ -29,7 +30,7 @@ public:
 
     [[nodiscard]] const CaptureFrame& get_frame() const { return m_frame; }
     [[nodiscard]] bool is_connected() const { return m_client_fd >= 0; }
-    [[nodiscard]] bool has_frame() const { return m_frame.dmabuf_fd >= 0; }
+    [[nodiscard]] bool has_frame() const { return m_frame.dmabuf_fd.valid(); }
 
 private:
     bool accept_client();

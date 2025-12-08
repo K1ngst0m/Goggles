@@ -6,8 +6,8 @@
 #include <algorithm>
 #include <cstring>
 #include <render/chain/pass.hpp>
-#include <unistd.h>
 #include <util/logging.hpp>
+#include <util/unique_fd.hpp>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -638,15 +638,7 @@ auto VulkanBackend::init_output_pass() -> Result<void> {
                               m_shader_dir);
 }
 
-auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
-    bool same_config =
-        m_imported_image && m_current_import.width == frame.width &&
-        m_current_import.height == frame.height && m_current_import.format == frame.format &&
-        m_current_import.modifier == frame.modifier && m_current_import_fd == frame.dmabuf_fd;
-    if (same_config) {
-        return {};
-    }
-
+auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST, "waitIdle failed before reimport");
     cleanup_imported_image();
 
@@ -673,10 +665,12 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     // Chain: image_info -> ext_mem_info -> modifier_info
     ext_mem_info.pNext = &modifier_info;
 
+    auto vk_format = static_cast<vk::Format>(frame.format);
+
     vk::ImageCreateInfo image_info{};
     image_info.pNext = &ext_mem_info;
     image_info.imageType = vk::ImageType::e2D;
-    image_info.format = frame.format;
+    image_info.format = vk_format;
     image_info.extent = vk::Extent3D{frame.width, frame.height, 1};
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
@@ -691,10 +685,10 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
                                 "Failed to create DMA-BUF image: " + vk::to_string(img_result));
     }
-    m_imported_image = image;
+    m_import.image = image;
 
     vk::ImageMemoryRequirementsInfo2 mem_reqs_info{};
-    mem_reqs_info.image = m_imported_image;
+    mem_reqs_info.image = m_import.image;
 
     vk::MemoryDedicatedRequirements dedicated_reqs{};
     vk::MemoryRequirements2 mem_reqs2{};
@@ -704,7 +698,7 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     auto mem_reqs = mem_reqs2.memoryRequirements;
 
     auto [fd_props_result, fd_props] = m_device->getMemoryFdPropertiesKHR(
-        vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, frame.dmabuf_fd);
+        vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, frame.dmabuf_fd.get());
     if (fd_props_result != vk::Result::eSuccess) {
         cleanup_imported_image();
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
@@ -723,18 +717,18 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     }
 
     // Vulkan takes ownership of fd on success
-    int import_fd = dup(frame.dmabuf_fd);
-    if (import_fd < 0) {
+    auto import_fd = frame.dmabuf_fd.dup();
+    if (!import_fd) {
         cleanup_imported_image();
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to dup DMA-BUF fd");
     }
 
     vk::ImportMemoryFdInfoKHR import_info{};
     import_info.handleType = vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT;
-    import_info.fd = import_fd;
+    import_info.fd = import_fd.get();
 
     vk::MemoryDedicatedAllocateInfo dedicated_alloc{};
-    dedicated_alloc.image = m_imported_image;
+    dedicated_alloc.image = m_import.image;
 
     if (dedicated_reqs.requiresDedicatedAllocation || dedicated_reqs.prefersDedicatedAllocation) {
         import_info.pNext = &dedicated_alloc;
@@ -747,14 +741,14 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
 
     auto [alloc_result, memory] = m_device->allocateMemory(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
-        close(import_fd);
         cleanup_imported_image();
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
                                 "Failed to import DMA-BUF memory: " + vk::to_string(alloc_result));
     }
-    m_imported_memory = memory;
+    import_fd.release();
+    m_import.memory = memory;
 
-    auto bind_result = m_device->bindImageMemory(m_imported_image, m_imported_memory, 0);
+    auto bind_result = m_device->bindImageMemory(m_import.image, m_import.memory, 0);
     if (bind_result != vk::Result::eSuccess) {
         cleanup_imported_image();
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
@@ -762,9 +756,9 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     }
 
     vk::ImageViewCreateInfo view_info{};
-    view_info.image = m_imported_image;
+    view_info.image = m_import.image;
     view_info.viewType = vk::ImageViewType::e2D;
-    view_info.format = frame.format;
+    view_info.format = vk_format;
     view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     view_info.subresourceRange.baseMipLevel = 0;
     view_info.subresourceRange.levelCount = 1;
@@ -778,34 +772,25 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
                                 "Failed to create DMA-BUF image view: " +
                                     vk::to_string(view_result));
     }
-    m_imported_image_view = view;
-
-    m_current_import = frame;
-    m_current_import.dmabuf_fd = -1;
-    m_current_import_fd = frame.dmabuf_fd;
+    m_import.view = view;
 
     GOGGLES_LOG_DEBUG("DMA-BUF imported: {}x{}, format={}, modifier=0x{:x}", frame.width,
-                      frame.height, vk::to_string(frame.format), frame.modifier);
+                      frame.height, vk::to_string(vk_format), frame.modifier);
     return {};
 }
 
 void VulkanBackend::cleanup_imported_image() {
     if (m_device) {
-        if (m_imported_image_view) {
-            m_device->destroyImageView(m_imported_image_view);
-            m_imported_image_view = nullptr;
+        if (m_import.view) {
+            m_device->destroyImageView(m_import.view);
         }
-        if (m_imported_memory) {
-            m_device->freeMemory(m_imported_memory);
-            m_imported_memory = nullptr;
+        if (m_import.memory) {
+            m_device->freeMemory(m_import.memory);
         }
-        if (m_imported_image) {
-            m_device->destroyImage(m_imported_image);
-            m_imported_image = nullptr;
+        if (m_import.image) {
+            m_device->destroyImage(m_import.image);
         }
     }
-    m_current_import = {};
-    m_current_import_fd = -1;
 }
 
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
@@ -853,7 +838,7 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
     src_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     src_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    src_barrier.image = m_imported_image;
+    src_barrier.image = m_import.image;
     src_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     src_barrier.subresourceRange.baseMipLevel = 0;
     src_barrier.subresourceRange.levelCount = 1;
@@ -867,8 +852,8 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
     ctx.frame_index = m_current_frame;
     ctx.output_extent = m_swapchain_extent;
     ctx.target_framebuffer = *m_framebuffers[image_index];
-    ctx.source_texture = m_imported_image_view;
-    ctx.original_texture = m_imported_image_view;
+    ctx.source_texture = m_import.view;
+    ctx.original_texture = m_import.view;
 
     m_output_pass.record(cmd, ctx);
 
@@ -968,17 +953,18 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     return !m_needs_resize;
 }
 
-auto VulkanBackend::render_frame(const FrameInfo& frame_info) -> Result<bool> {
+auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
     if (!m_initialized) {
         return make_error<bool>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
     }
 
-    if (m_source_format != frame_info.format) {
-        GOGGLES_TRY(recreate_swapchain_for_format(frame_info.format));
-        m_source_format = frame_info.format;
+    auto vk_format = static_cast<vk::Format>(frame.format);
+    if (m_source_format != vk_format) {
+        GOGGLES_TRY(recreate_swapchain_for_format(vk_format));
+        m_source_format = vk_format;
     }
 
-    GOGGLES_TRY(import_dmabuf(frame_info));
+    GOGGLES_TRY(import_dmabuf(frame));
 
     auto acquire_result = acquire_next_image();
     if (!acquire_result) {

@@ -4,6 +4,7 @@
 
 #include <SDL3/SDL.h>
 #include <array>
+#include <capture/capture_receiver.hpp>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -13,15 +14,6 @@
 #include <vector>
 
 namespace goggles::render {
-
-struct FrameInfo {
-    uint32_t width = 0;
-    uint32_t height = 0;
-    uint32_t stride = 0;
-    vk::Format format = vk::Format::eUndefined;
-    int dmabuf_fd = -1;
-    uint64_t modifier = 0;
-};
 
 class VulkanBackend {
 public:
@@ -37,7 +29,7 @@ public:
                             const std::filesystem::path& shader_dir = "shaders") -> Result<void>;
     void shutdown();
 
-    [[nodiscard]] auto render_frame(const FrameInfo& frame) -> Result<bool>;
+    [[nodiscard]] auto render_frame(const CaptureFrame& frame) -> Result<bool>;
     [[nodiscard]] auto render_clear() -> Result<bool>;
     [[nodiscard]] auto handle_resize() -> Result<void>;
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
@@ -59,7 +51,7 @@ private:
     [[nodiscard]] auto create_framebuffers() -> Result<void>;
     [[nodiscard]] auto init_output_pass() -> Result<void>;
 
-    [[nodiscard]] auto import_dmabuf(const FrameInfo& frame) -> Result<void>;
+    [[nodiscard]] auto import_dmabuf(const CaptureFrame& frame) -> Result<void>;
     void cleanup_imported_image();
 
     [[nodiscard]] auto acquire_next_image() -> Result<uint32_t>;
@@ -102,11 +94,12 @@ private:
     std::vector<vk::Semaphore> m_render_finished_sems;
     uint32_t m_current_frame = 0;
 
-    vk::Image m_imported_image;
-    vk::DeviceMemory m_imported_memory;
-    vk::ImageView m_imported_image_view;
-    FrameInfo m_current_import{};
-    int m_current_import_fd = -1;
+    struct ImportedImage {
+        vk::Image image;
+        vk::DeviceMemory memory;
+        vk::ImageView view;
+    };
+    ImportedImage m_import;
 
     ShaderRuntime m_shader_runtime;
     OutputPass m_output_pass;

@@ -286,8 +286,29 @@ Over-commenting causes:
 **All resources must be managed via RAII.**
 
 - **Vulkan objects:** Wrap in RAII types (custom or from libraries like `vk-bootstrap`, `vulkan-hpp`).
-- **File handles, sockets, etc.:** Use RAII wrappers (`std::fstream`, custom types).
+- **File handles, sockets, etc.:** Use RAII wrappers (`std::fstream`, `UniqueFd`, custom types).
 - **No manual cleanup** in destructors unless encapsulated in RAII.
+
+### D.1.1 File Descriptor Management
+
+**Never use raw `int` file descriptors when possible.**
+
+- **Use `goggles::util::UniqueFd`** for all owned file descriptors.
+- **Raw `int` is acceptable only** at uncontrollable boundaries (e.g., syscall returns, IPC receive).
+- **Wrap immediately:** Convert raw fd to `UniqueFd` as soon as it's received.
+- **API boundaries:** Non-owning references may use `int` with clear documentation.
+
+```cpp
+// GOOD: Wrap immediately after receive
+int raw_fd = receive_fd_from_ipc();
+UniqueFd owned{raw_fd};
+
+// GOOD: Factory for duplication
+auto copy = UniqueFd::dup_from(other_fd.get());
+
+// BAD: Storing raw fd
+int m_fd = some_fd;  // Who closes this?
+```
 
 ### D.2 Vulkan API Usage
 
@@ -725,6 +746,24 @@ tests/
 - **Integration tests:** Test interactions between modules (e.g., capture → pipeline).
 - **GPU tests:** Require Vulkan instance/device, not practical for unit tests.
 - **Manual testing** used for Vulkan code until automated GPU tests are justified.
+
+### H.6 Build Preset Requirement
+
+**All builds and tests MUST use CMake presets.**
+
+- **Never** run `cmake -B build` or `cmake --build build` directly without a preset.
+- **Use** `cmake --preset <name>` for configuration.
+- **Use** `cmake --build --preset <name>` for building.
+- **Use** `ctest --preset <name>` for testing.
+
+**Available presets:**
+- `asan` - Debug build with AddressSanitizer (default for development)
+- `ubsan` - Debug build with UndefinedBehaviorSanitizer
+- `debug` - Debug build without sanitizers
+- `release` - Optimized release build
+- `relwithdebinfo` - Release with debug symbols
+
+**Rationale:** Presets ensure consistent compiler flags, sanitizer settings, and build directories across all contributors and CI.
 
 ---
 
