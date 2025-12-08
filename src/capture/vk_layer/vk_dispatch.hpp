@@ -18,6 +18,8 @@ struct VkInstFuncs {
     PFN_vkGetPhysicalDeviceMemoryProperties GetPhysicalDeviceMemoryProperties;
     PFN_vkGetPhysicalDeviceQueueFamilyProperties GetPhysicalDeviceQueueFamilyProperties;
     PFN_vkEnumerateDeviceExtensionProperties EnumerateDeviceExtensionProperties;
+    PFN_vkGetPhysicalDeviceFormatProperties2 GetPhysicalDeviceFormatProperties2;
+    PFN_vkGetPhysicalDeviceImageFormatProperties2 GetPhysicalDeviceImageFormatProperties2;
 };
 
 struct VkDeviceFuncs {
@@ -39,6 +41,7 @@ struct VkDeviceFuncs {
 
     // External memory (DMA-BUF)
     PFN_vkGetMemoryFdKHR GetMemoryFdKHR;
+    PFN_vkGetImageDrmFormatModifierPropertiesEXT GetImageDrmFormatModifierPropertiesEXT;
 
     // Images
     PFN_vkCreateImage CreateImage;

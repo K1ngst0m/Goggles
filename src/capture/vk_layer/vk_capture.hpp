@@ -38,6 +38,7 @@ struct SwapData {
     int dmabuf_fd = -1;
     uint32_t dmabuf_stride = 0;
     uint32_t dmabuf_offset = 0;
+    uint64_t dmabuf_modifier = 0;
 
     // Per-frame resources
     std::vector<FrameData> frames;

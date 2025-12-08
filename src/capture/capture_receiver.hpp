@@ -1,6 +1,7 @@
 #pragma once
 
 #include "capture_protocol.hpp"
+
 #include <cstdint>
 
 namespace goggles {
@@ -11,6 +12,7 @@ struct CaptureFrame {
     uint32_t stride = 0;
     uint32_t format = 0;
     int dmabuf_fd = -1;
+    uint64_t modifier = 0;
 };
 
 class CaptureReceiver {

@@ -102,25 +102,119 @@ SwapData* CaptureManager::get_swap_data(VkSwapchainKHR swapchain) {
 // Export Image Initialization
 // =============================================================================
 
+// from drm_fourcc.h
+constexpr uint64_t DRM_FORMAT_MOD_LINEAR = 0;
+constexpr uint64_t DRM_FORMAT_MOD_INVALID = 0xffffffffffffffULL;
+
+struct ModifierInfo {
+    uint64_t modifier;
+    VkFormatFeatureFlags features;
+    uint32_t plane_count;
+};
+
+// Query supported DRM modifiers for a format that can be used for export
+static std::vector<ModifierInfo> query_export_modifiers(VkPhysicalDevice phys_device,
+                                                        VkFormat format, VkInstFuncs* inst_funcs) {
+    std::vector<ModifierInfo> result;
+
+    if (!inst_funcs->GetPhysicalDeviceFormatProperties2) {
+        return result;
+    }
+
+    VkDrmFormatModifierPropertiesListEXT modifier_list{};
+    modifier_list.sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT;
+
+    VkFormatProperties2 format_props{};
+    format_props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
+    format_props.pNext = &modifier_list;
+
+    inst_funcs->GetPhysicalDeviceFormatProperties2(phys_device, format, &format_props);
+
+    if (modifier_list.drmFormatModifierCount == 0) {
+        return result;
+    }
+
+    std::vector<VkDrmFormatModifierPropertiesEXT> modifiers(modifier_list.drmFormatModifierCount);
+    modifier_list.pDrmFormatModifierProperties = modifiers.data();
+
+    inst_funcs->GetPhysicalDeviceFormatProperties2(phys_device, format, &format_props);
+
+    for (const auto& mod : modifiers) {
+        if ((mod.drmFormatModifierTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) &&
+            mod.drmFormatModifierPlaneCount == 1) { // Single-plane only for now
+            result.push_back({
+                mod.drmFormatModifier,
+                mod.drmFormatModifierTilingFeatures,
+                mod.drmFormatModifierPlaneCount,
+            });
+        }
+    }
+
+    return result;
+}
+
+static uint32_t find_export_memory_type(const VkPhysicalDeviceMemoryProperties& mem_props,
+                                        uint32_t type_bits) {
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+        if ((type_bits & (1u << i)) &&
+            (mem_props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+            return i;
+        }
+    }
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+        if (type_bits & (1u << i)) {
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
+
 bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
+    auto* inst_data = dev_data->inst_data;
     VkDevice device = swap->device;
 
-    // LINEAR tiling required for mmap; same format as swapchain (no blit conversion)
+    auto modifiers =
+        query_export_modifiers(dev_data->physical_device, swap->format, &inst_data->funcs);
+
+    bool use_modifier_tiling = !modifiers.empty();
+
+    std::vector<uint64_t> modifier_list;
+    if (use_modifier_tiling) {
+        for (const auto& mod : modifiers) {
+            modifier_list.push_back(mod.modifier);
+        }
+        LAYER_DEBUG("Using DRM modifier list with %zu modifiers for format %d",
+                    modifier_list.size(), swap->format);
+    } else {
+        LAYER_DEBUG("No suitable DRM modifiers found, falling back to LINEAR tiling");
+    }
+
     VkExternalMemoryImageCreateInfo ext_mem_info{};
     ext_mem_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
     ext_mem_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
+    VkImageDrmFormatModifierListCreateInfoEXT modifier_list_info{};
+
+    if (use_modifier_tiling) {
+        modifier_list_info.sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT;
+        modifier_list_info.drmFormatModifierCount = static_cast<uint32_t>(modifier_list.size());
+        modifier_list_info.pDrmFormatModifiers = modifier_list.data();
+
+        ext_mem_info.pNext = &modifier_list_info;
+    }
 
     VkImageCreateInfo image_info{};
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.pNext = &ext_mem_info;
     image_info.imageType = VK_IMAGE_TYPE_2D;
-    image_info.format = swap->format; // Same format as swapchain - no conversion in blit
+    image_info.format = swap->format;
     image_info.extent = {swap->extent.width, swap->extent.height, 1};
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
     image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-    image_info.tiling = VK_IMAGE_TILING_LINEAR; // Required for mmap
+    image_info.tiling =
+        use_modifier_tiling ? VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT : VK_IMAGE_TILING_LINEAR;
     image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -131,25 +225,33 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
         return false;
     }
 
+    if (use_modifier_tiling && funcs.GetImageDrmFormatModifierPropertiesEXT) {
+        VkImageDrmFormatModifierPropertiesEXT modifier_props{};
+        modifier_props.sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT;
+        res = funcs.GetImageDrmFormatModifierPropertiesEXT(device, swap->export_image,
+                                                           &modifier_props);
+        if (res == VK_SUCCESS) {
+            swap->dmabuf_modifier = modifier_props.drmFormatModifier;
+            LAYER_DEBUG("Driver selected DRM modifier 0x%lx", swap->dmabuf_modifier);
+        } else {
+            swap->dmabuf_modifier = DRM_FORMAT_MOD_INVALID;
+            LAYER_DEBUG("Failed to query DRM modifier: %d", res);
+        }
+    } else {
+        swap->dmabuf_modifier = DRM_FORMAT_MOD_LINEAR;
+    }
+
     VkMemoryRequirements mem_reqs;
     funcs.GetImageMemoryRequirements(device, swap->export_image, &mem_reqs);
 
-    // HOST_VISIBLE required for LINEAR tiling
-    auto* inst_data = dev_data->inst_data;
+    // HOST_VISIBLE is not required for modifier-based tiling
     VkPhysicalDeviceMemoryProperties mem_props;
     inst_data->funcs.GetPhysicalDeviceMemoryProperties(dev_data->physical_device, &mem_props);
 
-    uint32_t mem_type_index = UINT32_MAX;
-    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-        if ((mem_reqs.memoryTypeBits & (1u << i)) &&
-            (mem_props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
-            mem_type_index = i;
-            break;
-        }
-    }
+    uint32_t mem_type_index = find_export_memory_type(mem_props, mem_reqs.memoryTypeBits);
 
     if (mem_type_index == UINT32_MAX) {
-        LAYER_DEBUG("No suitable HOST_VISIBLE memory type found");
+        LAYER_DEBUG("No suitable memory type found");
         funcs.DestroyImage(device, swap->export_image, nullptr);
         swap->export_image = VK_NULL_HANDLE;
         return false;
@@ -207,8 +309,8 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     swap->dmabuf_offset = static_cast<uint32_t>(layout.offset);
 
     swap->export_initialized = true;
-    LAYER_DEBUG("Export image initialized: fd=%d, stride=%u, offset=%u", swap->dmabuf_fd,
-                swap->dmabuf_stride, swap->dmabuf_offset);
+    LAYER_DEBUG("Export image initialized: fd=%d, stride=%u, offset=%u, modifier=0x%lx",
+                swap->dmabuf_fd, swap->dmabuf_stride, swap->dmabuf_offset, swap->dmabuf_modifier);
     return true;
 }
 
@@ -314,7 +416,8 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
 }
 
 void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue,
-                                   VkDeviceData* dev_data, [[maybe_unused]] VkPresentInfoKHR* present_info) {
+                                   VkDeviceData* dev_data,
+                                   [[maybe_unused]] VkPresentInfoKHR* present_info) {
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
@@ -437,13 +540,14 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
         tex_data.format = swap->format;
         tex_data.stride = swap->dmabuf_stride;
         tex_data.offset = swap->dmabuf_offset;
-        tex_data.modifier = 0; // LINEAR
+        tex_data.modifier = swap->dmabuf_modifier;
 
         static uint64_t frame_count = 0;
         bool sent = socket.send_texture(tex_data, swap->dmabuf_fd);
         if (++frame_count % 60 == 1) { // Log every 60 frames
-            LAYER_DEBUG("Frame %lu: send=%s, fd=%d, %ux%u", frame_count, sent ? "ok" : "FAIL",
-                        swap->dmabuf_fd, tex_data.width, tex_data.height);
+            LAYER_DEBUG("Frame %lu: send=%s, fd=%d, %ux%u, modifier=0x%lx", frame_count,
+                        sent ? "ok" : "FAIL", swap->dmabuf_fd, tex_data.width, tex_data.height,
+                        tex_data.modifier);
         }
     }
 }

@@ -98,6 +98,7 @@ auto main() -> int {
             frame_info.stride = frame.stride;
             frame_info.format = static_cast<vk::Format>(frame.format);
             frame_info.dmabuf_fd = frame.dmabuf_fd;
+            frame_info.modifier = frame.modifier;
 
             auto render_result = vulkan_backend.render_frame(frame_info);
             if (!render_result) {

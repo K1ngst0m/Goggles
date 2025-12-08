@@ -23,11 +23,20 @@ constexpr std::array REQUIRED_INSTANCE_EXTENSIONS = {
 constexpr const char* VALIDATION_LAYER_NAME = "VK_LAYER_KHRONOS_validation";
 
 constexpr std::array REQUIRED_DEVICE_EXTENSIONS = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
-    VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
-    VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,          VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
+    VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
+    VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,  VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
 };
+
+auto find_memory_type(const vk::PhysicalDeviceMemoryProperties& mem_props, uint32_t type_bits)
+    -> uint32_t {
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+        if (type_bits & (1U << i)) {
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
 
 } // namespace
 
@@ -630,10 +639,10 @@ auto VulkanBackend::init_output_pass() -> Result<void> {
 }
 
 auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
-    bool same_config = m_imported_image && m_current_import.width == frame.width &&
-                       m_current_import.height == frame.height &&
-                       m_current_import.format == frame.format &&
-                       m_current_import_fd == frame.dmabuf_fd;
+    bool same_config =
+        m_imported_image && m_current_import.width == frame.width &&
+        m_current_import.height == frame.height && m_current_import.format == frame.format &&
+        m_current_import.modifier == frame.modifier && m_current_import_fd == frame.dmabuf_fd;
     if (same_config) {
         return {};
     }
@@ -641,8 +650,28 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST, "waitIdle failed before reimport");
     cleanup_imported_image();
 
+    // Set up external memory info for DMA-BUF import
     vk::ExternalMemoryImageCreateInfo ext_mem_info{};
     ext_mem_info.handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT;
+
+    // Set up modifier info - always use DRM format modifier tiling for proper import
+    vk::ImageDrmFormatModifierExplicitCreateInfoEXT modifier_info{};
+    vk::SubresourceLayout plane_layout{};
+
+    // For single-plane images, provide a minimal plane layout
+    // The actual layout is determined by the exporter and encoded in the modifier
+    plane_layout.offset = 0;
+    plane_layout.size = 0;
+    plane_layout.rowPitch = frame.stride;
+    plane_layout.arrayPitch = 0;
+    plane_layout.depthPitch = 0;
+
+    modifier_info.drmFormatModifier = frame.modifier;
+    modifier_info.drmFormatModifierPlaneCount = 1;
+    modifier_info.pPlaneLayouts = &plane_layout;
+
+    // Chain: image_info -> ext_mem_info -> modifier_info
+    ext_mem_info.pNext = &modifier_info;
 
     vk::ImageCreateInfo image_info{};
     image_info.pNext = &ext_mem_info;
@@ -652,7 +681,7 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
     image_info.samples = vk::SampleCountFlagBits::e1;
-    image_info.tiling = vk::ImageTiling::eLinear;
+    image_info.tiling = vk::ImageTiling::eDrmFormatModifierEXT;
     image_info.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled;
     image_info.sharingMode = vk::SharingMode::eExclusive;
     image_info.initialLayout = vk::ImageLayout::eUndefined;
@@ -664,7 +693,15 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     }
     m_imported_image = image;
 
-    auto mem_reqs = m_device->getImageMemoryRequirements(m_imported_image);
+    vk::ImageMemoryRequirementsInfo2 mem_reqs_info{};
+    mem_reqs_info.image = m_imported_image;
+
+    vk::MemoryDedicatedRequirements dedicated_reqs{};
+    vk::MemoryRequirements2 mem_reqs2{};
+    mem_reqs2.pNext = &dedicated_reqs;
+
+    m_device->getImageMemoryRequirements2(&mem_reqs_info, &mem_reqs2);
+    auto mem_reqs = mem_reqs2.memoryRequirements;
 
     auto [fd_props_result, fd_props] = m_device->getMemoryFdPropertiesKHR(
         vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, frame.dmabuf_fd);
@@ -676,15 +713,8 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     }
 
     auto mem_props = m_physical_device.getMemoryProperties();
-    uint32_t mem_type_index = UINT32_MAX;
     uint32_t combined_bits = mem_reqs.memoryTypeBits & fd_props.memoryTypeBits;
-
-    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-        if (combined_bits & (1U << i)) {
-            mem_type_index = i;
-            break;
-        }
-    }
+    uint32_t mem_type_index = find_memory_type(mem_props, combined_bits);
 
     if (mem_type_index == UINT32_MAX) {
         cleanup_imported_image();
@@ -702,6 +732,13 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     vk::ImportMemoryFdInfoKHR import_info{};
     import_info.handleType = vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT;
     import_info.fd = import_fd;
+
+    vk::MemoryDedicatedAllocateInfo dedicated_alloc{};
+    dedicated_alloc.image = m_imported_image;
+
+    if (dedicated_reqs.requiresDedicatedAllocation || dedicated_reqs.prefersDedicatedAllocation) {
+        import_info.pNext = &dedicated_alloc;
+    }
 
     vk::MemoryAllocateInfo alloc_info{};
     alloc_info.pNext = &import_info;
@@ -747,8 +784,8 @@ auto VulkanBackend::import_dmabuf(const FrameInfo& frame) -> Result<void> {
     m_current_import.dmabuf_fd = -1;
     m_current_import_fd = frame.dmabuf_fd;
 
-    GOGGLES_LOG_DEBUG("DMA-BUF imported: {}x{}, format={}", frame.width, frame.height,
-                      vk::to_string(frame.format));
+    GOGGLES_LOG_DEBUG("DMA-BUF imported: {}x{}, format={}, modifier=0x{:x}", frame.width,
+                      frame.height, vk::to_string(frame.format), frame.modifier);
     return {};
 }
 

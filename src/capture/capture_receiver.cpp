@@ -184,7 +184,8 @@ bool CaptureReceiver::receive_message() {
 
         bool texture_changed =
             (tex_data->width != m_last_texture.width || tex_data->height != m_last_texture.height ||
-             tex_data->format != m_last_texture.format);
+             tex_data->format != m_last_texture.format ||
+             tex_data->modifier != m_last_texture.modifier);
 
         // Always accept the new fd - the old one may point to freed memory
         // after swapchain recreation (even if dimensions are the same)
@@ -196,11 +197,12 @@ bool CaptureReceiver::receive_message() {
         m_frame.height = tex_data->height;
         m_frame.stride = tex_data->stride;
         m_frame.format = static_cast<uint32_t>(tex_data->format);
+        m_frame.modifier = tex_data->modifier;
         m_last_texture = *tex_data;
 
         if (texture_changed) {
-            GOGGLES_LOG_INFO("Capture texture: {}x{}, format={}", m_frame.width, m_frame.height,
-                             m_frame.format);
+            GOGGLES_LOG_INFO("Capture texture: {}x{}, format={}, modifier=0x{:x}", m_frame.width,
+                             m_frame.height, m_frame.format, m_frame.modifier);
         }
 
         return m_frame.dmabuf_fd >= 0;

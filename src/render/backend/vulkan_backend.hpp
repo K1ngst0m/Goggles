@@ -20,6 +20,7 @@ struct FrameInfo {
     uint32_t stride = 0;
     vk::Format format = vk::Format::eUndefined;
     int dmabuf_fd = -1;
+    uint64_t modifier = 0;
 };
 
 class VulkanBackend {
