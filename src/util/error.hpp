@@ -83,10 +83,10 @@ template <typename T>
 /// Early-return if Result<T> is an error, propagating the error to the caller.
 /// Usage: GOGGLES_TRY(some_function_returning_result());
 // NOLINTNEXTLINE(bugprone-macro-parentheses)
-#define GOGGLES_TRY(expr)                                     \
-    do {                                                      \
-        if (auto _try_result = (expr); !_try_result)          \
-            return nonstd::make_unexpected(_try_result.error()); \
+#define GOGGLES_TRY(expr)                                                                          \
+    do {                                                                                           \
+        if (auto _try_result = (expr); !_try_result)                                               \
+            return nonstd::make_unexpected(_try_result.error());                                   \
     } while (0)
 
 // NOLINTEND(cppcoreguidelines-macro-usage)

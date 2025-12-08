@@ -10,11 +10,11 @@ namespace {
 
 constexpr const char* VALIDATION_LAYER_NAME = "VK_LAYER_KHRONOS_validation";
 
-VKAPI_ATTR auto VKAPI_CALL debug_callback(
-    vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
-    [[maybe_unused]] vk::DebugUtilsMessageTypeFlagsEXT message_type,
-    const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
-    [[maybe_unused]] void* user_data) -> VkBool32 {
+VKAPI_ATTR auto VKAPI_CALL
+debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+               [[maybe_unused]] vk::DebugUtilsMessageTypeFlagsEXT message_type,
+               const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
+               [[maybe_unused]] void* user_data) -> VkBool32 {
 
     const char* message = callback_data->pMessage != nullptr ? callback_data->pMessage : "";
 
@@ -50,9 +50,9 @@ auto VulkanDebugMessenger::create(vk::Instance instance) -> Result<VulkanDebugMe
 
     auto [result, messenger] = instance.createDebugUtilsMessengerEXTUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<VulkanDebugMessenger>(
-            ErrorCode::VULKAN_INIT_FAILED,
-            "Failed to create debug messenger: " + vk::to_string(result));
+        return make_error<VulkanDebugMessenger>(ErrorCode::VULKAN_INIT_FAILED,
+                                                "Failed to create debug messenger: " +
+                                                    vk::to_string(result));
     }
 
     GOGGLES_LOG_DEBUG("Vulkan debug messenger created");
