@@ -75,8 +75,6 @@ auto VulkanBackend::init(SDL_Window* window, bool enable_validation,
                                  vk::Format::eB8G8R8A8Srgb));
     GOGGLES_TRY(create_command_resources());
     GOGGLES_TRY(create_sync_objects());
-    GOGGLES_TRY(create_render_pass());
-    GOGGLES_TRY(create_framebuffers());
     GOGGLES_TRY(init_output_pass());
 
     m_initialized = true;
@@ -111,12 +109,10 @@ void VulkanBackend::shutdown() {
     }
     m_frames = {};
     m_render_finished_sems.clear();
-    m_framebuffers.clear();
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
 
     m_command_pool.reset();
-    m_render_pass.reset();
     m_swapchain.reset();
     m_device.reset();
     m_surface.reset();
@@ -161,7 +157,7 @@ auto VulkanBackend::create_instance(bool enable_validation) -> Result<void> {
     app_info.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
     app_info.pEngineName = "Goggles";
     app_info.engineVersion = VK_MAKE_VERSION(0, 1, 0);
-    app_info.apiVersion = VK_API_VERSION_1_1;
+    app_info.apiVersion = VK_API_VERSION_1_3;
 
     vk::InstanceCreateInfo create_info{};
     create_info.pApplicationInfo = &app_info;
@@ -281,7 +277,9 @@ auto VulkanBackend::create_device() -> Result<void> {
 
     vk::PhysicalDeviceVulkan11Features vk11_features{};
     vk::PhysicalDeviceVulkan12Features vk12_features{};
+    vk::PhysicalDeviceVulkan13Features vk13_features{};
     vk11_features.pNext = &vk12_features;
+    vk12_features.pNext = &vk13_features;
     vk::PhysicalDeviceFeatures2 features2{};
     features2.pNext = &vk11_features;
     m_physical_device.getFeatures2(&features2);
@@ -294,12 +292,19 @@ auto VulkanBackend::create_device() -> Result<void> {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
                                 "Timeline semaphores not supported (required for frame sync)");
     }
+    if (!vk13_features.dynamicRendering) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Dynamic rendering not supported (required for Vulkan 1.3)");
+    }
 
     vk::PhysicalDeviceVulkan11Features vk11_enable{};
     vk11_enable.shaderDrawParameters = VK_TRUE;
     vk::PhysicalDeviceVulkan12Features vk12_enable{};
     vk12_enable.timelineSemaphore = VK_TRUE;
+    vk::PhysicalDeviceVulkan13Features vk13_enable{};
+    vk13_enable.dynamicRendering = VK_TRUE;
     vk11_enable.pNext = &vk12_enable;
+    vk12_enable.pNext = &vk13_enable;
 
     vk::DeviceCreateInfo create_info{};
     create_info.pNext = &vk11_enable;
@@ -415,7 +420,6 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
 }
 
 void VulkanBackend::cleanup_swapchain() {
-    m_framebuffers.clear();
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
     m_swapchain.reset();
@@ -437,7 +441,6 @@ auto VulkanBackend::recreate_swapchain() -> Result<void> {
 
     GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                  m_swapchain_format));
-    GOGGLES_TRY(create_framebuffers());
 
     m_needs_resize = false;
     GOGGLES_LOG_INFO("Swapchain recreated: {}x{}", width, height);
@@ -461,12 +464,9 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
            "waitIdle failed before swapchain format change");
     m_output_pass.shutdown();
     cleanup_swapchain();
-    m_render_pass.reset();
 
     GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                  target_format));
-    GOGGLES_TRY(create_render_pass());
-    GOGGLES_TRY(create_framebuffers());
 
     return init_output_pass();
 }
@@ -560,81 +560,10 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
     return {};
 }
 
-auto VulkanBackend::create_render_pass() -> Result<void> {
-    vk::AttachmentDescription color_attachment{};
-    color_attachment.format = m_swapchain_format;
-    color_attachment.samples = vk::SampleCountFlagBits::e1;
-    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
-    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
-    color_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    color_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    color_attachment.initialLayout = vk::ImageLayout::eUndefined;
-    color_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
-
-    vk::AttachmentReference color_ref{};
-    color_ref.attachment = 0;
-    color_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-    vk::SubpassDescription subpass{};
-    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color_ref;
-
-    vk::SubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependency.srcAccessMask = vk::AccessFlagBits::eNone;
-    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-
-    vk::RenderPassCreateInfo create_info{};
-    create_info.attachmentCount = 1;
-    create_info.pAttachments = &color_attachment;
-    create_info.subpassCount = 1;
-    create_info.pSubpasses = &subpass;
-    create_info.dependencyCount = 1;
-    create_info.pDependencies = &dependency;
-
-    auto [result, render_pass] = m_device->createRenderPassUnique(create_info);
-    if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to create render pass: " + vk::to_string(result));
-    }
-
-    m_render_pass = std::move(render_pass);
-    GOGGLES_LOG_DEBUG("Render pass created");
-    return {};
-}
-
-auto VulkanBackend::create_framebuffers() -> Result<void> {
-    m_framebuffers.reserve(m_swapchain_image_views.size());
-
-    for (const auto& view : m_swapchain_image_views) {
-        vk::FramebufferCreateInfo create_info{};
-        create_info.renderPass = *m_render_pass;
-        create_info.attachmentCount = 1;
-        create_info.pAttachments = &*view;
-        create_info.width = m_swapchain_extent.width;
-        create_info.height = m_swapchain_extent.height;
-        create_info.layers = 1;
-
-        auto [result, framebuffer] = m_device->createFramebufferUnique(create_info);
-        if (result != vk::Result::eSuccess) {
-            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                    "Failed to create framebuffer: " + vk::to_string(result));
-        }
-        m_framebuffers.push_back(std::move(framebuffer));
-    }
-
-    GOGGLES_LOG_DEBUG("Framebuffers created: {}", m_framebuffers.size());
-    return {};
-}
-
 auto VulkanBackend::init_output_pass() -> Result<void> {
     GOGGLES_TRY(m_shader_runtime.init());
 
-    return m_output_pass.init(*m_device, *m_render_pass, MAX_FRAMES_IN_FLIGHT, m_shader_runtime,
+    return m_output_pass.init(*m_device, m_swapchain_format, MAX_FRAMES_IN_FLIGHT, m_shader_runtime,
                               m_shader_dir);
 }
 
@@ -845,17 +774,43 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
     src_barrier.subresourceRange.baseArrayLayer = 0;
     src_barrier.subresourceRange.layerCount = 1;
 
+    vk::ImageMemoryBarrier dst_barrier{};
+    dst_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
+    dst_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dst_barrier.oldLayout = vk::ImageLayout::eUndefined;
+    dst_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    dst_barrier.image = m_swapchain_images[image_index];
+    dst_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    dst_barrier.subresourceRange.baseMipLevel = 0;
+    dst_barrier.subresourceRange.levelCount = 1;
+    dst_barrier.subresourceRange.baseArrayLayer = 0;
+    dst_barrier.subresourceRange.layerCount = 1;
+
+    std::array barriers = {src_barrier, dst_barrier};
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                        vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, src_barrier);
+                        vk::PipelineStageFlagBits::eFragmentShader |
+                            vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                        {}, {}, {}, barriers);
 
     PassContext ctx{};
     ctx.frame_index = m_current_frame;
     ctx.output_extent = m_swapchain_extent;
-    ctx.target_framebuffer = *m_framebuffers[image_index];
+    ctx.target_image_view = *m_swapchain_image_views[image_index];
+    ctx.target_format = m_swapchain_format;
     ctx.source_texture = m_import.view;
     ctx.original_texture = m_import.view;
 
     m_output_pass.record(cmd, ctx);
+
+    dst_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dst_barrier.dstAccessMask = vk::AccessFlagBits::eNone;
+    dst_barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    dst_barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                        vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, dst_barrier);
 
     VK_TRY(cmd.end(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer end failed");
 
@@ -872,9 +827,9 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
 
     vk::ImageMemoryBarrier barrier{};
     barrier.srcAccessMask = vk::AccessFlagBits::eNone;
-    barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     barrier.oldLayout = vk::ImageLayout::eUndefined;
-    barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = m_swapchain_images[image_index];
@@ -884,26 +839,32 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
-                        {}, {}, {}, barrier);
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                        vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {}, barrier);
 
-    vk::ClearColorValue clear_color{std::array{0.0F, 0.0F, 0.0F, 1.0F}};
-    vk::ImageSubresourceRange range{};
-    range.aspectMask = vk::ImageAspectFlagBits::eColor;
-    range.baseMipLevel = 0;
-    range.levelCount = 1;
-    range.baseArrayLayer = 0;
-    range.layerCount = 1;
+    vk::RenderingAttachmentInfo color_attachment{};
+    color_attachment.imageView = *m_swapchain_image_views[image_index];
+    color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
+    color_attachment.clearValue.color = vk::ClearColorValue{std::array{0.0F, 0.0F, 0.0F, 1.0F}};
 
-    cmd.clearColorImage(m_swapchain_images[image_index], vk::ImageLayout::eTransferDstOptimal,
-                        clear_color, range);
+    vk::RenderingInfo rendering_info{};
+    rendering_info.renderArea.offset = vk::Offset2D{0, 0};
+    rendering_info.renderArea.extent = m_swapchain_extent;
+    rendering_info.layerCount = 1;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachments = &color_attachment;
 
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    cmd.beginRendering(rendering_info);
+    cmd.endRendering();
+
+    barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     barrier.dstAccessMask = vk::AccessFlagBits::eNone;
-    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
     barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
 
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
                         vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, barrier);
 
     VK_TRY(cmd.end(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer end failed");

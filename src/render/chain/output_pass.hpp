@@ -16,7 +16,7 @@ public:
     OutputPass(OutputPass&&) = delete;
     OutputPass& operator=(OutputPass&&) = delete;
 
-    [[nodiscard]] auto init(vk::Device device, vk::RenderPass render_pass,
+    [[nodiscard]] auto init(vk::Device device, vk::Format target_format,
                             uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
                             const std::filesystem::path& shader_dir) -> Result<void> override;
     void shutdown() override;
@@ -34,7 +34,7 @@ private:
     void update_descriptor(uint32_t frame_index, vk::ImageView source_view);
 
     vk::Device m_device;
-    vk::RenderPass m_render_pass;
+    vk::Format m_target_format = vk::Format::eUndefined;
     uint32_t m_num_sync_indices = 0;
 
     vk::UniquePipelineLayout m_pipeline_layout;

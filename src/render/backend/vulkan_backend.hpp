@@ -47,8 +47,6 @@ private:
     void cleanup_swapchain();
     [[nodiscard]] auto create_command_resources() -> Result<void>;
     [[nodiscard]] auto create_sync_objects() -> Result<void>;
-    [[nodiscard]] auto create_render_pass() -> Result<void>;
-    [[nodiscard]] auto create_framebuffers() -> Result<void>;
     [[nodiscard]] auto init_output_pass() -> Result<void>;
 
     [[nodiscard]] auto import_dmabuf(const CaptureFrame& frame) -> Result<void>;
@@ -79,9 +77,6 @@ private:
     std::vector<vk::UniqueImageView> m_swapchain_image_views;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     vk::Extent2D m_swapchain_extent;
-
-    vk::UniqueRenderPass m_render_pass;
-    std::vector<vk::UniqueFramebuffer> m_framebuffers;
 
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 

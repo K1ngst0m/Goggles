@@ -44,15 +44,16 @@ The render backend SHALL provide a graphics pipeline for blitting imported textu
 #### Scenario: Pipeline initialization
 
 - **GIVEN** valid SPIR-V bytecode from `ShaderRuntime`
-- **WHEN** `BlitPipeline` is initialized
-- **THEN** render pass, pipeline, descriptor layout, and sampler SHALL be created
+- **WHEN** `OutputPass` is initialized
+- **THEN** pipeline and descriptor layout SHALL be created
+- **AND** pipeline SHALL be created with `VkPipelineRenderingCreateInfo` specifying target format
 - **AND** all Vulkan resources SHALL use RAII (`vk::Unique*`)
 
 #### Scenario: Frame rendering
 
 - **GIVEN** an imported texture and acquired swapchain image
-- **WHEN** `BlitPipeline` records commands
-- **THEN** a render pass SHALL be begun with the swapchain framebuffer
+- **WHEN** `OutputPass` records commands
+- **THEN** dynamic rendering SHALL be begun with the swapchain image view
 - **AND** the imported texture SHALL be bound via descriptor set
 - **AND** a fullscreen triangle SHALL be drawn
 
@@ -122,18 +123,20 @@ The render chain subsystem SHALL provide a Pass abstraction compatible with Retr
 #### Scenario: Pass interface
 
 - **GIVEN** a Pass implementation
-- **WHEN** initialized with device, render pass, num_sync_indices, and shader runtime
-- **THEN** the pass SHALL create its pipeline and per-frame descriptor sets
+- **WHEN** initialized with device, target format, num_sync_indices, and shader runtime
+- **THEN** the pass SHALL create its pipeline with `VkPipelineRenderingCreateInfo`
 - **AND** allocate `num_sync_indices` descriptor sets from its pool
 
-#### Scenario: PassContext provides textures
+#### Scenario: PassContext provides rendering target
 
 - **GIVEN** a PassContext for recording
 - **WHEN** passed to `Pass::record()`
-- **THEN** it SHALL contain `source_texture` (previous pass output)
+- **THEN** it SHALL contain `target_image_view` (swapchain or intermediate image view)
+- **AND** it SHALL contain `target_format` (for barrier transitions)
+- **AND** it SHALL contain `source_texture` (previous pass output)
 - **AND** it SHALL contain `original_texture` (normalized input)
 - **AND** it SHALL contain `frame_index` for descriptor set selection
-- **AND** it SHALL contain `target_framebuffer` for rendering
+- **AND** it SHALL contain `output_extent` for viewport/scissor setup
 
 #### Scenario: Per-frame descriptor isolation
 
@@ -152,15 +155,15 @@ The `OutputPass` SHALL serve as combined normalize+output pass until multi-pass 
 - **GIVEN** no RetroArch shader passes are configured
 - **WHEN** OutputPass processes a frame
 - **THEN** it SHALL sample `ctx.source_texture` (the DMA-BUF import)
-- **AND** render to `ctx.target_framebuffer` (swapchain)
+- **AND** begin dynamic rendering with `ctx.target_image_view`
 - **AND** use `ctx.frame_index` for descriptor set selection
 
-#### Scenario: Backend provides framebuffers
+#### Scenario: Backend provides image views
 
 - **GIVEN** swapchain is recreated (resize)
-- **WHEN** backend recreates framebuffers
+- **WHEN** backend recreates swapchain image views
 - **THEN** OutputPass SHALL NOT need reinitialization
-- **AND** new framebuffers SHALL be passed via PassContext
+- **AND** new image views SHALL be passed via `PassContext.target_image_view`
 
 ### Requirement: Future RetroArch Integration
 
@@ -258,4 +261,36 @@ The debug messenger resource SHALL be managed via RAII wrapper class.
 - **WHEN** `VulkanBackend` is destroyed
 - **THEN** debug messenger SHALL be destroyed before instance
 - **AND** no use-after-free SHALL occur
+
+### Requirement: Dynamic Rendering
+
+The render backend SHALL use Vulkan 1.3 dynamic rendering instead of traditional render passes for all rendering operations.
+
+#### Scenario: API version requirement
+
+- **GIVEN** `VulkanBackend::create_instance()` is called
+- **WHEN** the Vulkan instance is created
+- **THEN** `VkApplicationInfo.apiVersion` SHALL be `VK_API_VERSION_1_3`
+
+#### Scenario: Dynamic rendering feature enablement
+
+- **GIVEN** `VulkanBackend::create_device()` is called
+- **WHEN** the logical device is created
+- **THEN** `VkPhysicalDeviceDynamicRenderingFeatures.dynamicRendering` SHALL be enabled
+- **AND** the feature SHALL be verified as supported before device creation
+
+#### Scenario: No VkRenderPass or VkFramebuffer objects
+
+- **GIVEN** the render backend is initialized
+- **THEN** no `VkRenderPass` objects SHALL be created
+- **AND** no `VkFramebuffer` objects SHALL be created
+- **AND** pipelines SHALL be created with `VkPipelineRenderingCreateInfo` instead of `renderPass`
+
+#### Scenario: Command buffer rendering
+
+- **GIVEN** a pass records rendering commands
+- **WHEN** rendering to a target image
+- **THEN** `vkCmdBeginRendering()` SHALL be used instead of `vkCmdBeginRenderPass()`
+- **AND** `vkCmdEndRendering()` SHALL be used instead of `vkCmdEndRenderPass()`
+- **AND** `VkRenderingInfo` SHALL specify the target image view and format directly
 

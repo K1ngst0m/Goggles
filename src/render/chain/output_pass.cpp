@@ -10,7 +10,7 @@ OutputPass::~OutputPass() {
     OutputPass::shutdown();
 }
 
-auto OutputPass::init(vk::Device device, vk::RenderPass render_pass, uint32_t num_sync_indices,
+auto OutputPass::init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
                       ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
     -> Result<void> {
     if (m_initialized) {
@@ -18,7 +18,7 @@ auto OutputPass::init(vk::Device device, vk::RenderPass render_pass, uint32_t nu
     }
 
     m_device = device;
-    m_render_pass = render_pass;
+    m_target_format = target_format;
     m_num_sync_indices = num_sync_indices;
 
     auto result = create_sampler();
@@ -57,7 +57,7 @@ void OutputPass::shutdown() {
     m_descriptor_layout.reset();
     m_sampler.reset();
     m_descriptor_sets.clear();
-    m_render_pass = nullptr;
+    m_target_format = vk::Format::eUndefined;
     m_device = nullptr;
     m_num_sync_indices = 0;
 
@@ -85,18 +85,21 @@ void OutputPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
 void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     update_descriptor(ctx.frame_index, ctx.source_texture);
 
-    vk::RenderPassBeginInfo begin_info{};
-    begin_info.renderPass = m_render_pass;
-    begin_info.framebuffer = ctx.target_framebuffer;
-    begin_info.renderArea.offset = vk::Offset2D{0, 0};
-    begin_info.renderArea.extent = ctx.output_extent;
+    vk::RenderingAttachmentInfo color_attachment{};
+    color_attachment.imageView = ctx.target_image_view;
+    color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
+    color_attachment.clearValue.color = vk::ClearColorValue{std::array{0.0F, 0.0F, 0.0F, 1.0F}};
 
-    std::array<vk::ClearValue, 1> clear_values{};
-    clear_values[0].color = vk::ClearColorValue{std::array{0.0F, 0.0F, 0.0F, 1.0F}};
-    begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
-    begin_info.pClearValues = clear_values.data();
+    vk::RenderingInfo rendering_info{};
+    rendering_info.renderArea.offset = vk::Offset2D{0, 0};
+    rendering_info.renderArea.extent = ctx.output_extent;
+    rendering_info.layerCount = 1;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachments = &color_attachment;
 
-    cmd.beginRenderPass(begin_info, vk::SubpassContents::eInline);
+    cmd.beginRendering(rendering_info);
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline_layout, 0,
                            m_descriptor_sets[ctx.frame_index], {});
@@ -116,7 +119,7 @@ void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     cmd.setScissor(0, scissor);
 
     cmd.draw(3, 1, 0, 0);
-    cmd.endRenderPass();
+    cmd.endRendering();
 }
 
 auto OutputPass::create_sampler() -> Result<void> {
@@ -294,7 +297,14 @@ auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
     dynamic_state.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
     dynamic_state.pDynamicStates = dynamic_states.data();
 
+    vk::PipelineRenderingCreateInfo rendering_info{};
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachmentFormats = &m_target_format;
+    rendering_info.depthAttachmentFormat = vk::Format::eUndefined;
+    rendering_info.stencilAttachmentFormat = vk::Format::eUndefined;
+
     vk::GraphicsPipelineCreateInfo create_info{};
+    create_info.pNext = &rendering_info;
     create_info.stageCount = static_cast<uint32_t>(stages.size());
     create_info.pStages = stages.data();
     create_info.pVertexInputState = &vertex_input;
@@ -305,8 +315,6 @@ auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
     create_info.pColorBlendState = &color_blend;
     create_info.pDynamicState = &dynamic_state;
     create_info.layout = *m_pipeline_layout;
-    create_info.renderPass = m_render_pass;
-    create_info.subpass = 0;
 
     auto [result, pipelines] = m_device.createGraphicsPipelinesUnique(nullptr, create_info);
     if (result != vk::Result::eSuccess) {
