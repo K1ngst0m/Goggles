@@ -13,8 +13,8 @@ TEST_CASE("default_config returns expected values", "[config]") {
         REQUIRE(config.capture.backend == "vulkan_layer");
     }
 
-    SECTION("Pipeline defaults") {
-        REQUIRE(config.pipeline.shader_preset.empty());
+    SECTION("Shader defaults") {
+        REQUIRE(config.shader.preset.empty());
     }
 
     SECTION("Render defaults") {
@@ -48,8 +48,8 @@ TEST_CASE("load_config parses valid configuration", "[config]") {
         REQUIRE(config.capture.backend == "vulkan_layer");
     }
 
-    SECTION("Pipeline section") {
-        REQUIRE(config.pipeline.shader_preset == "shaders/test.glsl");
+    SECTION("Shader section") {
+        REQUIRE(config.shader.preset == "shaders/test.glsl");
     }
 
     SECTION("Render section") {
@@ -71,7 +71,7 @@ TEST_CASE("load_config uses defaults for partial configuration", "[config]") {
 
     SECTION("Uses defaults for missing sections") {
         REQUIRE(config.capture.backend == "vulkan_layer"); // default
-        REQUIRE(config.pipeline.shader_preset.empty());    // default
+        REQUIRE(config.shader.preset.empty());             // default
         REQUIRE(config.logging.level == "info");           // default
         REQUIRE(config.logging.file.empty());              // default
     }

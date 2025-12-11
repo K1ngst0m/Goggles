@@ -72,6 +72,8 @@ auto main() -> int {
         return EXIT_FAILURE;
     }
 
+    vulkan_backend.load_shader_preset(config.shader.preset);
+
     goggles::CaptureReceiver capture_receiver;
     if (!capture_receiver.init()) {
         GOGGLES_LOG_WARN("Failed to initialize capture receiver");

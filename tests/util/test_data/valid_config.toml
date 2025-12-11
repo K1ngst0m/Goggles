@@ -3,8 +3,8 @@
 [capture]
 backend = "vulkan_layer"
 
-[pipeline]
-shader_preset = "shaders/test.glsl"
+[shader]
+preset = "shaders/test.glsl"
 
 [render]
 vsync = false

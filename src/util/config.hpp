@@ -13,9 +13,9 @@ struct Config {
         std::string backend = "vulkan_layer";
     } capture;
 
-    struct Pipeline {
-        std::string shader_preset;
-    } pipeline;
+    struct Shader {
+        std::string preset;
+    } shader;
 
     struct Render {
         bool vsync = true;

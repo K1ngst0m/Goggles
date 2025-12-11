@@ -75,7 +75,7 @@ auto VulkanBackend::init(SDL_Window* window, bool enable_validation,
                                  vk::Format::eB8G8R8A8Srgb));
     GOGGLES_TRY(create_command_resources());
     GOGGLES_TRY(create_sync_objects());
-    GOGGLES_TRY(init_output_pass());
+    GOGGLES_TRY(init_filter_chain());
 
     m_initialized = true;
     GOGGLES_LOG_INFO("Vulkan backend initialized: {}x{}", width, height);
@@ -94,7 +94,7 @@ void VulkanBackend::shutdown() {
         }
     }
 
-    m_output_pass.shutdown();
+    m_filter_chain.shutdown();
     m_shader_runtime.shutdown();
     cleanup_imported_image();
 
@@ -462,13 +462,13 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
 
     VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST,
            "waitIdle failed before swapchain format change");
-    m_output_pass.shutdown();
+    m_filter_chain.shutdown();
     cleanup_swapchain();
 
     GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                  target_format));
 
-    return init_output_pass();
+    return init_filter_chain();
 }
 
 auto VulkanBackend::get_matching_swapchain_format(vk::Format source_format) -> vk::Format {
@@ -560,11 +560,30 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
     return {};
 }
 
-auto VulkanBackend::init_output_pass() -> Result<void> {
+auto VulkanBackend::init_filter_chain() -> Result<void> {
     GOGGLES_TRY(m_shader_runtime.init());
 
-    return m_output_pass.init(*m_device, m_swapchain_format, MAX_FRAMES_IN_FLIGHT, m_shader_runtime,
-                              m_shader_dir);
+    return m_filter_chain.init(*m_device, m_physical_device, m_swapchain_format,
+                               MAX_FRAMES_IN_FLIGHT, m_shader_runtime, m_shader_dir);
+}
+
+
+void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path) {
+    if (!m_initialized) {
+        GOGGLES_LOG_WARN("Cannot load shader preset: VulkanBackend not initialized");
+        return;
+    }
+
+    if (preset_path.empty()) {
+        GOGGLES_LOG_DEBUG("No shader preset specified, using passthrough mode");
+        return;
+    }
+
+    auto result = m_filter_chain.load_preset(preset_path);
+    if (!result) {
+        GOGGLES_LOG_WARN("Failed to load shader preset '{}': {} - falling back to passthrough",
+                         preset_path.string(), result.error().message);
+    }
 }
 
 auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
@@ -702,6 +721,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
                                     vk::to_string(view_result));
     }
     m_import.view = view;
+    m_import_extent = vk::Extent2D{frame.width, frame.height};
 
     GOGGLES_LOG_DEBUG("DMA-BUF imported: {}x{}, format={}, modifier=0x{:x}", frame.width,
                       frame.height, vk::to_string(vk_format), frame.modifier);
@@ -794,15 +814,9 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
                             vk::PipelineStageFlagBits::eColorAttachmentOutput,
                         {}, {}, {}, barriers);
 
-    PassContext ctx{};
-    ctx.frame_index = m_current_frame;
-    ctx.output_extent = m_swapchain_extent;
-    ctx.target_image_view = *m_swapchain_image_views[image_index];
-    ctx.target_format = m_swapchain_format;
-    ctx.source_texture = m_import.view;
-    ctx.original_texture = m_import.view;
-
-    m_output_pass.record(cmd, ctx);
+    m_filter_chain.record(cmd, m_import.view, m_import_extent,
+                          *m_swapchain_image_views[image_index], m_swapchain_extent,
+                          m_current_frame);
 
     dst_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     dst_barrier.dstAccessMask = vk::AccessFlagBits::eNone;

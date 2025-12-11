@@ -10,12 +10,12 @@
 backend = "vulkan_layer"
 
 # =============================================================================
-# Pipeline Settings
+# Shader Settings
 # =============================================================================
-[pipeline]
-# Path to shader preset file (relative to this config or absolute)
-# Leave empty to skip shader processing initially
-shader_preset = ""
+[shader]
+# Path to shader preset file (.slangp)
+# Leave empty for passthrough mode (no processing)
+preset = "shaders/retroarch/crt/zfast-crt.slangp"
 
 # =============================================================================
 # Render Settings

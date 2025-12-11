@@ -5,7 +5,7 @@ TBD - created by archiving change add-render-pipeline. Update Purpose after arch
 ## Requirements
 ### Requirement: Shader Runtime Compilation
 
-The render shader subsystem SHALL compile Slang shaders to SPIR-V at runtime using the Slang API.
+The render shader subsystem SHALL compile Slang shaders to SPIR-V at runtime using the Slang API, supporting both HLSL-style native shaders and GLSL-style RetroArch shaders.
 
 #### Scenario: First-run compilation
 
@@ -28,6 +28,20 @@ The render shader subsystem SHALL compile Slang shaders to SPIR-V at runtime usi
 - **WHEN** the source `.slang` file has changed
 - **THEN** `ShaderRuntime` SHALL recompile the shader
 - **AND** update the cache
+
+#### Scenario: GLSL mode for RetroArch shaders
+
+- **GIVEN** a RetroArch `.slang` file using GLSL syntax (`#version 450`, `vec4`, `sampler2D`)
+- **WHEN** `compile_retroarch_shader()` is called
+- **THEN** `ShaderRuntime` SHALL use a GLSL-enabled Slang session
+- **AND** the session SHALL have `enableGLSL = true` and `allowGLSLSyntax = true`
+
+#### Scenario: Dual session architecture
+
+- **GIVEN** `ShaderRuntime` is initialized
+- **THEN** it SHALL maintain two Slang sessions: one for HLSL-native shaders, one for GLSL-RetroArch shaders
+- **AND** both sessions SHALL share the same global session
+- **AND** both sessions SHALL target SPIR-V 1.3
 
 ### Requirement: Fullscreen Blit Pipeline
 
@@ -293,4 +307,179 @@ The render backend SHALL use Vulkan 1.3 dynamic rendering instead of traditional
 - **THEN** `vkCmdBeginRendering()` SHALL be used instead of `vkCmdBeginRenderPass()`
 - **AND** `vkCmdEndRendering()` SHALL be used instead of `vkCmdEndRenderPass()`
 - **AND** `VkRenderingInfo` SHALL specify the target image view and format directly
+
+### Requirement: RetroArch Shader Preprocessing
+
+The shader subsystem SHALL preprocess RetroArch `.slang` files before compilation to handle custom pragmas.
+
+#### Scenario: Include resolution
+
+- **GIVEN** a `.slang` file with `#include "path/to/file.inc"`
+- **WHEN** preprocessing is performed
+- **THEN** the include directive SHALL be replaced with the file contents
+- **AND** paths SHALL be resolved relative to the including file
+- **AND** nested includes SHALL be resolved recursively
+
+#### Scenario: Stage splitting
+
+- **GIVEN** a `.slang` file with `#pragma stage vertex` and `#pragma stage fragment`
+- **WHEN** preprocessing is performed
+- **THEN** source SHALL be split into separate vertex and fragment sources
+- **AND** shared declarations before first pragma SHALL be included in both stages
+- **AND** pragmas SHALL be removed from output source
+
+#### Scenario: Parameter extraction
+
+- **GIVEN** a `.slang` file with `#pragma parameter NAME "Description" default min max step`
+- **WHEN** preprocessing is performed
+- **THEN** parameter metadata SHALL be extracted (name, description, default, min, max, step)
+- **AND** pragma lines SHALL be removed from output source
+- **AND** parameters SHALL be available for semantic binding
+
+#### Scenario: Metadata extraction
+
+- **GIVEN** a `.slang` file with `#pragma name ALIAS` or `#pragma format FORMAT`
+- **WHEN** preprocessing is performed
+- **THEN** name alias and format SHALL be extracted as pass metadata
+- **AND** pragma lines SHALL be removed from output source
+
+### Requirement: Preset Parser
+
+The shader subsystem SHALL parse RetroArch `.slangp` preset files to configure multi-pass shader chains.
+
+#### Scenario: Preset file loading
+
+- **GIVEN** a `.slangp` preset file with `shaders = N` and per-pass configuration
+- **WHEN** `PresetParser::load()` is called
+- **THEN** a `PresetConfig` struct SHALL be returned
+- **AND** it SHALL contain shader paths, scale types, filter modes, and format overrides for each pass
+
+#### Scenario: Scale type parsing
+
+- **GIVEN** a preset with `scale_type0 = source` or `scale_type0 = viewport` or `scale_type0 = absolute`
+- **WHEN** preset is parsed
+- **THEN** scale type SHALL be stored per pass
+- **AND** `scale0` or `scale0_x`/`scale0_y` SHALL be parsed as scale factors
+
+#### Scenario: Filter mode parsing
+
+- **GIVEN** a preset with `filter_linear0 = true` or `filter_linear0 = false`
+- **WHEN** preset is parsed
+- **THEN** sampler filter mode SHALL be stored per pass (linear or nearest)
+
+#### Scenario: Framebuffer format parsing
+
+- **GIVEN** a preset with `float_framebuffer0 = true` or `srgb_framebuffer0 = true`
+- **WHEN** preset is parsed
+- **THEN** framebuffer format SHALL be stored (R16G16B16A16_SFLOAT, R8G8B8A8_SRGB, or R8G8B8A8_UNORM default)
+
+### Requirement: FilterPass Implementation
+
+The chain subsystem SHALL provide `FilterPass` for executing RetroArch shader passes.
+
+#### Scenario: FilterPass initialization
+
+- **GIVEN** a preprocessed RetroArch shader (vertex SPIR-V, fragment SPIR-V, parameters, metadata)
+- **WHEN** `FilterPass::init()` is called
+- **THEN** graphics pipeline SHALL be created with both shader stages
+- **AND** descriptor layout SHALL match reflected bindings (UBO, textures)
+- **AND** `num_sync_indices` descriptor sets SHALL be allocated
+
+#### Scenario: Framebuffer creation for intermediate passes
+
+- **GIVEN** a FilterPass that is NOT the final pass
+- **WHEN** initialized with scale type and output dimensions
+- **THEN** a framebuffer image SHALL be created with specified format
+- **AND** image view SHALL be created for sampling by subsequent passes
+
+#### Scenario: FilterPass recording
+
+- **GIVEN** a FilterPass with valid pipeline and framebuffer
+- **WHEN** `record()` is called with PassContext
+- **THEN** dynamic rendering SHALL begin with framebuffer image view (or `ctx.target_image_view` for final pass)
+- **AND** UBO SHALL be updated with semantic values (MVP, sizes)
+- **AND** push constants SHALL be updated with per-frame values (FrameCount, sizes)
+- **AND** descriptor set SHALL bind Source and Original textures
+
+### Requirement: Slang Native Reflection
+
+The shader subsystem SHALL use Slang's built-in reflection API to discover shader bindings without external dependencies.
+
+#### Scenario: Reflection from linked program
+
+- **GIVEN** a linked `IComponentType` from Slang compilation
+- **WHEN** `getLayout()` is called
+- **THEN** a `ProgramLayout*` SHALL be returned
+- **AND** it SHALL provide access to all shader parameters
+
+#### Scenario: Push constant discovery
+
+- **GIVEN** a shader with push constants containing `SourceSize`, `OutputSize`, `FrameCount`, user params
+- **WHEN** reflection iterates parameters with `SLANG_PARAMETER_CATEGORY_PUSH_CONSTANT_BUFFER`
+- **THEN** each member's byte offset SHALL be discoverable via `getOffset()`
+- **AND** member names SHALL match shader source declarations
+
+#### Scenario: UBO member discovery
+
+- **GIVEN** a shader with UBO containing `MVP` matrix
+- **WHEN** reflection iterates the UBO type layout
+- **THEN** `MVP` offset SHALL be discoverable via `getOffset(SLANG_PARAMETER_CATEGORY_UNIFORM)`
+- **AND** UBO binding/set SHALL be discoverable via `getBindingIndex()` / `getBindingSpace()`
+
+#### Scenario: Texture binding discovery
+
+- **GIVEN** a shader with `Source` sampler at set=0, binding=2
+- **WHEN** reflection iterates texture parameters
+- **THEN** binding index SHALL be 2
+- **AND** binding space (set) SHALL be 0
+- **AND** parameter name SHALL be "Source"
+
+### Requirement: Semantic Binder
+
+The chain subsystem SHALL populate shader uniforms with RetroArch semantic values based on reflection data.
+
+#### Scenario: Size semantic population
+
+- **GIVEN** a shader with `SourceSize`, `OutputSize`, `OriginalSize` in push constants
+- **WHEN** semantic binder populates values before draw
+- **THEN** each size SHALL be written as vec4 `[width, height, 1/width, 1/height]`
+- **AND** values SHALL reflect actual texture/output dimensions
+
+#### Scenario: Frame counter population
+
+- **GIVEN** a shader with `FrameCount` in push constants
+- **WHEN** semantic binder populates values
+- **THEN** `FrameCount` SHALL be set to current frame number (monotonically increasing)
+
+#### Scenario: MVP matrix population
+
+- **GIVEN** a shader with `MVP` in UBO
+- **WHEN** semantic binder populates UBO
+- **THEN** `MVP` SHALL be set to identity matrix (or orthographic projection for proper UV mapping)
+
+#### Scenario: Texture binding
+
+- **GIVEN** a FilterPass with Source and Original texture semantics
+- **WHEN** descriptor set is updated before draw
+- **THEN** `Source` SHALL be bound to previous pass output (or Original for pass 0)
+- **AND** `Original` SHALL be bound to the normalized captured frame
+
+### Requirement: zfast-crt Verification
+
+The RetroArch shader support SHALL be verified using the zfast-crt shader as minimal test case.
+
+#### Scenario: zfast-crt compilation
+
+- **GIVEN** the zfast-crt `.slang` file from `research/slang-shaders/crt/shaders/zfast_crt/`
+- **WHEN** loaded via ShaderRuntime
+- **THEN** preprocessing SHALL extract parameters (BLURSCALE, LOWLUMSCAN, etc.)
+- **AND** compilation SHALL succeed without errors
+- **AND** SPIR-V reflection SHALL identify expected bindings
+
+#### Scenario: zfast-crt rendering
+
+- **GIVEN** a compiled zfast-crt shader in a FilterPass
+- **WHEN** rendered with a test input texture
+- **THEN** output SHALL exhibit CRT-style scanlines and blur
+- **AND** visual output SHALL match RetroArch reference (manual verification)
 

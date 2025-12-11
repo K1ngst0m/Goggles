@@ -40,10 +40,10 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         }
     }
 
-    if (data.contains("pipeline")) {
-        const auto pipeline = toml::find(data, "pipeline");
-        if (pipeline.contains("shader_preset")) {
-            config.pipeline.shader_preset = toml::find<std::string>(pipeline, "shader_preset");
+    if (data.contains("shader")) {
+        const auto shader = toml::find(data, "shader");
+        if (shader.contains("preset")) {
+            config.shader.preset = toml::find<std::string>(shader, "preset");
         }
     }
 

@@ -9,6 +9,8 @@ add_library(goggles_render STATIC
     chain/output_pass.cpp
     chain/preset_parser.cpp
     chain/filter_pass.cpp
+    chain/framebuffer.cpp
+    chain/filter_chain.cpp
 )
 
 target_include_directories(goggles_render PUBLIC

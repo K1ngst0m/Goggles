@@ -28,6 +28,7 @@ target_sources(goggles_tests PRIVATE
     render/test_slang_reflect.cpp
     render/test_semantic_binder.cpp
     render/test_zfast_integration.cpp
+    render/test_filter_chain.cpp
 
     # Future: Pipeline module tests (when implemented)
     # pipeline/graph/test_pipeline_graph.cpp

@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
-#include <render/chain/output_pass.hpp>
+#include <render/chain/filter_chain.hpp>
 #include <render/shader/shader_runtime.hpp>
 #include <util/error.hpp>
 #include <vector>
@@ -34,6 +34,8 @@ public:
     [[nodiscard]] auto handle_resize() -> Result<void>;
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 
+    void load_shader_preset(const std::filesystem::path& preset_path);
+
 private:
     [[nodiscard]] auto create_instance(bool enable_validation) -> Result<void>;
     [[nodiscard]] auto create_debug_messenger() -> Result<void>;
@@ -47,7 +49,7 @@ private:
     void cleanup_swapchain();
     [[nodiscard]] auto create_command_resources() -> Result<void>;
     [[nodiscard]] auto create_sync_objects() -> Result<void>;
-    [[nodiscard]] auto init_output_pass() -> Result<void>;
+    [[nodiscard]] auto init_filter_chain() -> Result<void>;
 
     [[nodiscard]] auto import_dmabuf(const CaptureFrame& frame) -> Result<void>;
     void cleanup_imported_image();
@@ -97,9 +99,10 @@ private:
     ImportedImage m_import;
 
     ShaderRuntime m_shader_runtime;
-    OutputPass m_output_pass;
+    FilterChain m_filter_chain;
     std::filesystem::path m_shader_dir;
     vk::Format m_source_format = vk::Format::eUndefined;
+    vk::Extent2D m_import_extent{};
 
     SDL_Window* m_window = nullptr;
     bool m_enable_validation = false;
