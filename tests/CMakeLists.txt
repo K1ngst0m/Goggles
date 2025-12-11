@@ -20,7 +20,15 @@ target_sources(goggles_tests PRIVATE
     util/test_job_system.cpp
     util/test_queues.cpp
     util/test_unique_fd.cpp
-    
+
+    # Render module tests
+    render/test_shader_runtime.cpp
+    render/test_retroarch_preprocessor.cpp
+    render/test_preset_parser.cpp
+    render/test_slang_reflect.cpp
+    render/test_semantic_binder.cpp
+    render/test_zfast_integration.cpp
+
     # Future: Pipeline module tests (when implemented)
     # pipeline/graph/test_pipeline_graph.cpp
 )
@@ -33,11 +41,17 @@ target_include_directories(goggles_tests PRIVATE
 # Link against project libraries
 target_link_libraries(goggles_tests PRIVATE
     goggles_util
+    goggles_render
     Catch2::Catch2WithMain
 )
 
 # Compiler settings (inherit from main project)
 target_compile_features(goggles_tests PRIVATE cxx_std_20)
+
+# Define source directory for test asset paths
+target_compile_definitions(goggles_tests PRIVATE
+    GOGGLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
 
 # Copy test data files to build directory
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/util/test_data/

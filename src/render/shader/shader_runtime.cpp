@@ -11,6 +11,8 @@
 #include <sstream>
 #include <util/logging.hpp>
 
+#include "slang_reflect.hpp"
+
 namespace goggles::render {
 
 namespace {
@@ -28,9 +30,16 @@ struct CacheHeader {
 
 } // namespace
 
+// Internal result for GLSL compilation including reflection
+struct ShaderRuntime::GlslCompileResult {
+    std::vector<uint32_t> spirv;
+    ReflectionData reflection;
+};
+
 struct ShaderRuntime::Impl {
     Slang::ComPtr<slang::IGlobalSession> global_session;
-    Slang::ComPtr<slang::ISession> session;
+    Slang::ComPtr<slang::ISession> hlsl_session;
+    Slang::ComPtr<slang::ISession> glsl_session;
 };
 
 ShaderRuntime::ShaderRuntime() : m_impl(std::make_unique<Impl>()) {}
@@ -47,18 +56,18 @@ auto ShaderRuntime::init() -> Result<void> {
         return {};
     }
 
-    if (SLANG_FAILED(slang::createGlobalSession(m_impl->global_session.writeRef()))) {
+    SlangGlobalSessionDesc global_desc = {};
+    global_desc.enableGLSL = true;
+
+    if (SLANG_FAILED(
+            slang::createGlobalSession(&global_desc, m_impl->global_session.writeRef()))) {
         return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED,
                                 "Failed to create Slang global session");
     }
 
-    slang::SessionDesc session_desc = {};
     slang::TargetDesc target_desc = {};
     target_desc.format = SLANG_SPIRV;
     target_desc.profile = m_impl->global_session->findProfile("spirv_1_3");
-
-    session_desc.targets = &target_desc;
-    session_desc.targetCount = 1;
 
     std::array<slang::CompilerOptionEntry, 1> options = {
         {{.name = slang::CompilerOptionName::EmitSpirvDirectly,
@@ -67,12 +76,32 @@ auto ShaderRuntime::init() -> Result<void> {
                     .intValue1 = 0,
                     .stringValue0 = nullptr,
                     .stringValue1 = nullptr}}}};
-    session_desc.compilerOptionEntries = options.data();
-    session_desc.compilerOptionEntryCount = options.size();
 
-    if (SLANG_FAILED(
-            m_impl->global_session->createSession(session_desc, m_impl->session.writeRef()))) {
-        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED, "Failed to create Slang session");
+    // HLSL session (existing behavior)
+    slang::SessionDesc hlsl_session_desc = {};
+    hlsl_session_desc.targets = &target_desc;
+    hlsl_session_desc.targetCount = 1;
+    hlsl_session_desc.compilerOptionEntries = options.data();
+    hlsl_session_desc.compilerOptionEntryCount = options.size();
+
+    if (SLANG_FAILED(m_impl->global_session->createSession(hlsl_session_desc,
+                                                           m_impl->hlsl_session.writeRef()))) {
+        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED,
+                                "Failed to create Slang HLSL session");
+    }
+
+    // GLSL session for RetroArch shaders
+    slang::SessionDesc glsl_session_desc = {};
+    glsl_session_desc.targets = &target_desc;
+    glsl_session_desc.targetCount = 1;
+    glsl_session_desc.compilerOptionEntries = options.data();
+    glsl_session_desc.compilerOptionEntryCount = options.size();
+    glsl_session_desc.allowGLSLSyntax = true;
+
+    if (SLANG_FAILED(m_impl->global_session->createSession(glsl_session_desc,
+                                                           m_impl->glsl_session.writeRef()))) {
+        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED,
+                                "Failed to create Slang GLSL session");
     }
 
     auto cache_dir = get_cache_dir();
@@ -83,7 +112,8 @@ auto ShaderRuntime::init() -> Result<void> {
     }
 
     m_initialized = true;
-    GOGGLES_LOG_INFO("ShaderRuntime initialized, cache: {}", cache_dir.string());
+    GOGGLES_LOG_INFO("ShaderRuntime initialized (dual session: HLSL + GLSL), cache: {}",
+                     cache_dir.string());
     return {};
 }
 
@@ -92,7 +122,8 @@ void ShaderRuntime::shutdown() {
         return;
     }
 
-    m_impl->session = nullptr;
+    m_impl->glsl_session = nullptr;
+    m_impl->hlsl_session = nullptr;
     m_impl->global_session = nullptr;
 
     m_initialized = false;
@@ -236,7 +267,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
                                   const std::string& entry_point) -> Result<std::vector<uint32_t>> {
     Slang::ComPtr<slang::IBlob> diagnostics_blob;
     std::string module_path = module_name + ".slang";
-    slang::IModule* module_ptr = m_impl->session->loadModuleFromSourceString(
+    slang::IModule* module_ptr = m_impl->hlsl_session->loadModuleFromSourceString(
         module_name.c_str(), module_path.c_str(), source.c_str(), diagnostics_blob.writeRef());
     Slang::ComPtr<slang::IModule> module(module_ptr);
 
@@ -264,7 +295,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
 
     std::array<slang::IComponentType*, 2> components = {module, entry_point_obj};
     Slang::ComPtr<slang::IComponentType> composed;
-    SlangResult result = m_impl->session->createCompositeComponentType(
+    SlangResult result = m_impl->hlsl_session->createCompositeComponentType(
         components.data(), components.size(), composed.writeRef(), diagnostics_blob.writeRef());
 
     if (SLANG_FAILED(result)) {
@@ -302,6 +333,139 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
     std::memcpy(spirv.data(), spirv_blob->getBufferPointer(), spirv_blob->getBufferSize());
 
     return spirv;
+}
+
+auto ShaderRuntime::compile_glsl(const std::string& module_name, const std::string& source,
+                                 const std::string& entry_point,
+                                 ShaderStage stage) -> Result<std::vector<uint32_t>> {
+    auto result = compile_glsl_with_reflection(module_name, source, entry_point, stage);
+    if (!result) {
+        return nonstd::make_unexpected(result.error());
+    }
+    return std::move(result->spirv);
+}
+
+auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
+                                                  const std::string& source,
+                                                  const std::string& entry_point,
+                                                  ShaderStage stage)
+    -> Result<GlslCompileResult> {
+    Slang::ComPtr<slang::IBlob> diagnostics_blob;
+    std::string module_path = module_name + ".glsl";
+    slang::IModule* module_ptr = m_impl->glsl_session->loadModuleFromSourceString(
+        module_name.c_str(), module_path.c_str(), source.c_str(), diagnostics_blob.writeRef());
+    Slang::ComPtr<slang::IModule> module(module_ptr);
+
+    if (diagnostics_blob != nullptr) {
+        GOGGLES_LOG_DEBUG("GLSL Slang diagnostics: {}",
+                          static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+    }
+
+    if (module_ptr == nullptr) {
+        std::string error_msg = "Failed to load GLSL shader module";
+        if (diagnostics_blob != nullptr) {
+            error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
+        }
+        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+    }
+
+    // Convert our stage enum to Slang's stage enum
+    SlangStage slang_stage = (stage == ShaderStage::VERTEX) ? SLANG_STAGE_VERTEX : SLANG_STAGE_FRAGMENT;
+
+    // Use findAndCheckEntryPoint for GLSL shaders since they don't have [shader(...)] attributes
+    Slang::ComPtr<slang::IEntryPoint> entry_point_obj;
+    SlangResult result = module->findAndCheckEntryPoint(
+        entry_point.c_str(), slang_stage, entry_point_obj.writeRef(), diagnostics_blob.writeRef());
+
+    if (SLANG_FAILED(result) || entry_point_obj == nullptr) {
+        std::string error_msg = "Entry point '" + entry_point + "' not found in GLSL shader";
+        if (diagnostics_blob != nullptr) {
+            error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
+        }
+        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+    }
+
+    std::array<slang::IComponentType*, 2> components = {module, entry_point_obj};
+    Slang::ComPtr<slang::IComponentType> composed;
+    result = m_impl->glsl_session->createCompositeComponentType(
+        components.data(), components.size(), composed.writeRef(), diagnostics_blob.writeRef());
+
+    if (SLANG_FAILED(result)) {
+        std::string error_msg = "Failed to compose GLSL shader program";
+        if (diagnostics_blob != nullptr) {
+            error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
+        }
+        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+    }
+
+    Slang::ComPtr<slang::IComponentType> linked;
+    result = composed->link(linked.writeRef(), diagnostics_blob.writeRef());
+
+    if (SLANG_FAILED(result)) {
+        std::string error_msg = "Failed to link GLSL shader program";
+        if (diagnostics_blob != nullptr) {
+            error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
+        }
+        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+    }
+
+    // Get reflection data from linked program
+    auto reflection_result = reflect_program(linked.get());
+    if (!reflection_result) {
+        GOGGLES_LOG_WARN("Failed to get reflection data: {}", reflection_result.error().message);
+    }
+
+    Slang::ComPtr<slang::IBlob> spirv_blob;
+    result = linked->getEntryPointCode(0, 0, spirv_blob.writeRef(), diagnostics_blob.writeRef());
+
+    if (SLANG_FAILED(result) || (spirv_blob == nullptr)) {
+        std::string error_msg = "Failed to get GLSL compiled SPIR-V";
+        if (diagnostics_blob != nullptr) {
+            error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
+        }
+        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+    }
+
+    auto glsl_spirv_size = spirv_blob->getBufferSize() / sizeof(uint32_t);
+    std::vector<uint32_t> glsl_spirv(glsl_spirv_size);
+    std::memcpy(glsl_spirv.data(), spirv_blob->getBufferPointer(), spirv_blob->getBufferSize());
+
+    return GlslCompileResult{
+        .spirv = std::move(glsl_spirv),
+        .reflection = reflection_result ? std::move(reflection_result.value()) : ReflectionData{}};
+}
+
+auto ShaderRuntime::compile_retroarch_shader(const std::string& vertex_source,
+                                             const std::string& fragment_source,
+                                             const std::string& module_name)
+    -> Result<RetroArchCompiledShader> {
+    if (!m_initialized) {
+        return make_error<RetroArchCompiledShader>(ErrorCode::SHADER_COMPILE_FAILED,
+                                                   "ShaderRuntime not initialized");
+    }
+
+    auto vertex_result =
+        compile_glsl_with_reflection(module_name + "_vert", vertex_source, "main", ShaderStage::VERTEX);
+    if (!vertex_result) {
+        return make_error<RetroArchCompiledShader>(
+            ErrorCode::SHADER_COMPILE_FAILED,
+            "Vertex shader compile failed: " + vertex_result.error().message);
+    }
+
+    auto fragment_result =
+        compile_glsl_with_reflection(module_name + "_frag", fragment_source, "main", ShaderStage::FRAGMENT);
+    if (!fragment_result) {
+        return make_error<RetroArchCompiledShader>(
+            ErrorCode::SHADER_COMPILE_FAILED,
+            "Fragment shader compile failed: " + fragment_result.error().message);
+    }
+
+    GOGGLES_LOG_INFO("Compiled RetroArch shader: {}", module_name);
+    return RetroArchCompiledShader{
+        .vertex_spirv = std::move(vertex_result->spirv),
+        .fragment_spirv = std::move(fragment_result->spirv),
+        .vertex_reflection = std::move(vertex_result->reflection),
+        .fragment_reflection = std::move(fragment_result->reflection)};
 }
 
 } // namespace goggles::render

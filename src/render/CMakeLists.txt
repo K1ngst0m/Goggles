@@ -4,7 +4,11 @@ add_library(goggles_render STATIC
     backend/vulkan_backend.cpp
     backend/vulkan_debug.cpp
     shader/shader_runtime.cpp
+    shader/retroarch_preprocessor.cpp
+    shader/slang_reflect.cpp
     chain/output_pass.cpp
+    chain/preset_parser.cpp
+    chain/filter_pass.cpp
 )
 
 target_include_directories(goggles_render PUBLIC

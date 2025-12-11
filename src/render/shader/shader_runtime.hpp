@@ -6,11 +6,22 @@
 #include <util/error.hpp>
 #include <vector>
 
+#include "slang_reflect.hpp"
+
 namespace goggles::render {
+
+enum class ShaderStage { VERTEX, FRAGMENT };
 
 struct CompiledShader {
     std::vector<uint32_t> spirv;
     std::string entry_point;
+};
+
+struct RetroArchCompiledShader {
+    std::vector<uint32_t> vertex_spirv;
+    std::vector<uint32_t> fragment_spirv;
+    ReflectionData vertex_reflection;
+    ReflectionData fragment_reflection;
 };
 
 class ShaderRuntime {
@@ -30,6 +41,11 @@ public:
                                       const std::string& entry_point = "main")
         -> Result<CompiledShader>;
 
+    [[nodiscard]] auto compile_retroarch_shader(const std::string& vertex_source,
+                                                const std::string& fragment_source,
+                                                const std::string& module_name)
+        -> Result<RetroArchCompiledShader>;
+
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 
 private:
@@ -47,6 +63,16 @@ private:
     [[nodiscard]] auto compile_slang(const std::string& module_name, const std::string& source,
                                      const std::string& entry_point)
         -> Result<std::vector<uint32_t>>;
+    [[nodiscard]] auto compile_glsl(const std::string& module_name, const std::string& source,
+                                    const std::string& entry_point, ShaderStage stage)
+        -> Result<std::vector<uint32_t>>;
+
+    // Internal result struct for GLSL compilation with reflection
+    struct GlslCompileResult;
+    [[nodiscard]] auto compile_glsl_with_reflection(const std::string& module_name,
+                                                    const std::string& source,
+                                                    const std::string& entry_point,
+                                                    ShaderStage stage) -> Result<GlslCompileResult>;
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;

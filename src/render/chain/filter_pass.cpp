@@ -1,4 +1,4 @@
-#include "output_pass.hpp"
+#include "filter_pass.hpp"
 
 #include <array>
 #include <render/shader/shader_runtime.hpp>
@@ -6,13 +6,28 @@
 
 namespace goggles::render {
 
-OutputPass::~OutputPass() {
-    OutputPass::shutdown();
+FilterPass::~FilterPass() {
+    FilterPass::shutdown();
 }
 
-auto OutputPass::init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
-                      ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
-    -> Result<void> {
+auto FilterPass::init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
+                      ShaderRuntime& /*shader_runtime*/,
+                      const std::filesystem::path& /*shader_dir*/) -> Result<void> {
+    // Standard init interface - not used for FilterPass
+    // Use init_from_sources or init_from_preset instead
+    m_device = device;
+    m_target_format = target_format;
+    m_num_sync_indices = num_sync_indices;
+    return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                            "FilterPass::init() not supported - use init_from_sources()");
+}
+
+auto FilterPass::init_from_sources(vk::Device device, vk::Format target_format,
+                                    uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
+                                    const std::string& vertex_source,
+                                    const std::string& fragment_source,
+                                    const std::string& shader_name,
+                                    FilterMode filter_mode) -> Result<void> {
     if (m_initialized) {
         return {};
     }
@@ -21,7 +36,22 @@ auto OutputPass::init(vk::Device device, vk::Format target_format, uint32_t num_
     m_target_format = target_format;
     m_num_sync_indices = num_sync_indices;
 
-    auto result = create_sampler();
+    // Compile RetroArch shader
+    auto compile_result =
+        shader_runtime.compile_retroarch_shader(vertex_source, fragment_source, shader_name);
+    if (!compile_result) {
+        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED, compile_result.error().message);
+    }
+
+    m_vertex_reflection = std::move(compile_result->vertex_reflection);
+    m_fragment_reflection = std::move(compile_result->fragment_reflection);
+
+    // Check if shader uses push constants
+    m_has_push_constants =
+        m_vertex_reflection.push_constants.has_value() ||
+        m_fragment_reflection.push_constants.has_value();
+
+    auto result = create_sampler(filter_mode);
     if (!result) {
         return result;
     }
@@ -36,17 +66,18 @@ auto OutputPass::init(vk::Device device, vk::Format target_format, uint32_t num_
         return result;
     }
 
-    result = create_pipeline(shader_runtime, shader_dir);
+    result = create_pipeline(compile_result->vertex_spirv, compile_result->fragment_spirv);
     if (!result) {
         return result;
     }
 
     m_initialized = true;
-    GOGGLES_LOG_DEBUG("OutputPass initialized");
+    GOGGLES_LOG_DEBUG("FilterPass '{}' initialized (push_constants={})", shader_name,
+                      m_has_push_constants);
     return {};
 }
 
-void OutputPass::shutdown() {
+void FilterPass::shutdown() {
     if (!m_initialized) {
         return;
     }
@@ -60,12 +91,13 @@ void OutputPass::shutdown() {
     m_target_format = vk::Format::eUndefined;
     m_device = nullptr;
     m_num_sync_indices = 0;
+    m_has_push_constants = false;
 
     m_initialized = false;
-    GOGGLES_LOG_DEBUG("OutputPass shutdown");
+    GOGGLES_LOG_DEBUG("FilterPass shutdown");
 }
 
-void OutputPass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
+void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
     vk::DescriptorImageInfo image_info{};
     image_info.sampler = *m_sampler;
     image_info.imageView = source_view;
@@ -82,7 +114,7 @@ void OutputPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
     m_device.updateDescriptorSets(write, {});
 }
 
-void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
+void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     update_descriptor(ctx.frame_index, ctx.source_texture);
 
     vk::RenderingAttachmentInfo color_attachment{};
@@ -104,6 +136,14 @@ void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline_layout, 0,
                            m_descriptor_sets[ctx.frame_index], {});
 
+    // Push semantic values if shader uses push constants
+    if (m_has_push_constants) {
+        auto push_data = m_binder.get_push_constants();
+        cmd.pushConstants(*m_pipeline_layout,
+                          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
+                          sizeof(RetroArchPushConstants), &push_data);
+    }
+
     vk::Viewport viewport{};
     viewport.x = 0.0F;
     viewport.y = 0.0F;
@@ -122,10 +162,13 @@ void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     cmd.endRendering();
 }
 
-auto OutputPass::create_sampler() -> Result<void> {
+auto FilterPass::create_sampler(FilterMode filter_mode) -> Result<void> {
+    vk::Filter filter =
+        (filter_mode == FilterMode::LINEAR) ? vk::Filter::eLinear : vk::Filter::eNearest;
+
     vk::SamplerCreateInfo create_info{};
-    create_info.magFilter = vk::Filter::eLinear;
-    create_info.minFilter = vk::Filter::eLinear;
+    create_info.magFilter = filter;
+    create_info.minFilter = filter;
     create_info.mipmapMode = vk::SamplerMipmapMode::eNearest;
     create_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
     create_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
@@ -148,7 +191,8 @@ auto OutputPass::create_sampler() -> Result<void> {
     return {};
 }
 
-auto OutputPass::create_descriptor_resources() -> Result<void> {
+auto FilterPass::create_descriptor_resources() -> Result<void> {
+    // Combined image sampler for Source texture (binding 0)
     vk::DescriptorSetLayoutBinding binding{};
     binding.binding = 0;
     binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
@@ -201,10 +245,21 @@ auto OutputPass::create_descriptor_resources() -> Result<void> {
     return {};
 }
 
-auto OutputPass::create_pipeline_layout() -> Result<void> {
+auto FilterPass::create_pipeline_layout() -> Result<void> {
     vk::PipelineLayoutCreateInfo create_info{};
     create_info.setLayoutCount = 1;
     create_info.pSetLayouts = &*m_descriptor_layout;
+
+    // Add push constant range if needed
+    vk::PushConstantRange push_range{};
+    if (m_has_push_constants) {
+        push_range.stageFlags =
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+        push_range.offset = 0;
+        push_range.size = sizeof(RetroArchPushConstants);
+        create_info.pushConstantRangeCount = 1;
+        create_info.pPushConstantRanges = &push_range;
+    }
 
     auto [result, layout] = m_device.createPipelineLayoutUnique(create_info);
     if (result != vk::Result::eSuccess) {
@@ -216,21 +271,11 @@ auto OutputPass::create_pipeline_layout() -> Result<void> {
     return {};
 }
 
-auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
-                                 const std::filesystem::path& shader_dir) -> Result<void> {
-    auto vert_result = shader_runtime.compile_shader(shader_dir / "internal/blit.vert.slang");
-    if (!vert_result) {
-        return nonstd::make_unexpected(vert_result.error());
-    }
-
-    auto frag_result = shader_runtime.compile_shader(shader_dir / "internal/blit.frag.slang");
-    if (!frag_result) {
-        return nonstd::make_unexpected(frag_result.error());
-    }
-
+auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
+                                 const std::vector<uint32_t>& fragment_spirv) -> Result<void> {
     vk::ShaderModuleCreateInfo vert_module_info{};
-    vert_module_info.codeSize = vert_result->spirv.size() * sizeof(uint32_t);
-    vert_module_info.pCode = vert_result->spirv.data();
+    vert_module_info.codeSize = vertex_spirv.size() * sizeof(uint32_t);
+    vert_module_info.pCode = vertex_spirv.data();
 
     auto [vert_mod_result, vert_module] = m_device.createShaderModuleUnique(vert_module_info);
     if (vert_mod_result != vk::Result::eSuccess) {
@@ -240,8 +285,8 @@ auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
     }
 
     vk::ShaderModuleCreateInfo frag_module_info{};
-    frag_module_info.codeSize = frag_result->spirv.size() * sizeof(uint32_t);
-    frag_module_info.pCode = frag_result->spirv.data();
+    frag_module_info.codeSize = fragment_spirv.size() * sizeof(uint32_t);
+    frag_module_info.pCode = fragment_spirv.data();
 
     auto [frag_mod_result, frag_module] = m_device.createShaderModuleUnique(frag_module_info);
     if (frag_mod_result != vk::Result::eSuccess) {
