@@ -393,8 +393,430 @@ RetroArch uses raw Vulkan C API. For Goggles (per PROJECT_POLICIES.md D.2):
 
 ---
 
+## Critical Divergence: Compiler and Syntax
+
+### The "Slang" Naming Confusion
+
+**IMPORTANT:** The term "Slang" refers to two completely different things:
+
+| Term | What it is | Used by |
+|------|-----------|---------|
+| **RetroArch "Slang"** | File format specification for Vulkan GLSL with custom pragmas | RetroArch, librashader |
+| **Microsoft Slang** | A shading language by Microsoft/NVIDIA (HLSL-based) | Goggles (current) |
+
+Goggles currently uses **Microsoft Slang** with HLSL-style syntax, but RetroArch shaders use **Vulkan GLSL** (the "Slang" format).
+
+### Compiler Comparison
+
+| Aspect | Goggles (Current) | RetroArch |
+|--------|------------------|-----------|
+| **Compiler** | Microsoft Slang (`slang.h`) | glslang (Khronos) |
+| **Base Language** | HLSL-style | GLSL (#version 450) |
+| **Shader Stage** | `[shader("vertex")]` attribute | `#pragma stage vertex` |
+| **Entry Point** | Named function with attribute | `void main()` |
+| **Types** | `float4`, `float2`, `Sampler2D` | `vec4`, `vec2`, `sampler2D` |
+| **Texture Sampling** | `.Sample()` method | `texture()` function |
+| **Descriptor Binding** | `[[vk::binding(0,0)]]` | `layout(set=0, binding=0)` |
+
+### Current Goggles Shader Example
+
+```hlsl
+// blit.frag.slang (HLSL-style)
+[[vk::binding(0, 0)]]
+Sampler2D source_texture;
+
+[shader("pixel")]
+float4 main(float2 texcoord : TEXCOORD0) : SV_Target0 {
+    return source_texture.Sample(texcoord);
+}
+```
+
+### RetroArch Shader Example
+
+```glsl
+// zfast_crt.slang (GLSL-style)
+#version 450
+layout(push_constant) uniform Push {
+    vec4 SourceSize;
+    vec4 OutputSize;
+    float BRIGHTNESS;
+} params;
+
+#pragma parameter BRIGHTNESS "Brightness" 1.0 0.5 2.0 0.05
+
+layout(std140, set = 0, binding = 0) uniform UBO { mat4 MVP; } global;
+
+#pragma stage vertex
+layout(location = 0) in vec4 Position;
+layout(location = 1) in vec2 TexCoord;
+layout(location = 0) out vec2 vTexCoord;
+void main() {
+   gl_Position = global.MVP * Position;
+   vTexCoord = TexCoord;
+}
+
+#pragma stage fragment
+layout(location = 0) in vec2 vTexCoord;
+layout(location = 0) out vec4 FragColor;
+layout(set = 0, binding = 2) uniform sampler2D Source;
+void main() {
+   FragColor = texture(Source, vTexCoord) * params.BRIGHTNESS;
+}
+```
+
+---
+
+## RetroArch Shader Preprocessing Requirements
+
+RetroArch/glslang does **NOT** support these directives natively. A custom preprocessor is required:
+
+### Custom Pragmas (Extract, Don't Compile)
+
+| Pragma | Purpose | Preprocessing Action |
+|--------|---------|---------------------|
+| `#pragma stage vertex/fragment` | Split stages | Split source at pragma, compile each stage separately |
+| `#pragma parameter NAME "Desc" default min max step` | User-tunable uniforms | Extract to metadata, verify uniform exists |
+| `#pragma name IDENTIFIER` | Pass alias | Extract to metadata for semantic binding |
+| `#pragma format FORMAT` | Framebuffer format | Extract to pass configuration |
+
+### `#include` Handling
+
+- Must be resolved **before** compilation (glslang doesn't support `#include` by default)
+- Paths are relative to the including file
+- No cycle detection (undefined behavior if cyclic)
+- Common include files in RetroArch shaders:
+  - `include/compat_macros.inc` - HLSL→GLSL type mapping (`float2` → `vec2`)
+  - Pass-specific headers (e.g., `bind-shader-params.h`)
+
+### Conditional Compilation (`#ifdef`, `#define`)
+
+- Used extensively in complex shaders (e.g., crt-royale)
+- Some defines control runtime behavior, others are compile-time
+- Example: `#ifdef RUNTIME_SHADER_PARAMS_ENABLE` toggles between static constants and uniforms
+
+---
+
+## Shader Complexity Analysis
+
+### Simple Shader: zfast-crt
+
+**Characteristics:**
+- Single pass
+- Simple preprocessing: only `#pragma parameter` extraction needed
+- Self-contained (no `#include`)
+- Uses push constants for all parameters
+- Straightforward translation possible
+
+**Key Patterns:**
+```glsl
+// Push constants for per-frame data
+layout(push_constant) uniform Push {
+    vec4 SourceSize;
+    float PARAM1, PARAM2;
+} params;
+
+// UBO for MVP only
+layout(std140, set = 0, binding = 0) uniform UBO { mat4 MVP; } global;
+
+// Source texture always at binding 2
+layout(set = 0, binding = 2) uniform sampler2D Source;
+```
+
+### Complex Shader: crt-royale
+
+**Characteristics:**
+- 9 passes with different scale types (source, viewport, absolute)
+- Heavy `#include` usage (17+ header files)
+- 6 LUT textures (mask textures)
+- Pass aliasing (e.g., `ORIG_LINEARIZED`, `HALATION_BLUR`)
+- Conditional compilation for feature toggles
+- ~50 user parameters
+- Some passes reference multiple previous pass outputs
+
+**Preprocessing Challenges:**
+1. Deep `#include` tree must be flattened
+2. Conditional compilation based on defines from both `.slangp` and headers
+3. Large UBO (exceeds 128 bytes, requires spill to regular UBO)
+4. Header files redefine compatibility macros (`float2` → `vec2`, etc.)
+
+---
+
+## Translation Strategy Options
+
+### Option 1: Slang GLSL Mode + Preprocessing (SELECTED)
+
+**Approach:**
+1. Enable Slang's GLSL compatibility mode (`enableGLSL = true`, `allowGLSLSyntax = true`)
+2. Add lightweight text preprocessing for RetroArch-specific pragmas:
+   - Resolve `#include` (Slang supports this natively via search paths)
+   - Extract `#pragma parameter/name/format` as metadata
+   - Split source at `#pragma stage vertex/fragment`
+3. Compile with Slang to SPIR-V (single compiler)
+4. Use SPIRV-Cross for reflection
+
+**Pros:**
+- Single compiler dependency (Slang already used for native shaders)
+- Slang is actively maintained by NVIDIA/Khronos
+- GLSL mode well-supported (Vulkan SDK includes Slang since 1.3.296)
+- Preprocessing is text-only (simple, no compiler complexity)
+
+**Cons:**
+- May encounter edge cases in complex shaders (mitigated by incremental testing)
+
+**Decision:** This is the selected approach. See `openspec/changes/add-retroarch-shader-support/` for implementation details.
+
+### Option 2: glslang (Rejected)
+
+**Approach:**
+- Add glslang as second compiler for RetroArch shaders
+
+**Rejected because:**
+- Two compilers = double maintenance burden
+- If we add glslang, why keep Slang at all?
+- Slang GLSL mode provides equivalent functionality
+
+### Option 3: Static Translation (Rejected)
+
+**Approach:**
+- One-time conversion of RetroArch shaders to Slang HLSL syntax
+
+**Rejected because:**
+- Maintenance burden (RetroArch shaders update frequently)
+- Translation errors likely for complex shaders
+- Would need ongoing translation effort for new shaders
+
+---
+
+## Preprocessor Implementation Outline
+
+```
+┌────────────────────┐
+│ .slang file        │
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐
+│ Include Resolution │  ← Recursive file reading
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐
+│ Pragma Extraction  │  ← #pragma parameter, name, format
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐
+│ Stage Splitting    │  ← #pragma stage vertex/fragment
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐     ┌─────────────────┐
+│ glslang Compile    │ ──► │ SPIR-V (vertex) │
+│ (per stage)        │     │ SPIR-V (frag)   │
+└────────────────────┘     └────────┬────────┘
+                                    │
+                                    ▼
+                           ┌─────────────────┐
+                           │ SPIRV-Cross     │
+                           │ (reflection)    │
+                           └────────┬────────┘
+                                    │
+                                    ▼
+                           ┌─────────────────┐
+                           │ Semantic Binding│
+                           │ (UBO/Push/Tex)  │
+                           └─────────────────┘
+```
+
+### Preprocessing Pseudo-code
+
+```cpp
+struct PreprocessedShader {
+    std::string vertex_source;
+    std::string fragment_source;
+    std::vector<Parameter> parameters;
+    std::string name_alias;
+    vk::Format format = vk::Format::eR8G8B8A8Unorm;
+};
+
+auto preprocess_slang(const fs::path& path) -> PreprocessedShader {
+    // 1. Read file
+    std::string source = read_file(path);
+
+    // 2. Resolve includes (recursive)
+    source = resolve_includes(source, path.parent_path());
+
+    // 3. Extract pragmas
+    auto parameters = extract_parameters(source);
+    auto name = extract_name(source);
+    auto format = extract_format(source);
+
+    // 4. Split by stage
+    auto [vertex, fragment] = split_by_stage(source);
+
+    return { vertex, fragment, parameters, name, format };
+}
+```
+
+---
+
+## Integration with Current Goggles Architecture
+
+### ShaderRuntime Extension
+
+Current `ShaderRuntime` compiles Microsoft Slang. Extend with:
+
+```cpp
+class ShaderRuntime {
+public:
+    // Existing: Microsoft Slang compilation
+    auto compile_shader(const fs::path& path) -> Result<CompiledShader>;
+
+    // New: RetroArch shader compilation
+    auto compile_retroarch_shader(const fs::path& path)
+        -> Result<RetroArchShader>;
+
+    struct RetroArchShader {
+        std::vector<uint32_t> vertex_spirv;
+        std::vector<uint32_t> fragment_spirv;
+        std::vector<Parameter> parameters;
+        std::string name;
+        vk::Format format;
+        ReflectionData reflection;
+    };
+};
+```
+
+### FilterPass Updates
+
+The existing `OutputPass` needs to evolve:
+
+```cpp
+class FilterPass : public Pass {
+    // RetroArch-specific
+    std::string m_name_alias;           // #pragma name
+    vk::Format m_framebuffer_format;    // #pragma format
+    std::vector<Parameter> m_parameters;
+
+    // Uniform data
+    std::vector<uint8_t> m_ubo_data;
+    std::vector<uint8_t> m_push_data;
+
+    // Framebuffer (null for final pass)
+    std::unique_ptr<Framebuffer> m_framebuffer;
+};
+```
+
+---
+
+## Open Questions
+
+1. **Parameter UI**: How will user-adjustable parameters be exposed?
+   - Separate config file?
+   - Runtime GUI?
+   - Command-line overrides?
+
+2. **Hot Reload**: Should shader changes be detected at runtime?
+   - Development convenience vs. complexity
+
+3. **Preset Switching**: How to handle .slangp loading/unloading?
+   - Full chain rebuild on preset change?
+   - Cache compiled passes?
+
+4. **History Buffer Size**: Per-preset or global limit?
+   - RetroArch: arbitrary, shader-defined
+   - Memory implications for high-resolution capture
+
+---
+
+## Implementation Status
+
+The following components have been implemented as part of the RetroArch shader support:
+
+### Completed Components
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| **ShaderRuntime GLSL Mode** | `src/render/shader/shader_runtime.cpp` | Dual session (HLSL + GLSL) with Slang compiler |
+| **RetroArch Preprocessor** | `src/render/shader/retroarch_preprocessor.cpp` | Stage splitting, parameter extraction, include resolution |
+| **Preset Parser** | `src/render/chain/preset_parser.cpp` | INI-style `.slangp` file parsing |
+| **Slang Reflection** | `src/render/shader/slang_reflect.cpp` | Native Slang reflection API (no SPIRV-Cross needed) |
+| **Semantic Binder** | `src/render/chain/semantic_binder.hpp` | UBO/push constant population for RetroArch semantics |
+| **FilterPass** | `src/render/chain/filter_pass.cpp` | Single pass rendering with RetroArch shader support |
+
+### Key Implementation Details
+
+#### Slang GLSL Mode Configuration
+
+```cpp
+// Global session with GLSL support
+SlangGlobalSessionDesc global_desc = {};
+global_desc.enableGLSL = true;
+slang::createGlobalSession(&global_desc, global_session.writeRef());
+
+// GLSL session for RetroArch shaders
+slang::SessionDesc glsl_session_desc = {};
+glsl_session_desc.allowGLSLSyntax = true;
+// ... target setup for SPIRV output
+```
+
+#### Entry Point Discovery
+
+GLSL shaders don't have `[shader(...)]` attributes, so use `findAndCheckEntryPoint`:
+
+```cpp
+SlangStage slang_stage = (stage == ShaderStage::VERTEX)
+    ? SLANG_STAGE_VERTEX : SLANG_STAGE_FRAGMENT;
+module->findAndCheckEntryPoint("main", slang_stage,
+    entry_point.writeRef(), diagnostics.writeRef());
+```
+
+#### Reflection API
+
+Using Slang's native reflection instead of SPIRV-Cross:
+
+```cpp
+slang::ProgramLayout* layout = linked->getLayout();
+for (unsigned i = 0; i < layout->getParameterCount(); i++) {
+    auto param = layout->getParameterByIndex(i);
+    auto category = param->getCategory();
+    // PushConstantBuffer, DescriptorTableSlot, etc.
+}
+```
+
+### Test Coverage
+
+| Test File | Coverage |
+|-----------|----------|
+| `test_shader_runtime.cpp` | GLSL compilation, error handling |
+| `test_retroarch_preprocessor.cpp` | Stage splitting, parameter extraction, includes |
+| `test_preset_parser.cpp` | INI parsing, multi-pass presets |
+| `test_slang_reflect.cpp` | UBO, push constants, texture bindings |
+| `test_semantic_binder.cpp` | Size vec4 computation, MVP matrix |
+| `test_zfast_integration.cpp` | End-to-end zfast-crt-composite verification |
+
+### Verified Shaders
+
+- **zfast-crt-composite**: Single pass CRT shader, compiles and reflects correctly
+  - Push constants: SourceSize, OutputSize, OriginalSize, FrameCount + 10 parameters
+  - UBO: MVP matrix at binding 0
+  - Texture: Source at binding 2
+
+### Future Work (Out of Scope)
+
+- **FilterChain Orchestration**: Multi-pass execution with framebuffer management
+- **History Buffers**: OriginalHistory# texture access
+- **Feedback Buffers**: PassFeedback# for IIR effects
+- **LUT Textures**: Static lookup textures from presets
+- **Parameter UI**: Runtime parameter adjustment
+
+---
+
 ## References
 
 - RetroArch: `gfx/drivers_shader/shader_vulkan.cpp`
 - Slang spec: https://docs.libretro.com/development/shader/slang-shaders/
 - librashader: https://github.com/SnowflakePowered/librashader
+- Microsoft Slang: https://github.com/shader-slang/slang
+- glslang: https://github.com/KhronosGroup/glslang
+- Compatibility macros: `slang-shaders/include/compat_macros.inc`

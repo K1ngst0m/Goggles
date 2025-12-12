@@ -64,10 +64,14 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
         auto& preprocessed = preprocess_result.value();
         auto pass = std::make_unique<FilterPass>();
 
+        bool is_final = (i == m_preset->passes.size() - 1);
+        vk::Format target_format = is_final ? m_swapchain_format : pass_config.framebuffer_format;
+
         auto init_result = pass->init_from_sources(
-            m_device, pass_config.framebuffer_format, m_num_sync_indices, *m_shader_runtime,
-            preprocessed.vertex_source, preprocessed.fragment_source,
-            pass_config.shader_path.stem().string(), pass_config.filter_mode);
+            m_device, m_physical_device, target_format, m_num_sync_indices,
+            *m_shader_runtime, preprocessed.vertex_source, preprocessed.fragment_source,
+            pass_config.shader_path.stem().string(), pass_config.filter_mode,
+            preprocessed.parameters);
 
         if (!init_result) {
             return make_error<void>(init_result.error().code, init_result.error().message);

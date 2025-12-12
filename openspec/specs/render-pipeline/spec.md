@@ -375,64 +375,49 @@ The shader subsystem SHALL parse RetroArch `.slangp` preset files to configure m
 
 ### Requirement: FilterPass Implementation
 
-The chain subsystem SHALL provide `FilterPass` for executing RetroArch shader passes.
+FilterPass SHALL create Vulkan pipeline resources based on shader reflection data from SlangReflect.
 
-#### Scenario: FilterPass initialization
+The pipeline creation process SHALL:
+1. Query push constant size from reflection and use it for VkPushConstantRange
+2. Build descriptor set layout from reflected UBO and texture bindings
+3. Combine stage flags when a binding is used by both vertex and fragment stages
+4. Create vertex input state matching reflected vertex shader inputs
+5. Allocate descriptor pool with correct type counts for all binding types
 
-- **GIVEN** a preprocessed RetroArch shader (vertex SPIR-V, fragment SPIR-V, parameters, metadata)
-- **WHEN** `FilterPass::init()` is called
-- **THEN** graphics pipeline SHALL be created with both shader stages
-- **AND** descriptor layout SHALL match reflected bindings (UBO, textures)
-- **AND** `num_sync_indices` descriptor sets SHALL be allocated
+#### Scenario: Shader with UBO and textures
+- **WHEN** a shader has UBO at binding 0 (vertex+fragment) and texture at binding 2
+- **THEN** descriptor layout includes both bindings with correct stage flags
+- **AND** descriptor pool has capacity for uniform buffer and combined image sampler
 
-#### Scenario: Framebuffer creation for intermediate passes
+#### Scenario: Shader with extended push constants
+- **WHEN** a shader's push constant block is 76 bytes
+- **THEN** VkPushConstantRange.size is set to 76
+- **AND** pipeline creation succeeds without validation errors
 
-- **GIVEN** a FilterPass that is NOT the final pass
-- **WHEN** initialized with scale type and output dimensions
-- **THEN** a framebuffer image SHALL be created with specified format
-- **AND** image view SHALL be created for sampling by subsequent passes
-
-#### Scenario: FilterPass recording
-
-- **GIVEN** a FilterPass with valid pipeline and framebuffer
-- **WHEN** `record()` is called with PassContext
-- **THEN** dynamic rendering SHALL begin with framebuffer image view (or `ctx.target_image_view` for final pass)
-- **AND** UBO SHALL be updated with semantic values (MVP, sizes)
-- **AND** push constants SHALL be updated with per-frame values (FrameCount, sizes)
-- **AND** descriptor set SHALL bind Source and Original textures
+#### Scenario: Shader with vertex inputs
+- **WHEN** a shader expects Position (location 0, vec4) and TexCoord (location 1, vec2)
+- **THEN** vertex input binding description specifies correct stride
+- **AND** vertex attribute descriptions specify locations 0 and 1 with R32G32B32A32_SFLOAT and R32G32_SFLOAT formats
 
 ### Requirement: Slang Native Reflection
 
-The shader subsystem SHALL use Slang's built-in reflection API to discover shader bindings without external dependencies.
+SlangReflect SHALL expose additional reflection data for pipeline creation:
 
-#### Scenario: Reflection from linked program
+1. `push_constant_size()` - total size in bytes of push constant block
+2. `get_ubo_bindings()` - list of UBO bindings with set, binding, size, and stage flags
+3. `get_vertex_inputs()` - list of vertex inputs with location, format, and offset
 
-- **GIVEN** a linked `IComponentType` from Slang compilation
-- **WHEN** `getLayout()` is called
-- **THEN** a `ProgramLayout*` SHALL be returned
-- **AND** it SHALL provide access to all shader parameters
+#### Scenario: Reflect push constant size
+- **WHEN** shader has a push constant block with 5 vec4 members
+- **THEN** push_constant_size() returns 80
 
-#### Scenario: Push constant discovery
+#### Scenario: Reflect UBO with combined stages
+- **WHEN** vertex and fragment shaders both reference UBO at binding 0
+- **THEN** get_ubo_bindings() returns entry with stage_flags = VERTEX | FRAGMENT
 
-- **GIVEN** a shader with push constants containing `SourceSize`, `OutputSize`, `FrameCount`, user params
-- **WHEN** reflection iterates parameters with `SLANG_PARAMETER_CATEGORY_PUSH_CONSTANT_BUFFER`
-- **THEN** each member's byte offset SHALL be discoverable via `getOffset()`
-- **AND** member names SHALL match shader source declarations
-
-#### Scenario: UBO member discovery
-
-- **GIVEN** a shader with UBO containing `MVP` matrix
-- **WHEN** reflection iterates the UBO type layout
-- **THEN** `MVP` offset SHALL be discoverable via `getOffset(SLANG_PARAMETER_CATEGORY_UNIFORM)`
-- **AND** UBO binding/set SHALL be discoverable via `getBindingIndex()` / `getBindingSpace()`
-
-#### Scenario: Texture binding discovery
-
-- **GIVEN** a shader with `Source` sampler at set=0, binding=2
-- **WHEN** reflection iterates texture parameters
-- **THEN** binding index SHALL be 2
-- **AND** binding space (set) SHALL be 0
-- **AND** parameter name SHALL be "Source"
+#### Scenario: Reflect vertex inputs
+- **WHEN** vertex shader has `layout(location = 0) in vec4 Position`
+- **THEN** get_vertex_inputs() includes {location: 0, format: R32G32B32A32_SFLOAT}
 
 ### Requirement: Semantic Binder
 

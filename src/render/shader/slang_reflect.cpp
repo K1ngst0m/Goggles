@@ -1,12 +1,12 @@
 #include "slang_reflect.hpp"
 
+#include <algorithm>
 #include <util/logging.hpp>
 
 namespace goggles::render {
 
 namespace {
 
-// Helper to extract uniform members from a type layout
 auto extract_members(slang::TypeLayoutReflection* type_layout, size_t base_offset)
     -> std::vector<UniformMember> {
     std::vector<UniformMember> members;
@@ -33,6 +33,58 @@ auto extract_members(slang::TypeLayoutReflection* type_layout, size_t base_offse
     return members;
 }
 
+auto slang_type_to_vk_format(slang::TypeReflection* type) -> vk::Format {
+    if (type == nullptr) {
+        return vk::Format::eUndefined;
+    }
+
+    auto kind = type->getKind();
+    if (kind == slang::TypeReflection::Kind::Vector) {
+        auto element_type = type->getElementType();
+        auto element_count = type->getElementCount();
+
+        if (element_type == nullptr) {
+            return vk::Format::eUndefined;
+        }
+
+        auto scalar_type = element_type->getScalarType();
+        if (scalar_type == slang::TypeReflection::ScalarType::Float32) {
+            switch (element_count) {
+            case 2:
+                return vk::Format::eR32G32Sfloat;
+            case 3:
+                return vk::Format::eR32G32B32Sfloat;
+            case 4:
+                return vk::Format::eR32G32B32A32Sfloat;
+            default:
+                return vk::Format::eUndefined;
+            }
+        }
+    } else if (kind == slang::TypeReflection::Kind::Scalar) {
+        auto scalar_type = type->getScalarType();
+        if (scalar_type == slang::TypeReflection::ScalarType::Float32) {
+            return vk::Format::eR32Sfloat;
+        }
+    }
+
+    return vk::Format::eUndefined;
+}
+
+auto get_format_size(vk::Format format) -> uint32_t {
+    switch (format) {
+    case vk::Format::eR32Sfloat:
+        return 4;
+    case vk::Format::eR32G32Sfloat:
+        return 8;
+    case vk::Format::eR32G32B32Sfloat:
+        return 12;
+    case vk::Format::eR32G32B32A32Sfloat:
+        return 16;
+    default:
+        return 0;
+    }
+}
+
 } // namespace
 
 auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
@@ -49,7 +101,6 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
                                           "Failed to get program layout");
     }
 
-    // Iterate over global parameters
     auto param_count = layout->getParameterCount();
     GOGGLES_LOG_DEBUG("Reflecting {} global parameters", param_count);
 
@@ -73,27 +124,33 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
                           static_cast<int>(kind), static_cast<int>(category));
 
         if (category == slang::ParameterCategory::PushConstantBuffer) {
-            // Push constant block
             PushConstantLayout push;
-            push.total_size = type_layout->getSize(SLANG_PARAMETER_CATEGORY_PUSH_CONSTANT_BUFFER);
-            push.members = extract_members(type_layout, 0);
+            push.stage_flags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+
+            auto element_type = type_layout->getElementTypeLayout();
+            if (element_type != nullptr) {
+                push.total_size = element_type->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM);
+                push.members = extract_members(element_type, 0);
+            } else {
+                push.total_size = type_layout->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM);
+                push.members = extract_members(type_layout, 0);
+            }
 
             GOGGLES_LOG_DEBUG("Found push constant block: size={}, members={}", push.total_size,
                               push.members.size());
             data.push_constants = std::move(push);
         } else if (category == slang::ParameterCategory::DescriptorTableSlot) {
-            // Could be UBO or texture
             auto binding = param->getBindingIndex();
             auto set = param->getBindingSpace();
 
             if (kind == slang::TypeReflection::Kind::ConstantBuffer ||
                 kind == slang::TypeReflection::Kind::ParameterBlock) {
-                // Uniform buffer
                 UniformBufferLayout ubo;
                 ubo.binding = binding;
                 ubo.set = set;
+                ubo.stage_flags =
+                    vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
 
-                // Get element type for constant buffer
                 auto element_type = type_layout->getElementTypeLayout();
                 if (element_type != nullptr) {
                     ubo.total_size = element_type->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM);
@@ -109,28 +166,73 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
             } else if (kind == slang::TypeReflection::Kind::Resource ||
                        kind == slang::TypeReflection::Kind::SamplerState ||
                        kind == slang::TypeReflection::Kind::TextureBuffer) {
-                // Texture or sampler
                 TextureBinding tex;
                 tex.name = name != nullptr ? name : "";
                 tex.binding = binding;
                 tex.set = set;
+                tex.stage_flags = vk::ShaderStageFlagBits::eFragment;
 
                 GOGGLES_LOG_DEBUG("Found texture: name='{}', binding={}, set={}", tex.name, binding,
                                   set);
                 data.textures.push_back(std::move(tex));
             }
         } else if (category == slang::ParameterCategory::Uniform) {
-            // Direct uniform in default constant buffer
             GOGGLES_LOG_DEBUG("Found direct uniform: name='{}'", name ? name : "(null)");
         }
     }
 
-    // Also check entry point parameters for textures/samplers
     auto entry_point_count = layout->getEntryPointCount();
     for (unsigned ep = 0; ep < entry_point_count; ++ep) {
         auto entry_layout = layout->getEntryPointByIndex(ep);
         if (entry_layout == nullptr) {
             continue;
+        }
+
+        auto stage = entry_layout->getStage();
+        bool is_vertex = (stage == SLANG_STAGE_VERTEX);
+
+        if (is_vertex) {
+            uint32_t offset = 0;
+            auto ep_param_count = entry_layout->getParameterCount();
+            for (unsigned j = 0; j < ep_param_count; ++j) {
+                auto param = entry_layout->getParameterByIndex(j);
+                if (param == nullptr) {
+                    continue;
+                }
+
+                auto category = param->getCategory();
+                if (category == slang::ParameterCategory::VaryingInput) {
+                    auto type_layout = param->getTypeLayout();
+                    if (type_layout == nullptr) {
+                        continue;
+                    }
+
+                    const char* name = param->getName();
+                    auto semantic_index = param->getSemanticIndex();
+
+                    VertexInput input;
+                    input.name = name != nullptr ? name : "";
+                    input.location = static_cast<uint32_t>(semantic_index);
+                    input.format = slang_type_to_vk_format(type_layout->getType());
+                    input.offset = offset;
+
+                    offset += get_format_size(input.format);
+
+                    GOGGLES_LOG_DEBUG("Found vertex input: name='{}', location={}, format={}",
+                                      input.name, input.location, vk::to_string(input.format));
+                    data.vertex_inputs.push_back(std::move(input));
+                }
+            }
+
+            // If no vertex inputs found via Slang reflection, assume RetroArch standard layout
+            // RetroArch shaders always use: Position (vec4, loc 0), TexCoord (vec2, loc 1)
+            if (data.vertex_inputs.empty() && data.push_constants.has_value()) {
+                GOGGLES_LOG_DEBUG("No vertex inputs from reflection, using RetroArch standard layout");
+                data.vertex_inputs.push_back(
+                    {"Position", 0, vk::Format::eR32G32B32A32Sfloat, 0});
+                data.vertex_inputs.push_back(
+                    {"TexCoord", 1, vk::Format::eR32G32Sfloat, 16});
+            }
         }
 
         auto ep_param_count = entry_layout->getParameterCount();
@@ -156,6 +258,8 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
                 tex.name = name != nullptr ? name : "";
                 tex.binding = binding;
                 tex.set = set;
+                tex.stage_flags = is_vertex ? vk::ShaderStageFlagBits::eVertex
+                                            : vk::ShaderStageFlagBits::eFragment;
 
                 GOGGLES_LOG_DEBUG("Found entry point texture: name='{}', binding={}, set={}",
                                   tex.name, binding, set);
@@ -164,7 +268,81 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
         }
     }
 
+    std::sort(data.vertex_inputs.begin(), data.vertex_inputs.end(),
+              [](const VertexInput& a, const VertexInput& b) { return a.location < b.location; });
+
     return data;
+}
+
+auto reflect_stage(slang::IComponentType* linked, vk::ShaderStageFlags stage)
+    -> Result<ReflectionData> {
+    auto result = reflect_program(linked);
+    if (!result) {
+        return result;
+    }
+
+    auto& data = result.value();
+
+    if (data.push_constants.has_value()) {
+        data.push_constants->stage_flags = stage;
+    }
+
+    if (data.ubo.has_value()) {
+        data.ubo->stage_flags = stage;
+    }
+
+    for (auto& tex : data.textures) {
+        tex.stage_flags = stage;
+    }
+
+    if (!(stage & vk::ShaderStageFlagBits::eVertex)) {
+        data.vertex_inputs.clear();
+    }
+
+    return data;
+}
+
+auto merge_reflection(const ReflectionData& vertex, const ReflectionData& fragment)
+    -> ReflectionData {
+    ReflectionData merged;
+
+    if (vertex.push_constants.has_value() && fragment.push_constants.has_value()) {
+        merged.push_constants = vertex.push_constants;
+        merged.push_constants->stage_flags =
+            vertex.push_constants->stage_flags | fragment.push_constants->stage_flags;
+        if (fragment.push_constants->total_size > merged.push_constants->total_size) {
+            merged.push_constants->total_size = fragment.push_constants->total_size;
+        }
+    } else if (vertex.push_constants.has_value()) {
+        merged.push_constants = vertex.push_constants;
+    } else if (fragment.push_constants.has_value()) {
+        merged.push_constants = fragment.push_constants;
+    }
+
+    if (vertex.ubo.has_value() && fragment.ubo.has_value() &&
+        vertex.ubo->binding == fragment.ubo->binding) {
+        merged.ubo = vertex.ubo;
+        merged.ubo->stage_flags = vertex.ubo->stage_flags | fragment.ubo->stage_flags;
+    } else if (vertex.ubo.has_value()) {
+        merged.ubo = vertex.ubo;
+    } else if (fragment.ubo.has_value()) {
+        merged.ubo = fragment.ubo;
+    }
+
+    merged.textures = vertex.textures;
+    for (const auto& frag_tex : fragment.textures) {
+        auto it = std::find_if(merged.textures.begin(), merged.textures.end(),
+                               [&](const TextureBinding& t) { return t.binding == frag_tex.binding; });
+        if (it != merged.textures.end()) {
+            it->stage_flags |= frag_tex.stage_flags;
+        } else {
+            merged.textures.push_back(frag_tex);
+        }
+    }
+
+    merged.vertex_inputs = vertex.vertex_inputs;
+
+    return merged;
 }
 
 } // namespace goggles::render

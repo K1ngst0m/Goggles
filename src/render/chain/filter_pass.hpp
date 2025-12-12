@@ -10,7 +10,11 @@
 
 namespace goggles::render {
 
-// FilterPass renders a RetroArch shader pass (single pass from a .slangp preset)
+struct Vertex {
+    float position[4];
+    float texcoord[2];
+};
+
 class FilterPass : public Pass {
 public:
     FilterPass() = default;
@@ -21,12 +25,10 @@ public:
     FilterPass(FilterPass&&) = delete;
     FilterPass& operator=(FilterPass&&) = delete;
 
-    // Initialize from a ShaderPassConfig (from preset parser)
     [[nodiscard]] auto init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
                             ShaderRuntime& shader_runtime,
                             const std::filesystem::path& shader_dir) -> Result<void> override;
 
-    // Initialize directly from preprocessed shader sources
     [[nodiscard]] auto init_from_sources(vk::Device device, vk::Format target_format,
                                           uint32_t num_sync_indices,
                                           ShaderRuntime& shader_runtime,
@@ -36,10 +38,20 @@ public:
                                           FilterMode filter_mode = FilterMode::LINEAR)
         -> Result<void>;
 
+    // Initialize with physical device for memory allocation
+    [[nodiscard]] auto init_from_sources(vk::Device device, vk::PhysicalDevice physical_device,
+                                          vk::Format target_format, uint32_t num_sync_indices,
+                                          ShaderRuntime& shader_runtime,
+                                          const std::string& vertex_source,
+                                          const std::string& fragment_source,
+                                          const std::string& shader_name,
+                                          FilterMode filter_mode = FilterMode::LINEAR,
+                                          const std::vector<ShaderParameter>& parameters = {})
+        -> Result<void>;
+
     void shutdown() override;
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
 
-    // Update semantic values for the current frame
     void set_source_size(uint32_t width, uint32_t height) {
         m_binder.set_source_size(width, height);
     }
@@ -60,10 +72,16 @@ private:
                                        const std::vector<uint32_t>& fragment_spirv)
         -> Result<void>;
     [[nodiscard]] auto create_sampler(FilterMode filter_mode) -> Result<void>;
+    [[nodiscard]] auto create_vertex_buffer() -> Result<void>;
+    [[nodiscard]] auto create_ubo_buffer() -> Result<void>;
 
     void update_descriptor(uint32_t frame_index, vk::ImageView source_view);
+    void build_push_constants();
+    [[nodiscard]] auto find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags properties)
+        -> uint32_t;
 
     vk::Device m_device;
+    vk::PhysicalDevice m_physical_device;
     vk::Format m_target_format = vk::Format::eUndefined;
     uint32_t m_num_sync_indices = 0;
 
@@ -75,16 +93,25 @@ private:
     std::vector<vk::DescriptorSet> m_descriptor_sets;
 
     vk::UniqueSampler m_sampler;
+    vk::UniqueBuffer m_vertex_buffer;
+    vk::UniqueDeviceMemory m_vertex_buffer_memory;
+    vk::UniqueBuffer m_ubo_buffer;
+    vk::UniqueDeviceMemory m_ubo_memory;
+    bool m_has_ubo = false;
 
-    // Semantic binding for RetroArch uniforms
     SemanticBinder m_binder;
 
-    // Reflection data from shader compilation
     ReflectionData m_vertex_reflection;
     ReflectionData m_fragment_reflection;
+    ReflectionData m_merged_reflection;
 
+    uint32_t m_push_constant_size = 0;
     bool m_has_push_constants = false;
+    bool m_has_vertex_inputs = false;
     bool m_initialized = false;
+
+    std::vector<uint8_t> m_push_data;
+    std::vector<ShaderParameter> m_parameters;
 };
 
 } // namespace goggles::render

@@ -1,10 +1,24 @@
 #include "filter_pass.hpp"
 
 #include <array>
+#include <cstring>
 #include <render/shader/shader_runtime.hpp>
 #include <util/logging.hpp>
 
 namespace goggles::render {
+
+namespace {
+
+constexpr std::array<Vertex, 6> FULLSCREEN_QUAD_VERTICES = {{
+    {{-1.0F, -1.0F, 0.0F, 1.0F}, {0.0F, 0.0F}},
+    {{1.0F, -1.0F, 0.0F, 1.0F}, {1.0F, 0.0F}},
+    {{1.0F, 1.0F, 0.0F, 1.0F}, {1.0F, 1.0F}},
+    {{-1.0F, -1.0F, 0.0F, 1.0F}, {0.0F, 0.0F}},
+    {{1.0F, 1.0F, 0.0F, 1.0F}, {1.0F, 1.0F}},
+    {{-1.0F, 1.0F, 0.0F, 1.0F}, {0.0F, 1.0F}},
+}};
+
+} // namespace
 
 FilterPass::~FilterPass() {
     FilterPass::shutdown();
@@ -13,8 +27,6 @@ FilterPass::~FilterPass() {
 auto FilterPass::init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
                       ShaderRuntime& /*shader_runtime*/,
                       const std::filesystem::path& /*shader_dir*/) -> Result<void> {
-    // Standard init interface - not used for FilterPass
-    // Use init_from_sources or init_from_preset instead
     m_device = device;
     m_target_format = target_format;
     m_num_sync_indices = num_sync_indices;
@@ -22,21 +34,34 @@ auto FilterPass::init(vk::Device device, vk::Format target_format, uint32_t num_
                             "FilterPass::init() not supported - use init_from_sources()");
 }
 
-auto FilterPass::init_from_sources(vk::Device device, vk::Format target_format,
-                                    uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
+auto FilterPass::init_from_sources(vk::Device /*device*/, vk::Format /*target_format*/,
+                                    uint32_t /*num_sync_indices*/, ShaderRuntime& /*shader_runtime*/,
+                                    const std::string& /*vertex_source*/,
+                                    const std::string& /*fragment_source*/,
+                                    const std::string& /*shader_name*/,
+                                    FilterMode /*filter_mode*/) -> Result<void> {
+    return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                            "FilterPass::init_from_sources() requires physical_device");
+}
+
+auto FilterPass::init_from_sources(vk::Device device, vk::PhysicalDevice physical_device,
+                                    vk::Format target_format, uint32_t num_sync_indices,
+                                    ShaderRuntime& shader_runtime,
                                     const std::string& vertex_source,
                                     const std::string& fragment_source,
                                     const std::string& shader_name,
-                                    FilterMode filter_mode) -> Result<void> {
+                                    FilterMode filter_mode,
+                                    const std::vector<ShaderParameter>& parameters) -> Result<void> {
     if (m_initialized) {
         return {};
     }
 
     m_device = device;
+    m_physical_device = physical_device;
     m_target_format = target_format;
     m_num_sync_indices = num_sync_indices;
+    m_parameters = parameters;
 
-    // Compile RetroArch shader
     auto compile_result =
         shader_runtime.compile_retroarch_shader(vertex_source, fragment_source, shader_name);
     if (!compile_result) {
@@ -45,35 +70,47 @@ auto FilterPass::init_from_sources(vk::Device device, vk::Format target_format,
 
     m_vertex_reflection = std::move(compile_result->vertex_reflection);
     m_fragment_reflection = std::move(compile_result->fragment_reflection);
+    m_merged_reflection = merge_reflection(m_vertex_reflection, m_fragment_reflection);
 
-    // Check if shader uses push constants
-    m_has_push_constants =
-        m_vertex_reflection.push_constants.has_value() ||
-        m_fragment_reflection.push_constants.has_value();
+    m_has_push_constants = m_merged_reflection.push_constants.has_value();
+    m_has_vertex_inputs = !m_merged_reflection.vertex_inputs.empty();
+
+    if (m_has_push_constants) {
+        m_push_constant_size = static_cast<uint32_t>(m_merged_reflection.push_constants->total_size);
+        m_push_data.resize(m_push_constant_size, 0);
+        GOGGLES_LOG_DEBUG("Push constant size from reflection: {} bytes", m_push_constant_size);
+
+        for (const auto& member : m_merged_reflection.push_constants->members) {
+            GOGGLES_LOG_DEBUG("  Push constant member: '{}' offset={} size={}",
+                              member.name, member.offset, member.size);
+        }
+    }
+
+    GOGGLES_LOG_DEBUG("FilterPass parameters count: {}", m_parameters.size());
+    for (const auto& param : m_parameters) {
+        GOGGLES_LOG_DEBUG("  Param: '{}' default={}", param.name, param.default_value);
+    }
 
     auto result = create_sampler(filter_mode);
     if (!result) {
         return result;
     }
 
-    result = create_descriptor_resources();
-    if (!result) {
-        return result;
+    if (m_has_vertex_inputs) {
+        result = create_vertex_buffer();
+        if (!result) {
+            return result;
+        }
     }
 
-    result = create_pipeline_layout();
-    if (!result) {
-        return result;
-    }
-
-    result = create_pipeline(compile_result->vertex_spirv, compile_result->fragment_spirv);
-    if (!result) {
-        return result;
-    }
+    GOGGLES_TRY(create_ubo_buffer());
+    GOGGLES_TRY(create_descriptor_resources());
+    GOGGLES_TRY(create_pipeline_layout());
+    GOGGLES_TRY(create_pipeline(compile_result->vertex_spirv, compile_result->fragment_spirv));
 
     m_initialized = true;
-    GOGGLES_LOG_DEBUG("FilterPass '{}' initialized (push_constants={})", shader_name,
-                      m_has_push_constants);
+    GOGGLES_LOG_DEBUG("FilterPass '{}' initialized (push_constants={}, size={}, vertex_inputs={})",
+                      shader_name, m_has_push_constants, m_push_constant_size, m_has_vertex_inputs);
     return {};
 }
 
@@ -87,31 +124,102 @@ void FilterPass::shutdown() {
     m_descriptor_pool.reset();
     m_descriptor_layout.reset();
     m_sampler.reset();
+    m_vertex_buffer.reset();
+    m_vertex_buffer_memory.reset();
+    m_ubo_buffer.reset();
+    m_ubo_memory.reset();
     m_descriptor_sets.clear();
+    m_push_data.clear();
+    m_parameters.clear();
     m_target_format = vk::Format::eUndefined;
     m_device = nullptr;
+    m_physical_device = nullptr;
     m_num_sync_indices = 0;
     m_has_push_constants = false;
+    m_has_vertex_inputs = false;
+    m_has_ubo = false;
+    m_push_constant_size = 0;
 
     m_initialized = false;
     GOGGLES_LOG_DEBUG("FilterPass shutdown");
 }
 
 void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
-    vk::DescriptorImageInfo image_info{};
-    image_info.sampler = *m_sampler;
-    image_info.imageView = source_view;
-    image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    std::vector<vk::WriteDescriptorSet> writes;
+    std::vector<vk::DescriptorImageInfo> image_infos;
+    vk::DescriptorBufferInfo ubo_info{};
 
-    vk::WriteDescriptorSet write{};
-    write.dstSet = m_descriptor_sets[frame_index];
-    write.dstBinding = 0;
-    write.dstArrayElement = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    write.pImageInfo = &image_info;
+    if (m_has_ubo && m_ubo_buffer) {
+        ubo_info.buffer = *m_ubo_buffer;
+        ubo_info.offset = 0;
+        ubo_info.range = m_merged_reflection.ubo->total_size;
 
-    m_device.updateDescriptorSets(write, {});
+        vk::WriteDescriptorSet write{};
+        write.dstSet = m_descriptor_sets[frame_index];
+        write.dstBinding = m_merged_reflection.ubo->binding;
+        write.dstArrayElement = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = vk::DescriptorType::eUniformBuffer;
+        write.pBufferInfo = &ubo_info;
+        writes.push_back(write);
+    }
+
+    image_infos.reserve(m_merged_reflection.textures.size());
+
+    for (const auto& tex : m_merged_reflection.textures) {
+        vk::DescriptorImageInfo image_info{};
+        image_info.sampler = *m_sampler;
+        image_info.imageView = source_view;
+        image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        image_infos.push_back(image_info);
+
+        vk::WriteDescriptorSet write{};
+        write.dstSet = m_descriptor_sets[frame_index];
+        write.dstBinding = tex.binding;
+        write.dstArrayElement = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        write.pImageInfo = &image_infos.back();
+        writes.push_back(write);
+    }
+
+    if (!writes.empty()) {
+        m_device.updateDescriptorSets(writes, {});
+    }
+}
+
+void FilterPass::build_push_constants() {
+    if (!m_has_push_constants || m_push_data.empty()) {
+        return;
+    }
+
+    std::memset(m_push_data.data(), 0, m_push_data.size());
+
+    for (const auto& member : m_merged_reflection.push_constants->members) {
+        if (member.offset + member.size > m_push_data.size()) {
+            continue;
+        }
+
+        auto* dest = m_push_data.data() + member.offset;
+
+        if (member.name == "SourceSize") {
+            std::memcpy(dest, m_binder.source_size().data(), sizeof(SizeVec4));
+        } else if (member.name == "OriginalSize") {
+            std::memcpy(dest, m_binder.original_size().data(), sizeof(SizeVec4));
+        } else if (member.name == "OutputSize") {
+            std::memcpy(dest, m_binder.output_size().data(), sizeof(SizeVec4));
+        } else if (member.name == "FrameCount") {
+            auto frame_count = m_binder.frame_count();
+            std::memcpy(dest, &frame_count, sizeof(uint32_t));
+        } else {
+            for (const auto& param : m_parameters) {
+                if (param.name == member.name) {
+                    std::memcpy(dest, &param.default_value, sizeof(float));
+                    break;
+                }
+            }
+        }
+    }
 }
 
 void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
@@ -136,12 +244,11 @@ void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline_layout, 0,
                            m_descriptor_sets[ctx.frame_index], {});
 
-    // Push semantic values if shader uses push constants
-    if (m_has_push_constants) {
-        auto push_data = m_binder.get_push_constants();
+    if (m_has_push_constants && m_push_constant_size > 0) {
+        build_push_constants();
         cmd.pushConstants(*m_pipeline_layout,
                           vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
-                          sizeof(RetroArchPushConstants), &push_data);
+                          m_push_constant_size, m_push_data.data());
     }
 
     vk::Viewport viewport{};
@@ -158,7 +265,13 @@ void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     scissor.extent = ctx.output_extent;
     cmd.setScissor(0, scissor);
 
-    cmd.draw(3, 1, 0, 0);
+    if (m_has_vertex_inputs && m_vertex_buffer) {
+        vk::DeviceSize offset = 0;
+        cmd.bindVertexBuffers(0, *m_vertex_buffer, offset);
+        cmd.draw(6, 1, 0, 0);
+    } else {
+        cmd.draw(3, 1, 0, 0);
+    }
     cmd.endRendering();
 }
 
@@ -191,17 +304,161 @@ auto FilterPass::create_sampler(FilterMode filter_mode) -> Result<void> {
     return {};
 }
 
+auto FilterPass::create_vertex_buffer() -> Result<void> {
+    vk::DeviceSize buffer_size = sizeof(FULLSCREEN_QUAD_VERTICES);
+
+    vk::BufferCreateInfo buffer_info{};
+    buffer_info.size = buffer_size;
+    buffer_info.usage = vk::BufferUsageFlagBits::eVertexBuffer;
+    buffer_info.sharingMode = vk::SharingMode::eExclusive;
+
+    auto [buf_result, buffer] = m_device.createBufferUnique(buffer_info);
+    if (buf_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to create vertex buffer: " + vk::to_string(buf_result));
+    }
+
+    auto mem_reqs = m_device.getBufferMemoryRequirements(*buffer);
+
+    vk::MemoryAllocateInfo alloc_info{};
+    alloc_info.allocationSize = mem_reqs.size;
+    alloc_info.memoryTypeIndex =
+        find_memory_type(mem_reqs.memoryTypeBits,
+                         vk::MemoryPropertyFlagBits::eHostVisible |
+                             vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
+    if (mem_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to allocate vertex buffer memory: " +
+                                    vk::to_string(mem_result));
+    }
+
+    auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
+    if (bind_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to bind vertex buffer memory: " + vk::to_string(bind_result));
+    }
+
+    auto [map_result, data] = m_device.mapMemory(*memory, 0, buffer_size);
+    if (map_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to map vertex buffer memory: " + vk::to_string(map_result));
+    }
+    std::memcpy(data, FULLSCREEN_QUAD_VERTICES.data(), buffer_size);
+    m_device.unmapMemory(*memory);
+
+    m_vertex_buffer = std::move(buffer);
+    m_vertex_buffer_memory = std::move(memory);
+    return {};
+}
+
+auto FilterPass::create_ubo_buffer() -> Result<void> {
+    if (!m_merged_reflection.ubo.has_value()) {
+        return {};
+    }
+
+    m_has_ubo = true;
+    auto ubo_size = m_merged_reflection.ubo->total_size;
+
+    vk::BufferCreateInfo buffer_info{};
+    buffer_info.size = ubo_size;
+    buffer_info.usage = vk::BufferUsageFlagBits::eUniformBuffer;
+    buffer_info.sharingMode = vk::SharingMode::eExclusive;
+
+    auto [buf_result, buffer] = m_device.createBufferUnique(buffer_info);
+    if (buf_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to create UBO buffer: " + vk::to_string(buf_result));
+    }
+
+    auto mem_reqs = m_device.getBufferMemoryRequirements(*buffer);
+
+    vk::MemoryAllocateInfo alloc_info{};
+    alloc_info.allocationSize = mem_reqs.size;
+    alloc_info.memoryTypeIndex =
+        find_memory_type(mem_reqs.memoryTypeBits,
+                         vk::MemoryPropertyFlagBits::eHostVisible |
+                             vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
+    if (mem_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to allocate UBO memory: " + vk::to_string(mem_result));
+    }
+
+    auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
+    if (bind_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to bind UBO memory: " + vk::to_string(bind_result));
+    }
+
+    auto [map_result, data] = m_device.mapMemory(*memory, 0, ubo_size);
+    if (map_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to map UBO memory: " + vk::to_string(map_result));
+    }
+
+    auto ubo_data = m_binder.get_ubo();
+    std::memcpy(data, &ubo_data, std::min(ubo_size, sizeof(ubo_data)));
+    m_device.unmapMemory(*memory);
+
+    m_ubo_buffer = std::move(buffer);
+    m_ubo_memory = std::move(memory);
+
+    GOGGLES_LOG_DEBUG("UBO buffer created, size={}", ubo_size);
+    return {};
+}
+
+auto FilterPass::find_memory_type(uint32_t type_filter,
+                                   vk::MemoryPropertyFlags properties) -> uint32_t {
+    auto mem_props = m_physical_device.getMemoryProperties();
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+        if ((type_filter & (1U << i)) != 0U &&
+            (mem_props.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    return 0;
+}
+
 auto FilterPass::create_descriptor_resources() -> Result<void> {
-    // Combined image sampler for Source texture (binding 0)
-    vk::DescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    binding.descriptorCount = 1;
-    binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+
+    if (m_merged_reflection.ubo.has_value()) {
+        vk::DescriptorSetLayoutBinding ubo_binding{};
+        ubo_binding.binding = m_merged_reflection.ubo->binding;
+        ubo_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
+        ubo_binding.descriptorCount = 1;
+        ubo_binding.stageFlags = m_merged_reflection.ubo->stage_flags;
+        bindings.push_back(ubo_binding);
+        GOGGLES_LOG_DEBUG("Descriptor binding {}: UBO, stages={}",
+                          ubo_binding.binding, vk::to_string(ubo_binding.stageFlags));
+    }
+
+    for (const auto& tex : m_merged_reflection.textures) {
+        vk::DescriptorSetLayoutBinding tex_binding{};
+        tex_binding.binding = tex.binding;
+        tex_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        tex_binding.descriptorCount = 1;
+        tex_binding.stageFlags = tex.stage_flags;
+        bindings.push_back(tex_binding);
+        GOGGLES_LOG_DEBUG("Descriptor binding {}: texture '{}', stages={}",
+                          tex_binding.binding, tex.name, vk::to_string(tex_binding.stageFlags));
+    }
+
+    if (bindings.empty()) {
+        vk::DescriptorSetLayoutBinding fallback{};
+        fallback.binding = 0;
+        fallback.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        fallback.descriptorCount = 1;
+        fallback.stageFlags = vk::ShaderStageFlagBits::eFragment;
+        bindings.push_back(fallback);
+    }
 
     vk::DescriptorSetLayoutCreateInfo layout_info{};
-    layout_info.bindingCount = 1;
-    layout_info.pBindings = &binding;
+    layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
+    layout_info.pBindings = bindings.data();
 
     auto [layout_result, layout] = m_device.createDescriptorSetLayoutUnique(layout_info);
     if (layout_result != vk::Result::eSuccess) {
@@ -211,14 +468,25 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
     }
     m_descriptor_layout = std::move(layout);
 
-    vk::DescriptorPoolSize pool_size{};
-    pool_size.type = vk::DescriptorType::eCombinedImageSampler;
-    pool_size.descriptorCount = m_num_sync_indices;
+    std::vector<vk::DescriptorPoolSize> pool_sizes;
+
+    uint32_t ubo_count = m_merged_reflection.ubo.has_value() ? m_num_sync_indices : 0;
+    uint32_t sampler_count =
+        static_cast<uint32_t>(m_merged_reflection.textures.size()) * m_num_sync_indices;
+
+    if (sampler_count == 0) {
+        sampler_count = m_num_sync_indices;
+    }
+
+    if (ubo_count > 0) {
+        pool_sizes.push_back({vk::DescriptorType::eUniformBuffer, ubo_count});
+    }
+    pool_sizes.push_back({vk::DescriptorType::eCombinedImageSampler, sampler_count});
 
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.maxSets = m_num_sync_indices;
-    pool_info.poolSizeCount = 1;
-    pool_info.pPoolSizes = &pool_size;
+    pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
+    pool_info.pPoolSizes = pool_sizes.data();
 
     auto [pool_result, pool] = m_device.createDescriptorPoolUnique(pool_info);
     if (pool_result != vk::Result::eSuccess) {
@@ -250,15 +518,15 @@ auto FilterPass::create_pipeline_layout() -> Result<void> {
     create_info.setLayoutCount = 1;
     create_info.pSetLayouts = &*m_descriptor_layout;
 
-    // Add push constant range if needed
     vk::PushConstantRange push_range{};
-    if (m_has_push_constants) {
+    if (m_has_push_constants && m_push_constant_size > 0) {
         push_range.stageFlags =
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
         push_range.offset = 0;
-        push_range.size = sizeof(RetroArchPushConstants);
+        push_range.size = m_push_constant_size;
         create_info.pushConstantRangeCount = 1;
         create_info.pPushConstantRanges = &push_range;
+        GOGGLES_LOG_DEBUG("Pipeline layout push constant range: {} bytes", m_push_constant_size);
     }
 
     auto [result, layout] = m_device.createPipelineLayoutUnique(create_info);
@@ -304,6 +572,31 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
     stages[1].pName = "main";
 
     vk::PipelineVertexInputStateCreateInfo vertex_input{};
+    vk::VertexInputBindingDescription binding_desc{};
+    std::vector<vk::VertexInputAttributeDescription> attrib_descs;
+
+    if (m_has_vertex_inputs) {
+        binding_desc.binding = 0;
+        binding_desc.stride = sizeof(Vertex);
+        binding_desc.inputRate = vk::VertexInputRate::eVertex;
+
+        for (const auto& input : m_merged_reflection.vertex_inputs) {
+            vk::VertexInputAttributeDescription attrib{};
+            attrib.location = input.location;
+            attrib.binding = 0;
+            attrib.format = input.format;
+            attrib.offset = input.offset;
+            attrib_descs.push_back(attrib);
+            GOGGLES_LOG_DEBUG("Vertex input location {}: format={}, offset={}",
+                              input.location, vk::to_string(input.format), input.offset);
+        }
+
+        vertex_input.vertexBindingDescriptionCount = 1;
+        vertex_input.pVertexBindingDescriptions = &binding_desc;
+        vertex_input.vertexAttributeDescriptionCount =
+            static_cast<uint32_t>(attrib_descs.size());
+        vertex_input.pVertexAttributeDescriptions = attrib_descs.data();
+    }
 
     vk::PipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.topology = vk::PrimitiveTopology::eTriangleList;

@@ -468,7 +468,17 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
     GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                  target_format));
 
-    return init_filter_chain();
+    GOGGLES_TRY(init_filter_chain());
+
+    if (!m_preset_path.empty()) {
+        auto result = m_filter_chain.load_preset(m_preset_path);
+        if (!result) {
+            GOGGLES_LOG_WARN("Failed to reload shader preset after format change: {}",
+                             result.error().message);
+        }
+    }
+
+    return {};
 }
 
 auto VulkanBackend::get_matching_swapchain_format(vk::Format source_format) -> vk::Format {
@@ -573,6 +583,8 @@ void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path)
         GOGGLES_LOG_WARN("Cannot load shader preset: VulkanBackend not initialized");
         return;
     }
+
+    m_preset_path = preset_path;
 
     if (preset_path.empty()) {
         GOGGLES_LOG_DEBUG("No shader preset specified, using passthrough mode");
