@@ -15,5 +15,9 @@ target_link_libraries(goggles PRIVATE
     SDL3::SDL3-static
 )
 
+set_target_properties(goggles PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
 goggles_enable_clang_tidy(goggles)
 goggles_enable_sanitizers(goggles)

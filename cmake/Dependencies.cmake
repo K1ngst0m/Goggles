@@ -2,6 +2,12 @@
 # Dependencies Management
 # ============================================================================
 
+# Layer-only builds skip most dependencies
+if(GOGGLES_LAYER_ONLY)
+    find_package(Vulkan REQUIRED)
+    return()
+endif()
+
 include(cmake/CPM.cmake)
 
 # Use a global CPM source cache to speed up builds

@@ -122,10 +122,33 @@
     },
 
     {
-      "name": "quality", 
+      "name": "quality",
       "displayName": "Quality Assurance (Debug + ASAN + Clang-Tidy)",
       "description": "Debug build with comprehensive code quality checks",
       "inherits": [".debug", ".asan", ".clang-tidy"]
+    },
+
+    {
+      "name": ".i686",
+      "hidden": true,
+      "inherits": ".common",
+      "toolchainFile": "${sourceDir}/cmake/toolchain-i686.cmake",
+      "cacheVariables": {
+        "GOGGLES_LAYER_ONLY": "ON"
+      }
+    },
+
+    {
+      "name": "debug-i686",
+      "displayName": "Debug (i686)",
+      "description": "32-bit layer only - debug build",
+      "inherits": [".i686", ".debug"]
+    },
+    {
+      "name": "release-i686",
+      "displayName": "Release (i686)",
+      "description": "32-bit layer only - release build",
+      "inherits": [".i686", ".release"]
     }
   ],
   "buildPresets": [
@@ -167,6 +190,15 @@
     {
       "name": "quality",
       "configurePreset": "quality"
+    },
+
+    {
+      "name": "debug-i686",
+      "configurePreset": "debug-i686"
+    },
+    {
+      "name": "release-i686",
+      "configurePreset": "release-i686"
     }
   ],
   "testPresets": [

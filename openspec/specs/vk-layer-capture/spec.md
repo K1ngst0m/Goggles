@@ -4,18 +4,29 @@
 TBD - created by archiving change add-vk-layer-capture-minimal. Update Purpose after archive.
 ## Requirements
 ### Requirement: Vulkan Layer Registration
-The capture layer SHALL provide a valid Vulkan layer manifest that allows the Vulkan loader to discover and load the layer.
+The capture layer SHALL provide valid Vulkan layer manifests for both 32-bit (i386) and 64-bit (x86_64) architectures that allow the Vulkan loader to discover and load the appropriate layer library.
 
-#### Scenario: Layer discovery by loader
-- **GIVEN** `goggles_layer.json` is in `VK_LAYER_PATH`
-- **WHEN** a Vulkan application initializes with `VK_INSTANCE_LAYERS=VK_LAYER_goggles_capture`
-- **THEN** the Vulkan loader SHALL load `libgoggles_vklayer.so`
+#### Scenario: Layer discovery by loader (64-bit)
+- **GIVEN** `goggles_layer_x86_64.json` is in implicit layer search path
+- **WHEN** a 64-bit Vulkan application initializes with `GOGGLES_CAPTURE=1`
+- **THEN** the Vulkan loader SHALL load the 64-bit `libgoggles_vklayer.so`
+- **AND** the layer SHALL negotiate interface version successfully
+
+#### Scenario: Layer discovery by loader (32-bit)
+- **GIVEN** `goggles_layer_i386.json` is in implicit layer search path
+- **WHEN** a 32-bit Vulkan application (including Wine/DXVK) initializes with `GOGGLES_CAPTURE=1`
+- **THEN** the Vulkan loader SHALL load the 32-bit `libgoggles_vklayer.so`
 - **AND** the layer SHALL negotiate interface version successfully
 
 #### Scenario: Layer negotiation
 - **WHEN** the loader calls `vkNegotiateLoaderLayerInterfaceVersion`
 - **THEN** the layer SHALL return `VK_SUCCESS`
 - **AND** report a supported interface version (>= 2)
+
+#### Scenario: Architecture-specific layer names
+- **GIVEN** both manifests use the same enable environment variable `GOGGLES_CAPTURE`
+- **THEN** the 64-bit manifest SHALL declare layer name `VK_LAYER_goggles_capture_64`
+- **AND** the 32-bit manifest SHALL declare layer name `VK_LAYER_goggles_capture_32`
 
 ### Requirement: Instance and Device Hooking
 The layer SHALL intercept `vkCreateInstance` and `vkCreateDevice` to establish dispatch chains and add required extensions.
@@ -104,4 +115,21 @@ The layer SHALL follow project logging policies for capture layer code.
 #### Scenario: Initialization logging
 - **WHEN** `vkCreateInstance` or `vkCreateDevice` is hooked
 - **THEN** the layer MAY log at info level with `[goggles_vklayer]` prefix
+
+### Requirement: Multi-Architecture Build Support
+The build system SHALL support building the capture layer for both 32-bit and 64-bit architectures.
+
+#### Scenario: 64-bit layer build (default)
+- **WHEN** CMake is invoked without special flags
+- **THEN** the build SHALL produce a 64-bit `libgoggles_vklayer.so`
+
+#### Scenario: 32-bit layer build (cross-compile)
+- **WHEN** CMake is invoked with `-DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-i686.cmake`
+- **THEN** the build SHALL produce a 32-bit `libgoggles_vklayer.so`
+- **AND** the layer SHALL compile without pointer truncation or format specifier warnings
+
+#### Scenario: Standalone layer build
+- **WHEN** the layer is built using the layer-only CMake target
+- **THEN** the build SHALL NOT require SDL3, slang, or other main application dependencies
+- **AND** only Vulkan headers SHALL be required
 

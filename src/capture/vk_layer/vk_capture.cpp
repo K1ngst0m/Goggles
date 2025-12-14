@@ -2,6 +2,7 @@
 
 #include "ipc_socket.hpp"
 
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <unistd.h>
@@ -232,7 +233,7 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
                                                            &modifier_props);
         if (res == VK_SUCCESS) {
             swap->dmabuf_modifier = modifier_props.drmFormatModifier;
-            LAYER_DEBUG("Driver selected DRM modifier 0x%lx", swap->dmabuf_modifier);
+            LAYER_DEBUG("Driver selected DRM modifier 0x%" PRIx64, swap->dmabuf_modifier);
         } else {
             swap->dmabuf_modifier = DRM_FORMAT_MOD_INVALID;
             LAYER_DEBUG("Failed to query DRM modifier: %d", res);
@@ -309,7 +310,7 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     swap->dmabuf_offset = static_cast<uint32_t>(layout.offset);
 
     swap->export_initialized = true;
-    LAYER_DEBUG("Export image initialized: fd=%d, stride=%u, offset=%u, modifier=0x%lx",
+    LAYER_DEBUG("Export image initialized: fd=%d, stride=%u, offset=%u, modifier=0x%" PRIx64,
                 swap->dmabuf_fd, swap->dmabuf_stride, swap->dmabuf_offset, swap->dmabuf_modifier);
     return true;
 }
@@ -545,7 +546,7 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
         static uint64_t frame_count = 0;
         bool sent = socket.send_texture(tex_data, swap->dmabuf_fd);
         if (++frame_count % 60 == 1) { // Log every 60 frames
-            LAYER_DEBUG("Frame %lu: send=%s, fd=%d, %ux%u, modifier=0x%lx", frame_count,
+            LAYER_DEBUG("Frame %" PRIu64 ": send=%s, fd=%d, %ux%u, modifier=0x%" PRIx64, frame_count,
                         sent ? "ok" : "FAIL", swap->dmabuf_fd, tex_data.width, tex_data.height,
                         tex_data.modifier);
         }
