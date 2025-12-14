@@ -34,7 +34,7 @@ private:
     vk::Device m_device;
     vk::PhysicalDevice m_physical_device;
     vk::Format m_format = vk::Format::eUndefined;
-    vk::Extent2D m_extent{};
+    vk::Extent2D m_extent;
 
     vk::UniqueImage m_image;
     vk::UniqueDeviceMemory m_memory;

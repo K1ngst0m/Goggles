@@ -9,13 +9,13 @@
 namespace goggles::render {
 
 // RetroArch semantic types for uniform binding
-enum class Semantic {
-    MVP,           // Model-View-Projection matrix (UBO)
-    SourceSize,    // vec4: [width, height, 1/width, 1/height] of source texture
-    OutputSize,    // vec4: [width, height, 1/width, 1/height] of output
-    OriginalSize,  // vec4: size of original captured frame
-    FrameCount,    // uint: frame counter
-    FinalViewportSize,  // vec4: final output viewport size
+enum class Semantic : std::uint8_t {
+    MVP,               // Model-View-Projection matrix (UBO)
+    SOURCE_SIZE,       // vec4: [width, height, 1/width, 1/height] of source texture
+    OUTPUT_SIZE,       // vec4: [width, height, 1/width, 1/height] of output
+    ORIGINAL_SIZE,     // vec4: size of original captured frame
+    FRAME_COUNT,       // uint: frame counter
+    FINAL_VIEWPORT_SIZE,  // vec4: final output viewport size
 };
 
 // Size vec4 format: [width, height, 1/width, 1/height]
@@ -64,7 +64,7 @@ struct RetroArchPushConstants {
     SizeVec4 output_size;
     SizeVec4 original_size;
     uint32_t frame_count;
-    uint32_t _padding[3];  // Align to 16 bytes
+    std::array<uint32_t, 3> padding;  // Align to 16 bytes
 
     [[nodiscard]] static constexpr auto size_bytes() -> size_t {
         return 3 * SizeVec4::size_bytes() + 4 * sizeof(uint32_t);
@@ -107,7 +107,7 @@ public:
             .output_size = m_output_size,
             .original_size = m_original_size,
             .frame_count = m_frame_count,
-            ._padding = {0, 0, 0}};
+            .padding = {0, 0, 0}};
     }
 
     // Convenience: get source size vec4
@@ -124,9 +124,9 @@ public:
 
 private:
     std::array<float, 16> m_mvp = IDENTITY_MVP;
-    SizeVec4 m_source_size = {1.0F, 1.0F, 1.0F, 1.0F};
-    SizeVec4 m_output_size = {1.0F, 1.0F, 1.0F, 1.0F};
-    SizeVec4 m_original_size = {1.0F, 1.0F, 1.0F, 1.0F};
+    SizeVec4 m_source_size = {.width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
+    SizeVec4 m_output_size = {.width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
+    SizeVec4 m_original_size = {.width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
     uint32_t m_frame_count = 0;
 };
 

@@ -10,6 +10,11 @@
 
 namespace goggles::render {
 
+struct FramebufferExtents {
+    vk::Extent2D viewport;
+    vk::Extent2D source;
+};
+
 class FilterChain {
 public:
     FilterChain() = default;
@@ -42,13 +47,7 @@ public:
                                                          vk::Extent2D viewport_extent) -> vk::Extent2D;
 
 private:
-    [[nodiscard]] auto ensure_framebuffers(vk::Extent2D viewport_extent,
-                                           vk::Extent2D source_extent) -> Result<void>;
-
-    void record_image_barrier(vk::CommandBuffer cmd, vk::Image image, vk::ImageLayout old_layout,
-                              vk::ImageLayout new_layout, vk::AccessFlags src_access,
-                              vk::AccessFlags dst_access, vk::PipelineStageFlags src_stage,
-                              vk::PipelineStageFlags dst_stage);
+    [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents) -> Result<void>;
 
     vk::Device m_device;
     vk::PhysicalDevice m_physical_device;

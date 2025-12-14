@@ -1,6 +1,8 @@
 #include "preset_parser.hpp"
 
+#include <charconv>
 #include <fstream>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <unordered_map>
@@ -34,6 +36,80 @@ auto parse_bool(const std::string& value) -> bool {
     std::string lower = value;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
     return lower == "true" || lower == "1" || lower == "yes";
+}
+
+auto parse_float_safe(const std::string& str, float default_value) -> float {
+    float result = default_value;
+    std::from_chars(str.data(), str.data() + str.size(), result);
+    return result;
+}
+
+auto parse_int_safe(const std::string& str) -> std::optional<int> {
+    int result = 0;
+    auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), result);
+    if (ec == std::errc{}) {
+        return result;
+    }
+    return std::nullopt;
+}
+
+using ValueMap = std::unordered_map<std::string, std::string>;
+
+void parse_textures(const ValueMap& values, const std::filesystem::path& base_path,
+                    std::vector<TextureConfig>& textures) {
+    auto textures_it = values.find("textures");
+    if (textures_it == values.end()) {
+        return;
+    }
+
+    std::string textures_str = textures_it->second;
+    std::istringstream tex_stream(textures_str);
+    std::string tex_name;
+    while (std::getline(tex_stream, tex_name, ';')) {
+        tex_name = trim(tex_name);
+        if (tex_name.empty()) {
+            continue;
+        }
+
+        TextureConfig tex;
+        tex.name = tex_name;
+
+        auto tex_path_it = values.find(tex_name);
+        if (tex_path_it != values.end()) {
+            tex.path = base_path / tex_path_it->second;
+        }
+
+        auto tex_filter_it = values.find(tex_name + "_linear");
+        if (tex_filter_it != values.end()) {
+            tex.filter_mode =
+                parse_bool(tex_filter_it->second) ? FilterMode::LINEAR : FilterMode::NEAREST;
+        }
+
+        auto tex_mipmap_it = values.find(tex_name + "_mipmap");
+        if (tex_mipmap_it != values.end()) {
+            tex.mipmap = parse_bool(tex_mipmap_it->second);
+        }
+
+        textures.push_back(std::move(tex));
+    }
+}
+
+void parse_parameters(const ValueMap& values, std::vector<ParameterOverride>& parameters) {
+    for (const auto& [key, value] : values) {
+        if (key.starts_with("shader") || key.starts_with("scale") || key.starts_with("filter") ||
+            key.starts_with("float") || key.starts_with("srgb") || key.starts_with("alias") ||
+            key.starts_with("mipmap") || key == "shaders" || key == "textures" ||
+            key.find("_linear") != std::string::npos ||
+            key.find("_mipmap") != std::string::npos) {
+            continue;
+        }
+
+        float param_value = 0.0F;
+        auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), param_value);
+        if (ec == std::errc{}) {
+            parameters.push_back({.name = key, .value = param_value});
+        }
+    }
 }
 
 } // namespace
@@ -82,13 +158,12 @@ auto PresetParser::parse_ini(const std::string& content,
                                         "Preset missing 'shaders' count");
     }
 
-    int shader_count = 0;
-    try {
-        shader_count = std::stoi(shaders_it->second);
-    } catch (...) {
+    auto shader_count_opt = parse_int_safe(shaders_it->second);
+    if (!shader_count_opt) {
         return make_error<PresetConfig>(ErrorCode::PARSE_ERROR,
                                         "Invalid 'shaders' count: " + shaders_it->second);
     }
+    int shader_count = *shader_count_opt;
 
     // Parse each shader pass
     for (int i = 0; i < shader_count; ++i) {
@@ -129,16 +204,16 @@ auto PresetParser::parse_ini(const std::string& content,
         // Scale factors
         auto scale_it = values.find(scale_prefix);
         if (scale_it != values.end()) {
-            pass.scale_x = std::stof(scale_it->second);
+            pass.scale_x = parse_float_safe(scale_it->second, 1.0F);
             pass.scale_y = pass.scale_x;
         }
         auto scale_x_it = values.find(scale_prefix + "_x");
         if (scale_x_it != values.end()) {
-            pass.scale_x = std::stof(scale_x_it->second);
+            pass.scale_x = parse_float_safe(scale_x_it->second, 1.0F);
         }
         auto scale_y_it = values.find(scale_prefix + "_y");
         if (scale_y_it != values.end()) {
-            pass.scale_y = std::stof(scale_y_it->second);
+            pass.scale_y = parse_float_safe(scale_y_it->second, 1.0F);
         }
 
         // Filter mode
@@ -176,61 +251,8 @@ auto PresetParser::parse_ini(const std::string& content,
         config.passes.push_back(std::move(pass));
     }
 
-    // Parse textures
-    auto textures_it = values.find("textures");
-    if (textures_it != values.end()) {
-        // textures = "TEX1;TEX2;TEX3"
-        std::string textures_str = textures_it->second;
-        std::istringstream tex_stream(textures_str);
-        std::string tex_name;
-        while (std::getline(tex_stream, tex_name, ';')) {
-            tex_name = trim(tex_name);
-            if (tex_name.empty()) {
-                continue;
-            }
-
-            TextureConfig tex;
-            tex.name = tex_name;
-
-            auto tex_path_it = values.find(tex_name);
-            if (tex_path_it != values.end()) {
-                tex.path = base_path / tex_path_it->second;
-            }
-
-            auto tex_filter_it = values.find(tex_name + "_linear");
-            if (tex_filter_it != values.end()) {
-                tex.filter_mode = parse_bool(tex_filter_it->second) ? FilterMode::LINEAR
-                                                                    : FilterMode::NEAREST;
-            }
-
-            auto tex_mipmap_it = values.find(tex_name + "_mipmap");
-            if (tex_mipmap_it != values.end()) {
-                tex.mipmap = parse_bool(tex_mipmap_it->second);
-            }
-
-            config.textures.push_back(std::move(tex));
-        }
-    }
-
-    // Parse parameter overrides
-    for (const auto& [key, value] : values) {
-        // Parameters are simple KEY = value pairs that aren't standard preset keys
-        if (key.find("shader") == 0 || key.find("scale") == 0 || key.find("filter") == 0 ||
-            key.find("float") == 0 || key.find("srgb") == 0 || key.find("alias") == 0 ||
-            key.find("mipmap") == 0 || key == "shaders" || key == "textures" ||
-            key.find("_linear") != std::string::npos ||
-            key.find("_mipmap") != std::string::npos) {
-            continue;
-        }
-
-        // Try to parse as float - if it fails, skip
-        try {
-            float param_value = std::stof(value);
-            config.parameters.push_back({.name = key, .value = param_value});
-        } catch (...) {
-            // Not a numeric parameter, skip
-        }
-    }
+    parse_textures(values, base_path, config.textures);
+    parse_parameters(values, config.parameters);
 
     GOGGLES_LOG_INFO("Loaded preset with {} passes, {} textures, {} parameter overrides",
                      config.passes.size(), config.textures.size(), config.parameters.size());

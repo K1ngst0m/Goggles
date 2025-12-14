@@ -11,9 +11,6 @@ namespace {
 
 constexpr std::string_view PRAGMA_STAGE_VERTEX = "#pragma stage vertex";
 constexpr std::string_view PRAGMA_STAGE_FRAGMENT = "#pragma stage fragment";
-constexpr std::string_view PRAGMA_PARAMETER = "#pragma parameter";
-constexpr std::string_view PRAGMA_NAME = "#pragma name";
-constexpr std::string_view PRAGMA_FORMAT = "#pragma format";
 
 auto read_file(const std::filesystem::path& path) -> Result<std::string> {
     std::ifstream file(path);

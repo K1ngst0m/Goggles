@@ -4,6 +4,7 @@
 #include "preset_parser.hpp"
 #include "semantic_binder.hpp"
 
+#include <array>
 #include <render/shader/retroarch_preprocessor.hpp>
 #include <render/shader/slang_reflect.hpp>
 #include <vector>
@@ -11,8 +12,8 @@
 namespace goggles::render {
 
 struct Vertex {
-    float position[4];
-    float texcoord[2];
+    std::array<float, 4> position;
+    std::array<float, 2> texcoord;
 };
 
 class FilterPass : public Pass {

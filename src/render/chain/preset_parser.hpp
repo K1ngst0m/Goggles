@@ -9,9 +9,9 @@
 
 namespace goggles::render {
 
-enum class ScaleType { SOURCE, VIEWPORT, ABSOLUTE };
+enum class ScaleType : std::uint8_t { SOURCE, VIEWPORT, ABSOLUTE };
 
-enum class FilterMode { LINEAR, NEAREST };
+enum class FilterMode : std::uint8_t { LINEAR, NEAREST };
 
 struct ShaderPassConfig {
     std::filesystem::path shader_path;

@@ -85,22 +85,7 @@ auto get_format_size(vk::Format format) -> uint32_t {
     }
 }
 
-} // namespace
-
-auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
-    if (linked == nullptr) {
-        return make_error<ReflectionData>(ErrorCode::SHADER_COMPILE_FAILED,
-                                          "Cannot reflect null program");
-    }
-
-    ReflectionData data;
-    slang::ProgramLayout* layout = linked->getLayout();
-
-    if (layout == nullptr) {
-        return make_error<ReflectionData>(ErrorCode::SHADER_COMPILE_FAILED,
-                                          "Failed to get program layout");
-    }
-
+void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& data) {
     auto param_count = layout->getParameterCount();
     GOGGLES_LOG_DEBUG("Reflecting {} global parameters", param_count);
 
@@ -180,7 +165,9 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
             GOGGLES_LOG_DEBUG("Found direct uniform: name='{}'", name ? name : "(null)");
         }
     }
+}
 
+void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
     auto entry_point_count = layout->getEntryPointCount();
     for (unsigned ep = 0; ep < entry_point_count; ++ep) {
         auto entry_layout = layout->getEntryPointByIndex(ep);
@@ -224,7 +211,6 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
                 }
             }
 
-            // If no vertex inputs found via Slang reflection, assume RetroArch standard layout
             // RetroArch shaders always use: Position (vec4, loc 0), TexCoord (vec2, loc 1)
             if (data.vertex_inputs.empty() && data.push_constants.has_value()) {
                 GOGGLES_LOG_DEBUG("No vertex inputs from reflection, using RetroArch standard layout");
@@ -267,6 +253,26 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
             }
         }
     }
+}
+
+} // namespace
+
+auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
+    if (linked == nullptr) {
+        return make_error<ReflectionData>(ErrorCode::SHADER_COMPILE_FAILED,
+                                          "Cannot reflect null program");
+    }
+
+    ReflectionData data;
+    slang::ProgramLayout* layout = linked->getLayout();
+
+    if (layout == nullptr) {
+        return make_error<ReflectionData>(ErrorCode::SHADER_COMPILE_FAILED,
+                                          "Failed to get program layout");
+    }
+
+    reflect_global_parameters(layout, data);
+    reflect_entry_points(layout, data);
 
     std::sort(data.vertex_inputs.begin(), data.vertex_inputs.end(),
               [](const VertexInput& a, const VertexInput& b) { return a.location < b.location; });

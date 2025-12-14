@@ -10,12 +10,12 @@ namespace goggles::render {
 namespace {
 
 constexpr std::array<Vertex, 6> FULLSCREEN_QUAD_VERTICES = {{
-    {{-1.0F, -1.0F, 0.0F, 1.0F}, {0.0F, 0.0F}},
-    {{1.0F, -1.0F, 0.0F, 1.0F}, {1.0F, 0.0F}},
-    {{1.0F, 1.0F, 0.0F, 1.0F}, {1.0F, 1.0F}},
-    {{-1.0F, -1.0F, 0.0F, 1.0F}, {0.0F, 0.0F}},
-    {{1.0F, 1.0F, 0.0F, 1.0F}, {1.0F, 1.0F}},
-    {{-1.0F, 1.0F, 0.0F, 1.0F}, {0.0F, 1.0F}},
+    {.position = {-1.0F, -1.0F, 0.0F, 1.0F}, .texcoord = {0.0F, 0.0F}},
+    {.position = {1.0F, -1.0F, 0.0F, 1.0F}, .texcoord = {1.0F, 0.0F}},
+    {.position = {1.0F, 1.0F, 0.0F, 1.0F}, .texcoord = {1.0F, 1.0F}},
+    {.position = {-1.0F, -1.0F, 0.0F, 1.0F}, .texcoord = {0.0F, 0.0F}},
+    {.position = {1.0F, 1.0F, 0.0F, 1.0F}, .texcoord = {1.0F, 1.0F}},
+    {.position = {-1.0F, 1.0F, 0.0F, 1.0F}, .texcoord = {0.0F, 1.0F}},
 }};
 
 } // namespace
@@ -149,7 +149,7 @@ void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
     std::vector<vk::DescriptorImageInfo> image_infos;
     vk::DescriptorBufferInfo ubo_info{};
 
-    if (m_has_ubo && m_ubo_buffer) {
+    if (m_has_ubo && m_ubo_buffer && m_merged_reflection.ubo.has_value()) {
         ubo_info.buffer = *m_ubo_buffer;
         ubo_info.offset = 0;
         ubo_info.range = m_merged_reflection.ubo->total_size;
@@ -189,7 +189,8 @@ void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
 }
 
 void FilterPass::build_push_constants() {
-    if (!m_has_push_constants || m_push_data.empty()) {
+    if (!m_has_push_constants || m_push_data.empty() ||
+        !m_merged_reflection.push_constants.has_value()) {
         return;
     }
 
@@ -479,9 +480,9 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
     }
 
     if (ubo_count > 0) {
-        pool_sizes.push_back({vk::DescriptorType::eUniformBuffer, ubo_count});
+        pool_sizes.emplace_back(vk::DescriptorType::eUniformBuffer, ubo_count);
     }
-    pool_sizes.push_back({vk::DescriptorType::eCombinedImageSampler, sampler_count});
+    pool_sizes.emplace_back(vk::DescriptorType::eCombinedImageSampler, sampler_count);
 
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.maxSets = m_num_sync_indices;

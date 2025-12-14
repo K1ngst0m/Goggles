@@ -104,7 +104,7 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
         return;
     }
 
-    auto fb_result = ensure_framebuffers(viewport_extent, original_extent);
+    auto fb_result = ensure_framebuffers({.viewport = viewport_extent, .source = original_extent});
     if (!fb_result) {
         GOGGLES_LOG_ERROR("Failed to ensure framebuffers: {}", fb_result.error().message);
         return;
@@ -147,13 +147,22 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
         pass->record(cmd, ctx);
 
         if (!is_final) {
-            record_image_barrier(cmd, m_framebuffers[i].image(),
-                                 vk::ImageLayout::eColorAttachmentOptimal,
-                                 vk::ImageLayout::eShaderReadOnlyOptimal,
-                                 vk::AccessFlagBits::eColorAttachmentWrite,
-                                 vk::AccessFlagBits::eShaderRead,
-                                 vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                                 vk::PipelineStageFlagBits::eFragmentShader);
+            vk::ImageMemoryBarrier barrier{};
+            barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+            barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+            barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = m_framebuffers[i].image();
+            barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+
+            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                                vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
 
             source_view = m_framebuffers[i].view();
             source_extent = m_framebuffers[i].extent();
@@ -193,17 +202,17 @@ void FilterChain::shutdown() {
     m_initialized = false;
 }
 
-auto FilterChain::ensure_framebuffers(vk::Extent2D viewport_extent,
-                                      vk::Extent2D source_extent) -> Result<void> {
+auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents) -> Result<void> {
     if (!m_preset) {
         return {};
     }
 
-    vk::Extent2D prev_extent = source_extent;
+    vk::Extent2D prev_extent = extents.source;
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
         const auto& pass_config = m_preset->passes[i];
-        auto target_extent = calculate_pass_output_size(pass_config, prev_extent, viewport_extent);
+        auto target_extent =
+            calculate_pass_output_size(pass_config, prev_extent, extents.viewport);
 
         if (!m_framebuffers[i].is_initialized()) {
             GOGGLES_TRY(m_framebuffers[i].init(m_device, m_physical_device,
@@ -252,28 +261,6 @@ auto FilterChain::calculate_pass_output_size(const ShaderPassConfig& pass_config
     }
 
     return vk::Extent2D{std::max(1U, width), std::max(1U, height)};
-}
-
-void FilterChain::record_image_barrier(vk::CommandBuffer cmd, vk::Image image,
-                                       vk::ImageLayout old_layout, vk::ImageLayout new_layout,
-                                       vk::AccessFlags src_access, vk::AccessFlags dst_access,
-                                       vk::PipelineStageFlags src_stage,
-                                       vk::PipelineStageFlags dst_stage) {
-    vk::ImageMemoryBarrier barrier{};
-    barrier.srcAccessMask = src_access;
-    barrier.dstAccessMask = dst_access;
-    barrier.oldLayout = old_layout;
-    barrier.newLayout = new_layout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-
-    cmd.pipelineBarrier(src_stage, dst_stage, {}, {}, {}, barrier);
 }
 
 } // namespace goggles::render

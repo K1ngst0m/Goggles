@@ -103,7 +103,7 @@ private:
     std::filesystem::path m_shader_dir;
     std::filesystem::path m_preset_path;
     vk::Format m_source_format = vk::Format::eUndefined;
-    vk::Extent2D m_import_extent{};
+    vk::Extent2D m_import_extent;
 
     SDL_Window* m_window = nullptr;
     bool m_enable_validation = false;
