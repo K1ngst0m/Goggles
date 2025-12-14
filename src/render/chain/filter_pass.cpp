@@ -91,16 +91,10 @@ auto FilterPass::init_from_sources(vk::Device device, vk::PhysicalDevice physica
         GOGGLES_LOG_DEBUG("  Param: '{}' default={}", param.name, param.default_value);
     }
 
-    auto result = create_sampler(filter_mode);
-    if (!result) {
-        return result;
-    }
+    GOGGLES_TRY(create_sampler(filter_mode));
 
     if (m_has_vertex_inputs) {
-        result = create_vertex_buffer();
-        if (!result) {
-            return result;
-        }
+        GOGGLES_TRY(create_vertex_buffer());
     }
 
     GOGGLES_TRY(create_ubo_buffer());

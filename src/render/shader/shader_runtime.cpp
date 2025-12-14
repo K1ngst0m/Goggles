@@ -157,18 +157,15 @@ auto ShaderRuntime::compile_shader(const std::filesystem::path& source_path,
     }
 
     auto module_name = source_path.stem().string();
-    auto compiled = compile_slang(module_name, source, entry_point);
-    if (!compiled) {
-        return nonstd::make_unexpected(compiled.error());
-    }
+    auto compiled = GOGGLES_TRY(compile_slang(module_name, source, entry_point));
 
-    auto save_result = save_cached_spirv(cache_path, source_hash, compiled.value());
+    auto save_result = save_cached_spirv(cache_path, source_hash, compiled);
     if (!save_result) {
         GOGGLES_LOG_WARN("Failed to cache SPIR-V: {}", save_result.error().message);
     }
 
     GOGGLES_LOG_INFO("Compiled shader: {} ({})", source_path.filename().string(), entry_point);
-    return CompiledShader{.spirv = std::move(compiled.value()), .entry_point = entry_point};
+    return CompiledShader{.spirv = std::move(compiled), .entry_point = entry_point};
 }
 
 auto ShaderRuntime::get_cache_dir() const -> std::filesystem::path {
@@ -338,11 +335,8 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
 auto ShaderRuntime::compile_glsl(const std::string& module_name, const std::string& source,
                                  const std::string& entry_point,
                                  ShaderStage stage) -> Result<std::vector<uint32_t>> {
-    auto result = compile_glsl_with_reflection(module_name, source, entry_point, stage);
-    if (!result) {
-        return nonstd::make_unexpected(result.error());
-    }
-    return std::move(result->spirv);
+    auto result = GOGGLES_TRY(compile_glsl_with_reflection(module_name, source, entry_point, stage));
+    return std::move(result.spirv);
 }
 
 auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,

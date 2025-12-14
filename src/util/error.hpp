@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <nonstd/expected.hpp>
 #include <source_location>
 #include <string>
@@ -80,13 +82,30 @@ template <typename T>
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 
-/// Early-return if Result<T> is an error, propagating the error to the caller.
-/// Usage: GOGGLES_TRY(some_function_returning_result());
+/// Propagate error or return value. Expression-style like Rust's `?` operator.
 // NOLINTNEXTLINE(bugprone-macro-parentheses)
 #define GOGGLES_TRY(expr)                                                                          \
-    do {                                                                                           \
-        if (auto _try_result = (expr); !_try_result)                                               \
+    ({                                                                                             \
+        auto _try_result = (expr);                                                                 \
+        if (!_try_result)                                                                          \
             return nonstd::make_unexpected(_try_result.error());                                   \
-    } while (0)
+        std::move(_try_result).value();                                                            \
+    })
+
+/// Abort on error or return value. Use for internal invariants where failure is a bug.
+// NOLINTNEXTLINE(bugprone-macro-parentheses)
+#define GOGGLES_MUST(expr)                                                                         \
+    ({                                                                                             \
+        auto _must_result = (expr);                                                                \
+        if (!_must_result) {                                                                       \
+            auto& _err = _must_result.error();                                                     \
+            std::fprintf(stderr, "GOGGLES_MUST failed at %s:%u in %s\n  %s: %s\n",                 \
+                         _err.location.file_name(), _err.location.line(),                          \
+                         _err.location.function_name(), goggles::error_code_name(_err.code),       \
+                         _err.message.c_str());                                                    \
+            std::abort();                                                                          \
+        }                                                                                          \
+        std::move(_must_result).value();                                                           \
+    })
 
 // NOLINTEND(cppcoreguidelines-macro-usage)

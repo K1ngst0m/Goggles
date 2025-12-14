@@ -407,15 +407,24 @@ VK_TRY(cmd.begin(begin_info), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer beg
 VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST, "waitIdle failed");
 ```
 
-**`GOGGLES_TRY` - For Result<T> propagation:**
+**`GOGGLES_TRY` - For Result<T> propagation (expression-style):**
 
 ```cpp
 #include <util/error.hpp>
 
-// Usage: GOGGLES_TRY(result_returning_call())
+// As statement (discards void result)
 GOGGLES_TRY(create_instance());
-GOGGLES_TRY(create_surface(window));
-GOGGLES_TRY(create_device());
+
+// As expression (captures value)
+auto device = GOGGLES_TRY(create_device());
+uint32_t index = GOGGLES_TRY(acquire_next_image());
+```
+
+**`GOGGLES_MUST` - For internal invariants (aborts on failure):**
+
+```cpp
+// Use for bundled resources that should never fail
+auto shader = GOGGLES_MUST(compile_shader(internal_shader_path));
 ```
 
 #### D.6.3 Manual Pattern (When Macros Don't Apply)

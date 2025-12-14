@@ -21,25 +21,10 @@ auto OutputPass::init(vk::Device device, vk::Format target_format, uint32_t num_
     m_target_format = target_format;
     m_num_sync_indices = num_sync_indices;
 
-    auto result = create_sampler();
-    if (!result) {
-        return result;
-    }
-
-    result = create_descriptor_resources();
-    if (!result) {
-        return result;
-    }
-
-    result = create_pipeline_layout();
-    if (!result) {
-        return result;
-    }
-
-    result = create_pipeline(shader_runtime, shader_dir);
-    if (!result) {
-        return result;
-    }
+    GOGGLES_TRY(create_sampler());
+    GOGGLES_TRY(create_descriptor_resources());
+    GOGGLES_TRY(create_pipeline_layout());
+    GOGGLES_TRY(create_pipeline(shader_runtime, shader_dir));
 
     m_initialized = true;
     GOGGLES_LOG_DEBUG("OutputPass initialized");
@@ -218,19 +203,15 @@ auto OutputPass::create_pipeline_layout() -> Result<void> {
 
 auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
                                  const std::filesystem::path& shader_dir) -> Result<void> {
-    auto vert_result = shader_runtime.compile_shader(shader_dir / "internal/blit.vert.slang");
-    if (!vert_result) {
-        return nonstd::make_unexpected(vert_result.error());
-    }
-
-    auto frag_result = shader_runtime.compile_shader(shader_dir / "internal/blit.frag.slang");
-    if (!frag_result) {
-        return nonstd::make_unexpected(frag_result.error());
-    }
+    // Internal shaders - abort on failure since they're bundled with the app
+    auto vert_compiled =
+        GOGGLES_MUST(shader_runtime.compile_shader(shader_dir / "internal/blit.vert.slang"));
+    auto frag_compiled =
+        GOGGLES_MUST(shader_runtime.compile_shader(shader_dir / "internal/blit.frag.slang"));
 
     vk::ShaderModuleCreateInfo vert_module_info{};
-    vert_module_info.codeSize = vert_result->spirv.size() * sizeof(uint32_t);
-    vert_module_info.pCode = vert_result->spirv.data();
+    vert_module_info.codeSize = vert_compiled.spirv.size() * sizeof(uint32_t);
+    vert_module_info.pCode = vert_compiled.spirv.data();
 
     auto [vert_mod_result, vert_module] = m_device.createShaderModuleUnique(vert_module_info);
     if (vert_mod_result != vk::Result::eSuccess) {
@@ -240,8 +221,8 @@ auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
     }
 
     vk::ShaderModuleCreateInfo frag_module_info{};
-    frag_module_info.codeSize = frag_result->spirv.size() * sizeof(uint32_t);
-    frag_module_info.pCode = frag_result->spirv.data();
+    frag_module_info.codeSize = frag_compiled.spirv.size() * sizeof(uint32_t);
+    frag_module_info.pCode = frag_compiled.spirv.data();
 
     auto [frag_mod_result, frag_module] = m_device.createShaderModuleUnique(frag_module_info);
     if (frag_mod_result != vk::Result::eSuccess) {

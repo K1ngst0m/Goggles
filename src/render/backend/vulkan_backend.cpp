@@ -953,11 +953,7 @@ auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
 
     GOGGLES_TRY(import_dmabuf(frame));
 
-    auto acquire_result = acquire_next_image();
-    if (!acquire_result) {
-        return nonstd::make_unexpected(acquire_result.error());
-    }
-    uint32_t image_index = acquire_result.value();
+    uint32_t image_index = GOGGLES_TRY(acquire_next_image());
 
     GOGGLES_TRY(record_render_commands(m_frames[m_current_frame].command_buffer, image_index));
 
@@ -969,11 +965,7 @@ auto VulkanBackend::render_clear() -> Result<bool> {
         return make_error<bool>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
     }
 
-    auto acquire_result = acquire_next_image();
-    if (!acquire_result) {
-        return nonstd::make_unexpected(acquire_result.error());
-    }
-    uint32_t image_index = acquire_result.value();
+    uint32_t image_index = GOGGLES_TRY(acquire_next_image());
 
     GOGGLES_TRY(record_clear_commands(m_frames[m_current_frame].command_buffer, image_index));
 
