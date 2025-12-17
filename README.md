@@ -2,6 +2,8 @@
 
 A hooking-based frame streaming tool with support for RetroArch shader processing.
 
+![Showcase](showcase.webp)
+
 ## Build
 
 ```bash
