@@ -27,28 +27,23 @@ public:
     FilterPass& operator=(FilterPass&&) = delete;
 
     [[nodiscard]] auto init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
-                            ShaderRuntime& shader_runtime,
-                            const std::filesystem::path& shader_dir) -> Result<void> override;
+                            ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
+        -> Result<void> override;
 
-    [[nodiscard]] auto init_from_sources(vk::Device device, vk::Format target_format,
-                                          uint32_t num_sync_indices,
-                                          ShaderRuntime& shader_runtime,
-                                          const std::string& vertex_source,
-                                          const std::string& fragment_source,
-                                          const std::string& shader_name,
-                                          FilterMode filter_mode = FilterMode::LINEAR)
-        -> Result<void>;
+    [[nodiscard]] auto
+    init_from_sources(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
+                      ShaderRuntime& shader_runtime, const std::string& vertex_source,
+                      const std::string& fragment_source, const std::string& shader_name,
+                      FilterMode filter_mode = FilterMode::LINEAR) -> Result<void>;
 
     // Initialize with physical device for memory allocation
-    [[nodiscard]] auto init_from_sources(vk::Device device, vk::PhysicalDevice physical_device,
-                                          vk::Format target_format, uint32_t num_sync_indices,
-                                          ShaderRuntime& shader_runtime,
-                                          const std::string& vertex_source,
-                                          const std::string& fragment_source,
-                                          const std::string& shader_name,
-                                          FilterMode filter_mode = FilterMode::LINEAR,
-                                          const std::vector<ShaderParameter>& parameters = {})
-        -> Result<void>;
+    [[nodiscard]] auto
+    init_from_sources(vk::Device device, vk::PhysicalDevice physical_device,
+                      vk::Format target_format, uint32_t num_sync_indices,
+                      ShaderRuntime& shader_runtime, const std::string& vertex_source,
+                      const std::string& fragment_source, const std::string& shader_name,
+                      FilterMode filter_mode = FilterMode::LINEAR,
+                      const std::vector<ShaderParameter>& parameters = {}) -> Result<void>;
 
     void shutdown() override;
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
@@ -70,8 +65,7 @@ private:
     [[nodiscard]] auto create_descriptor_resources() -> Result<void>;
     [[nodiscard]] auto create_pipeline_layout() -> Result<void>;
     [[nodiscard]] auto create_pipeline(const std::vector<uint32_t>& vertex_spirv,
-                                       const std::vector<uint32_t>& fragment_spirv)
-        -> Result<void>;
+                                       const std::vector<uint32_t>& fragment_spirv) -> Result<void>;
     [[nodiscard]] auto create_sampler(FilterMode filter_mode) -> Result<void>;
     [[nodiscard]] auto create_vertex_buffer() -> Result<void>;
     [[nodiscard]] auto create_ubo_buffer() -> Result<void>;

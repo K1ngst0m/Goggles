@@ -74,8 +74,8 @@ auto RetroArchPreprocessor::preprocess_source(const std::string& source,
 }
 
 auto RetroArchPreprocessor::resolve_includes(const std::string& source,
-                                             const std::filesystem::path& base_path,
-                                             int depth) -> Result<std::string> {
+                                             const std::filesystem::path& base_path, int depth)
+    -> Result<std::string> {
     if (depth > MAX_INCLUDE_DEPTH) {
         return make_error<std::string>(ErrorCode::PARSE_ERROR,
                                        "Maximum include depth exceeded (circular include?)");
@@ -95,14 +95,14 @@ auto RetroArchPreprocessor::resolve_includes(const std::string& source,
 
             auto include_source = read_file(include_path);
             if (!include_source) {
-                return make_error<std::string>(
-                    ErrorCode::FILE_NOT_FOUND,
-                    "Failed to resolve include: " + include_path.string());
+                return make_error<std::string>(ErrorCode::FILE_NOT_FOUND,
+                                               "Failed to resolve include: " +
+                                                   include_path.string());
             }
 
             // Recursively resolve includes in the included file
-            auto resolved = resolve_includes(include_source.value(), include_path.parent_path(),
-                                             depth + 1);
+            auto resolved =
+                resolve_includes(include_source.value(), include_path.parent_path(), depth + 1);
             if (!resolved) {
                 return resolved;
             }

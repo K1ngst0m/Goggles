@@ -26,11 +26,8 @@ TEST_CASE("SemanticBinder UBO population", "[semantic]") {
     REQUIRE(ubo.mvp[15] == 1.0F); // m[3][3]
 
     // Set custom MVP
-    std::array<float, 16> custom_mvp = {
-        2.0F, 0.0F, 0.0F, 0.0F,
-        0.0F, 2.0F, 0.0F, 0.0F,
-        0.0F, 0.0F, 1.0F, 0.0F,
-        0.0F, 0.0F, 0.0F, 1.0F};
+    std::array<float, 16> custom_mvp = {2.0F, 0.0F, 0.0F, 0.0F, 0.0F, 2.0F, 0.0F, 0.0F,
+                                        0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F};
     binder.set_mvp(custom_mvp);
     ubo = binder.get_ubo();
     REQUIRE(ubo.mvp[0] == 2.0F);

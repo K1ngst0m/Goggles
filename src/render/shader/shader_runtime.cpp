@@ -1,5 +1,7 @@
 #include "shader_runtime.hpp"
 
+#include "slang_reflect.hpp"
+
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -10,8 +12,6 @@
 #include <slang.h>
 #include <sstream>
 #include <util/logging.hpp>
-
-#include "slang_reflect.hpp"
 
 namespace goggles::render {
 
@@ -59,8 +59,7 @@ auto ShaderRuntime::init() -> Result<void> {
     SlangGlobalSessionDesc global_desc = {};
     global_desc.enableGLSL = true;
 
-    if (SLANG_FAILED(
-            slang::createGlobalSession(&global_desc, m_impl->global_session.writeRef()))) {
+    if (SLANG_FAILED(slang::createGlobalSession(&global_desc, m_impl->global_session.writeRef()))) {
         return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED,
                                 "Failed to create Slang global session");
     }
@@ -333,16 +332,16 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
 }
 
 auto ShaderRuntime::compile_glsl(const std::string& module_name, const std::string& source,
-                                 const std::string& entry_point,
-                                 ShaderStage stage) -> Result<std::vector<uint32_t>> {
-    auto result = GOGGLES_TRY(compile_glsl_with_reflection(module_name, source, entry_point, stage));
+                                 const std::string& entry_point, ShaderStage stage)
+    -> Result<std::vector<uint32_t>> {
+    auto result =
+        GOGGLES_TRY(compile_glsl_with_reflection(module_name, source, entry_point, stage));
     return std::move(result.spirv);
 }
 
 auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
-                                                  const std::string& source,
-                                                  const std::string& entry_point,
-                                                  ShaderStage stage)
+                                                 const std::string& source,
+                                                 const std::string& entry_point, ShaderStage stage)
     -> Result<GlslCompileResult> {
     Slang::ComPtr<slang::IBlob> diagnostics_blob;
     std::string module_path = module_name + ".glsl";
@@ -364,7 +363,8 @@ auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
     }
 
     // Convert our stage enum to Slang's stage enum
-    SlangStage slang_stage = (stage == ShaderStage::VERTEX) ? SLANG_STAGE_VERTEX : SLANG_STAGE_FRAGMENT;
+    SlangStage slang_stage =
+        (stage == ShaderStage::VERTEX) ? SLANG_STAGE_VERTEX : SLANG_STAGE_FRAGMENT;
 
     // Use findAndCheckEntryPoint for GLSL shaders since they don't have [shader(...)] attributes
     Slang::ComPtr<slang::IEntryPoint> entry_point_obj;
@@ -424,9 +424,9 @@ auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
     std::vector<uint32_t> glsl_spirv(glsl_spirv_size);
     std::memcpy(glsl_spirv.data(), spirv_blob->getBufferPointer(), spirv_blob->getBufferSize());
 
-    return GlslCompileResult{
-        .spirv = std::move(glsl_spirv),
-        .reflection = reflection_result ? std::move(reflection_result.value()) : ReflectionData{}};
+    return GlslCompileResult{.spirv = std::move(glsl_spirv),
+                             .reflection = reflection_result ? std::move(reflection_result.value())
+                                                             : ReflectionData{}};
 }
 
 auto ShaderRuntime::compile_retroarch_shader(const std::string& vertex_source,
@@ -438,28 +438,27 @@ auto ShaderRuntime::compile_retroarch_shader(const std::string& vertex_source,
                                                    "ShaderRuntime not initialized");
     }
 
-    auto vertex_result =
-        compile_glsl_with_reflection(module_name + "_vert", vertex_source, "main", ShaderStage::VERTEX);
+    auto vertex_result = compile_glsl_with_reflection(module_name + "_vert", vertex_source, "main",
+                                                      ShaderStage::VERTEX);
     if (!vertex_result) {
-        return make_error<RetroArchCompiledShader>(
-            ErrorCode::SHADER_COMPILE_FAILED,
-            "Vertex shader compile failed: " + vertex_result.error().message);
+        return make_error<RetroArchCompiledShader>(ErrorCode::SHADER_COMPILE_FAILED,
+                                                   "Vertex shader compile failed: " +
+                                                       vertex_result.error().message);
     }
 
-    auto fragment_result =
-        compile_glsl_with_reflection(module_name + "_frag", fragment_source, "main", ShaderStage::FRAGMENT);
+    auto fragment_result = compile_glsl_with_reflection(module_name + "_frag", fragment_source,
+                                                        "main", ShaderStage::FRAGMENT);
     if (!fragment_result) {
-        return make_error<RetroArchCompiledShader>(
-            ErrorCode::SHADER_COMPILE_FAILED,
-            "Fragment shader compile failed: " + fragment_result.error().message);
+        return make_error<RetroArchCompiledShader>(ErrorCode::SHADER_COMPILE_FAILED,
+                                                   "Fragment shader compile failed: " +
+                                                       fragment_result.error().message);
     }
 
     GOGGLES_LOG_INFO("Compiled RetroArch shader: {}", module_name);
-    return RetroArchCompiledShader{
-        .vertex_spirv = std::move(vertex_result->spirv),
-        .fragment_spirv = std::move(fragment_result->spirv),
-        .vertex_reflection = std::move(vertex_result->reflection),
-        .fragment_reflection = std::move(fragment_result->reflection)};
+    return RetroArchCompiledShader{.vertex_spirv = std::move(vertex_result->spirv),
+                                   .fragment_spirv = std::move(fragment_result->spirv),
+                                   .vertex_reflection = std::move(vertex_result->reflection),
+                                   .fragment_reflection = std::move(fragment_result->reflection)};
 }
 
 } // namespace goggles::render

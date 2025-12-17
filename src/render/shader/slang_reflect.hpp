@@ -64,11 +64,11 @@ struct ReflectionData {
 
 // Reflects a single shader stage (vertex or fragment)
 // stage: VK_SHADER_STAGE_VERTEX_BIT or VK_SHADER_STAGE_FRAGMENT_BIT
-[[nodiscard]] auto reflect_stage(slang::IComponentType* linked,
-                                  vk::ShaderStageFlags stage) -> Result<ReflectionData>;
+[[nodiscard]] auto reflect_stage(slang::IComponentType* linked, vk::ShaderStageFlags stage)
+    -> Result<ReflectionData>;
 
 // Merge two ReflectionData, combining stage flags for matching bindings
-[[nodiscard]] auto merge_reflection(const ReflectionData& vertex,
-                                     const ReflectionData& fragment) -> ReflectionData;
+[[nodiscard]] auto merge_reflection(const ReflectionData& vertex, const ReflectionData& fragment)
+    -> ReflectionData;
 
 } // namespace goggles::render

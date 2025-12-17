@@ -48,8 +48,8 @@ public:
     [[nodiscard]] auto load(const std::filesystem::path& preset_path) -> Result<PresetConfig>;
 
 private:
-    [[nodiscard]] auto parse_ini(const std::string& content,
-                                 const std::filesystem::path& base_path) -> Result<PresetConfig>;
+    [[nodiscard]] auto parse_ini(const std::string& content, const std::filesystem::path& base_path)
+        -> Result<PresetConfig>;
 
     [[nodiscard]] auto parse_scale_type(const std::string& value) -> ScaleType;
     [[nodiscard]] auto parse_format(bool is_float, bool is_srgb) -> vk::Format;

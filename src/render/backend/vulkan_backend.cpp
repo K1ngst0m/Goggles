@@ -577,7 +577,6 @@ auto VulkanBackend::init_filter_chain() -> Result<void> {
                                MAX_FRAMES_IN_FLIGHT, m_shader_runtime, m_shader_dir);
 }
 
-
 void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path) {
     if (!m_initialized) {
         GOGGLES_LOG_WARN("Cannot load shader preset: VulkanBackend not initialized");

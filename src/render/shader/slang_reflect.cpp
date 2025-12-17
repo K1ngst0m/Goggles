@@ -105,12 +105,14 @@ void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& dat
         auto kind = type_layout->getKind();
         auto category = param->getCategory();
 
-        GOGGLES_LOG_DEBUG("Parameter {}: name='{}', kind={}, category={}", i, name ? name : "(null)",
-                          static_cast<int>(kind), static_cast<int>(category));
+        GOGGLES_LOG_DEBUG("Parameter {}: name='{}', kind={}, category={}", i,
+                          name ? name : "(null)", static_cast<int>(kind),
+                          static_cast<int>(category));
 
         if (category == slang::ParameterCategory::PushConstantBuffer) {
             PushConstantLayout push;
-            push.stage_flags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+            push.stage_flags =
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
 
             auto element_type = type_layout->getElementTypeLayout();
             if (element_type != nullptr) {
@@ -145,8 +147,8 @@ void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& dat
                     ubo.members = extract_members(type_layout, 0);
                 }
 
-                GOGGLES_LOG_DEBUG("Found UBO: binding={}, set={}, size={}, members={}", binding, set,
-                                  ubo.total_size, ubo.members.size());
+                GOGGLES_LOG_DEBUG("Found UBO: binding={}, set={}, size={}, members={}", binding,
+                                  set, ubo.total_size, ubo.members.size());
                 data.ubo = std::move(ubo);
             } else if (kind == slang::TypeReflection::Kind::Resource ||
                        kind == slang::TypeReflection::Kind::SamplerState ||
@@ -213,11 +215,10 @@ void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
 
             // RetroArch shaders always use: Position (vec4, loc 0), TexCoord (vec2, loc 1)
             if (data.vertex_inputs.empty() && data.push_constants.has_value()) {
-                GOGGLES_LOG_DEBUG("No vertex inputs from reflection, using RetroArch standard layout");
-                data.vertex_inputs.push_back(
-                    {"Position", 0, vk::Format::eR32G32B32A32Sfloat, 0});
-                data.vertex_inputs.push_back(
-                    {"TexCoord", 1, vk::Format::eR32G32Sfloat, 16});
+                GOGGLES_LOG_DEBUG(
+                    "No vertex inputs from reflection, using RetroArch standard layout");
+                data.vertex_inputs.push_back({"Position", 0, vk::Format::eR32G32B32A32Sfloat, 0});
+                data.vertex_inputs.push_back({"TexCoord", 1, vk::Format::eR32G32Sfloat, 16});
             }
         }
 
@@ -337,8 +338,9 @@ auto merge_reflection(const ReflectionData& vertex, const ReflectionData& fragme
 
     merged.textures = vertex.textures;
     for (const auto& frag_tex : fragment.textures) {
-        auto it = std::find_if(merged.textures.begin(), merged.textures.end(),
-                               [&](const TextureBinding& t) { return t.binding == frag_tex.binding; });
+        auto it =
+            std::find_if(merged.textures.begin(), merged.textures.end(),
+                         [&](const TextureBinding& t) { return t.binding == frag_tex.binding; });
         if (it != merged.textures.end()) {
             it->stage_flags |= frag_tex.stage_flags;
         } else {

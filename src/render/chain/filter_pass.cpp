@@ -35,23 +35,21 @@ auto FilterPass::init(vk::Device device, vk::Format target_format, uint32_t num_
 }
 
 auto FilterPass::init_from_sources(vk::Device /*device*/, vk::Format /*target_format*/,
-                                    uint32_t /*num_sync_indices*/, ShaderRuntime& /*shader_runtime*/,
-                                    const std::string& /*vertex_source*/,
-                                    const std::string& /*fragment_source*/,
-                                    const std::string& /*shader_name*/,
-                                    FilterMode /*filter_mode*/) -> Result<void> {
+                                   uint32_t /*num_sync_indices*/, ShaderRuntime& /*shader_runtime*/,
+                                   const std::string& /*vertex_source*/,
+                                   const std::string& /*fragment_source*/,
+                                   const std::string& /*shader_name*/, FilterMode /*filter_mode*/)
+    -> Result<void> {
     return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
                             "FilterPass::init_from_sources() requires physical_device");
 }
 
 auto FilterPass::init_from_sources(vk::Device device, vk::PhysicalDevice physical_device,
-                                    vk::Format target_format, uint32_t num_sync_indices,
-                                    ShaderRuntime& shader_runtime,
-                                    const std::string& vertex_source,
-                                    const std::string& fragment_source,
-                                    const std::string& shader_name,
-                                    FilterMode filter_mode,
-                                    const std::vector<ShaderParameter>& parameters) -> Result<void> {
+                                   vk::Format target_format, uint32_t num_sync_indices,
+                                   ShaderRuntime& shader_runtime, const std::string& vertex_source,
+                                   const std::string& fragment_source,
+                                   const std::string& shader_name, FilterMode filter_mode,
+                                   const std::vector<ShaderParameter>& parameters) -> Result<void> {
     if (m_initialized) {
         return {};
     }
@@ -76,13 +74,14 @@ auto FilterPass::init_from_sources(vk::Device device, vk::PhysicalDevice physica
     m_has_vertex_inputs = !m_merged_reflection.vertex_inputs.empty();
 
     if (m_has_push_constants) {
-        m_push_constant_size = static_cast<uint32_t>(m_merged_reflection.push_constants->total_size);
+        m_push_constant_size =
+            static_cast<uint32_t>(m_merged_reflection.push_constants->total_size);
         m_push_data.resize(m_push_constant_size, 0);
         GOGGLES_LOG_DEBUG("Push constant size from reflection: {} bytes", m_push_constant_size);
 
         for (const auto& member : m_merged_reflection.push_constants->members) {
-            GOGGLES_LOG_DEBUG("  Push constant member: '{}' offset={} size={}",
-                              member.name, member.offset, member.size);
+            GOGGLES_LOG_DEBUG("  Push constant member: '{}' offset={} size={}", member.name,
+                              member.offset, member.size);
         }
     }
 
@@ -318,9 +317,8 @@ auto FilterPass::create_vertex_buffer() -> Result<void> {
     vk::MemoryAllocateInfo alloc_info{};
     alloc_info.allocationSize = mem_reqs.size;
     alloc_info.memoryTypeIndex =
-        find_memory_type(mem_reqs.memoryTypeBits,
-                         vk::MemoryPropertyFlagBits::eHostVisible |
-                             vk::MemoryPropertyFlagBits::eHostCoherent);
+        find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
+                                                      vk::MemoryPropertyFlagBits::eHostCoherent);
 
     auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
@@ -332,7 +330,8 @@ auto FilterPass::create_vertex_buffer() -> Result<void> {
     auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
     if (bind_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                                "Failed to bind vertex buffer memory: " + vk::to_string(bind_result));
+                                "Failed to bind vertex buffer memory: " +
+                                    vk::to_string(bind_result));
     }
 
     auto [map_result, data] = m_device.mapMemory(*memory, 0, buffer_size);
@@ -372,9 +371,8 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
     vk::MemoryAllocateInfo alloc_info{};
     alloc_info.allocationSize = mem_reqs.size;
     alloc_info.memoryTypeIndex =
-        find_memory_type(mem_reqs.memoryTypeBits,
-                         vk::MemoryPropertyFlagBits::eHostVisible |
-                             vk::MemoryPropertyFlagBits::eHostCoherent);
+        find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
+                                                      vk::MemoryPropertyFlagBits::eHostCoherent);
 
     auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
@@ -405,8 +403,8 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
     return {};
 }
 
-auto FilterPass::find_memory_type(uint32_t type_filter,
-                                   vk::MemoryPropertyFlags properties) -> uint32_t {
+auto FilterPass::find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags properties)
+    -> uint32_t {
     auto mem_props = m_physical_device.getMemoryProperties();
     for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
         if ((type_filter & (1U << i)) != 0U &&
@@ -427,8 +425,8 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
         ubo_binding.descriptorCount = 1;
         ubo_binding.stageFlags = m_merged_reflection.ubo->stage_flags;
         bindings.push_back(ubo_binding);
-        GOGGLES_LOG_DEBUG("Descriptor binding {}: UBO, stages={}",
-                          ubo_binding.binding, vk::to_string(ubo_binding.stageFlags));
+        GOGGLES_LOG_DEBUG("Descriptor binding {}: UBO, stages={}", ubo_binding.binding,
+                          vk::to_string(ubo_binding.stageFlags));
     }
 
     for (const auto& tex : m_merged_reflection.textures) {
@@ -438,8 +436,8 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
         tex_binding.descriptorCount = 1;
         tex_binding.stageFlags = tex.stage_flags;
         bindings.push_back(tex_binding);
-        GOGGLES_LOG_DEBUG("Descriptor binding {}: texture '{}', stages={}",
-                          tex_binding.binding, tex.name, vk::to_string(tex_binding.stageFlags));
+        GOGGLES_LOG_DEBUG("Descriptor binding {}: texture '{}', stages={}", tex_binding.binding,
+                          tex.name, vk::to_string(tex_binding.stageFlags));
     }
 
     if (bindings.empty()) {
@@ -582,14 +580,13 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
             attrib.format = input.format;
             attrib.offset = input.offset;
             attrib_descs.push_back(attrib);
-            GOGGLES_LOG_DEBUG("Vertex input location {}: format={}, offset={}",
-                              input.location, vk::to_string(input.format), input.offset);
+            GOGGLES_LOG_DEBUG("Vertex input location {}: format={}, offset={}", input.location,
+                              vk::to_string(input.format), input.offset);
         }
 
         vertex_input.vertexBindingDescriptionCount = 1;
         vertex_input.pVertexBindingDescriptions = &binding_desc;
-        vertex_input.vertexAttributeDescriptionCount =
-            static_cast<uint32_t>(attrib_descs.size());
+        vertex_input.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrib_descs.size());
         vertex_input.pVertexAttributeDescriptions = attrib_descs.data();
     }
 

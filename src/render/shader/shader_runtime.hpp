@@ -1,12 +1,12 @@
 #pragma once
 
+#include "slang_reflect.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
 #include <util/error.hpp>
 #include <vector>
-
-#include "slang_reflect.hpp"
 
 namespace goggles::render {
 

@@ -27,8 +27,8 @@ public:
 
     [[nodiscard]] auto init(vk::Device device, vk::PhysicalDevice physical_device,
                             vk::Format swapchain_format, uint32_t num_sync_indices,
-                            ShaderRuntime& shader_runtime,
-                            const std::filesystem::path& shader_dir) -> Result<void>;
+                            ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
+        -> Result<void>;
 
     [[nodiscard]] auto load_preset(const std::filesystem::path& preset_path) -> Result<void>;
 
@@ -44,7 +44,8 @@ public:
 
     [[nodiscard]] static auto calculate_pass_output_size(const ShaderPassConfig& pass_config,
                                                          vk::Extent2D source_extent,
-                                                         vk::Extent2D viewport_extent) -> vk::Extent2D;
+                                                         vk::Extent2D viewport_extent)
+        -> vk::Extent2D;
 
 private:
     [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents) -> Result<void>;

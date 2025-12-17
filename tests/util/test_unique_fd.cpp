@@ -173,7 +173,7 @@ TEST_CASE("UniqueFd dup_from() wraps raw fd", "[unique_fd]") {
         UniqueFd fd = UniqueFd::dup_from(raw_fd);
 
         REQUIRE(fd.valid());
-        REQUIRE(fd.get() != raw_fd); // Should be a duplicate, not the same
+        REQUIRE(fd.get() != raw_fd);  // Should be a duplicate, not the same
         REQUIRE(is_fd_valid(raw_fd)); // Original still valid
 
         // Clean up original

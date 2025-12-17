@@ -1,10 +1,9 @@
 #include "filter_chain.hpp"
 
+#include <cmath>
 #include <render/backend/vulkan_error.hpp>
 #include <render/shader/retroarch_preprocessor.hpp>
 #include <util/logging.hpp>
-
-#include <cmath>
 
 namespace goggles::render {
 
@@ -14,8 +13,8 @@ FilterChain::~FilterChain() {
 
 auto FilterChain::init(vk::Device device, vk::PhysicalDevice physical_device,
                        vk::Format swapchain_format, uint32_t num_sync_indices,
-                       ShaderRuntime& shader_runtime,
-                       const std::filesystem::path& shader_dir) -> Result<void> {
+                       ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
+    -> Result<void> {
     if (m_initialized) {
         return {};
     }
@@ -27,8 +26,8 @@ auto FilterChain::init(vk::Device device, vk::PhysicalDevice physical_device,
     m_shader_runtime = &shader_runtime;
     m_shader_dir = shader_dir;
 
-    GOGGLES_TRY(m_output_pass.init(device, swapchain_format, num_sync_indices, shader_runtime,
-                                   shader_dir));
+    GOGGLES_TRY(
+        m_output_pass.init(device, swapchain_format, num_sync_indices, shader_runtime, shader_dir));
 
     m_initialized = true;
     GOGGLES_LOG_DEBUG("FilterChain initialized (passthrough mode)");
@@ -68,8 +67,8 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
         vk::Format target_format = is_final ? m_swapchain_format : pass_config.framebuffer_format;
 
         auto init_result = pass->init_from_sources(
-            m_device, m_physical_device, target_format, m_num_sync_indices,
-            *m_shader_runtime, preprocessed.vertex_source, preprocessed.fragment_source,
+            m_device, m_physical_device, target_format, m_num_sync_indices, *m_shader_runtime,
+            preprocessed.vertex_source, preprocessed.fragment_source,
             pass_config.shader_path.stem().string(), pass_config.filter_mode,
             preprocessed.parameters);
 
@@ -183,7 +182,8 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
             pass_config.scale_type_y == ScaleType::VIEWPORT) {
             vk::Extent2D prev_extent =
                 (i == 0) ? new_viewport_extent : m_framebuffers[i - 1].extent();
-            auto new_size = calculate_pass_output_size(pass_config, prev_extent, new_viewport_extent);
+            auto new_size =
+                calculate_pass_output_size(pass_config, prev_extent, new_viewport_extent);
 
             if (m_framebuffers[i].extent() != new_size) {
                 GOGGLES_TRY(m_framebuffers[i].resize(new_size));
@@ -211,12 +211,11 @@ auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents) -> Resu
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
         const auto& pass_config = m_preset->passes[i];
-        auto target_extent =
-            calculate_pass_output_size(pass_config, prev_extent, extents.viewport);
+        auto target_extent = calculate_pass_output_size(pass_config, prev_extent, extents.viewport);
 
         if (!m_framebuffers[i].is_initialized()) {
             GOGGLES_TRY(m_framebuffers[i].init(m_device, m_physical_device,
-                                              pass_config.framebuffer_format, target_extent));
+                                               pass_config.framebuffer_format, target_extent));
         } else if (m_framebuffers[i].extent() != target_extent) {
             GOGGLES_TRY(m_framebuffers[i].resize(target_extent));
         }

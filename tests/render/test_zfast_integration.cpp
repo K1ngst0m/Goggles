@@ -55,7 +55,8 @@ TEST_CASE("zfast-crt integration - preprocessing", "[integration][zfast]") {
     REQUIRE(preprocessed.vertex_source.find("#version 450") != std::string::npos);
     REQUIRE(preprocessed.fragment_source.find("#version 450") != std::string::npos);
 
-    // Verify parameters extracted (6 params: BLURSCALEX, LOWLUMSCAN, HILUMSCAN, BRIGHTBOOST, MASK_DARK, MASK_FADE)
+    // Verify parameters extracted (6 params: BLURSCALEX, LOWLUMSCAN, HILUMSCAN, BRIGHTBOOST,
+    // MASK_DARK, MASK_FADE)
     REQUIRE(preprocessed.parameters.size() == 6);
 
     // Check specific known parameters

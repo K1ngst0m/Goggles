@@ -40,8 +40,8 @@ public:
 
 private:
     [[nodiscard]] auto resolve_includes(const std::string& source,
-                                        const std::filesystem::path& base_path,
-                                        int depth = 0) -> Result<std::string>;
+                                        const std::filesystem::path& base_path, int depth = 0)
+        -> Result<std::string>;
 
     [[nodiscard]] auto split_by_stage(const std::string& source)
         -> std::pair<std::string, std::string>;

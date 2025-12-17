@@ -99,8 +99,7 @@ void parse_parameters(const ValueMap& values, std::vector<ParameterOverride>& pa
         if (key.starts_with("shader") || key.starts_with("scale") || key.starts_with("filter") ||
             key.starts_with("float") || key.starts_with("srgb") || key.starts_with("alias") ||
             key.starts_with("mipmap") || key == "shaders" || key == "textures" ||
-            key.find("_linear") != std::string::npos ||
-            key.find("_mipmap") != std::string::npos) {
+            key.find("_linear") != std::string::npos || key.find("_mipmap") != std::string::npos) {
             continue;
         }
 
@@ -124,8 +123,8 @@ auto PresetParser::load(const std::filesystem::path& preset_path) -> Result<Pres
     return parse_ini(content_result.value(), preset_path.parent_path());
 }
 
-auto PresetParser::parse_ini(const std::string& content,
-                             const std::filesystem::path& base_path) -> Result<PresetConfig> {
+auto PresetParser::parse_ini(const std::string& content, const std::filesystem::path& base_path)
+    -> Result<PresetConfig> {
     PresetConfig config;
     std::unordered_map<std::string, std::string> values;
 
@@ -154,8 +153,7 @@ auto PresetParser::parse_ini(const std::string& content,
     // Get shader count
     auto shaders_it = values.find("shaders");
     if (shaders_it == values.end()) {
-        return make_error<PresetConfig>(ErrorCode::PARSE_ERROR,
-                                        "Preset missing 'shaders' count");
+        return make_error<PresetConfig>(ErrorCode::PARSE_ERROR, "Preset missing 'shaders' count");
     }
 
     auto shader_count_opt = parse_int_safe(shaders_it->second);
@@ -219,8 +217,8 @@ auto PresetParser::parse_ini(const std::string& content,
         // Filter mode
         auto filter_it = values.find(filter_prefix);
         if (filter_it != values.end()) {
-            pass.filter_mode = parse_bool(filter_it->second) ? FilterMode::LINEAR
-                                                             : FilterMode::NEAREST;
+            pass.filter_mode =
+                parse_bool(filter_it->second) ? FilterMode::LINEAR : FilterMode::NEAREST;
         }
 
         // Framebuffer format

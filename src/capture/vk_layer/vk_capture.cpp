@@ -546,9 +546,9 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
         static uint64_t frame_count = 0;
         bool sent = socket.send_texture(tex_data, swap->dmabuf_fd);
         if (++frame_count % 60 == 1) { // Log every 60 frames
-            LAYER_DEBUG("Frame %" PRIu64 ": send=%s, fd=%d, %ux%u, modifier=0x%" PRIx64, frame_count,
-                        sent ? "ok" : "FAIL", swap->dmabuf_fd, tex_data.width, tex_data.height,
-                        tex_data.modifier);
+            LAYER_DEBUG("Frame %" PRIu64 ": send=%s, fd=%d, %ux%u, modifier=0x%" PRIx64,
+                        frame_count, sent ? "ok" : "FAIL", swap->dmabuf_fd, tex_data.width,
+                        tex_data.height, tex_data.modifier);
         }
     }
 }
