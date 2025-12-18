@@ -9,14 +9,63 @@ Goggles is a real-time game capture and GPU post-processing application for Linu
 - **Graphics API:** Vulkan
 - **Shading Language:** Slang (for SPIR-V generation)
 - **Build System:** CMake
-- **Dependency Management:** CPM.cmake (for header-only/simple libs) and conan (for complex libs)
+- **Dependency Management:** CPM.cmake (header-only libs and prebuilt binaries)
 - **Core Libraries:**
     - `tl::expected` for error handling
     - `spdlog` for logging
     - `toml11` for configuration
     - `Catch2` v3 for testing
-    - `rigtorp::SPSCQueue` for inter-thread communication
+    - `goggles::util::SPSCQueue` for inter-thread communication (custom implementation)
     - `vulkan-hpp` for Vulkan C++ bindings (application code only, not capture layer)
+
+## Project Structure
+```
+goggles/
+├── src/
+│   ├── app/                      # Main application executable
+│   │   └── main.cpp
+│   ├── render/
+│   │   ├── backend/              # Vulkan API abstraction
+│   │   │   ├── vulkan_backend.*  # Device, swapchain, queues
+│   │   │   ├── vulkan_debug.*    # Debug utilities
+│   │   │   └── vulkan_error.hpp  # Error handling
+│   │   ├── shader/               # Shader compilation
+│   │   │   ├── shader_runtime.*  # Slang → SPIR-V
+│   │   │   ├── slang_reflect.*   # Reflection utilities
+│   │   │   └── retroarch_preprocessor.* # Preset preprocessing
+│   │   └── chain/                # Filter chain (RetroArch-style)
+│   │       ├── filter_chain.*    # Chain orchestration
+│   │       ├── filter_pass.*     # Individual filter passes
+│   │       ├── output_pass.*     # Final output pass
+│   │       ├── preset_parser.*   # .slangp preset parsing
+│   │       └── framebuffer.*     # Framebuffer management
+│   ├── capture/
+│   │   ├── vk_layer/             # Vulkan layer for game interception
+│   │   │   ├── vk_capture.*      # Frame capture implementation
+│   │   │   ├── vk_hooks.*        # Vulkan function hooks
+│   │   │   ├── vk_dispatch.*     # Dispatch table management
+│   │   │   └── ipc_socket.*      # IPC communication
+│   │   ├── compositor/           # Compositor capture (future)
+│   │   ├── capture_receiver.*    # App-side frame receiver
+│   │   └── capture_protocol.hpp  # IPC protocol definitions
+│   └── util/                     # Utility functions
+│       ├── error.hpp             # tl::expected error types
+│       ├── logging.*             # spdlog wrapper
+│       ├── config.*              # TOML configuration
+│       ├── job_system.*          # BS::thread_pool wrapper
+│       ├── queues.hpp            # Custom SPSCQueue
+│       └── unique_fd.hpp         # RAII file descriptor
+├── shaders/
+│   ├── internal/                 # Built-in shaders
+│   └── retroarch/                # RetroArch shader presets
+├── config/
+│   ├── goggles.toml              # App configuration
+│   └── goggles_layer.json*       # Vulkan layer manifest
+├── tests/                        # Catch2 unit tests (mirrors src/)
+├── docs/                         # Architecture documentation
+├── cmake/                        # CMake modules and config
+└── scripts/                      # Helper scripts
+```
 
 ## Project Conventions
 
@@ -35,7 +84,7 @@ Goggles is a real-time game capture and GPU post-processing application for Linu
     - Pointer alignment: Left (`int* ptr`)
 
 ### Architecture Patterns
-- **Modular Design:** The system is split into clear boundaries: `capture`, `pipeline`, `render`, and `app/control`.
+- **Modular Design:** The system is split into clear boundaries: `capture`, `render` (with `chain/` for filter pipeline), and `app`.
 - **Error Handling:** All fallible operations MUST return `tl::expected<T, Error>`. Exceptions are only for unrecoverable programming errors. Errors are logged once at subsystem boundaries.
 - **Ownership:** Strict RAII is mandated for all resources. `std::unique_ptr` is the default for exclusive ownership; `std::shared_ptr` is used sparingly. No raw `new`/`delete`.
 - **Vulkan API:** Application code MUST use vulkan-hpp with `VULKAN_HPP_NO_EXCEPTIONS` and dynamic dispatch. Use `vk::Unique*` for long-lived resources, plain handles for per-frame/GPU-async resources. Exception: capture layer uses raw C API.
@@ -68,16 +117,48 @@ Goggles is a real-time game capture and GPU post-processing application for Linu
 
 ## External Dependencies
 - **CPM.cmake Managed:**
-    - `tl::expected` (martinmoene/expected-lite)
-    - `spdlog`
-    - `toml11`
-    - `Catch2`
-    - `SDL3` (libsdl-org/SDL, release-3.2.0) - window creation and Vulkan surface support
-- **Conan Managed:**
-    - `Slang`
+    - `tl::expected` v0.8.0 (martinmoene/expected-lite) - error handling
+    - `spdlog` v1.15.0 - logging
+    - `toml11` v4.2.0 - configuration parsing
+    - `Catch2` v3.8.0 - testing framework
+    - `SDL3` release-3.2.0 (libsdl-org/SDL) - window creation and Vulkan surface support
+    - `Slang` v2025.23.2 - shader compilation (downloaded as prebuilt binary)
 - **System Provided:**
     - Vulkan SDK
-- **Threading (when needed):**
+- **Threading:**
     - `BS::thread_pool` v3.5.0 (Phase 1 job system, already integrated)
-    - `Taskflow` v3.10.0 (Phase 2 upgrade path, dependency-aware)
-    - `rigtorp::SPSCQueue` v1.2.0 (wait-free inter-thread communication)
+    - `Taskflow` v3.10.0 (Phase 2 upgrade path, dependency-aware, commented out)
+- **Internal Implementations:**
+    - `goggles::util::SPSCQueue` - custom wait-free SPSC queue in `src/util/queues.hpp`
+
+## Documentation Policy
+
+### What to Document
+- **Architecture decisions** - The "why" behind design choices
+- **Component boundaries** - What each module is responsible for
+- **Data flow** - How data moves between components (IPC, queues)
+- **Performance constraints** - Design trade-offs for real-time requirements
+- **External API contracts** - Interfaces between subsystems
+
+### What NOT to Document (AI Regenerates)
+- Function signatures and parameters (read the code)
+- Implementation details within a module
+- Line-by-line code explanations
+- Obvious patterns that follow project conventions
+
+### Document Pattern
+All topic-specific documentation SHALL follow:
+1. **Purpose** (1-2 sentences) - What this doc covers
+2. **Overview** (diagram if helpful) - High-level flow
+3. **Key Components** - What pieces exist and why
+4. **How They Connect** - Data/control flow
+5. **Constraints/Decisions** - The "why"
+
+### File Naming
+- All docs in `docs/` use `snake_case.md`
+- Entry point: `docs/architecture.md`
+
+### Maintenance
+- Keep docs high-level; AI can fill implementation details from code
+- Review quarterly for staleness
+- Update when architecture changes, not for code refactors

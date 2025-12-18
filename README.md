@@ -97,3 +97,14 @@ For Steam games, set launch options:
 ```
 GOGGLES_CAPTURE=1 %command%
 ```
+
+## Documentation
+
+See [docs/architecture.md](docs/architecture.md) for project architecture and design.
+
+Topic-specific docs:
+- [Threading](docs/threading.md) - Concurrency model and job system
+- [DMA-BUF Sharing](docs/dmabuf_sharing.md) - Cross-process GPU buffer sharing
+- [Filter Chain](docs/filter_chain_workflow.md) - RetroArch shader pipeline
+- [RetroArch](docs/retroarch.md) - Shader preset compatibility
+- [Project Policies](docs/project_policies.md) - Development rules and conventions
