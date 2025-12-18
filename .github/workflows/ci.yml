@@ -30,10 +30,17 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-apt-
 
+    - name: Install Vulkan SDK
+      run: |
+        wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+        sudo apt-get update
+        sudo apt-get install -y vulkan-sdk
+
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake ninja-build ccache
+        sudo apt-get install -y cmake ninja-build ccache \
+          libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev libxss-dev
 
     - name: Setup ccache
       uses: actions/cache@v4
@@ -84,10 +91,17 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-apt-
 
+    - name: Install Vulkan SDK
+      run: |
+        wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+        sudo apt-get update
+        sudo apt-get install -y vulkan-sdk
+
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake clang-tidy ninja-build ccache
+        sudo apt-get install -y cmake clang-tidy ninja-build ccache \
+          libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev libxss-dev
 
     - name: Setup ccache
       uses: actions/cache@v4

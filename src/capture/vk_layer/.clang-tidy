@@ -4,6 +4,7 @@ InheritParentConfig: true
 
 Checks: >
   -bugprone-branch-clone,
+  -bugprone-casting-through-void,
   -clang-diagnostic-*,
   -modernize-avoid-c-arrays,
   -modernize-use-auto,
