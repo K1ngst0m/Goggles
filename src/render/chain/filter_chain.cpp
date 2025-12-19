@@ -51,9 +51,7 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
 
     RetroArchPreprocessor preprocessor;
 
-    for (size_t i = 0; i < m_preset->passes.size(); ++i) {
-        const auto& pass_config = m_preset->passes[i];
-
+    for (const auto& pass_config : m_preset->passes) {
         auto preprocess_result = preprocessor.preprocess(pass_config.shader_path);
         if (!preprocess_result) {
             return make_error<void>(preprocess_result.error().code,
@@ -63,12 +61,9 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
         auto& preprocessed = preprocess_result.value();
         auto pass = std::make_unique<FilterPass>();
 
-        bool is_final = (i == m_preset->passes.size() - 1);
-        vk::Format target_format = is_final ? m_swapchain_format : pass_config.framebuffer_format;
-
         auto init_result = pass->init_from_sources(
-            m_device, m_physical_device, target_format, m_num_sync_indices, *m_shader_runtime,
-            preprocessed.vertex_source, preprocessed.fragment_source,
+            m_device, m_physical_device, pass_config.framebuffer_format, m_num_sync_indices,
+            *m_shader_runtime, preprocessed.vertex_source, preprocessed.fragment_source,
             pass_config.shader_path.stem().string(), pass_config.filter_mode,
             preprocessed.parameters);
 
@@ -79,7 +74,7 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
         m_passes.push_back(std::move(pass));
     }
 
-    m_framebuffers.resize(m_passes.empty() ? 0 : m_passes.size() - 1);
+    m_framebuffers.resize(m_passes.size());
 
     GOGGLES_LOG_INFO("FilterChain loaded preset: {} ({} passes)", preset_path.filename().string(),
                      m_passes.size());
@@ -88,22 +83,35 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
 
 void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
                          vk::Extent2D original_extent, vk::ImageView swapchain_view,
-                         vk::Extent2D viewport_extent, uint32_t frame_index) {
+                         vk::Extent2D viewport_extent, uint32_t frame_index, ScaleMode scale_mode,
+                         uint32_t integer_scale) {
+    m_last_scale_mode = scale_mode;
+    m_last_integer_scale = integer_scale;
+    m_last_source_extent = original_extent;
+
     if (m_passes.empty()) {
         PassContext ctx{};
         ctx.frame_index = frame_index;
         ctx.output_extent = viewport_extent;
+        ctx.source_extent = original_extent;
         ctx.target_image_view = swapchain_view;
         ctx.target_format = m_swapchain_format;
         ctx.source_texture = original_view;
         ctx.original_texture = original_view;
+        ctx.scale_mode = scale_mode;
+        ctx.integer_scale = integer_scale;
 
         m_output_pass.record(cmd, ctx);
         m_frame_count++;
         return;
     }
 
-    auto fb_result = ensure_framebuffers({.viewport = viewport_extent, .source = original_extent});
+    auto vp = calculate_viewport(original_extent.width, original_extent.height,
+                                  viewport_extent.width, viewport_extent.height, scale_mode,
+                                  integer_scale);
+
+    auto fb_result = ensure_framebuffers({.viewport = viewport_extent, .source = original_extent},
+                                         {vp.width, vp.height});
     if (!fb_result) {
         GOGGLES_LOG_ERROR("Failed to ensure framebuffers: {}", fb_result.error().message);
         return;
@@ -114,76 +122,110 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
 
     for (size_t i = 0; i < m_passes.size(); ++i) {
         auto& pass = m_passes[i];
-        bool is_final = (i == m_passes.size() - 1);
 
-        vk::ImageView target_view;
-        vk::Extent2D target_extent;
-        vk::Format target_format;
+        vk::ImageView target_view = m_framebuffers[i].view();
+        vk::Extent2D target_extent = m_framebuffers[i].extent();
+        vk::Format target_format = m_framebuffers[i].format();
 
-        if (is_final) {
-            target_view = swapchain_view;
-            target_extent = viewport_extent;
-            target_format = m_swapchain_format;
-        } else {
-            target_view = m_framebuffers[i].view();
-            target_extent = m_framebuffers[i].extent();
-            target_format = m_framebuffers[i].format();
-        }
+        vk::ImageMemoryBarrier pre_barrier{};
+        pre_barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+        pre_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        pre_barrier.oldLayout = vk::ImageLayout::eUndefined;
+        pre_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+        pre_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre_barrier.image = m_framebuffers[i].image();
+        pre_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        pre_barrier.subresourceRange.baseMipLevel = 0;
+        pre_barrier.subresourceRange.levelCount = 1;
+        pre_barrier.subresourceRange.baseArrayLayer = 0;
+        pre_barrier.subresourceRange.layerCount = 1;
+
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                            vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
+                            pre_barrier);
 
         pass->set_source_size(source_extent.width, source_extent.height);
         pass->set_output_size(target_extent.width, target_extent.height);
         pass->set_original_size(original_extent.width, original_extent.height);
         pass->set_frame_count(m_frame_count);
+        pass->set_final_viewport_size(vp.width, vp.height);
 
         PassContext ctx{};
         ctx.frame_index = frame_index;
         ctx.output_extent = target_extent;
+        ctx.source_extent = source_extent;
         ctx.target_image_view = target_view;
         ctx.target_format = target_format;
         ctx.source_texture = source_view;
         ctx.original_texture = original_view;
+        ctx.scale_mode = scale_mode;
+        ctx.integer_scale = integer_scale;
 
         pass->record(cmd, ctx);
 
-        if (!is_final) {
-            vk::ImageMemoryBarrier barrier{};
-            barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-            barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-            barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-            barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = m_framebuffers[i].image();
-            barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-            barrier.subresourceRange.baseMipLevel = 0;
-            barrier.subresourceRange.levelCount = 1;
-            barrier.subresourceRange.baseArrayLayer = 0;
-            barrier.subresourceRange.layerCount = 1;
+        vk::ImageMemoryBarrier barrier{};
+        barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+        barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = m_framebuffers[i].image();
+        barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
 
-            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                                vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
 
-            source_view = m_framebuffers[i].view();
-            source_extent = m_framebuffers[i].extent();
-        }
+        source_view = m_framebuffers[i].view();
+        source_extent = m_framebuffers[i].extent();
     }
+
+    PassContext output_ctx{};
+    output_ctx.frame_index = frame_index;
+    output_ctx.output_extent = viewport_extent;
+    output_ctx.source_extent = original_extent;
+    output_ctx.target_image_view = swapchain_view;
+    output_ctx.target_format = m_swapchain_format;
+    output_ctx.source_texture = source_view;
+    output_ctx.original_texture = original_view;
+    output_ctx.scale_mode = scale_mode;
+    output_ctx.integer_scale = integer_scale;
+
+    m_output_pass.record(cmd, output_ctx);
 
     m_frame_count++;
 }
 
 auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void> {
+    GOGGLES_LOG_DEBUG("FilterChain::handle_resize called: {}x{}", new_viewport_extent.width,
+                      new_viewport_extent.height);
+
     if (!m_preset || m_framebuffers.empty()) {
+        GOGGLES_LOG_DEBUG("handle_resize: no preset or framebuffers");
         return {};
     }
+
+    auto vp = calculate_viewport(m_last_source_extent.width, m_last_source_extent.height,
+                                  new_viewport_extent.width, new_viewport_extent.height,
+                                  m_last_scale_mode, m_last_integer_scale);
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
         const auto& pass_config = m_preset->passes[i];
         if (pass_config.scale_type_x == ScaleType::VIEWPORT ||
             pass_config.scale_type_y == ScaleType::VIEWPORT) {
             vk::Extent2D prev_extent =
-                (i == 0) ? new_viewport_extent : m_framebuffers[i - 1].extent();
+                (i == 0) ? m_last_source_extent : m_framebuffers[i - 1].extent();
             auto new_size =
-                calculate_pass_output_size(pass_config, prev_extent, new_viewport_extent);
+                calculate_pass_output_size(pass_config, prev_extent, {vp.width, vp.height});
+
+            GOGGLES_LOG_DEBUG("handle_resize: fb[{}] current={}x{}, new={}x{}", i,
+                              m_framebuffers[i].extent().width, m_framebuffers[i].extent().height,
+                              new_size.width, new_size.height);
 
             if (m_framebuffers[i].extent() != new_size) {
                 GOGGLES_TRY(m_framebuffers[i].resize(new_size));
@@ -202,7 +244,8 @@ void FilterChain::shutdown() {
     m_initialized = false;
 }
 
-auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents) -> Result<void> {
+auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents,
+                                      vk::Extent2D viewport_extent) -> Result<void> {
     if (!m_preset) {
         return {};
     }
@@ -211,7 +254,8 @@ auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents) -> Resu
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
         const auto& pass_config = m_preset->passes[i];
-        auto target_extent = calculate_pass_output_size(pass_config, prev_extent, extents.viewport);
+        auto target_extent =
+            calculate_pass_output_size(pass_config, prev_extent, viewport_extent);
 
         if (!m_framebuffers[i].is_initialized()) {
             GOGGLES_TRY(m_framebuffers[i].init(m_device, m_physical_device,

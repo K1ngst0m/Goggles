@@ -92,6 +92,10 @@ public:
     // Set the frame counter
     void set_frame_count(uint32_t count) { m_frame_count = count; }
 
+    void set_final_viewport_size(uint32_t width, uint32_t height) {
+        m_final_viewport_size = make_size_vec4(width, height);
+    }
+
     // Set a custom MVP matrix (column-major)
     void set_mvp(const std::array<float, 16>& mvp) { m_mvp = mvp; }
 
@@ -119,11 +123,17 @@ public:
     // Convenience: get frame count
     [[nodiscard]] auto frame_count() const -> uint32_t { return m_frame_count; }
 
+    [[nodiscard]] auto final_viewport_size() const -> const SizeVec4& {
+        return m_final_viewport_size;
+    }
+
 private:
     std::array<float, 16> m_mvp = IDENTITY_MVP;
     SizeVec4 m_source_size = {.width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
     SizeVec4 m_output_size = {.width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
     SizeVec4 m_original_size = {
+        .width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
+    SizeVec4 m_final_viewport_size = {
         .width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
     uint32_t m_frame_count = 0;
 };

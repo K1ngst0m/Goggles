@@ -4,7 +4,7 @@
 
 ### Requirement: Aspect Ratio Display Modes
 
-The output pass SHALL support three display modes for scaling captured frames to the output window, controlled by configuration.
+The output pass SHALL support four display modes for scaling captured frames to the output window, controlled by configuration.
 
 #### Scenario: Fit mode scales image to fit within window
 
@@ -32,12 +32,39 @@ The output pass SHALL support three display modes for scaling captured frames to
 - **AND** the image SHALL be scaled to match window dimensions exactly
 - **AND** aspect ratio distortion is acceptable
 
-#### Scenario: Same aspect ratio produces identical output
+#### Scenario: Integer mode with auto scale finds maximum fit
+
+- **GIVEN** scale mode is set to `integer`
+- **AND** integer_scale is `0` (auto)
+- **AND** source is 640x480 and window is 1920x1080
+- **WHEN** `OutputPass::record()` renders the frame
+- **THEN** the maximum integer scale that fits SHALL be calculated (2x = 1280x960)
+- **AND** the image SHALL be centered with black borders
+
+#### Scenario: Integer mode with fixed scale of 1 shows original size
+
+- **GIVEN** scale mode is set to `integer`
+- **AND** integer_scale is `1`
+- **AND** source is 640x480 and window is 1920x1080
+- **WHEN** `OutputPass::record()` renders the frame
+- **THEN** the viewport SHALL be 640x480 (original size)
+- **AND** the image SHALL be centered with black borders
+
+#### Scenario: Integer mode with fixed scale multiplies source dimensions
+
+- **GIVEN** scale mode is set to `integer`
+- **AND** integer_scale is `3`
+- **AND** source is 640x480
+- **WHEN** `OutputPass::record()` renders the frame
+- **THEN** the viewport SHALL be 1920x1440 (3x source)
+- **AND** portions exceeding window bounds SHALL be clipped by scissor
+
+#### Scenario: Same aspect ratio produces identical output for fit/fill/stretch
 
 - **GIVEN** source image and window have the same aspect ratio
-- **WHEN** any scale mode is used
+- **WHEN** fit, fill, or stretch mode is used
 - **THEN** the output SHALL be identical regardless of mode
-- **AND** the image SHALL fill the entire window without letterboxing or cropping
+- **AND** the image SHALL fill the entire window
 
 ### Requirement: Scale Mode Configuration
 
@@ -68,6 +95,12 @@ The application config SHALL include a setting to control the display scale mode
 - **WHEN** `load_config()` is called
 - **THEN** `config.render.scale_mode` SHALL be `ScaleMode::Stretch`
 
+#### Scenario: TOML parsing for integer mode
+
+- **GIVEN** `goggles.toml` contains `[render] scale_mode = "integer"`
+- **WHEN** `load_config()` is called
+- **THEN** `config.render.scale_mode` SHALL be `ScaleMode::Integer`
+
 #### Scenario: Missing config field uses default
 
 - **GIVEN** `goggles.toml` does not contain `scale_mode` field
@@ -80,6 +113,43 @@ The application config SHALL include a setting to control the display scale mode
 - **WHEN** `load_config()` is called
 - **THEN** an error SHALL be returned
 - **AND** the error message SHALL indicate the invalid value
+
+### Requirement: Integer Scale Configuration
+
+The application config SHALL include a setting to control the integer scaling multiplier when scale_mode is "integer".
+
+#### Scenario: Integer scale field definition
+
+- **GIVEN** the `goggles::Config` struct
+- **WHEN** `Config::Render` is defined
+- **THEN** it SHALL include `uint32_t integer_scale` field
+- **AND** the default value SHALL be `0` (auto)
+
+#### Scenario: Integer scale only applies in integer mode
+
+- **GIVEN** `goggles.toml` contains `[render] scale_mode = "stretch"` and `integer_scale = 2`
+- **WHEN** rendering occurs
+- **THEN** the `integer_scale` value SHALL be ignored
+- **AND** stretch mode behavior SHALL apply
+
+#### Scenario: TOML parsing for auto integer scale
+
+- **GIVEN** `goggles.toml` contains `[render] integer_scale = 0`
+- **WHEN** `load_config()` is called
+- **THEN** `config.render.integer_scale` SHALL be `0`
+
+#### Scenario: TOML parsing for fixed integer scale
+
+- **GIVEN** `goggles.toml` contains `[render] integer_scale = 3`
+- **WHEN** `load_config()` is called
+- **THEN** `config.render.integer_scale` SHALL be `3`
+
+#### Scenario: Integer scale validation
+
+- **GIVEN** `goggles.toml` contains `[render] integer_scale = 10`
+- **WHEN** `load_config()` is called
+- **THEN** an error SHALL be returned
+- **AND** the error message SHALL indicate valid range is 0-8
 
 ### Requirement: FinalViewportSize Calculation
 
@@ -109,6 +179,24 @@ The filter chain SHALL calculate `FinalViewportSize` based on the scale mode to 
 - **WHEN** `FinalViewportSize` is calculated
 - **THEN** it SHALL be (1920, 1440) representing the full scaled content
 - **AND** the OutputPass scissor SHALL clip to swapchain bounds
+
+#### Scenario: Integer mode uses source multiplied by scale factor
+
+- **GIVEN** scale mode is `integer`
+- **AND** integer_scale is `2`
+- **AND** source is 640x480
+- **WHEN** `FinalViewportSize` is calculated
+- **THEN** it SHALL be (1280, 960)
+- **AND** shaders using `scale_type = viewport` SHALL render at this resolution
+
+#### Scenario: Integer mode auto calculates max scale
+
+- **GIVEN** scale mode is `integer`
+- **AND** integer_scale is `0` (auto)
+- **AND** source is 640x480 and swapchain is 1920x1080
+- **WHEN** `FinalViewportSize` is calculated
+- **THEN** max scale SHALL be min(floor(1920/640), floor(1080/480)) = min(3, 2) = 2
+- **AND** FinalViewportSize SHALL be (1280, 960)
 
 #### Scenario: SemanticBinder uses calculated FinalViewportSize
 
@@ -142,23 +230,23 @@ The render subsystem SHALL provide a utility function to calculate scaled viewpo
 - **THEN** result SHALL have width=1920, height=1080
 - **AND** offset_x=0, offset_y=0
 
-## MODIFIED Requirements
+#### Scenario: Calculate integer viewport with auto scale
 
-### Requirement: PassContext provides rendering target
+- **GIVEN** source extent (640, 480) and target extent (1920, 1080)
+- **WHEN** `calculate_viewport()` is called with `ScaleMode::Integer` and integer_scale=0
+- **THEN** result SHALL have width=1280, height=960 (2x)
+- **AND** offset_x=320, offset_y=60 (centered)
 
-The PassContext struct SHALL provide all data needed by a pass to render a frame, including source image dimensions for aspect ratio calculations.
+#### Scenario: Calculate integer viewport with fixed scale
 
-#### Scenario: PassContext provides rendering target
+- **GIVEN** source extent (640, 480) and target extent (1920, 1080)
+- **WHEN** `calculate_viewport()` is called with `ScaleMode::Integer` and integer_scale=1
+- **THEN** result SHALL have width=640, height=480
+- **AND** offset_x=640, offset_y=300 (centered)
 
-- **GIVEN** a PassContext for recording
-- **WHEN** passed to `Pass::record()`
-- **THEN** it SHALL contain `target_image_view` (swapchain or intermediate image view)
-- **AND** it SHALL contain `target_format` (for barrier transitions)
-- **AND** it SHALL contain `source_texture` (previous pass output)
-- **AND** it SHALL contain `source_extent` (dimensions of source texture)
-- **AND** it SHALL contain `original_texture` (normalized input)
-- **AND** it SHALL contain `frame_index` for descriptor set selection
-- **AND** it SHALL contain `output_extent` for viewport/scissor setup
+### Requirement: PassContext Source Extent
+
+The PassContext struct SHALL include source image dimensions to enable aspect ratio calculations.
 
 #### Scenario: Source extent available for aspect ratio calculation
 

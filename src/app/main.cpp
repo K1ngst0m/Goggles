@@ -45,6 +45,8 @@ auto main() -> int {
     GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
     GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
     GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
+    GOGGLES_LOG_DEBUG("  Render scale_mode: {}", to_string(config.render.scale_mode));
+    GOGGLES_LOG_DEBUG("  Render integer_scale: {}", config.render.integer_scale);
     GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -63,7 +65,8 @@ auto main() -> int {
     GOGGLES_LOG_INFO("Window created (1280x720, Vulkan-enabled)");
 
     goggles::render::VulkanBackend vulkan_backend;
-    auto init_result = vulkan_backend.init(window, config.render.enable_validation);
+    auto init_result = vulkan_backend.init(window, config.render.enable_validation, "shaders",
+                                           config.render.scale_mode, config.render.integer_scale);
     if (!init_result) {
         GOGGLES_LOG_CRITICAL("Failed to initialize Vulkan: {} ({})", init_result.error().message,
                              goggles::error_code_name(init_result.error().code));
@@ -82,24 +85,46 @@ auto main() -> int {
     bool running = true;
     while (running) {
         SDL_Event event;
+        bool window_resized = false;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 GOGGLES_LOG_INFO("Quit event received");
                 running = false;
+            } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
+                window_resized = true;
+            }
+        }
+
+        if (window_resized) {
+            auto resize_result = vulkan_backend.handle_resize();
+            if (!resize_result) {
+                GOGGLES_LOG_ERROR("Resize failed: {}", resize_result.error().message);
             }
         }
 
         capture_receiver.poll_frame();
 
+        bool needs_resize = false;
         if (capture_receiver.has_frame()) {
             auto render_result = vulkan_backend.render_frame(capture_receiver.get_frame());
             if (!render_result) {
                 GOGGLES_LOG_ERROR("Render failed: {}", render_result.error().message);
+            } else {
+                needs_resize = !*render_result;
             }
         } else {
             auto render_result = vulkan_backend.render_clear();
             if (!render_result) {
                 GOGGLES_LOG_ERROR("Clear failed: {}", render_result.error().message);
+            } else {
+                needs_resize = !*render_result;
+            }
+        }
+
+        if (needs_resize) {
+            auto resize_result = vulkan_backend.handle_resize();
+            if (!resize_result) {
+                GOGGLES_LOG_ERROR("Resize failed: {}", resize_result.error().message);
             }
         }
     }

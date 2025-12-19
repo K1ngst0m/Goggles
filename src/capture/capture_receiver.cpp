@@ -178,7 +178,7 @@ bool CaptureReceiver::receive_message() {
             return false;
         }
 
-        GOGGLES_LOG_DEBUG("Received texture: {}x{}, fd={}, stride={}, format={}", tex_data->width,
+        GOGGLES_LOG_TRACE("Received texture: {}x{}, fd={}, stride={}, format={}", tex_data->width,
                           tex_data->height, new_fd, tex_data->stride,
                           static_cast<int>(tex_data->format));
 

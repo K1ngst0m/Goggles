@@ -33,7 +33,8 @@ public:
     [[nodiscard]] auto load_preset(const std::filesystem::path& preset_path) -> Result<void>;
 
     void record(vk::CommandBuffer cmd, vk::ImageView original_view, vk::Extent2D original_extent,
-                vk::ImageView swapchain_view, vk::Extent2D viewport_extent, uint32_t frame_index);
+                vk::ImageView swapchain_view, vk::Extent2D viewport_extent, uint32_t frame_index,
+                ScaleMode scale_mode = ScaleMode::STRETCH, uint32_t integer_scale = 0);
 
     [[nodiscard]] auto handle_resize(vk::Extent2D new_viewport_extent) -> Result<void>;
 
@@ -48,7 +49,8 @@ public:
         -> vk::Extent2D;
 
 private:
-    [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents) -> Result<void>;
+    [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents,
+                                           vk::Extent2D viewport_extent) -> Result<void>;
 
     vk::Device m_device;
     vk::PhysicalDevice m_physical_device;
@@ -63,6 +65,10 @@ private:
 
     std::optional<PresetConfig> m_preset;
     uint32_t m_frame_count = 0;
+
+    ScaleMode m_last_scale_mode = ScaleMode::STRETCH;
+    uint32_t m_last_integer_scale = 0;
+    vk::Extent2D m_last_source_extent;
 
     bool m_initialized = false;
 };

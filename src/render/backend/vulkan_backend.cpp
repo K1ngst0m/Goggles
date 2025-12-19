@@ -45,7 +45,8 @@ VulkanBackend::~VulkanBackend() {
 }
 
 auto VulkanBackend::init(SDL_Window* window, bool enable_validation,
-                         const std::filesystem::path& shader_dir) -> Result<void> {
+                         const std::filesystem::path& shader_dir, ScaleMode scale_mode,
+                         uint32_t integer_scale) -> Result<void> {
     if (m_initialized) {
         return {};
     }
@@ -61,6 +62,8 @@ auto VulkanBackend::init(SDL_Window* window, bool enable_validation,
     m_window = window;
     m_enable_validation = enable_validation;
     m_shader_dir = shader_dir;
+    m_scale_mode = scale_mode;
+    m_integer_scale = integer_scale;
 
     int width = 0;
     int height = 0;
@@ -441,9 +444,10 @@ auto VulkanBackend::recreate_swapchain() -> Result<void> {
 
     GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                  m_swapchain_format));
+    GOGGLES_TRY(m_filter_chain.handle_resize(m_swapchain_extent));
 
     m_needs_resize = false;
-    GOGGLES_LOG_INFO("Swapchain recreated: {}x{}", width, height);
+    GOGGLES_LOG_DEBUG("Swapchain recreated: {}x{}", width, height);
     return {};
 }
 
@@ -734,7 +738,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     m_import.view = view;
     m_import_extent = vk::Extent2D{frame.width, frame.height};
 
-    GOGGLES_LOG_DEBUG("DMA-BUF imported: {}x{}, format={}, modifier=0x{:x}", frame.width,
+    GOGGLES_LOG_TRACE("DMA-BUF imported: {}x{}, format={}, modifier=0x{:x}", frame.width,
                       frame.height, vk::to_string(vk_format), frame.modifier);
     return {};
 }
@@ -827,7 +831,7 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
 
     m_filter_chain.record(cmd, m_import.view, m_import_extent,
                           *m_swapchain_image_views[image_index], m_swapchain_extent,
-                          m_current_frame);
+                          m_current_frame, m_scale_mode, m_integer_scale);
 
     dst_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     dst_barrier.dstAccessMask = vk::AccessFlagBits::eNone;
@@ -976,10 +980,7 @@ auto VulkanBackend::handle_resize() -> Result<void> {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
     }
 
-    if (m_needs_resize) {
-        return recreate_swapchain();
-    }
-    return {};
+    return recreate_swapchain();
 }
 
 } // namespace goggles::render
