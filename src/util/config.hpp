@@ -8,6 +8,23 @@
 
 namespace goggles {
 
+enum class ScaleMode : uint8_t {
+    FIT,
+    FILL,
+    STRETCH,
+    INTEGER,
+};
+
+[[nodiscard]] constexpr auto to_string(ScaleMode mode) -> const char* {
+    switch (mode) {
+        case ScaleMode::FIT: return "fit";
+        case ScaleMode::FILL: return "fill";
+        case ScaleMode::STRETCH: return "stretch";
+        case ScaleMode::INTEGER: return "integer";
+    }
+    return "unknown";
+}
+
 struct Config {
     struct Capture {
         std::string backend = "vulkan_layer";
@@ -21,6 +38,8 @@ struct Config {
         bool vsync = true;
         uint32_t target_fps = 60;
         bool enable_validation = false;
+        ScaleMode scale_mode = ScaleMode::STRETCH;
+        uint32_t integer_scale = 0;
     } render;
 
     struct Logging {

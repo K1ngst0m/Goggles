@@ -70,6 +70,15 @@ void OutputPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
 void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     update_descriptor(ctx.frame_index, ctx.source_texture);
 
+    auto scaled = calculate_viewport(ctx.source_extent.width, ctx.source_extent.height,
+                                     ctx.output_extent.width, ctx.output_extent.height,
+                                     ctx.scale_mode, ctx.integer_scale);
+
+    GOGGLES_LOG_TRACE("OutputPass: source={}x{}, output={}x{}, mode={}, scaled={}x{} @ ({},{})",
+                      ctx.source_extent.width, ctx.source_extent.height, ctx.output_extent.width,
+                      ctx.output_extent.height, static_cast<int>(ctx.scale_mode), scaled.width,
+                      scaled.height, scaled.offset_x, scaled.offset_y);
+
     vk::RenderingAttachmentInfo color_attachment{};
     color_attachment.imageView = ctx.target_image_view;
     color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -90,10 +99,10 @@ void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
                            m_descriptor_sets[ctx.frame_index], {});
 
     vk::Viewport viewport{};
-    viewport.x = 0.0F;
-    viewport.y = 0.0F;
-    viewport.width = static_cast<float>(ctx.output_extent.width);
-    viewport.height = static_cast<float>(ctx.output_extent.height);
+    viewport.x = static_cast<float>(scaled.offset_x);
+    viewport.y = static_cast<float>(scaled.offset_y);
+    viewport.width = static_cast<float>(scaled.width);
+    viewport.height = static_cast<float>(scaled.height);
     viewport.minDepth = 0.0F;
     viewport.maxDepth = 1.0F;
     cmd.setViewport(0, viewport);

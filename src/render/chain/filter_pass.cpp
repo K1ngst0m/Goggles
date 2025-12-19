@@ -205,6 +205,8 @@ void FilterPass::build_push_constants() {
         } else if (member.name == "FrameCount") {
             auto frame_count = m_binder.frame_count();
             std::memcpy(dest, &frame_count, sizeof(uint32_t));
+        } else if (member.name == "FinalViewportSize") {
+            std::memcpy(dest, m_binder.final_viewport_size().data(), sizeof(SizeVec4));
         } else {
             for (const auto& param : m_parameters) {
                 if (param.name == member.name) {

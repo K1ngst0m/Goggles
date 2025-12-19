@@ -10,6 +10,7 @@
 #include <optional>
 #include <render/chain/filter_chain.hpp>
 #include <render/shader/shader_runtime.hpp>
+#include <util/config.hpp>
 #include <util/error.hpp>
 #include <vector>
 
@@ -26,7 +27,9 @@ public:
     VulkanBackend& operator=(VulkanBackend&&) = delete;
 
     [[nodiscard]] auto init(SDL_Window* window, bool enable_validation = false,
-                            const std::filesystem::path& shader_dir = "shaders") -> Result<void>;
+                            const std::filesystem::path& shader_dir = "shaders",
+                            ScaleMode scale_mode = ScaleMode::STRETCH,
+                            uint32_t integer_scale = 0) -> Result<void>;
     void shutdown();
 
     [[nodiscard]] auto render_frame(const CaptureFrame& frame) -> Result<bool>;
@@ -107,6 +110,8 @@ private:
 
     SDL_Window* m_window = nullptr;
     bool m_enable_validation = false;
+    ScaleMode m_scale_mode = ScaleMode::STRETCH;
+    uint32_t m_integer_scale = 0;
     bool m_initialized = false;
     bool m_needs_resize = false;
 };

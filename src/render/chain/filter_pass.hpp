@@ -58,6 +58,9 @@ public:
         m_binder.set_original_size(width, height);
     }
     void set_frame_count(uint32_t count) { m_binder.set_frame_count(count); }
+    void set_final_viewport_size(uint32_t width, uint32_t height) {
+        m_binder.set_final_viewport_size(width, height);
+    }
 
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 

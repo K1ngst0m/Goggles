@@ -64,6 +64,31 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         if (render.contains("enable_validation")) {
             config.render.enable_validation = toml::find<bool>(render, "enable_validation");
         }
+        if (render.contains("scale_mode")) {
+            auto mode_str = toml::find<std::string>(render, "scale_mode");
+            if (mode_str == "fit") {
+                config.render.scale_mode = ScaleMode::FIT;
+            } else if (mode_str == "fill") {
+                config.render.scale_mode = ScaleMode::FILL;
+            } else if (mode_str == "stretch") {
+                config.render.scale_mode = ScaleMode::STRETCH;
+            } else if (mode_str == "integer") {
+                config.render.scale_mode = ScaleMode::INTEGER;
+            } else {
+                return make_error<Config>(ErrorCode::INVALID_CONFIG,
+                                          "Invalid scale_mode: " + mode_str +
+                                              " (expected: fit, fill, stretch, integer)");
+            }
+        }
+        if (render.contains("integer_scale")) {
+            auto scale = toml::find<int64_t>(render, "integer_scale");
+            if (scale < 0 || scale > 8) {
+                return make_error<Config>(ErrorCode::INVALID_CONFIG,
+                                          "Invalid integer_scale: " + std::to_string(scale) +
+                                              " (expected: 0-8)");
+            }
+            config.render.integer_scale = static_cast<uint32_t>(scale);
+        }
     }
 
     if (data.contains("logging")) {
