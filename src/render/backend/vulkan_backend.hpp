@@ -28,8 +28,8 @@ public:
 
     [[nodiscard]] auto init(SDL_Window* window, bool enable_validation = false,
                             const std::filesystem::path& shader_dir = "shaders",
-                            ScaleMode scale_mode = ScaleMode::STRETCH,
-                            uint32_t integer_scale = 0) -> Result<void>;
+                            ScaleMode scale_mode = ScaleMode::STRETCH, uint32_t integer_scale = 0)
+        -> Result<void>;
     void shutdown();
 
     [[nodiscard]] auto render_frame(const CaptureFrame& frame) -> Result<bool>;

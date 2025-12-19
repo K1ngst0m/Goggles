@@ -17,10 +17,14 @@ enum class ScaleMode : uint8_t {
 
 [[nodiscard]] constexpr auto to_string(ScaleMode mode) -> const char* {
     switch (mode) {
-        case ScaleMode::FIT: return "fit";
-        case ScaleMode::FILL: return "fill";
-        case ScaleMode::STRETCH: return "stretch";
-        case ScaleMode::INTEGER: return "integer";
+    case ScaleMode::FIT:
+        return "fit";
+    case ScaleMode::FILL:
+        return "fill";
+    case ScaleMode::STRETCH:
+        return "stretch";
+    case ScaleMode::INTEGER:
+        return "integer";
     }
     return "unknown";
 }

@@ -40,36 +40,22 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
     }
 
     PresetParser parser;
-    auto preset_result = parser.load(preset_path);
-    if (!preset_result) {
-        return make_error<void>(preset_result.error().code, preset_result.error().message);
-    }
+    m_preset = GOGGLES_TRY(parser.load(preset_path));
 
     m_passes.clear();
     m_framebuffers.clear();
-    m_preset = std::move(preset_result.value());
 
     RetroArchPreprocessor preprocessor;
 
     for (const auto& pass_config : m_preset->passes) {
-        auto preprocess_result = preprocessor.preprocess(pass_config.shader_path);
-        if (!preprocess_result) {
-            return make_error<void>(preprocess_result.error().code,
-                                    preprocess_result.error().message);
-        }
-
-        auto& preprocessed = preprocess_result.value();
+        auto preprocessed = GOGGLES_TRY(preprocessor.preprocess(pass_config.shader_path));
         auto pass = std::make_unique<FilterPass>();
 
-        auto init_result = pass->init_from_sources(
+        GOGGLES_TRY(pass->init_from_sources(
             m_device, m_physical_device, pass_config.framebuffer_format, m_num_sync_indices,
             *m_shader_runtime, preprocessed.vertex_source, preprocessed.fragment_source,
             pass_config.shader_path.stem().string(), pass_config.filter_mode,
-            preprocessed.parameters);
-
-        if (!init_result) {
-            return make_error<void>(init_result.error().code, init_result.error().message);
-        }
+            preprocessed.parameters));
 
         m_passes.push_back(std::move(pass));
     }
@@ -106,16 +92,11 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
         return;
     }
 
-    auto vp = calculate_viewport(original_extent.width, original_extent.height,
-                                  viewport_extent.width, viewport_extent.height, scale_mode,
-                                  integer_scale);
+    auto vp =
+        calculate_viewport(original_extent.width, original_extent.height, viewport_extent.width,
+                           viewport_extent.height, scale_mode, integer_scale);
 
-    auto fb_result = ensure_framebuffers({.viewport = viewport_extent, .source = original_extent},
-                                         {vp.width, vp.height});
-    if (!fb_result) {
-        GOGGLES_LOG_ERROR("Failed to ensure framebuffers: {}", fb_result.error().message);
-        return;
-    }
+    GOGGLES_MUST(ensure_framebuffers({.viewport = viewport_extent, .source = original_extent}, {vp.width, vp.height}));
 
     vk::ImageView source_view = original_view;
     vk::Extent2D source_extent = original_extent;
@@ -211,8 +192,8 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
     }
 
     auto vp = calculate_viewport(m_last_source_extent.width, m_last_source_extent.height,
-                                  new_viewport_extent.width, new_viewport_extent.height,
-                                  m_last_scale_mode, m_last_integer_scale);
+                                 new_viewport_extent.width, new_viewport_extent.height,
+                                 m_last_scale_mode, m_last_integer_scale);
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
         const auto& pass_config = m_preset->passes[i];
@@ -254,8 +235,7 @@ auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents,
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
         const auto& pass_config = m_preset->passes[i];
-        auto target_extent =
-            calculate_pass_output_size(pass_config, prev_extent, viewport_extent);
+        auto target_extent = calculate_pass_output_size(pass_config, prev_extent, viewport_extent);
 
         if (!m_framebuffers[i].is_initialized()) {
             GOGGLES_TRY(m_framebuffers[i].init(m_device, m_physical_device,
