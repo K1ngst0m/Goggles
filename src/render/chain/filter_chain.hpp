@@ -25,10 +25,9 @@ public:
     FilterChain(FilterChain&&) = delete;
     FilterChain& operator=(FilterChain&&) = delete;
 
-    [[nodiscard]] auto init(vk::Device device, vk::PhysicalDevice physical_device,
-                            vk::Format swapchain_format, uint32_t num_sync_indices,
-                            ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
-        -> Result<void>;
+    [[nodiscard]] auto init(const VulkanContext& vk_ctx, vk::Format swapchain_format,
+                            uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
+                            const std::filesystem::path& shader_dir) -> Result<void>;
 
     [[nodiscard]] auto load_preset(const std::filesystem::path& preset_path) -> Result<void>;
 
@@ -52,8 +51,7 @@ private:
     [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents,
                                            vk::Extent2D viewport_extent) -> Result<void>;
 
-    vk::Device m_device;
-    vk::PhysicalDevice m_physical_device;
+    VulkanContext m_vk_ctx;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     uint32_t m_num_sync_indices = 0;
     ShaderRuntime* m_shader_runtime = nullptr;

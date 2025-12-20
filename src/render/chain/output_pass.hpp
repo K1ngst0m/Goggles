@@ -6,6 +6,12 @@
 
 namespace goggles::render {
 
+struct OutputPassConfig {
+    vk::Format target_format = vk::Format::eUndefined;
+    uint32_t num_sync_indices = 2;
+    std::filesystem::path shader_dir;
+};
+
 class OutputPass : public Pass {
 public:
     OutputPass() = default;
@@ -16,9 +22,8 @@ public:
     OutputPass(OutputPass&&) = delete;
     OutputPass& operator=(OutputPass&&) = delete;
 
-    [[nodiscard]] auto init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
-                            ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
-        -> Result<void> override;
+    [[nodiscard]] auto init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
+                            const OutputPassConfig& config) -> Result<void>;
     void shutdown() override;
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
 

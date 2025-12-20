@@ -24,44 +24,20 @@ FilterPass::~FilterPass() {
     FilterPass::shutdown();
 }
 
-auto FilterPass::init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
-                      ShaderRuntime& /*shader_runtime*/,
-                      const std::filesystem::path& /*shader_dir*/) -> Result<void> {
-    m_device = device;
-    m_target_format = target_format;
-    m_num_sync_indices = num_sync_indices;
-    return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                            "FilterPass::init() not supported - use init_from_sources()");
-}
-
-auto FilterPass::init_from_sources(vk::Device /*device*/, vk::Format /*target_format*/,
-                                   uint32_t /*num_sync_indices*/, ShaderRuntime& /*shader_runtime*/,
-                                   const std::string& /*vertex_source*/,
-                                   const std::string& /*fragment_source*/,
-                                   const std::string& /*shader_name*/, FilterMode /*filter_mode*/)
-    -> Result<void> {
-    return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
-                            "FilterPass::init_from_sources() requires physical_device");
-}
-
-auto FilterPass::init_from_sources(vk::Device device, vk::PhysicalDevice physical_device,
-                                   vk::Format target_format, uint32_t num_sync_indices,
-                                   ShaderRuntime& shader_runtime, const std::string& vertex_source,
-                                   const std::string& fragment_source,
-                                   const std::string& shader_name, FilterMode filter_mode,
-                                   const std::vector<ShaderParameter>& parameters) -> Result<void> {
+auto FilterPass::init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
+                      const FilterPassConfig& config) -> Result<void> {
     if (m_initialized) {
         return {};
     }
 
-    m_device = device;
-    m_physical_device = physical_device;
-    m_target_format = target_format;
-    m_num_sync_indices = num_sync_indices;
-    m_parameters = parameters;
+    m_device = vk_ctx.device;
+    m_physical_device = vk_ctx.physical_device;
+    m_target_format = config.target_format;
+    m_num_sync_indices = config.num_sync_indices;
+    m_parameters = config.parameters;
 
-    auto compile_result =
-        shader_runtime.compile_retroarch_shader(vertex_source, fragment_source, shader_name);
+    auto compile_result = shader_runtime.compile_retroarch_shader(
+        config.vertex_source, config.fragment_source, config.shader_name);
     if (!compile_result) {
         return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED, compile_result.error().message);
     }
@@ -90,7 +66,7 @@ auto FilterPass::init_from_sources(vk::Device device, vk::PhysicalDevice physica
         GOGGLES_LOG_DEBUG("  Param: '{}' default={}", param.name, param.default_value);
     }
 
-    GOGGLES_TRY(create_sampler(filter_mode));
+    GOGGLES_TRY(create_sampler(config.filter_mode));
 
     if (m_has_vertex_inputs) {
         GOGGLES_TRY(create_vertex_buffer());
@@ -103,7 +79,8 @@ auto FilterPass::init_from_sources(vk::Device device, vk::PhysicalDevice physica
 
     m_initialized = true;
     GOGGLES_LOG_DEBUG("FilterPass '{}' initialized (push_constants={}, size={}, vertex_inputs={})",
-                      shader_name, m_has_push_constants, m_push_constant_size, m_has_vertex_inputs);
+                      config.shader_name, m_has_push_constants, m_push_constant_size,
+                      m_has_vertex_inputs);
     return {};
 }
 
