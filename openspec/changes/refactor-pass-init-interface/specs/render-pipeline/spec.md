@@ -36,7 +36,7 @@ The render backend SHALL provide a graphics pipeline for blitting imported textu
 #### Scenario: Pipeline initialization
 
 - **GIVEN** valid SPIR-V bytecode from `ShaderRuntime`
-- **WHEN** `OutputPass` is initialized via `init(VulkanContext&, ShaderRuntime&, OutputPassConfig&)`
+- **WHEN** `OutputPass` is initialized via `init(const VulkanContext&, ShaderRuntime&, const OutputPassConfig&)`
 - **THEN** pipeline and descriptor layout SHALL be created
 - **AND** pipeline SHALL be created with `VkPipelineRenderingCreateInfo` specifying target format from config
 - **AND** all Vulkan resources SHALL use RAII (`vk::Unique*`)

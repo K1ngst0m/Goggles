@@ -49,7 +49,7 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
 
     RetroArchPreprocessor preprocessor;
 
-    for (const auto& pass_config : m_preset->passes) {
+    for (const auto& pass_config : m_preset.passes) {
         auto preprocessed = GOGGLES_TRY(preprocessor.preprocess(pass_config.shader_path));
         auto pass = std::make_unique<FilterPass>();
 
@@ -103,7 +103,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
         calculate_viewport(original_extent.width, original_extent.height, viewport_extent.width,
                            viewport_extent.height, scale_mode, integer_scale);
 
-    GOGGLES_MUST(ensure_framebuffers({.viewport = viewport_extent, .source = original_extent}, {vp.width, vp.height}));
+    GOGGLES_MUST(ensure_framebuffers({.viewport = viewport_extent, .source = original_extent},
+                                     {vp.width, vp.height}));
 
     vk::ImageView source_view = original_view;
     vk::Extent2D source_extent = original_extent;
@@ -193,7 +194,7 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
     GOGGLES_LOG_DEBUG("FilterChain::handle_resize called: {}x{}", new_viewport_extent.width,
                       new_viewport_extent.height);
 
-    if (!m_preset || m_framebuffers.empty()) {
+    if (m_preset.passes.empty() || m_framebuffers.empty()) {
         GOGGLES_LOG_DEBUG("handle_resize: no preset or framebuffers");
         return {};
     }
@@ -203,7 +204,7 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
                                  m_last_scale_mode, m_last_integer_scale);
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
-        const auto& pass_config = m_preset->passes[i];
+        const auto& pass_config = m_preset.passes[i];
         if (pass_config.scale_type_x == ScaleType::VIEWPORT ||
             pass_config.scale_type_y == ScaleType::VIEWPORT) {
             vk::Extent2D prev_extent =
@@ -227,21 +228,21 @@ void FilterChain::shutdown() {
     m_passes.clear();
     m_framebuffers.clear();
     m_output_pass.shutdown();
-    m_preset.reset();
+    m_preset = PresetConfig{};
     m_frame_count = 0;
     m_initialized = false;
 }
 
 auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents,
                                       vk::Extent2D viewport_extent) -> Result<void> {
-    if (!m_preset) {
+    if (m_preset.passes.empty()) {
         return {};
     }
 
     vk::Extent2D prev_extent = extents.source;
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
-        const auto& pass_config = m_preset->passes[i];
+        const auto& pass_config = m_preset.passes[i];
         auto target_extent = calculate_pass_output_size(pass_config, prev_extent, viewport_extent);
 
         if (!m_framebuffers[i].is_initialized()) {

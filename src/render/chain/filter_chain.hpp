@@ -61,7 +61,7 @@ private:
     std::vector<Framebuffer> m_framebuffers;
     OutputPass m_output_pass;
 
-    std::optional<PresetConfig> m_preset;
+    PresetConfig m_preset;
     uint32_t m_frame_count = 0;
 
     ScaleMode m_last_scale_mode = ScaleMode::STRETCH;
