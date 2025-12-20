@@ -11,23 +11,25 @@ FilterChain::~FilterChain() {
     shutdown();
 }
 
-auto FilterChain::init(vk::Device device, vk::PhysicalDevice physical_device,
-                       vk::Format swapchain_format, uint32_t num_sync_indices,
-                       ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
-    -> Result<void> {
+auto FilterChain::init(const VulkanContext& vk_ctx, vk::Format swapchain_format,
+                       uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
+                       const std::filesystem::path& shader_dir) -> Result<void> {
     if (m_initialized) {
         return {};
     }
 
-    m_device = device;
-    m_physical_device = physical_device;
+    m_vk_ctx = vk_ctx;
     m_swapchain_format = swapchain_format;
     m_num_sync_indices = num_sync_indices;
     m_shader_runtime = &shader_runtime;
     m_shader_dir = shader_dir;
 
-    GOGGLES_TRY(
-        m_output_pass.init(device, swapchain_format, num_sync_indices, shader_runtime, shader_dir));
+    OutputPassConfig output_config{
+        .target_format = swapchain_format,
+        .num_sync_indices = num_sync_indices,
+        .shader_dir = shader_dir,
+    };
+    GOGGLES_TRY(m_output_pass.init(vk_ctx, shader_runtime, output_config));
 
     m_initialized = true;
     GOGGLES_LOG_DEBUG("FilterChain initialized (passthrough mode)");
@@ -47,15 +49,20 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
 
     RetroArchPreprocessor preprocessor;
 
-    for (const auto& pass_config : m_preset->passes) {
+    for (const auto& pass_config : m_preset.passes) {
         auto preprocessed = GOGGLES_TRY(preprocessor.preprocess(pass_config.shader_path));
         auto pass = std::make_unique<FilterPass>();
 
-        GOGGLES_TRY(pass->init_from_sources(
-            m_device, m_physical_device, pass_config.framebuffer_format, m_num_sync_indices,
-            *m_shader_runtime, preprocessed.vertex_source, preprocessed.fragment_source,
-            pass_config.shader_path.stem().string(), pass_config.filter_mode,
-            preprocessed.parameters));
+        FilterPassConfig config{
+            .target_format = pass_config.framebuffer_format,
+            .num_sync_indices = m_num_sync_indices,
+            .vertex_source = preprocessed.vertex_source,
+            .fragment_source = preprocessed.fragment_source,
+            .shader_name = pass_config.shader_path.stem().string(),
+            .filter_mode = pass_config.filter_mode,
+            .parameters = preprocessed.parameters,
+        };
+        GOGGLES_TRY(pass->init(m_vk_ctx, *m_shader_runtime, config));
 
         m_passes.push_back(std::move(pass));
     }
@@ -96,7 +103,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
         calculate_viewport(original_extent.width, original_extent.height, viewport_extent.width,
                            viewport_extent.height, scale_mode, integer_scale);
 
-    GOGGLES_MUST(ensure_framebuffers({.viewport = viewport_extent, .source = original_extent}, {vp.width, vp.height}));
+    GOGGLES_MUST(ensure_framebuffers({.viewport = viewport_extent, .source = original_extent},
+                                     {vp.width, vp.height}));
 
     vk::ImageView source_view = original_view;
     vk::Extent2D source_extent = original_extent;
@@ -186,7 +194,7 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
     GOGGLES_LOG_DEBUG("FilterChain::handle_resize called: {}x{}", new_viewport_extent.width,
                       new_viewport_extent.height);
 
-    if (!m_preset || m_framebuffers.empty()) {
+    if (m_preset.passes.empty() || m_framebuffers.empty()) {
         GOGGLES_LOG_DEBUG("handle_resize: no preset or framebuffers");
         return {};
     }
@@ -196,7 +204,7 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
                                  m_last_scale_mode, m_last_integer_scale);
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
-        const auto& pass_config = m_preset->passes[i];
+        const auto& pass_config = m_preset.passes[i];
         if (pass_config.scale_type_x == ScaleType::VIEWPORT ||
             pass_config.scale_type_y == ScaleType::VIEWPORT) {
             vk::Extent2D prev_extent =
@@ -220,25 +228,25 @@ void FilterChain::shutdown() {
     m_passes.clear();
     m_framebuffers.clear();
     m_output_pass.shutdown();
-    m_preset.reset();
+    m_preset = PresetConfig{};
     m_frame_count = 0;
     m_initialized = false;
 }
 
 auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents,
                                       vk::Extent2D viewport_extent) -> Result<void> {
-    if (!m_preset) {
+    if (m_preset.passes.empty()) {
         return {};
     }
 
     vk::Extent2D prev_extent = extents.source;
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
-        const auto& pass_config = m_preset->passes[i];
+        const auto& pass_config = m_preset.passes[i];
         auto target_extent = calculate_pass_output_size(pass_config, prev_extent, viewport_extent);
 
         if (!m_framebuffers[i].is_initialized()) {
-            GOGGLES_TRY(m_framebuffers[i].init(m_device, m_physical_device,
+            GOGGLES_TRY(m_framebuffers[i].init(m_vk_ctx.device, m_vk_ctx.physical_device,
                                                pass_config.framebuffer_format, target_extent));
         } else if (m_framebuffers[i].extent() != target_extent) {
             GOGGLES_TRY(m_framebuffers[i].resize(target_extent));

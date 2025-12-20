@@ -11,6 +11,11 @@ namespace goggles::render {
 
 class ShaderRuntime;
 
+struct VulkanContext {
+    vk::Device device;
+    vk::PhysicalDevice physical_device;
+};
+
 struct PassContext {
     uint32_t frame_index;
     vk::Extent2D output_extent;
@@ -33,9 +38,6 @@ public:
     Pass(Pass&&) = delete;
     Pass& operator=(Pass&&) = delete;
 
-    [[nodiscard]] virtual auto init(vk::Device device, vk::Format target_format,
-                                    uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
-                                    const std::filesystem::path& shader_dir) -> Result<void> = 0;
     virtual void shutdown() = 0;
     virtual void record(vk::CommandBuffer cmd, const PassContext& ctx) = 0;
 };

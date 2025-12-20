@@ -577,8 +577,9 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
 auto VulkanBackend::init_filter_chain() -> Result<void> {
     GOGGLES_TRY(m_shader_runtime.init());
 
-    return m_filter_chain.init(*m_device, m_physical_device, m_swapchain_format,
-                               MAX_FRAMES_IN_FLIGHT, m_shader_runtime, m_shader_dir);
+    VulkanContext vk_ctx{.device = *m_device, .physical_device = m_physical_device};
+    return m_filter_chain.init(vk_ctx, m_swapchain_format, MAX_FRAMES_IN_FLIGHT, m_shader_runtime,
+                               m_shader_dir);
 }
 
 void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path) {

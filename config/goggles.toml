@@ -38,13 +38,13 @@ enable_validation = true
 #   "fill"    - Scale to fill window, preserving aspect ratio (may crop edges)
 #   "stretch" - Stretch to fill window exactly, ignoring aspect ratio
 #   "integer" - Pixel-perfect integer scaling (uses integer_scale setting)
-scale_mode = "integer"
+scale_mode = "fit"
 
 # Integer scaling multiplier (only used when scale_mode = "integer")
 # 0 = auto (maximum integer scale that fits in window)
 # 1 = original size (no scaling)
 # 2-8 = fixed multiplier (e.g., 2 = 2x, 3 = 3x)
-integer_scale = 3
+integer_scale = 1
 
 # =============================================================================
 # Logging Settings

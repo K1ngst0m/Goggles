@@ -10,21 +10,20 @@ OutputPass::~OutputPass() {
     OutputPass::shutdown();
 }
 
-auto OutputPass::init(vk::Device device, vk::Format target_format, uint32_t num_sync_indices,
-                      ShaderRuntime& shader_runtime, const std::filesystem::path& shader_dir)
-    -> Result<void> {
+auto OutputPass::init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
+                      const OutputPassConfig& config) -> Result<void> {
     if (m_initialized) {
         return {};
     }
 
-    m_device = device;
-    m_target_format = target_format;
-    m_num_sync_indices = num_sync_indices;
+    m_device = vk_ctx.device;
+    m_target_format = config.target_format;
+    m_num_sync_indices = config.num_sync_indices;
 
     GOGGLES_TRY(create_sampler());
     GOGGLES_TRY(create_descriptor_resources());
     GOGGLES_TRY(create_pipeline_layout());
-    GOGGLES_TRY(create_pipeline(shader_runtime, shader_dir));
+    GOGGLES_TRY(create_pipeline(shader_runtime, config.shader_dir));
 
     m_initialized = true;
     GOGGLES_LOG_DEBUG("OutputPass initialized");
