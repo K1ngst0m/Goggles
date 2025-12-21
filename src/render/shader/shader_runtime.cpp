@@ -60,7 +60,7 @@ auto ShaderRuntime::init() -> Result<void> {
     global_desc.enableGLSL = true;
 
     if (SLANG_FAILED(slang::createGlobalSession(&global_desc, m_impl->global_session.writeRef()))) {
-        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<void>(ErrorCode::shader_compile_failed,
                                 "Failed to create Slang global session");
     }
 
@@ -91,7 +91,7 @@ auto ShaderRuntime::init() -> Result<void> {
 
     if (SLANG_FAILED(m_impl->global_session->createSession(hlsl_session_desc,
                                                            m_impl->hlsl_session.writeRef()))) {
-        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<void>(ErrorCode::shader_compile_failed,
                                 "Failed to create Slang HLSL session");
     }
 
@@ -105,7 +105,7 @@ auto ShaderRuntime::init() -> Result<void> {
 
     if (SLANG_FAILED(m_impl->global_session->createSession(glsl_session_desc,
                                                            m_impl->glsl_session.writeRef()))) {
-        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<void>(ErrorCode::shader_compile_failed,
                                 "Failed to create Slang GLSL session");
     }
 
@@ -138,13 +138,13 @@ void ShaderRuntime::shutdown() {
 auto ShaderRuntime::compile_shader(const std::filesystem::path& source_path,
                                    const std::string& entry_point) -> Result<CompiledShader> {
     if (!m_initialized) {
-        return make_error<CompiledShader>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<CompiledShader>(ErrorCode::shader_compile_failed,
                                           "ShaderRuntime not initialized");
     }
 
     std::ifstream file(source_path);
     if (!file) {
-        return make_error<CompiledShader>(ErrorCode::FILE_NOT_FOUND,
+        return make_error<CompiledShader>(ErrorCode::file_not_found,
                                           "Shader file not found: " + source_path.string());
     }
 
@@ -206,32 +206,32 @@ auto ShaderRuntime::load_cached_spirv(const std::filesystem::path& cache_path,
     -> Result<std::vector<uint32_t>> {
     std::ifstream file(cache_path, std::ios::binary);
     if (!file) {
-        return make_error<std::vector<uint32_t>>(ErrorCode::FILE_NOT_FOUND, "Cache miss");
+        return make_error<std::vector<uint32_t>>(ErrorCode::file_not_found, "Cache miss");
     }
 
     CacheHeader header{};
     file.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!file) {
-        return make_error<std::vector<uint32_t>>(ErrorCode::FILE_READ_FAILED,
+        return make_error<std::vector<uint32_t>>(ErrorCode::file_read_failed,
                                                  "Invalid cache header");
     }
 
     if (std::string_view(header.magic.data(), 4) != CACHE_MAGIC ||
         header.version != CACHE_VERSION) {
-        return make_error<std::vector<uint32_t>>(ErrorCode::PARSE_ERROR, "Cache version mismatch");
+        return make_error<std::vector<uint32_t>>(ErrorCode::parse_error, "Cache version mismatch");
     }
 
     std::string stored_hash(header.hash_length, '\0');
     file.read(stored_hash.data(), static_cast<std::streamsize>(header.hash_length));
     if (!file || stored_hash != expected_hash) {
-        return make_error<std::vector<uint32_t>>(ErrorCode::PARSE_ERROR, "Source hash mismatch");
+        return make_error<std::vector<uint32_t>>(ErrorCode::parse_error, "Source hash mismatch");
     }
 
     std::vector<uint32_t> spirv(header.spirv_size);
     file.read(reinterpret_cast<char*>(spirv.data()),
               static_cast<std::streamsize>(header.spirv_size * sizeof(uint32_t)));
     if (!file) {
-        return make_error<std::vector<uint32_t>>(ErrorCode::FILE_READ_FAILED,
+        return make_error<std::vector<uint32_t>>(ErrorCode::file_read_failed,
                                                  "Failed to read SPIR-V");
     }
 
@@ -243,7 +243,7 @@ auto ShaderRuntime::save_cached_spirv(const std::filesystem::path& cache_path,
                                       const std::vector<uint32_t>& spirv) -> Result<void> {
     std::ofstream file(cache_path, std::ios::binary);
     if (!file) {
-        return make_error<void>(ErrorCode::FILE_WRITE_FAILED,
+        return make_error<void>(ErrorCode::file_write_failed,
                                 "Failed to create cache file: " + cache_path.string());
     }
 
@@ -259,7 +259,7 @@ auto ShaderRuntime::save_cached_spirv(const std::filesystem::path& cache_path,
                static_cast<std::streamsize>(spirv.size() * sizeof(uint32_t)));
 
     if (!file) {
-        return make_error<void>(ErrorCode::FILE_WRITE_FAILED, "Failed to write cache file");
+        return make_error<void>(ErrorCode::file_write_failed, "Failed to write cache file");
     }
 
     return {};
@@ -283,7 +283,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<std::vector<uint32_t>>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     Slang::ComPtr<slang::IEntryPoint> entry_point_obj;
@@ -291,7 +291,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
 
     if (entry_point_obj == nullptr) {
         return make_error<std::vector<uint32_t>>(
-            ErrorCode::SHADER_COMPILE_FAILED,
+            ErrorCode::shader_compile_failed,
             "Entry point '" + entry_point + "' not found. Ensure it has [shader(...)] attribute.");
     }
 
@@ -305,7 +305,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<std::vector<uint32_t>>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     Slang::ComPtr<slang::IComponentType> linked;
@@ -316,7 +316,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<std::vector<uint32_t>>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     Slang::ComPtr<slang::IBlob> spirv_blob;
@@ -327,7 +327,7 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<std::vector<uint32_t>>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<std::vector<uint32_t>>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     auto spirv_size = spirv_blob->getBufferSize() / sizeof(uint32_t);
@@ -365,12 +365,12 @@ auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<GlslCompileResult>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     // Convert our stage enum to Slang's stage enum
     SlangStage slang_stage =
-        (stage == ShaderStage::VERTEX) ? SLANG_STAGE_VERTEX : SLANG_STAGE_FRAGMENT;
+        (stage == ShaderStage::vertex) ? SLANG_STAGE_VERTEX : SLANG_STAGE_FRAGMENT;
 
     // Use findAndCheckEntryPoint for GLSL shaders since they don't have [shader(...)] attributes
     Slang::ComPtr<slang::IEntryPoint> entry_point_obj;
@@ -382,7 +382,7 @@ auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<GlslCompileResult>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     std::array<slang::IComponentType*, 2> components = {module, entry_point_obj};
@@ -395,7 +395,7 @@ auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<GlslCompileResult>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     Slang::ComPtr<slang::IComponentType> linked;
@@ -406,7 +406,7 @@ auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<GlslCompileResult>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     // Get reflection data from linked program
@@ -423,7 +423,7 @@ auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
         if (diagnostics_blob != nullptr) {
             error_msg = static_cast<const char*>(diagnostics_blob->getBufferPointer());
         }
-        return make_error<GlslCompileResult>(ErrorCode::SHADER_COMPILE_FAILED, error_msg);
+        return make_error<GlslCompileResult>(ErrorCode::shader_compile_failed, error_msg);
     }
 
     auto glsl_spirv_size = spirv_blob->getBufferSize() / sizeof(uint32_t);
@@ -440,22 +440,22 @@ auto ShaderRuntime::compile_retroarch_shader(const std::string& vertex_source,
                                              const std::string& module_name)
     -> Result<RetroArchCompiledShader> {
     if (!m_initialized) {
-        return make_error<RetroArchCompiledShader>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<RetroArchCompiledShader>(ErrorCode::shader_compile_failed,
                                                    "ShaderRuntime not initialized");
     }
 
     auto vertex_result = compile_glsl_with_reflection(module_name + "_vert", vertex_source, "main",
-                                                      ShaderStage::VERTEX);
+                                                      ShaderStage::vertex);
     if (!vertex_result) {
-        return make_error<RetroArchCompiledShader>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<RetroArchCompiledShader>(ErrorCode::shader_compile_failed,
                                                    "Vertex shader compile failed: " +
                                                        vertex_result.error().message);
     }
 
     auto fragment_result = compile_glsl_with_reflection(module_name + "_frag", fragment_source,
-                                                        "main", ShaderStage::FRAGMENT);
+                                                        "main", ShaderStage::fragment);
     if (!fragment_result) {
-        return make_error<RetroArchCompiledShader>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<RetroArchCompiledShader>(ErrorCode::shader_compile_failed,
                                                    "Fragment shader compile failed: " +
                                                        fragment_result.error().message);
     }

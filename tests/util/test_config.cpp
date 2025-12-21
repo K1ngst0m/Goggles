@@ -33,7 +33,7 @@ TEST_CASE("load_config handles missing file", "[config]") {
     auto result = load_config(nonexistent_file);
 
     REQUIRE(!result.has_value());
-    REQUIRE(result.error().code == ErrorCode::FILE_NOT_FOUND);
+    REQUIRE(result.error().code == ErrorCode::file_not_found);
     REQUIRE(result.error().message.find("Configuration file not found") != std::string::npos);
     REQUIRE(result.error().message.find(nonexistent_file) != std::string::npos);
 }
@@ -85,7 +85,7 @@ TEST_CASE("load_config validates backend values", "[config]") {
     auto result = load_config("util/test_data/invalid_config.toml");
 
     REQUIRE(!result.has_value());
-    REQUIRE(result.error().code == ErrorCode::INVALID_CONFIG);
+    REQUIRE(result.error().code == ErrorCode::invalid_config);
     REQUIRE(result.error().message.find("Invalid capture backend") != std::string::npos);
     REQUIRE(result.error().message.find("invalid_backend") != std::string::npos);
     REQUIRE(result.error().message.find("vulkan_layer or compositor") != std::string::npos);
@@ -101,7 +101,7 @@ TEST_CASE("load_config validates target_fps values", "[config]") {
     auto result = load_config(temp_config);
 
     REQUIRE(!result.has_value());
-    REQUIRE(result.error().code == ErrorCode::INVALID_CONFIG);
+    REQUIRE(result.error().code == ErrorCode::invalid_config);
     REQUIRE(result.error().message.find("Invalid target_fps") != std::string::npos);
     REQUIRE(result.error().message.find("-10") != std::string::npos);
     REQUIRE(result.error().message.find("1-1000") != std::string::npos);
@@ -120,7 +120,7 @@ TEST_CASE("load_config validates target_fps upper bound", "[config]") {
     auto result = load_config(temp_config);
 
     REQUIRE(!result.has_value());
-    REQUIRE(result.error().code == ErrorCode::INVALID_CONFIG);
+    REQUIRE(result.error().code == ErrorCode::invalid_config);
     REQUIRE(result.error().message.find("Invalid target_fps") != std::string::npos);
     REQUIRE(result.error().message.find("2000") != std::string::npos);
 
@@ -138,7 +138,7 @@ TEST_CASE("load_config validates log level values", "[config]") {
     auto result = load_config(temp_config);
 
     REQUIRE(!result.has_value());
-    REQUIRE(result.error().code == ErrorCode::INVALID_CONFIG);
+    REQUIRE(result.error().code == ErrorCode::invalid_config);
     REQUIRE(result.error().message.find("Invalid log level") != std::string::npos);
     REQUIRE(result.error().message.find("invalid_level") != std::string::npos);
     REQUIRE(result.error().message.find("trace, debug, info, warn, error, critical") !=
@@ -191,7 +191,7 @@ TEST_CASE("load_config handles TOML parse errors", "[config]") {
     auto result = load_config("util/test_data/malformed_config.toml");
 
     REQUIRE(!result.has_value());
-    REQUIRE(result.error().code == ErrorCode::PARSE_ERROR);
+    REQUIRE(result.error().code == ErrorCode::parse_error);
     REQUIRE(result.error().message.find("Failed to parse TOML") != std::string::npos);
 }
 

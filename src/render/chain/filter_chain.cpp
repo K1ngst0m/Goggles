@@ -41,7 +41,7 @@ auto FilterChain::init(const VulkanContext& vk_ctx, vk::Format swapchain_format,
 
 auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Result<void> {
     if (!m_initialized) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "FilterChain not initialized");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "FilterChain not initialized");
     }
 
     PresetParser parser;
@@ -246,8 +246,8 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
 
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
         const auto& pass_config = m_preset.passes[i];
-        if (pass_config.scale_type_x == ScaleType::VIEWPORT ||
-            pass_config.scale_type_y == ScaleType::VIEWPORT) {
+        if (pass_config.scale_type_x == ScaleType::viewport ||
+            pass_config.scale_type_y == ScaleType::viewport) {
             vk::Extent2D prev_extent =
                 (i == 0) ? m_last_source_extent : m_framebuffers[i - 1].extent();
             auto new_size =
@@ -307,29 +307,29 @@ auto FilterChain::calculate_pass_output_size(const ShaderPassConfig& pass_config
     uint32_t height = 0;
 
     switch (pass_config.scale_type_x) {
-    case ScaleType::SOURCE:
+    case ScaleType::source:
         width = static_cast<uint32_t>(
             std::round(static_cast<float>(source_extent.width) * pass_config.scale_x));
         break;
-    case ScaleType::VIEWPORT:
+    case ScaleType::viewport:
         width = static_cast<uint32_t>(
             std::round(static_cast<float>(viewport_extent.width) * pass_config.scale_x));
         break;
-    case ScaleType::ABSOLUTE:
+    case ScaleType::absolute:
         width = static_cast<uint32_t>(pass_config.scale_x);
         break;
     }
 
     switch (pass_config.scale_type_y) {
-    case ScaleType::SOURCE:
+    case ScaleType::source:
         height = static_cast<uint32_t>(
             std::round(static_cast<float>(source_extent.height) * pass_config.scale_y));
         break;
-    case ScaleType::VIEWPORT:
+    case ScaleType::viewport:
         height = static_cast<uint32_t>(
             std::round(static_cast<float>(viewport_extent.height) * pass_config.scale_y));
         break;
-    case ScaleType::ABSOLUTE:
+    case ScaleType::absolute:
         height = static_cast<uint32_t>(pass_config.scale_y);
         break;
     }
@@ -362,26 +362,26 @@ auto FilterChain::load_preset_textures() -> Result<void> {
 
 auto FilterChain::create_texture_sampler(const TextureConfig& config) -> Result<vk::UniqueSampler> {
     vk::Filter filter =
-        (config.filter_mode == FilterMode::LINEAR) ? vk::Filter::eLinear : vk::Filter::eNearest;
+        (config.filter_mode == FilterMode::linear) ? vk::Filter::eLinear : vk::Filter::eNearest;
 
     vk::SamplerAddressMode address_mode;
     switch (config.wrap_mode) {
-    case WrapMode::CLAMP_TO_EDGE:
+    case WrapMode::clamp_to_edge:
         address_mode = vk::SamplerAddressMode::eClampToEdge;
         break;
-    case WrapMode::REPEAT:
+    case WrapMode::repeat:
         address_mode = vk::SamplerAddressMode::eRepeat;
         break;
-    case WrapMode::MIRRORED_REPEAT:
+    case WrapMode::mirrored_repeat:
         address_mode = vk::SamplerAddressMode::eMirroredRepeat;
         break;
-    case WrapMode::CLAMP_TO_BORDER:
+    case WrapMode::clamp_to_border:
     default:
         address_mode = vk::SamplerAddressMode::eClampToBorder;
         break;
     }
 
-    vk::SamplerMipmapMode mipmap_mode = (config.filter_mode == FilterMode::LINEAR)
+    vk::SamplerMipmapMode mipmap_mode = (config.filter_mode == FilterMode::linear)
                                             ? vk::SamplerMipmapMode::eLinear
                                             : vk::SamplerMipmapMode::eNearest;
 
@@ -404,7 +404,7 @@ auto FilterChain::create_texture_sampler(const TextureConfig& config) -> Result<
 
     auto [result, sampler] = m_vk_ctx.device.createSamplerUnique(sampler_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<vk::UniqueSampler>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<vk::UniqueSampler>(ErrorCode::vulkan_init_failed,
                                              "Failed to create texture sampler: " +
                                                  vk::to_string(result));
     }

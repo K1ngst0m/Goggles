@@ -52,7 +52,7 @@ bool LayerSocketClient::connect() {
     }
 
     CaptureClientHello hello{};
-    hello.type = CaptureMessageType::CLIENT_HELLO;
+    hello.type = CaptureMessageType::client_hello;
     hello.version = 1;
 
     char exe_path[256];
@@ -121,7 +121,7 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
     }
 
     ssize_t received = recv(socket_fd_, &control, sizeof(control), MSG_DONTWAIT);
-    if (received == sizeof(control) && control.type == CaptureMessageType::CONTROL) {
+    if (received == sizeof(control) && control.type == CaptureMessageType::control) {
         capturing_ = (control.capturing != 0);
         return true;
     }

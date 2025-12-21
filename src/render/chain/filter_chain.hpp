@@ -40,7 +40,7 @@ public:
 
     void record(vk::CommandBuffer cmd, vk::ImageView original_view, vk::Extent2D original_extent,
                 vk::ImageView swapchain_view, vk::Extent2D viewport_extent, uint32_t frame_index,
-                ScaleMode scale_mode = ScaleMode::STRETCH, uint32_t integer_scale = 0);
+                ScaleMode scale_mode = ScaleMode::stretch, uint32_t integer_scale = 0);
 
     [[nodiscard]] auto handle_resize(vk::Extent2D new_viewport_extent) -> Result<void>;
 
@@ -79,7 +79,7 @@ private:
     std::unordered_map<std::string, LoadedTexture> m_texture_registry;
     std::unordered_map<std::string, size_t> m_alias_to_pass_index;
 
-    ScaleMode m_last_scale_mode = ScaleMode::STRETCH;
+    ScaleMode m_last_scale_mode = ScaleMode::stretch;
     uint32_t m_last_integer_scale = 0;
     vk::Extent2D m_last_source_extent;
 

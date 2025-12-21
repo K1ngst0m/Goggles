@@ -26,7 +26,7 @@ struct PassContext {
     vk::Format target_format;
     vk::ImageView source_texture;
     vk::ImageView original_texture;
-    ScaleMode scale_mode = ScaleMode::STRETCH;
+    ScaleMode scale_mode = ScaleMode::stretch;
     uint32_t integer_scale = 0;
 };
 
@@ -62,7 +62,7 @@ struct ScaledViewport {
     }
 
     switch (mode) {
-    case ScaleMode::STRETCH: {
+    case ScaleMode::stretch: {
         result.offset_x = 0;
         result.offset_y = 0;
         result.width = target_width;
@@ -70,7 +70,7 @@ struct ScaledViewport {
         break;
     }
 
-    case ScaleMode::FIT: {
+    case ScaleMode::fit: {
         float source_aspect = static_cast<float>(source_width) / static_cast<float>(source_height);
         float target_aspect = static_cast<float>(target_width) / static_cast<float>(target_height);
 
@@ -89,7 +89,7 @@ struct ScaledViewport {
         break;
     }
 
-    case ScaleMode::FILL: {
+    case ScaleMode::fill: {
         float source_aspect = static_cast<float>(source_width) / static_cast<float>(source_height);
         float target_aspect = static_cast<float>(target_width) / static_cast<float>(target_height);
 
@@ -108,7 +108,7 @@ struct ScaledViewport {
         break;
     }
 
-    case ScaleMode::INTEGER: {
+    case ScaleMode::integer: {
         uint32_t scale = integer_scale;
 
         if (scale == 0) {

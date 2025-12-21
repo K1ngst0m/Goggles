@@ -63,7 +63,7 @@ CheckOptions:
   - key: readability-identifier-naming.StaticConstantCase
     value: UPPER_CASE
   - key: readability-identifier-naming.EnumConstantCase
-    value: UPPER_CASE
+    value: lower_case
   - key: readability-function-size.LineThreshold
     value: 150
 ...

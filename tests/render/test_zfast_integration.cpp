@@ -24,8 +24,8 @@ TEST_CASE("zfast-crt integration - preset loading", "[integration][zfast]") {
 
     auto& preset = preset_result.value();
     REQUIRE(preset.passes.size() == 1);
-    REQUIRE(preset.passes[0].filter_mode == FilterMode::LINEAR);
-    REQUIRE(preset.passes[0].scale_type_x == ScaleType::VIEWPORT);
+    REQUIRE(preset.passes[0].filter_mode == FilterMode::linear);
+    REQUIRE(preset.passes[0].scale_type_x == ScaleType::viewport);
     REQUIRE(preset.passes[0].shader_path.filename() == "zfast_crt_finemask.slang");
 }
 

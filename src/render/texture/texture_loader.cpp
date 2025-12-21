@@ -33,12 +33,12 @@ auto TextureLoader::load_from_file(const std::filesystem::path& path,
 
     stbi_uc* pixels = stbi_load(path.string().c_str(), &width, &height, &channels, RGBA_CHANNELS);
     if (pixels == nullptr) {
-        return make_error<TextureData>(ErrorCode::FILE_NOT_FOUND,
+        return make_error<TextureData>(ErrorCode::file_not_found,
                                        "Failed to load texture: " + path.string());
     }
     if (width <= 0 || height <= 0) {
         stbi_image_free(pixels);
-        return make_error<TextureData>(ErrorCode::INVALID_DATA,
+        return make_error<TextureData>(ErrorCode::invalid_data,
                                        "Invalid texture dimensions: " + path.string());
     }
 
@@ -72,7 +72,7 @@ auto TextureLoader::create_staging_buffer(vk::DeviceSize size, const uint8_t* pi
 
     auto [buffer_result, buffer] = m_device.createBufferUnique(buffer_info);
     if (buffer_result != vk::Result::eSuccess) {
-        return make_error<StagingResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "Failed to create staging buffer: " +
                                                 vk::to_string(buffer_result));
     }
@@ -82,7 +82,7 @@ auto TextureLoader::create_staging_buffer(vk::DeviceSize size, const uint8_t* pi
         find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
                                                       vk::MemoryPropertyFlagBits::eHostCoherent);
     if (mem_type == UINT32_MAX) {
-        return make_error<StagingResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "No suitable memory type for staging buffer");
     }
 
@@ -92,21 +92,21 @@ auto TextureLoader::create_staging_buffer(vk::DeviceSize size, const uint8_t* pi
 
     auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
-        return make_error<StagingResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "Failed to allocate staging memory: " +
                                                 vk::to_string(mem_result));
     }
 
     auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
     if (bind_result != vk::Result::eSuccess) {
-        return make_error<StagingResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "Failed to bind staging buffer memory: " +
                                                 vk::to_string(bind_result));
     }
 
     auto [map_result, data] = m_device.mapMemory(*memory, 0, size);
     if (map_result != vk::Result::eSuccess) {
-        return make_error<StagingResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "Failed to map staging memory: " +
                                                 vk::to_string(map_result));
     }
@@ -133,7 +133,7 @@ auto TextureLoader::create_texture_image(ImageSize size, uint32_t mip_levels, bo
 
     auto [image_result, image] = m_device.createImageUnique(image_info);
     if (image_result != vk::Result::eSuccess) {
-        return make_error<ImageResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<ImageResources>(ErrorCode::vulkan_init_failed,
                                           "Failed to create image: " + vk::to_string(image_result));
     }
 
@@ -141,7 +141,7 @@ auto TextureLoader::create_texture_image(ImageSize size, uint32_t mip_levels, bo
     uint32_t mem_type =
         find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
     if (mem_type == UINT32_MAX) {
-        return make_error<ImageResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<ImageResources>(ErrorCode::vulkan_init_failed,
                                           "No suitable memory type for image");
     }
 
@@ -151,14 +151,14 @@ auto TextureLoader::create_texture_image(ImageSize size, uint32_t mip_levels, bo
 
     auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
-        return make_error<ImageResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<ImageResources>(ErrorCode::vulkan_init_failed,
                                           "Failed to allocate image memory: " +
                                               vk::to_string(mem_result));
     }
 
     auto bind_result = m_device.bindImageMemory(*image, *memory, 0);
     if (bind_result != vk::Result::eSuccess) {
-        return make_error<ImageResources>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<ImageResources>(ErrorCode::vulkan_init_failed,
                                           "Failed to bind image memory: " +
                                               vk::to_string(bind_result));
     }
@@ -176,7 +176,7 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
 
     auto [cmd_result, cmd_buffers] = m_device.allocateCommandBuffersUnique(cmd_alloc_info);
     if (cmd_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate command buffer: " + vk::to_string(cmd_result));
     }
     auto& cmd = cmd_buffers[0];
@@ -185,7 +185,7 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
     auto begin_result = cmd->begin(begin_info);
     if (begin_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to begin command buffer: " + vk::to_string(begin_result));
     }
 
@@ -233,7 +233,7 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
 
     auto end_result = cmd->end();
     if (end_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to end command buffer: " + vk::to_string(end_result));
     }
 
@@ -243,14 +243,14 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
 
     auto submit_result = m_queue.submit(1, &submit_info, nullptr);
     if (submit_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to submit transfer command buffer: " +
                                     vk::to_string(submit_result));
     }
 
     auto wait_result = m_queue.waitIdle();
     if (wait_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to wait for queue idle: " + vk::to_string(wait_result));
     }
 
@@ -282,7 +282,7 @@ auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_
 
     auto [view_result, view] = m_device.createImageViewUnique(view_info);
     if (view_result != vk::Result::eSuccess) {
-        return make_error<TextureData>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<TextureData>(ErrorCode::vulkan_init_failed,
                                        "Failed to create image view: " +
                                            vk::to_string(view_result));
     }

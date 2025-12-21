@@ -103,7 +103,7 @@ bool CaptureReceiver::accept_client() {
     GOGGLES_LOG_INFO("Capture client connected");
 
     CaptureControl ctrl{};
-    ctrl.type = CaptureMessageType::CONTROL;
+    ctrl.type = CaptureMessageType::control;
     ctrl.capturing = 1;
     send(m_client_fd, &ctrl, sizeof(ctrl), MSG_NOSIGNAL);
 
@@ -150,7 +150,7 @@ bool CaptureReceiver::receive_message() {
 
     auto msg_type = *reinterpret_cast<CaptureMessageType*>(buf.data());
 
-    if (msg_type == CaptureMessageType::CLIENT_HELLO) {
+    if (msg_type == CaptureMessageType::client_hello) {
         if (std::cmp_greater_equal(received, sizeof(CaptureClientHello))) {
             auto* hello = reinterpret_cast<CaptureClientHello*>(buf.data());
             GOGGLES_LOG_INFO("Capture client: {}", hello->exe_name.data());
@@ -158,7 +158,7 @@ bool CaptureReceiver::receive_message() {
         return false;
     }
 
-    if (msg_type == CaptureMessageType::TEXTURE_DATA) {
+    if (msg_type == CaptureMessageType::texture_data) {
         if (std::cmp_less(received, sizeof(CaptureTextureData))) {
             return false;
         }

@@ -15,7 +15,7 @@ constexpr std::string_view PRAGMA_STAGE_FRAGMENT = "#pragma stage fragment";
 auto read_file(const std::filesystem::path& path) -> Result<std::string> {
     std::ifstream file(path);
     if (!file) {
-        return make_error<std::string>(ErrorCode::FILE_NOT_FOUND,
+        return make_error<std::string>(ErrorCode::file_not_found,
                                        "Failed to open file: " + path.string());
     }
     std::stringstream buffer;
@@ -77,7 +77,7 @@ auto RetroArchPreprocessor::resolve_includes(const std::string& source,
                                              const std::filesystem::path& base_path, int depth)
     -> Result<std::string> {
     if (depth > MAX_INCLUDE_DEPTH) {
-        return make_error<std::string>(ErrorCode::PARSE_ERROR,
+        return make_error<std::string>(ErrorCode::parse_error,
                                        "Maximum include depth exceeded (circular include?)");
     }
 
@@ -95,7 +95,7 @@ auto RetroArchPreprocessor::resolve_includes(const std::string& source,
 
             auto include_source = read_file(include_path);
             if (!include_source) {
-                return make_error<std::string>(ErrorCode::FILE_NOT_FOUND,
+                return make_error<std::string>(ErrorCode::file_not_found,
                                                "Failed to resolve include: " +
                                                    include_path.string());
             }
@@ -120,13 +120,13 @@ auto RetroArchPreprocessor::resolve_includes(const std::string& source,
 
 auto RetroArchPreprocessor::split_by_stage(const std::string& source)
     -> std::pair<std::string, std::string> {
-    enum class Stage : std::uint8_t { SHARED, VERTEX, FRAGMENT };
+    enum class Stage : std::uint8_t { shared, vertex, fragment };
 
     std::string shared;
     std::string vertex;
     std::string fragment;
     std::string* current = &shared;
-    Stage current_stage = Stage::SHARED;
+    Stage current_stage = Stage::shared;
 
     std::istringstream stream(source);
     std::string line;
@@ -135,19 +135,19 @@ auto RetroArchPreprocessor::split_by_stage(const std::string& source)
         std::string trimmed = trim(line);
 
         if (trimmed.starts_with(PRAGMA_STAGE_VERTEX)) {
-            if (current_stage != Stage::VERTEX) {
+            if (current_stage != Stage::vertex) {
                 current = &vertex;
                 vertex = shared;
-                current_stage = Stage::VERTEX;
+                current_stage = Stage::vertex;
             }
             continue;
         }
 
         if (trimmed.starts_with(PRAGMA_STAGE_FRAGMENT)) {
-            if (current_stage != Stage::FRAGMENT) {
+            if (current_stage != Stage::fragment) {
                 current = &fragment;
                 fragment = shared;
-                current_stage = Stage::FRAGMENT;
+                current_stage = Stage::fragment;
             }
             continue;
         }

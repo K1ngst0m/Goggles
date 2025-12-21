@@ -135,7 +135,7 @@ void main() { FragColor = vec4(1.0); }
 
         auto result = runtime.compile_retroarch_shader(bad_vertex, fragment, "test_error");
         REQUIRE(!result.has_value());
-        REQUIRE(result.error().code == goggles::ErrorCode::SHADER_COMPILE_FAILED);
+        REQUIRE(result.error().code == goggles::ErrorCode::shader_compile_failed);
     }
 
     SECTION("Compile before init fails") {
@@ -143,6 +143,6 @@ void main() { FragColor = vec4(1.0); }
 
         auto result = uninitialized_runtime.compile_retroarch_shader("", "", "test");
         REQUIRE(!result.has_value());
-        REQUIRE(result.error().code == goggles::ErrorCode::SHADER_COMPILE_FAILED);
+        REQUIRE(result.error().code == goggles::ErrorCode::shader_compile_failed);
     }
 }

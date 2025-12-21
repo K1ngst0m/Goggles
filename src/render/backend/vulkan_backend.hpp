@@ -28,7 +28,7 @@ public:
 
     [[nodiscard]] auto init(SDL_Window* window, bool enable_validation = false,
                             const std::filesystem::path& shader_dir = "shaders",
-                            ScaleMode scale_mode = ScaleMode::STRETCH, uint32_t integer_scale = 0)
+                            ScaleMode scale_mode = ScaleMode::stretch, uint32_t integer_scale = 0)
         -> Result<void>;
     void shutdown();
 
@@ -110,7 +110,7 @@ private:
 
     SDL_Window* m_window = nullptr;
     bool m_enable_validation = false;
-    ScaleMode m_scale_mode = ScaleMode::STRETCH;
+    ScaleMode m_scale_mode = ScaleMode::stretch;
     uint32_t m_integer_scale = 0;
     bool m_initialized = false;
     bool m_needs_resize = false;

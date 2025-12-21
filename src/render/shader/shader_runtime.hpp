@@ -10,7 +10,8 @@
 
 namespace goggles::render {
 
-enum class ShaderStage : std::uint8_t { VERTEX, FRAGMENT };
+enum class ShaderStage : std::uint8_t { vertex, fragment };
+;
 
 struct CompiledShader {
     std::vector<uint32_t> spirv;

@@ -10,8 +10,8 @@ TEST_CASE("FilterChain size calculation", "[filter_chain]") {
     vk::Extent2D viewport{1920, 1080};
 
     SECTION("SOURCE scale type multiplies source size") {
-        config.scale_type_x = ScaleType::SOURCE;
-        config.scale_type_y = ScaleType::SOURCE;
+        config.scale_type_x = ScaleType::source;
+        config.scale_type_y = ScaleType::source;
         config.scale_x = 2.0F;
         config.scale_y = 2.0F;
 
@@ -21,8 +21,8 @@ TEST_CASE("FilterChain size calculation", "[filter_chain]") {
     }
 
     SECTION("VIEWPORT scale type multiplies viewport size") {
-        config.scale_type_x = ScaleType::VIEWPORT;
-        config.scale_type_y = ScaleType::VIEWPORT;
+        config.scale_type_x = ScaleType::viewport;
+        config.scale_type_y = ScaleType::viewport;
         config.scale_x = 0.5F;
         config.scale_y = 0.5F;
 
@@ -32,8 +32,8 @@ TEST_CASE("FilterChain size calculation", "[filter_chain]") {
     }
 
     SECTION("ABSOLUTE scale type uses pixel dimensions") {
-        config.scale_type_x = ScaleType::ABSOLUTE;
-        config.scale_type_y = ScaleType::ABSOLUTE;
+        config.scale_type_x = ScaleType::absolute;
+        config.scale_type_y = ScaleType::absolute;
         config.scale_x = 640.0F;
         config.scale_y = 480.0F;
 
@@ -43,8 +43,8 @@ TEST_CASE("FilterChain size calculation", "[filter_chain]") {
     }
 
     SECTION("Mixed scale types work independently") {
-        config.scale_type_x = ScaleType::SOURCE;
-        config.scale_type_y = ScaleType::VIEWPORT;
+        config.scale_type_x = ScaleType::source;
+        config.scale_type_y = ScaleType::viewport;
         config.scale_x = 4.0F;
         config.scale_y = 1.0F;
 
@@ -54,8 +54,8 @@ TEST_CASE("FilterChain size calculation", "[filter_chain]") {
     }
 
     SECTION("Minimum size is 1x1") {
-        config.scale_type_x = ScaleType::SOURCE;
-        config.scale_type_y = ScaleType::SOURCE;
+        config.scale_type_x = ScaleType::source;
+        config.scale_type_y = ScaleType::source;
         config.scale_x = 0.0F;
         config.scale_y = 0.0F;
 
@@ -65,8 +65,8 @@ TEST_CASE("FilterChain size calculation", "[filter_chain]") {
     }
 
     SECTION("Fractional scaling rounds correctly") {
-        config.scale_type_x = ScaleType::SOURCE;
-        config.scale_type_y = ScaleType::SOURCE;
+        config.scale_type_x = ScaleType::source;
+        config.scale_type_y = ScaleType::source;
         config.scale_x = 1.5F;
         config.scale_y = 1.5F;
 

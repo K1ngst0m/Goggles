@@ -54,7 +54,7 @@ auto VulkanBackend::init(SDL_Window* window, bool enable_validation,
     auto vk_get_instance_proc_addr =
         reinterpret_cast<PFN_vkGetInstanceProcAddr>(SDL_Vulkan_GetVkGetInstanceProcAddr());
     if (vk_get_instance_proc_addr == nullptr) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to get vkGetInstanceProcAddr from SDL");
     }
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vk_get_instance_proc_addr);
@@ -130,7 +130,7 @@ auto VulkanBackend::create_instance(bool enable_validation) -> Result<void> {
     uint32_t sdl_ext_count = 0;
     const char* const* sdl_extensions = SDL_Vulkan_GetInstanceExtensions(&sdl_ext_count);
     if (sdl_extensions == nullptr) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 std::string("SDL_Vulkan_GetInstanceExtensions failed: ") +
                                     SDL_GetError());
     }
@@ -171,7 +171,7 @@ auto VulkanBackend::create_instance(bool enable_validation) -> Result<void> {
 
     auto [result, instance] = vk::createInstanceUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create Vulkan instance: " + vk::to_string(result));
     }
 
@@ -201,7 +201,7 @@ auto VulkanBackend::create_debug_messenger() -> Result<void> {
 auto VulkanBackend::create_surface(SDL_Window* window) -> Result<void> {
     VkSurfaceKHR raw_surface = VK_NULL_HANDLE;
     if (!SDL_Vulkan_CreateSurface(window, *m_instance, nullptr, &raw_surface)) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 std::string("SDL_Vulkan_CreateSurface failed: ") + SDL_GetError());
     }
 
@@ -213,7 +213,7 @@ auto VulkanBackend::create_surface(SDL_Window* window) -> Result<void> {
 auto VulkanBackend::select_physical_device() -> Result<void> {
     auto [result, devices] = m_instance->enumeratePhysicalDevices();
     if (result != vk::Result::eSuccess || devices.empty()) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "No Vulkan devices found");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "No Vulkan devices found");
     }
 
     for (const auto& device : devices) {
@@ -267,7 +267,7 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
         return {};
     }
 
-    return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+    return make_error<void>(ErrorCode::vulkan_init_failed,
                             "No suitable GPU found with DMA-BUF support");
 }
 
@@ -288,15 +288,15 @@ auto VulkanBackend::create_device() -> Result<void> {
     m_physical_device.getFeatures2(&features2);
 
     if (!vk11_features.shaderDrawParameters) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "shaderDrawParameters not supported (required for vertex shaders)");
     }
     if (!vk12_features.timelineSemaphore) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Timeline semaphores not supported (required for frame sync)");
     }
     if (!vk13_features.dynamicRendering) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Dynamic rendering not supported (required for Vulkan 1.3)");
     }
 
@@ -318,7 +318,7 @@ auto VulkanBackend::create_device() -> Result<void> {
 
     auto [result, device] = m_physical_device.createDeviceUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create logical device: " + vk::to_string(result));
     }
 
@@ -334,13 +334,13 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
     -> Result<void> {
     auto [cap_result, capabilities] = m_physical_device.getSurfaceCapabilitiesKHR(*m_surface);
     if (cap_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to query surface capabilities");
     }
 
     auto [fmt_result, formats] = m_physical_device.getSurfaceFormatsKHR(*m_surface);
     if (fmt_result != vk::Result::eSuccess || formats.empty()) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to query surface formats");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to query surface formats");
     }
 
     vk::SurfaceFormatKHR chosen_format = formats[0];
@@ -384,7 +384,7 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
 
     auto [result, swapchain] = m_device->createSwapchainKHRUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create swapchain: " + vk::to_string(result));
     }
 
@@ -394,7 +394,7 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
 
     auto [img_result, images] = m_device->getSwapchainImagesKHR(*m_swapchain);
     if (img_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to get swapchain images");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to get swapchain images");
     }
     m_swapchain_images = std::move(images);
 
@@ -412,7 +412,7 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
 
         auto [view_result, view] = m_device->createImageViewUnique(view_info);
         if (view_result != vk::Result::eSuccess) {
-            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to create image view");
+            return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create image view");
         }
         m_swapchain_image_views.push_back(std::move(view));
     }
@@ -438,7 +438,7 @@ auto VulkanBackend::recreate_swapchain() -> Result<void> {
         SDL_WaitEvent(nullptr);
     }
 
-    VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST,
+    VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost,
            "waitIdle failed before swapchain recreation");
     cleanup_swapchain();
 
@@ -464,7 +464,7 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
     int height = 0;
     SDL_GetWindowSize(m_window, &width, &height);
 
-    VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST,
+    VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost,
            "waitIdle failed before swapchain format change");
     m_filter_chain.shutdown();
     cleanup_swapchain();
@@ -514,7 +514,7 @@ auto VulkanBackend::create_command_resources() -> Result<void> {
 
     auto [pool_result, pool] = m_device->createCommandPoolUnique(pool_info);
     if (pool_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to create command pool");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create command pool");
     }
     m_command_pool = std::move(pool);
 
@@ -525,7 +525,7 @@ auto VulkanBackend::create_command_resources() -> Result<void> {
 
     auto [alloc_result, buffers] = m_device->allocateCommandBuffers(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate command buffers");
     }
 
@@ -546,14 +546,14 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
         {
             auto [result, fence] = m_device->createFence(fence_info);
             if (result != vk::Result::eSuccess) {
-                return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to create fence");
+                return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create fence");
             }
             frame.in_flight_fence = fence;
         }
         {
             auto [result, sem] = m_device->createSemaphore(sem_info);
             if (result != vk::Result::eSuccess) {
-                return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                return make_error<void>(ErrorCode::vulkan_init_failed,
                                         "Failed to create semaphore");
             }
             frame.image_available_sem = sem;
@@ -564,7 +564,7 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
     for (auto& sem : m_render_finished_sems) {
         auto [result, new_sem] = m_device->createSemaphore(sem_info);
         if (result != vk::Result::eSuccess) {
-            return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+            return make_error<void>(ErrorCode::vulkan_init_failed,
                                     "Failed to create render finished semaphore");
         }
         sem = new_sem;
@@ -606,7 +606,7 @@ void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path)
 }
 
 auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
-    VK_TRY(m_device->waitIdle(), ErrorCode::VULKAN_DEVICE_LOST, "waitIdle failed before reimport");
+    VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost, "waitIdle failed before reimport");
     cleanup_imported_image();
 
     // Set up external memory info for DMA-BUF import
@@ -649,7 +649,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
 
     auto [img_result, image] = m_device->createImage(image_info);
     if (img_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create DMA-BUF image: " + vk::to_string(img_result));
     }
     m_import.image = image;
@@ -668,7 +668,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
         vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, frame.dmabuf_fd.get());
     if (fd_props_result != vk::Result::eSuccess) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to get DMA-BUF fd properties: " +
                                     vk::to_string(fd_props_result));
     }
@@ -679,7 +679,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
 
     if (mem_type_index == UINT32_MAX) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "No suitable memory type for DMA-BUF import");
     }
 
@@ -687,7 +687,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     auto import_fd = frame.dmabuf_fd.dup();
     if (!import_fd) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Failed to dup DMA-BUF fd");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to dup DMA-BUF fd");
     }
 
     vk::ImportMemoryFdInfoKHR import_info{};
@@ -709,7 +709,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     auto [alloc_result, memory] = m_device->allocateMemory(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to import DMA-BUF memory: " + vk::to_string(alloc_result));
     }
     import_fd.release();
@@ -718,7 +718,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     auto bind_result = m_device->bindImageMemory(m_import.image, m_import.memory, 0);
     if (bind_result != vk::Result::eSuccess) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to bind DMA-BUF memory: " + vk::to_string(bind_result));
     }
 
@@ -735,7 +735,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     auto [view_result, view] = m_device->createImageView(view_info);
     if (view_result != vk::Result::eSuccess) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create DMA-BUF image view: " +
                                     vk::to_string(view_result));
     }
@@ -766,7 +766,7 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
 
     auto wait_result = m_device->waitForFences(frame.in_flight_fence, VK_TRUE, UINT64_MAX);
     if (wait_result != vk::Result::eSuccess) {
-        return make_error<uint32_t>(ErrorCode::VULKAN_DEVICE_LOST, "Fence wait failed");
+        return make_error<uint32_t>(ErrorCode::vulkan_device_lost, "Fence wait failed");
     }
 
     auto [result, image_index] =
@@ -775,17 +775,17 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
         m_needs_resize = true;
         if (result == vk::Result::eErrorOutOfDateKHR) {
-            return make_error<uint32_t>(ErrorCode::VULKAN_INIT_FAILED, "Swapchain out of date");
+            return make_error<uint32_t>(ErrorCode::vulkan_init_failed, "Swapchain out of date");
         }
     }
     if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
-        return make_error<uint32_t>(ErrorCode::VULKAN_DEVICE_LOST,
+        return make_error<uint32_t>(ErrorCode::vulkan_device_lost,
                                     "Failed to acquire swapchain image: " + vk::to_string(result));
     }
 
     auto reset_result = m_device->resetFences(frame.in_flight_fence);
     if (reset_result != vk::Result::eSuccess) {
-        return make_error<uint32_t>(ErrorCode::VULKAN_DEVICE_LOST,
+        return make_error<uint32_t>(ErrorCode::vulkan_device_lost,
                                     "Fence reset failed: " + vk::to_string(reset_result));
     }
     return image_index;
@@ -793,11 +793,11 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
 
 auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index)
     -> Result<void> {
-    VK_TRY(cmd.reset(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer reset failed");
+    VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
 
     vk::CommandBufferBeginInfo begin_info{};
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    VK_TRY(cmd.begin(begin_info), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer begin failed");
+    VK_TRY(cmd.begin(begin_info), ErrorCode::vulkan_device_lost, "Command buffer begin failed");
 
     vk::ImageMemoryBarrier src_barrier{};
     src_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
@@ -845,18 +845,18 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
                         vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, dst_barrier);
 
-    VK_TRY(cmd.end(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer end failed");
+    VK_TRY(cmd.end(), ErrorCode::vulkan_device_lost, "Command buffer end failed");
 
     return {};
 }
 
 auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index)
     -> Result<void> {
-    VK_TRY(cmd.reset(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer reset failed");
+    VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
 
     vk::CommandBufferBeginInfo begin_info{};
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    VK_TRY(cmd.begin(begin_info), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer begin failed");
+    VK_TRY(cmd.begin(begin_info), ErrorCode::vulkan_device_lost, "Command buffer begin failed");
 
     vk::ImageMemoryBarrier barrier{};
     barrier.srcAccessMask = vk::AccessFlagBits::eNone;
@@ -900,7 +900,7 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
                         vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, barrier);
 
-    VK_TRY(cmd.end(), ErrorCode::VULKAN_DEVICE_LOST, "Command buffer end failed");
+    VK_TRY(cmd.end(), ErrorCode::vulkan_device_lost, "Command buffer end failed");
 
     return {};
 }
@@ -921,7 +921,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 
     auto submit_result = m_graphics_queue.submit(submit_info, frame.in_flight_fence);
     if (submit_result != vk::Result::eSuccess) {
-        return make_error<bool>(ErrorCode::VULKAN_DEVICE_LOST,
+        return make_error<bool>(ErrorCode::vulkan_device_lost,
                                 "Queue submit failed: " + vk::to_string(submit_result));
     }
 
@@ -939,7 +939,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     }
     if (present_result != vk::Result::eSuccess && present_result != vk::Result::eSuboptimalKHR &&
         present_result != vk::Result::eErrorOutOfDateKHR) {
-        return make_error<bool>(ErrorCode::VULKAN_DEVICE_LOST,
+        return make_error<bool>(ErrorCode::vulkan_device_lost,
                                 "Present failed: " + vk::to_string(present_result));
     }
 
@@ -949,7 +949,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 
 auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
     if (!m_initialized) {
-        return make_error<bool>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
+        return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
     auto vk_format = static_cast<vk::Format>(frame.format);
@@ -969,7 +969,7 @@ auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
 
 auto VulkanBackend::render_clear() -> Result<bool> {
     if (!m_initialized) {
-        return make_error<bool>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
+        return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
@@ -981,7 +981,7 @@ auto VulkanBackend::render_clear() -> Result<bool> {
 
 auto VulkanBackend::handle_resize() -> Result<void> {
     if (!m_initialized) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Backend not initialized");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
     return recreate_swapchain();

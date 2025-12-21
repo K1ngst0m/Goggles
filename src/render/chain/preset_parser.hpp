@@ -9,31 +9,34 @@
 
 namespace goggles::render {
 
-enum class ScaleType : std::uint8_t { SOURCE, VIEWPORT, ABSOLUTE };
+enum class ScaleType : std::uint8_t { source, viewport, absolute };
+;
 
-enum class FilterMode : std::uint8_t { LINEAR, NEAREST };
+enum class FilterMode : std::uint8_t { linear, nearest };
+;
 
-enum class WrapMode : std::uint8_t { CLAMP_TO_BORDER, CLAMP_TO_EDGE, REPEAT, MIRRORED_REPEAT };
+enum class WrapMode : std::uint8_t { clamp_to_border, clamp_to_edge, repeat, mirrored_repeat };
+;
 
 struct ShaderPassConfig {
     std::filesystem::path shader_path;
-    ScaleType scale_type_x = ScaleType::SOURCE;
-    ScaleType scale_type_y = ScaleType::SOURCE;
+    ScaleType scale_type_x = ScaleType::source;
+    ScaleType scale_type_y = ScaleType::source;
     float scale_x = 1.0F;
     float scale_y = 1.0F;
-    FilterMode filter_mode = FilterMode::LINEAR;
+    FilterMode filter_mode = FilterMode::linear;
     vk::Format framebuffer_format = vk::Format::eR8G8B8A8Unorm;
     bool mipmap = false;
-    WrapMode wrap_mode = WrapMode::CLAMP_TO_EDGE;
+    WrapMode wrap_mode = WrapMode::clamp_to_edge;
     std::optional<std::string> alias;
 };
 
 struct TextureConfig {
     std::string name;
     std::filesystem::path path;
-    FilterMode filter_mode = FilterMode::LINEAR;
+    FilterMode filter_mode = FilterMode::linear;
     bool mipmap = false;
-    WrapMode wrap_mode = WrapMode::CLAMP_TO_BORDER;
+    WrapMode wrap_mode = WrapMode::clamp_to_border;
     bool linear = false;
 };
 

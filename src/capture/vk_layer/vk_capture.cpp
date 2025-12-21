@@ -535,7 +535,7 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     auto& socket = get_layer_socket();
     if (socket.is_connected()) {
         CaptureTextureData tex_data{};
-        tex_data.type = CaptureMessageType::TEXTURE_DATA;
+        tex_data.type = CaptureMessageType::texture_data;
         tex_data.width = swap->extent.width;
         tex_data.height = swap->extent.height;
         tex_data.format = swap->format;

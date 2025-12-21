@@ -50,7 +50,7 @@ auto VulkanDebugMessenger::create(vk::Instance instance) -> Result<VulkanDebugMe
 
     auto [result, messenger] = instance.createDebugUtilsMessengerEXTUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<VulkanDebugMessenger>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<VulkanDebugMessenger>(ErrorCode::vulkan_init_failed,
                                                 "Failed to create debug messenger: " +
                                                     vk::to_string(result));
     }

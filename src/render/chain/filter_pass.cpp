@@ -11,13 +11,13 @@ namespace {
 
 auto convert_wrap_mode(WrapMode mode) -> vk::SamplerAddressMode {
     switch (mode) {
-    case WrapMode::CLAMP_TO_EDGE:
+    case WrapMode::clamp_to_edge:
         return vk::SamplerAddressMode::eClampToEdge;
-    case WrapMode::REPEAT:
+    case WrapMode::repeat:
         return vk::SamplerAddressMode::eRepeat;
-    case WrapMode::MIRRORED_REPEAT:
+    case WrapMode::mirrored_repeat:
         return vk::SamplerAddressMode::eMirroredRepeat;
-    case WrapMode::CLAMP_TO_BORDER:
+    case WrapMode::clamp_to_border:
     default:
         return vk::SamplerAddressMode::eClampToBorder;
     }
@@ -53,7 +53,7 @@ auto FilterPass::init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime
     auto compile_result = shader_runtime.compile_retroarch_shader(
         config.vertex_source, config.fragment_source, config.shader_name);
     if (!compile_result) {
-        return make_error<void>(ErrorCode::SHADER_COMPILE_FAILED, compile_result.error().message);
+        return make_error<void>(ErrorCode::shader_compile_failed, compile_result.error().message);
     }
 
     m_vertex_reflection = std::move(compile_result->vertex_reflection);
@@ -286,9 +286,9 @@ void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
 auto FilterPass::create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wrap_mode)
     -> Result<void> {
     vk::Filter filter =
-        (filter_mode == FilterMode::LINEAR) ? vk::Filter::eLinear : vk::Filter::eNearest;
+        (filter_mode == FilterMode::linear) ? vk::Filter::eLinear : vk::Filter::eNearest;
 
-    vk::SamplerMipmapMode mipmap_mode = (filter_mode == FilterMode::LINEAR)
+    vk::SamplerMipmapMode mipmap_mode = (filter_mode == FilterMode::linear)
                                             ? vk::SamplerMipmapMode::eLinear
                                             : vk::SamplerMipmapMode::eNearest;
 
@@ -311,7 +311,7 @@ auto FilterPass::create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wr
 
     auto [result, sampler] = m_device.createSamplerUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create sampler: " + vk::to_string(result));
     }
 
@@ -329,7 +329,7 @@ auto FilterPass::create_vertex_buffer() -> Result<void> {
 
     auto [buf_result, buffer] = m_device.createBufferUnique(buffer_info);
     if (buf_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create vertex buffer: " + vk::to_string(buf_result));
     }
 
@@ -343,21 +343,21 @@ auto FilterPass::create_vertex_buffer() -> Result<void> {
 
     auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate vertex buffer memory: " +
                                     vk::to_string(mem_result));
     }
 
     auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
     if (bind_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to bind vertex buffer memory: " +
                                     vk::to_string(bind_result));
     }
 
     auto [map_result, data] = m_device.mapMemory(*memory, 0, buffer_size);
     if (map_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to map vertex buffer memory: " + vk::to_string(map_result));
     }
     std::memcpy(data, FULLSCREEN_QUAD_VERTICES.data(), buffer_size);
@@ -387,7 +387,7 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
 
     auto [buf_result, buffer] = m_device.createBufferUnique(buffer_info);
     if (buf_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create UBO buffer: " + vk::to_string(buf_result));
     }
 
@@ -401,19 +401,19 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
 
     auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate UBO memory: " + vk::to_string(mem_result));
     }
 
     auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
     if (bind_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to bind UBO memory: " + vk::to_string(bind_result));
     }
 
     auto [map_result, data] = m_device.mapMemory(*memory, 0, m_ubo_size);
     if (map_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to map UBO memory: " + vk::to_string(map_result));
     }
 
@@ -481,7 +481,7 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
 
     auto [layout_result, layout] = m_device.createDescriptorSetLayoutUnique(layout_info);
     if (layout_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create descriptor set layout: " +
                                     vk::to_string(layout_result));
     }
@@ -509,7 +509,7 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
 
     auto [pool_result, pool] = m_device.createDescriptorPoolUnique(pool_info);
     if (pool_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create descriptor pool: " + vk::to_string(pool_result));
     }
     m_descriptor_pool = std::move(pool);
@@ -523,7 +523,7 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
 
     auto [alloc_result, sets] = m_device.allocateDescriptorSets(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate descriptor sets: " +
                                     vk::to_string(alloc_result));
     }
@@ -550,7 +550,7 @@ auto FilterPass::create_pipeline_layout() -> Result<void> {
 
     auto [result, layout] = m_device.createPipelineLayoutUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create pipeline layout: " + vk::to_string(result));
     }
 
@@ -566,7 +566,7 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
 
     auto [vert_mod_result, vert_module] = m_device.createShaderModuleUnique(vert_module_info);
     if (vert_mod_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create vertex shader module: " +
                                     vk::to_string(vert_mod_result));
     }
@@ -577,7 +577,7 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
 
     auto [frag_mod_result, frag_module] = m_device.createShaderModuleUnique(frag_module_info);
     if (frag_mod_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create fragment shader module: " +
                                     vk::to_string(frag_mod_result));
     }
@@ -674,7 +674,7 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
 
     auto [result, pipelines] = m_device.createGraphicsPipelinesUnique(nullptr, create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create graphics pipeline: " + vk::to_string(result));
     }
 
@@ -689,7 +689,7 @@ auto FilterPass::update_ubo_parameters() -> Result<void> {
 
     auto [map_result, data] = m_device.mapMemory(*m_ubo_memory, 0, m_ubo_size);
     if (map_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to map UBO memory: " + vk::to_string(map_result));
     }
 

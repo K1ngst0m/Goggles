@@ -11,7 +11,7 @@ auto default_config() -> Config {
 
 auto load_config(const std::filesystem::path& path) -> Result<Config> {
     if (!std::filesystem::exists(path)) {
-        return make_error<Config>(ErrorCode::FILE_NOT_FOUND,
+        return make_error<Config>(ErrorCode::file_not_found,
                                   "Configuration file not found: " + path.string());
     }
 
@@ -19,7 +19,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
     try {
         data = toml::parse(path);
     } catch (const std::exception& e) {
-        return make_error<Config>(ErrorCode::PARSE_ERROR,
+        return make_error<Config>(ErrorCode::parse_error,
                                   "Failed to parse TOML: " + std::string(e.what()));
     }
 
@@ -33,7 +33,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
             // Validate backend value
             if (config.capture.backend != "vulkan_layer" &&
                 config.capture.backend != "compositor") {
-                return make_error<Config>(ErrorCode::INVALID_CONFIG,
+                return make_error<Config>(ErrorCode::invalid_config,
                                           "Invalid capture backend: " + config.capture.backend +
                                               " (expected: vulkan_layer or compositor)");
             }
@@ -55,7 +55,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         if (render.contains("target_fps")) {
             auto fps = toml::find<int64_t>(render, "target_fps");
             if (fps <= 0 || fps > 1000) {
-                return make_error<Config>(ErrorCode::INVALID_CONFIG,
+                return make_error<Config>(ErrorCode::invalid_config,
                                           "Invalid target_fps: " + std::to_string(fps) +
                                               " (expected: 1-1000)");
             }
@@ -67,15 +67,15 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         if (render.contains("scale_mode")) {
             auto mode_str = toml::find<std::string>(render, "scale_mode");
             if (mode_str == "fit") {
-                config.render.scale_mode = ScaleMode::FIT;
+                config.render.scale_mode = ScaleMode::fit;
             } else if (mode_str == "fill") {
-                config.render.scale_mode = ScaleMode::FILL;
+                config.render.scale_mode = ScaleMode::fill;
             } else if (mode_str == "stretch") {
-                config.render.scale_mode = ScaleMode::STRETCH;
+                config.render.scale_mode = ScaleMode::stretch;
             } else if (mode_str == "integer") {
-                config.render.scale_mode = ScaleMode::INTEGER;
+                config.render.scale_mode = ScaleMode::integer;
             } else {
-                return make_error<Config>(ErrorCode::INVALID_CONFIG,
+                return make_error<Config>(ErrorCode::invalid_config,
                                           "Invalid scale_mode: " + mode_str +
                                               " (expected: fit, fill, stretch, integer)");
             }
@@ -83,7 +83,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         if (render.contains("integer_scale")) {
             auto scale = toml::find<int64_t>(render, "integer_scale");
             if (scale < 0 || scale > 8) {
-                return make_error<Config>(ErrorCode::INVALID_CONFIG,
+                return make_error<Config>(ErrorCode::invalid_config,
                                           "Invalid integer_scale: " + std::to_string(scale) +
                                               " (expected: 0-8)");
             }
@@ -101,7 +101,7 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
             if (level != "trace" && level != "debug" && level != "info" && level != "warn" &&
                 level != "error" && level != "critical") {
                 return make_error<Config>(
-                    ErrorCode::INVALID_CONFIG,
+                    ErrorCode::invalid_config,
                     "Invalid log level: " + level +
                         " (expected: trace, debug, info, warn, error, critical)");
             }

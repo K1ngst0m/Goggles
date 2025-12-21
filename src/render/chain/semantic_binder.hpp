@@ -10,13 +10,14 @@ namespace goggles::render {
 
 // RetroArch semantic types for uniform binding
 enum class Semantic : std::uint8_t {
-    MVP,                 // Model-View-Projection matrix (UBO)
-    SOURCE_SIZE,         // vec4: [width, height, 1/width, 1/height] of source texture
-    OUTPUT_SIZE,         // vec4: [width, height, 1/width, 1/height] of output
-    ORIGINAL_SIZE,       // vec4: size of original captured frame
-    FRAME_COUNT,         // uint: frame counter
-    FINAL_VIEWPORT_SIZE, // vec4: final output viewport size
+    mvp,
+    source_size,
+    output_size,
+    original_size,
+    frame_count,
+    final_viewport_size,
 };
+;
 
 // Size vec4 format: [width, height, 1/width, 1/height]
 struct SizeVec4 {

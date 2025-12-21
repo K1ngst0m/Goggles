@@ -18,9 +18,9 @@ struct FilterPassConfig {
     std::string vertex_source;
     std::string fragment_source;
     std::string shader_name;
-    FilterMode filter_mode = FilterMode::LINEAR;
+    FilterMode filter_mode = FilterMode::linear;
     bool mipmap = false;
-    WrapMode wrap_mode = WrapMode::CLAMP_TO_EDGE;
+    WrapMode wrap_mode = WrapMode::clamp_to_edge;
     std::vector<ShaderParameter> parameters;
 };
 

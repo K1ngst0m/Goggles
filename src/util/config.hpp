@@ -9,21 +9,22 @@
 namespace goggles {
 
 enum class ScaleMode : uint8_t {
-    FIT,
-    FILL,
-    STRETCH,
-    INTEGER,
+    fit,
+    fill,
+    stretch,
+    integer,
 };
+;
 
 [[nodiscard]] constexpr auto to_string(ScaleMode mode) -> const char* {
     switch (mode) {
-    case ScaleMode::FIT:
+    case ScaleMode::fit:
         return "fit";
-    case ScaleMode::FILL:
+    case ScaleMode::fill:
         return "fill";
-    case ScaleMode::STRETCH:
+    case ScaleMode::stretch:
         return "stretch";
-    case ScaleMode::INTEGER:
+    case ScaleMode::integer:
         return "integer";
     }
     return "unknown";
@@ -42,7 +43,7 @@ struct Config {
         bool vsync = true;
         uint32_t target_fps = 60;
         bool enable_validation = false;
-        ScaleMode scale_mode = ScaleMode::STRETCH;
+        ScaleMode scale_mode = ScaleMode::stretch;
         uint32_t integer_scale = 0;
     } render;
 

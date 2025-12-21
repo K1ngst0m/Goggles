@@ -71,7 +71,7 @@ auto Framebuffer::init(vk::Device device, vk::PhysicalDevice physical_device, vk
 
 auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
     if (!m_initialized) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED, "Framebuffer not initialized");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Framebuffer not initialized");
     }
 
     if (m_extent == new_extent) {
@@ -116,7 +116,7 @@ auto Framebuffer::create_image() -> Result<void> {
 
     auto [result, image] = m_device.createImageUnique(image_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create framebuffer image: " + vk::to_string(result));
     }
     m_image = std::move(image);
@@ -130,7 +130,7 @@ auto Framebuffer::allocate_memory() -> Result<void> {
     uint32_t mem_type_index = find_memory_type(mem_props, mem_reqs.memoryTypeBits,
                                                vk::MemoryPropertyFlagBits::eDeviceLocal);
     if (mem_type_index == UINT32_MAX) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "No suitable memory type for framebuffer");
     }
 
@@ -140,12 +140,12 @@ auto Framebuffer::allocate_memory() -> Result<void> {
 
     auto [result, memory] = m_device.allocateMemoryUnique(alloc_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate framebuffer memory: " + vk::to_string(result));
     }
     m_memory = std::move(memory);
 
-    VK_TRY(m_device.bindImageMemory(*m_image, *m_memory, 0), ErrorCode::VULKAN_INIT_FAILED,
+    VK_TRY(m_device.bindImageMemory(*m_image, *m_memory, 0), ErrorCode::vulkan_init_failed,
            "Failed to bind framebuffer memory");
 
     return {};
@@ -164,7 +164,7 @@ auto Framebuffer::create_image_view() -> Result<void> {
 
     auto [result, view] = m_device.createImageViewUnique(view_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create framebuffer image view: " +
                                     vk::to_string(result));
     }

@@ -133,7 +133,7 @@ auto OutputPass::create_sampler() -> Result<void> {
 
     auto [result, sampler] = m_device.createSamplerUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create sampler: " + vk::to_string(result));
     }
 
@@ -154,7 +154,7 @@ auto OutputPass::create_descriptor_resources() -> Result<void> {
 
     auto [layout_result, layout] = m_device.createDescriptorSetLayoutUnique(layout_info);
     if (layout_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create descriptor set layout: " +
                                     vk::to_string(layout_result));
     }
@@ -171,7 +171,7 @@ auto OutputPass::create_descriptor_resources() -> Result<void> {
 
     auto [pool_result, pool] = m_device.createDescriptorPoolUnique(pool_info);
     if (pool_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create descriptor pool: " + vk::to_string(pool_result));
     }
     m_descriptor_pool = std::move(pool);
@@ -185,7 +185,7 @@ auto OutputPass::create_descriptor_resources() -> Result<void> {
 
     auto [alloc_result, sets] = m_device.allocateDescriptorSets(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate descriptor sets: " +
                                     vk::to_string(alloc_result));
     }
@@ -201,7 +201,7 @@ auto OutputPass::create_pipeline_layout() -> Result<void> {
 
     auto [result, layout] = m_device.createPipelineLayoutUnique(create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create pipeline layout: " + vk::to_string(result));
     }
 
@@ -223,7 +223,7 @@ auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
 
     auto [vert_mod_result, vert_module] = m_device.createShaderModuleUnique(vert_module_info);
     if (vert_mod_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create vertex shader module: " +
                                     vk::to_string(vert_mod_result));
     }
@@ -234,7 +234,7 @@ auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
 
     auto [frag_mod_result, frag_module] = m_device.createShaderModuleUnique(frag_module_info);
     if (frag_mod_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create fragment shader module: " +
                                     vk::to_string(frag_mod_result));
     }
@@ -307,7 +307,7 @@ auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
 
     auto [result, pipelines] = m_device.createGraphicsPipelinesUnique(nullptr, create_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+        return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create graphics pipeline: " + vk::to_string(result));
     }
 

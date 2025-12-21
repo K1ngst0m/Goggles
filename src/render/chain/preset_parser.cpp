@@ -16,7 +16,7 @@ namespace {
 auto read_file(const std::filesystem::path& path) -> Result<std::string> {
     std::ifstream file(path);
     if (!file) {
-        return make_error<std::string>(ErrorCode::FILE_NOT_FOUND,
+        return make_error<std::string>(ErrorCode::file_not_found,
                                        "Failed to open preset: " + path.string());
     }
     std::stringstream buffer;
@@ -59,15 +59,15 @@ auto parse_wrap_mode_value(const std::string& value) -> WrapMode {
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
     if (lower == "clamp_to_edge") {
-        return WrapMode::CLAMP_TO_EDGE;
+        return WrapMode::clamp_to_edge;
     }
     if (lower == "repeat") {
-        return WrapMode::REPEAT;
+        return WrapMode::repeat;
     }
     if (lower == "mirrored_repeat") {
-        return WrapMode::MIRRORED_REPEAT;
+        return WrapMode::mirrored_repeat;
     }
-    return WrapMode::CLAMP_TO_BORDER;
+    return WrapMode::clamp_to_border;
 }
 
 using ValueMap = std::unordered_map<std::string, std::string>;
@@ -100,7 +100,7 @@ void parse_textures(const ValueMap& values, const std::filesystem::path& base_pa
         if (tex_linear_it != values.end()) {
             bool is_linear = parse_bool(tex_linear_it->second);
             tex.linear = is_linear;
-            tex.filter_mode = is_linear ? FilterMode::LINEAR : FilterMode::NEAREST;
+            tex.filter_mode = is_linear ? FilterMode::linear : FilterMode::nearest;
         }
 
         auto tex_mipmap_it = values.find(tex_name + "_mipmap");
@@ -178,12 +178,12 @@ auto PresetParser::parse_ini(const std::string& content, const std::filesystem::
     // Get shader count
     auto shaders_it = values.find("shaders");
     if (shaders_it == values.end()) {
-        return make_error<PresetConfig>(ErrorCode::PARSE_ERROR, "Preset missing 'shaders' count");
+        return make_error<PresetConfig>(ErrorCode::parse_error, "Preset missing 'shaders' count");
     }
 
     auto shader_count_opt = parse_int_safe(shaders_it->second);
     if (!shader_count_opt) {
-        return make_error<PresetConfig>(ErrorCode::PARSE_ERROR,
+        return make_error<PresetConfig>(ErrorCode::parse_error,
                                         "Invalid 'shaders' count: " + shaders_it->second);
     }
     int shader_count = *shader_count_opt;
@@ -202,7 +202,7 @@ auto PresetParser::parse_ini(const std::string& content, const std::filesystem::
         // Shader path
         auto shader_it = values.find(prefix);
         if (shader_it == values.end()) {
-            return make_error<PresetConfig>(ErrorCode::PARSE_ERROR,
+            return make_error<PresetConfig>(ErrorCode::parse_error,
                                             "Missing shader path for pass " + std::to_string(i));
         }
         pass.shader_path = base_path / shader_it->second;
@@ -243,7 +243,7 @@ auto PresetParser::parse_ini(const std::string& content, const std::filesystem::
         auto filter_it = values.find(filter_prefix);
         if (filter_it != values.end()) {
             pass.filter_mode =
-                parse_bool(filter_it->second) ? FilterMode::LINEAR : FilterMode::NEAREST;
+                parse_bool(filter_it->second) ? FilterMode::linear : FilterMode::nearest;
         }
 
         // Framebuffer format
@@ -295,12 +295,12 @@ auto PresetParser::parse_scale_type(const std::string& value) -> ScaleType {
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
     if (lower == "viewport") {
-        return ScaleType::VIEWPORT;
+        return ScaleType::viewport;
     }
     if (lower == "absolute") {
-        return ScaleType::ABSOLUTE;
+        return ScaleType::absolute;
     }
-    return ScaleType::SOURCE;
+    return ScaleType::source;
 }
 
 auto PresetParser::parse_format(bool is_float, bool is_srgb) -> vk::Format {

@@ -260,7 +260,7 @@ void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
 
 auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
     if (linked == nullptr) {
-        return make_error<ReflectionData>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<ReflectionData>(ErrorCode::shader_compile_failed,
                                           "Cannot reflect null program");
     }
 
@@ -268,7 +268,7 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
     slang::ProgramLayout* layout = linked->getLayout();
 
     if (layout == nullptr) {
-        return make_error<ReflectionData>(ErrorCode::SHADER_COMPILE_FAILED,
+        return make_error<ReflectionData>(ErrorCode::shader_compile_failed,
                                           "Failed to get program layout");
     }
 
