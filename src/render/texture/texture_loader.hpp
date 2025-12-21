@@ -53,11 +53,11 @@ private:
         -> Result<ImageResources>;
 
     [[nodiscard]] auto record_and_submit_transfer(vk::Buffer staging_buffer, vk::Image image,
-                                                   ImageSize size, uint32_t mip_levels)
-        -> Result<void>;
+                                                   ImageSize size, uint32_t mip_levels,
+                                                   vk::Format format) -> Result<void>;
 
-    void generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk::Extent2D extent,
-                          uint32_t mip_levels);
+    void generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk::Format format,
+                          vk::Extent2D extent, uint32_t mip_levels);
 
     [[nodiscard]] auto find_memory_type(uint32_t type_filter,
                                          vk::MemoryPropertyFlags properties) -> uint32_t;
@@ -68,6 +68,9 @@ private:
     vk::PhysicalDevice m_physical_device;
     vk::CommandPool m_cmd_pool;
     vk::Queue m_queue;
+
+    bool m_srgb_supports_linear;
+    bool m_unorm_supports_linear;
 };
 
 } // namespace goggles::render

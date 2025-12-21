@@ -17,6 +17,13 @@ constexpr int RGBA_CHANNELS = 4;
 TextureLoader::TextureLoader(vk::Device device, vk::PhysicalDevice physical_device,
                              vk::CommandPool cmd_pool, vk::Queue queue)
     : m_device(device), m_physical_device(physical_device), m_cmd_pool(cmd_pool), m_queue(queue) {
+    auto srgb_props = physical_device.getFormatProperties(vk::Format::eR8G8B8A8Srgb);
+    m_srgb_supports_linear = static_cast<bool>(
+        srgb_props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear);
+
+    auto unorm_props = physical_device.getFormatProperties(vk::Format::eR8G8B8A8Unorm);
+    m_unorm_supports_linear = static_cast<bool>(
+        unorm_props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear);
 }
 
 auto TextureLoader::load_from_file(const std::filesystem::path& path,
@@ -29,6 +36,11 @@ auto TextureLoader::load_from_file(const std::filesystem::path& path,
     if (pixels == nullptr) {
         return make_error<TextureData>(ErrorCode::FILE_NOT_FOUND,
                                        "Failed to load texture: " + path.string());
+    }
+    if (width <= 0 || height <= 0) {
+      stbi_image_free(pixels);
+      return make_error<TextureData>(ErrorCode::INVALID_DATA,
+                                     "Invalid texture dimensions: " + path.string());
     }
 
     uint32_t mip_levels = 1;
@@ -153,8 +165,8 @@ auto TextureLoader::create_texture_image(ImageSize size, uint32_t mip_levels, bo
 }
 
 auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Image image,
-                                                ImageSize size, uint32_t mip_levels)
-    -> Result<void> {
+                                                ImageSize size, uint32_t mip_levels,
+                                                vk::Format format) -> Result<void> {
     vk::CommandBufferAllocateInfo cmd_alloc_info{};
     cmd_alloc_info.commandPool = m_cmd_pool;
     cmd_alloc_info.level = vk::CommandBufferLevel::ePrimary;
@@ -206,7 +218,7 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
     cmd->copyBufferToImage(staging_buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
 
     if (mip_levels > 1) {
-        generate_mipmaps(*cmd, image, vk::Extent2D{size.width, size.height}, mip_levels);
+        generate_mipmaps(*cmd, image, format, vk::Extent2D{size.width, size.height}, mip_levels);
     } else {
         barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
         barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -247,18 +259,19 @@ auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_
                                    uint32_t mip_levels, bool linear) -> Result<TextureData> {
     vk::DeviceSize image_size = static_cast<vk::DeviceSize>(width) * height * RGBA_CHANNELS;
 
+    vk::Format format = linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb;
+
     auto staging = GOGGLES_TRY(create_staging_buffer(image_size, pixels));
     auto image_resources =
         GOGGLES_TRY(create_texture_image(ImageSize{width, height}, mip_levels, linear));
 
-    GOGGLES_TRY(
-        record_and_submit_transfer(*staging.buffer, *image_resources.image, ImageSize{width, height},
-                                    mip_levels));
+    GOGGLES_TRY(record_and_submit_transfer(*staging.buffer, *image_resources.image,
+                                            ImageSize{width, height}, mip_levels, format));
 
     vk::ImageViewCreateInfo view_info{};
     view_info.image = *image_resources.image;
     view_info.viewType = vk::ImageViewType::e2D;
-    view_info.format = linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb;
+    view_info.format = format;
     view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     view_info.subresourceRange.baseMipLevel = 0;
     view_info.subresourceRange.levelCount = mip_levels;
@@ -280,8 +293,17 @@ auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_
     };
 }
 
-void TextureLoader::generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk::Extent2D extent,
-                                      uint32_t mip_levels) {
+void TextureLoader::generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk::Format format,
+                                      vk::Extent2D extent, uint32_t mip_levels) {
+    bool supports_linear = (format == vk::Format::eR8G8B8A8Srgb) ? m_srgb_supports_linear
+                                                                   : m_unorm_supports_linear;
+    vk::Filter filter = supports_linear ? vk::Filter::eLinear : vk::Filter::eNearest;
+
+    if (!supports_linear) {
+        GOGGLES_LOG_WARN("Format {} does not support linear filtering for mipmaps, using nearest",
+                         vk::to_string(format));
+    }
+
     vk::ImageMemoryBarrier barrier{};
     barrier.image = image;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -320,7 +342,7 @@ void TextureLoader::generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk:
         blit.dstSubresource.layerCount = 1;
 
         cmd.blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image,
-                      vk::ImageLayout::eTransferDstOptimal, blit, vk::Filter::eLinear);
+                      vk::ImageLayout::eTransferDstOptimal, blit, filter);
 
         barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
         barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -362,6 +384,9 @@ auto TextureLoader::find_memory_type(uint32_t type_filter,
 }
 
 auto TextureLoader::calculate_mip_levels(uint32_t width, uint32_t height) -> uint32_t {
+    if (width == 0 || height == 0) {
+        return 1;
+    }
     return static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
 }
 

@@ -23,6 +23,7 @@ enum class ErrorCode : std::uint8_t {
     SHADER_LOAD_FAILED,
     CAPTURE_INIT_FAILED,
     CAPTURE_FRAME_FAILED,
+    INVALID_DATA,
     UNKNOWN_ERROR
 };
 
@@ -72,6 +73,8 @@ template <typename T>
         return "CAPTURE_INIT_FAILED";
     case ErrorCode::CAPTURE_FRAME_FAILED:
         return "CAPTURE_FRAME_FAILED";
+    case ErrorCode::INVALID_DATA:
+        return "INVALID_DATA";
     case ErrorCode::UNKNOWN_ERROR:
         return "UNKNOWN_ERROR";
     }
