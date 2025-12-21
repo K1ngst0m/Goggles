@@ -127,6 +127,20 @@ public:
         return m_final_viewport_size;
     }
 
+    void set_alias_size(const std::string& alias, uint32_t width, uint32_t height) {
+        m_alias_sizes[alias] = make_size_vec4(width, height);
+    }
+
+    [[nodiscard]] auto get_alias_size(const std::string& alias) const -> std::optional<SizeVec4> {
+        auto it = m_alias_sizes.find(alias);
+        if (it != m_alias_sizes.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
+    void clear_alias_sizes() { m_alias_sizes.clear(); }
+
 private:
     std::array<float, 16> m_mvp = IDENTITY_MVP;
     SizeVec4 m_source_size = {.width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
@@ -136,6 +150,7 @@ private:
     SizeVec4 m_final_viewport_size = {
         .width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
     uint32_t m_frame_count = 0;
+    std::unordered_map<std::string, SizeVec4> m_alias_sizes;
 };
 
 } // namespace goggles::render

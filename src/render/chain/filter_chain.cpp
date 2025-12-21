@@ -31,6 +31,9 @@ auto FilterChain::init(const VulkanContext& vk_ctx, vk::Format swapchain_format,
     };
     GOGGLES_TRY(m_output_pass.init(vk_ctx, shader_runtime, output_config));
 
+    m_texture_loader = std::make_unique<TextureLoader>(vk_ctx.device, vk_ctx.physical_device,
+                                                       vk_ctx.command_pool, vk_ctx.graphics_queue);
+
     m_initialized = true;
     GOGGLES_LOG_DEBUG("FilterChain initialized (passthrough mode)");
     return {};
@@ -46,10 +49,13 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
 
     m_passes.clear();
     m_framebuffers.clear();
+    m_texture_registry.clear();
+    m_alias_to_pass_index.clear();
 
     RetroArchPreprocessor preprocessor;
 
-    for (const auto& pass_config : m_preset.passes) {
+    for (size_t i = 0; i < m_preset.passes.size(); ++i) {
+        const auto& pass_config = m_preset.passes[i];
         auto preprocessed = GOGGLES_TRY(preprocessor.preprocess(pass_config.shader_path));
         auto pass = std::make_unique<FilterPass>();
 
@@ -60,17 +66,32 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
             .fragment_source = preprocessed.fragment_source,
             .shader_name = pass_config.shader_path.stem().string(),
             .filter_mode = pass_config.filter_mode,
+            .mipmap = pass_config.mipmap,
+            .wrap_mode = pass_config.wrap_mode,
             .parameters = preprocessed.parameters,
         };
         GOGGLES_TRY(pass->init(m_vk_ctx, *m_shader_runtime, config));
 
+        for (const auto& override : m_preset.parameters) {
+            pass->set_parameter_override(override.name, override.value);
+        }
+        GOGGLES_TRY(pass->update_ubo_parameters());
+
         m_passes.push_back(std::move(pass));
+
+        if (pass_config.alias.has_value()) {
+            m_alias_to_pass_index[*pass_config.alias] = i;
+        }
     }
 
     m_framebuffers.resize(m_passes.size());
 
-    GOGGLES_LOG_INFO("FilterChain loaded preset: {} ({} passes)", preset_path.filename().string(),
-                     m_passes.size());
+    GOGGLES_TRY(load_preset_textures());
+
+    GOGGLES_LOG_INFO(
+        "FilterChain loaded preset: {} ({} passes, {} textures, {} aliases, {} params)",
+        preset_path.filename().string(), m_passes.size(), m_texture_registry.size(),
+        m_alias_to_pass_index.size(), m_preset.parameters.size());
     return {};
 }
 
@@ -139,6 +160,26 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
         pass->set_original_size(original_extent.width, original_extent.height);
         pass->set_frame_count(m_frame_count);
         pass->set_final_viewport_size(vp.width, vp.height);
+
+        pass->clear_alias_sizes();
+        for (const auto& [alias, pass_idx] : m_alias_to_pass_index) {
+            if (pass_idx < i && m_framebuffers[pass_idx].is_initialized()) {
+                auto alias_extent = m_framebuffers[pass_idx].extent();
+                pass->set_alias_size(alias, alias_extent.width, alias_extent.height);
+            }
+        }
+
+        pass->clear_texture_bindings();
+        pass->set_texture_binding("Source", source_view, nullptr);
+        pass->set_texture_binding("Original", original_view, nullptr);
+        for (const auto& [alias, pass_idx] : m_alias_to_pass_index) {
+            if (pass_idx < i && m_framebuffers[pass_idx].is_initialized()) {
+                pass->set_texture_binding(alias, m_framebuffers[pass_idx].view(), nullptr);
+            }
+        }
+        for (const auto& [name, tex] : m_texture_registry) {
+            pass->set_texture_binding(name, *tex.data.view, *tex.sampler);
+        }
 
         PassContext ctx{};
         ctx.frame_index = frame_index;
@@ -227,6 +268,8 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
 void FilterChain::shutdown() {
     m_passes.clear();
     m_framebuffers.clear();
+    m_texture_registry.clear();
+    m_alias_to_pass_index.clear();
     m_output_pass.shutdown();
     m_preset = PresetConfig{};
     m_frame_count = 0;
@@ -292,6 +335,80 @@ auto FilterChain::calculate_pass_output_size(const ShaderPassConfig& pass_config
     }
 
     return vk::Extent2D{std::max(1U, width), std::max(1U, height)};
+}
+
+auto FilterChain::load_preset_textures() -> Result<void> {
+    for (const auto& tex_config : m_preset.textures) {
+        TextureLoadConfig load_cfg{.generate_mipmaps = tex_config.mipmap,
+                                   .linear = tex_config.linear};
+
+        auto tex_data_result = m_texture_loader->load_from_file(tex_config.path, load_cfg);
+        if (!tex_data_result) {
+            return nonstd::make_unexpected(tex_data_result.error());
+        }
+
+        auto sampler = GOGGLES_TRY(create_texture_sampler(tex_config));
+
+        m_texture_registry[tex_config.name] = LoadedTexture{
+            .data = std::move(tex_data_result.value()),
+            .sampler = std::move(sampler),
+        };
+
+        GOGGLES_LOG_DEBUG("Loaded texture '{}' from {}", tex_config.name,
+                          tex_config.path.filename().string());
+    }
+    return {};
+}
+
+auto FilterChain::create_texture_sampler(const TextureConfig& config) -> Result<vk::UniqueSampler> {
+    vk::Filter filter =
+        (config.filter_mode == FilterMode::LINEAR) ? vk::Filter::eLinear : vk::Filter::eNearest;
+
+    vk::SamplerAddressMode address_mode;
+    switch (config.wrap_mode) {
+    case WrapMode::CLAMP_TO_EDGE:
+        address_mode = vk::SamplerAddressMode::eClampToEdge;
+        break;
+    case WrapMode::REPEAT:
+        address_mode = vk::SamplerAddressMode::eRepeat;
+        break;
+    case WrapMode::MIRRORED_REPEAT:
+        address_mode = vk::SamplerAddressMode::eMirroredRepeat;
+        break;
+    case WrapMode::CLAMP_TO_BORDER:
+    default:
+        address_mode = vk::SamplerAddressMode::eClampToBorder;
+        break;
+    }
+
+    vk::SamplerMipmapMode mipmap_mode = (config.filter_mode == FilterMode::LINEAR)
+                                            ? vk::SamplerMipmapMode::eLinear
+                                            : vk::SamplerMipmapMode::eNearest;
+
+    vk::SamplerCreateInfo sampler_info{};
+    sampler_info.magFilter = filter;
+    sampler_info.minFilter = filter;
+    sampler_info.addressModeU = address_mode;
+    sampler_info.addressModeV = address_mode;
+    sampler_info.addressModeW = address_mode;
+    sampler_info.anisotropyEnable = VK_FALSE;
+    sampler_info.maxAnisotropy = 1.0f;
+    sampler_info.borderColor = vk::BorderColor::eFloatTransparentBlack;
+    sampler_info.unnormalizedCoordinates = VK_FALSE;
+    sampler_info.compareEnable = VK_FALSE;
+    sampler_info.compareOp = vk::CompareOp::eAlways;
+    sampler_info.mipmapMode = mipmap_mode;
+    sampler_info.mipLodBias = 0.0f;
+    sampler_info.minLod = 0.0f;
+    sampler_info.maxLod = config.mipmap ? VK_LOD_CLAMP_NONE : 0.0f;
+
+    auto [result, sampler] = m_vk_ctx.device.createSamplerUnique(sampler_info);
+    if (result != vk::Result::eSuccess) {
+        return make_error<vk::UniqueSampler>(ErrorCode::VULKAN_INIT_FAILED,
+                                             "Failed to create texture sampler: " +
+                                                 vk::to_string(result));
+    }
+    return Result<vk::UniqueSampler>{std::move(sampler)};
 }
 
 } // namespace goggles::render

@@ -13,6 +13,8 @@ enum class ScaleType : std::uint8_t { SOURCE, VIEWPORT, ABSOLUTE };
 
 enum class FilterMode : std::uint8_t { LINEAR, NEAREST };
 
+enum class WrapMode : std::uint8_t { CLAMP_TO_BORDER, CLAMP_TO_EDGE, REPEAT, MIRRORED_REPEAT };
+
 struct ShaderPassConfig {
     std::filesystem::path shader_path;
     ScaleType scale_type_x = ScaleType::SOURCE;
@@ -22,6 +24,7 @@ struct ShaderPassConfig {
     FilterMode filter_mode = FilterMode::LINEAR;
     vk::Format framebuffer_format = vk::Format::eR8G8B8A8Unorm;
     bool mipmap = false;
+    WrapMode wrap_mode = WrapMode::CLAMP_TO_EDGE;
     std::optional<std::string> alias;
 };
 
@@ -30,6 +33,8 @@ struct TextureConfig {
     std::filesystem::path path;
     FilterMode filter_mode = FilterMode::LINEAR;
     bool mipmap = false;
+    WrapMode wrap_mode = WrapMode::CLAMP_TO_BORDER;
+    bool linear = false;
 };
 
 struct ParameterOverride {
@@ -52,6 +57,7 @@ private:
         -> Result<PresetConfig>;
 
     [[nodiscard]] auto parse_scale_type(const std::string& value) -> ScaleType;
+    [[nodiscard]] auto parse_wrap_mode(const std::string& value) -> WrapMode;
     [[nodiscard]] auto parse_format(bool is_float, bool is_srgb) -> vk::Format;
 };
 

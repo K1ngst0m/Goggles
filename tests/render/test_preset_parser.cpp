@@ -128,6 +128,174 @@ TEST_CASE("Preset Parser zfast-crt-composite", "[preset][integration]") {
     REQUIRE(result->passes[0].scale_type_x == ScaleType::VIEWPORT);
 }
 
+TEST_CASE("Preset Parser texture wrap_mode parsing", "[preset][texture]") {
+    PresetParser parser;
+
+    SECTION("Parse wrap_mode clamp_to_border (default)") {
+        std::string preset_content = R"(
+shaders = 1
+shader0 = test.slang
+
+textures = lut
+lut = textures/lut.png
+)";
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test";
+        std::filesystem::create_directories(temp_dir);
+        auto preset_path = temp_dir / "wrap_test.slangp";
+
+        {
+            std::ofstream file(preset_path);
+            file << preset_content;
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->textures.size() == 1);
+        REQUIRE(result->textures[0].wrap_mode == WrapMode::CLAMP_TO_BORDER);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+
+    SECTION("Parse wrap_mode clamp_to_edge") {
+        std::string preset_content = R"(
+shaders = 1
+shader0 = test.slang
+
+textures = lut
+lut = textures/lut.png
+lut_wrap_mode = clamp_to_edge
+)";
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test";
+        std::filesystem::create_directories(temp_dir);
+        auto preset_path = temp_dir / "wrap_test.slangp";
+
+        {
+            std::ofstream file(preset_path);
+            file << preset_content;
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->textures.size() == 1);
+        REQUIRE(result->textures[0].wrap_mode == WrapMode::CLAMP_TO_EDGE);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+
+    SECTION("Parse wrap_mode repeat") {
+        std::string preset_content = R"(
+shaders = 1
+shader0 = test.slang
+
+textures = lut
+lut = textures/lut.png
+lut_wrap_mode = repeat
+)";
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test";
+        std::filesystem::create_directories(temp_dir);
+        auto preset_path = temp_dir / "wrap_test.slangp";
+
+        {
+            std::ofstream file(preset_path);
+            file << preset_content;
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->textures.size() == 1);
+        REQUIRE(result->textures[0].wrap_mode == WrapMode::REPEAT);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+
+    SECTION("Parse wrap_mode mirrored_repeat") {
+        std::string preset_content = R"(
+shaders = 1
+shader0 = test.slang
+
+textures = lut
+lut = textures/lut.png
+lut_wrap_mode = mirrored_repeat
+)";
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test";
+        std::filesystem::create_directories(temp_dir);
+        auto preset_path = temp_dir / "wrap_test.slangp";
+
+        {
+            std::ofstream file(preset_path);
+            file << preset_content;
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->textures.size() == 1);
+        REQUIRE(result->textures[0].wrap_mode == WrapMode::MIRRORED_REPEAT);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+
+    SECTION("Parse multiple textures with different wrap_modes") {
+        std::string preset_content = R"(
+shaders = 1
+shader0 = test.slang
+
+textures = "lut1;lut2"
+lut1 = textures/lut1.png
+lut1_wrap_mode = repeat
+lut2 = textures/lut2.png
+lut2_wrap_mode = clamp_to_edge
+)";
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test";
+        std::filesystem::create_directories(temp_dir);
+        auto preset_path = temp_dir / "wrap_test.slangp";
+
+        {
+            std::ofstream file(preset_path);
+            file << preset_content;
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->textures.size() == 2);
+        REQUIRE(result->textures[0].name == "lut1");
+        REQUIRE(result->textures[0].wrap_mode == WrapMode::REPEAT);
+        REQUIRE(result->textures[1].name == "lut2");
+        REQUIRE(result->textures[1].wrap_mode == WrapMode::CLAMP_TO_EDGE);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+}
+
+TEST_CASE("Preset Parser pass alias parsing", "[preset][alias]") {
+    PresetParser parser;
+
+    SECTION("Parse alias for shader pass") {
+        std::string preset_content = R"(
+shaders = 2
+shader0 = pass0.slang
+alias0 = BLOOM_PASS
+shader1 = pass1.slang
+)";
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test";
+        std::filesystem::create_directories(temp_dir);
+        auto preset_path = temp_dir / "alias_test.slangp";
+
+        {
+            std::ofstream file(preset_path);
+            file << preset_content;
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->passes.size() == 2);
+        REQUIRE(result->passes[0].alias.has_value());
+        REQUIRE(result->passes[0].alias.value() == "BLOOM_PASS");
+        REQUIRE_FALSE(result->passes[1].alias.has_value());
+
+        std::filesystem::remove_all(temp_dir);
+    }
+}
+
 TEST_CASE("Preset Parser error handling", "[preset][error]") {
     PresetParser parser;
 

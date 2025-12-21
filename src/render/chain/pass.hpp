@@ -14,6 +14,8 @@ class ShaderRuntime;
 struct VulkanContext {
     vk::Device device;
     vk::PhysicalDevice physical_device;
+    vk::CommandPool command_pool;
+    vk::Queue graphics_queue;
 };
 
 struct PassContext {

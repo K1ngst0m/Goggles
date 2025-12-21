@@ -120,10 +120,13 @@ auto RetroArchPreprocessor::resolve_includes(const std::string& source,
 
 auto RetroArchPreprocessor::split_by_stage(const std::string& source)
     -> std::pair<std::string, std::string> {
+    enum class Stage : std::uint8_t { SHARED, VERTEX, FRAGMENT };
+
     std::string shared;
     std::string vertex;
     std::string fragment;
     std::string* current = &shared;
+    Stage current_stage = Stage::SHARED;
 
     std::istringstream stream(source);
     std::string line;
@@ -132,24 +135,27 @@ auto RetroArchPreprocessor::split_by_stage(const std::string& source)
         std::string trimmed = trim(line);
 
         if (trimmed.starts_with(PRAGMA_STAGE_VERTEX)) {
-            // Switch to vertex stage, append shared content first
-            current = &vertex;
-            vertex = shared;
-            continue; // Skip the pragma line itself
+            if (current_stage != Stage::VERTEX) {
+                current = &vertex;
+                vertex = shared;
+                current_stage = Stage::VERTEX;
+            }
+            continue;
         }
 
         if (trimmed.starts_with(PRAGMA_STAGE_FRAGMENT)) {
-            // Switch to fragment stage, append shared content first
-            current = &fragment;
-            fragment = shared;
-            continue; // Skip the pragma line itself
+            if (current_stage != Stage::FRAGMENT) {
+                current = &fragment;
+                fragment = shared;
+                current_stage = Stage::FRAGMENT;
+            }
+            continue;
         }
 
         *current += line;
         *current += "\n";
     }
 
-    // If no stage pragmas found, use entire source for both stages (unusual but handle it)
     if (vertex.empty() && fragment.empty()) {
         vertex = source;
         fragment = source;

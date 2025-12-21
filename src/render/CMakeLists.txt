@@ -11,6 +11,7 @@ add_library(goggles_render STATIC
     chain/filter_pass.cpp
     chain/framebuffer.cpp
     chain/filter_chain.cpp
+    texture/texture_loader.cpp
 )
 
 target_include_directories(goggles_render PUBLIC
@@ -23,6 +24,7 @@ target_link_libraries(goggles_render PUBLIC
     Vulkan::Vulkan
     SDL3::SDL3-static
     slang::slang
+    stb_image
 )
 
 target_compile_definitions(goggles_render PUBLIC
