@@ -306,7 +306,7 @@ auto FilterPass::create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wr
     create_info.compareEnable = VK_FALSE;
     create_info.minLod = 0.0F;
     create_info.maxLod = mipmap ? VK_LOD_CLAMP_NONE : 0.0F;
-    create_info.borderColor = vk::BorderColor::eFloatOpaqueBlack;
+    create_info.borderColor = vk::BorderColor::eFloatTransparentBlack;
     create_info.unnormalizedCoordinates = VK_FALSE;
 
     auto [result, sampler] = m_device.createSamplerUnique(create_info);
