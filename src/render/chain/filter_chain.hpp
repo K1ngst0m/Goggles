@@ -59,7 +59,8 @@ private:
                                            vk::Extent2D viewport_extent) -> Result<void>;
 
     [[nodiscard]] auto load_preset_textures() -> Result<void>;
-    [[nodiscard]] auto create_texture_sampler(const TextureConfig& config) -> Result<vk::UniqueSampler>;
+    [[nodiscard]] auto create_texture_sampler(const TextureConfig& config)
+        -> Result<vk::UniqueSampler>;
 
     VulkanContext m_vk_ctx;
     vk::Format m_swapchain_format = vk::Format::eUndefined;

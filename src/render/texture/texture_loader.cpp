@@ -5,7 +5,6 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-
 #include <util/logging.hpp>
 
 namespace goggles::render {
@@ -27,7 +26,7 @@ TextureLoader::TextureLoader(vk::Device device, vk::PhysicalDevice physical_devi
 }
 
 auto TextureLoader::load_from_file(const std::filesystem::path& path,
-                                    const TextureLoadConfig& config) -> Result<TextureData> {
+                                   const TextureLoadConfig& config) -> Result<TextureData> {
     int width = 0;
     int height = 0;
     int channels = 0;
@@ -38,18 +37,19 @@ auto TextureLoader::load_from_file(const std::filesystem::path& path,
                                        "Failed to load texture: " + path.string());
     }
     if (width <= 0 || height <= 0) {
-      stbi_image_free(pixels);
-      return make_error<TextureData>(ErrorCode::INVALID_DATA,
-                                     "Invalid texture dimensions: " + path.string());
+        stbi_image_free(pixels);
+        return make_error<TextureData>(ErrorCode::INVALID_DATA,
+                                       "Invalid texture dimensions: " + path.string());
     }
 
     uint32_t mip_levels = 1;
     if (config.generate_mipmaps) {
-        mip_levels = calculate_mip_levels(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+        mip_levels =
+            calculate_mip_levels(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     }
 
     auto result = upload_to_gpu(pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                 mip_levels, config.linear);
+                                mip_levels, config.linear);
 
     stbi_image_free(pixels);
 
@@ -78,9 +78,9 @@ auto TextureLoader::create_staging_buffer(vk::DeviceSize size, const uint8_t* pi
     }
 
     auto mem_reqs = m_device.getBufferMemoryRequirements(*buffer);
-    uint32_t mem_type = find_memory_type(
-        mem_reqs.memoryTypeBits,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    uint32_t mem_type =
+        find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
+                                                      vk::MemoryPropertyFlagBits::eHostCoherent);
     if (mem_type == UINT32_MAX) {
         return make_error<StagingResources>(ErrorCode::VULKAN_INIT_FAILED,
                                             "No suitable memory type for staging buffer");
@@ -107,7 +107,8 @@ auto TextureLoader::create_staging_buffer(vk::DeviceSize size, const uint8_t* pi
     auto [map_result, data] = m_device.mapMemory(*memory, 0, size);
     if (map_result != vk::Result::eSuccess) {
         return make_error<StagingResources>(ErrorCode::VULKAN_INIT_FAILED,
-                                            "Failed to map staging memory: " + vk::to_string(map_result));
+                                            "Failed to map staging memory: " +
+                                                vk::to_string(map_result));
     }
     std::memcpy(data, pixels, size);
     m_device.unmapMemory(*memory);
@@ -158,15 +159,16 @@ auto TextureLoader::create_texture_image(ImageSize size, uint32_t mip_levels, bo
     auto bind_result = m_device.bindImageMemory(*image, *memory, 0);
     if (bind_result != vk::Result::eSuccess) {
         return make_error<ImageResources>(ErrorCode::VULKAN_INIT_FAILED,
-                                          "Failed to bind image memory: " + vk::to_string(bind_result));
+                                          "Failed to bind image memory: " +
+                                              vk::to_string(bind_result));
     }
 
     return ImageResources{.image = std::move(image), .memory = std::move(memory)};
 }
 
 auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Image image,
-                                                ImageSize size, uint32_t mip_levels,
-                                                vk::Format format) -> Result<void> {
+                                               ImageSize size, uint32_t mip_levels,
+                                               vk::Format format) -> Result<void> {
     vk::CommandBufferAllocateInfo cmd_alloc_info{};
     cmd_alloc_info.commandPool = m_cmd_pool;
     cmd_alloc_info.level = vk::CommandBufferLevel::ePrimary;
@@ -256,7 +258,7 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
 }
 
 auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_t height,
-                                   uint32_t mip_levels, bool linear) -> Result<TextureData> {
+                                  uint32_t mip_levels, bool linear) -> Result<TextureData> {
     vk::DeviceSize image_size = static_cast<vk::DeviceSize>(width) * height * RGBA_CHANNELS;
 
     vk::Format format = linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb;
@@ -266,7 +268,7 @@ auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_
         GOGGLES_TRY(create_texture_image(ImageSize{width, height}, mip_levels, linear));
 
     GOGGLES_TRY(record_and_submit_transfer(*staging.buffer, *image_resources.image,
-                                            ImageSize{width, height}, mip_levels, format));
+                                           ImageSize{width, height}, mip_levels, format));
 
     vk::ImageViewCreateInfo view_info{};
     view_info.image = *image_resources.image;
@@ -281,7 +283,8 @@ auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_
     auto [view_result, view] = m_device.createImageViewUnique(view_info);
     if (view_result != vk::Result::eSuccess) {
         return make_error<TextureData>(ErrorCode::VULKAN_INIT_FAILED,
-                                       "Failed to create image view: " + vk::to_string(view_result));
+                                       "Failed to create image view: " +
+                                           vk::to_string(view_result));
     }
 
     return TextureData{
@@ -294,9 +297,9 @@ auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_
 }
 
 void TextureLoader::generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk::Format format,
-                                      vk::Extent2D extent, uint32_t mip_levels) {
-    bool supports_linear = (format == vk::Format::eR8G8B8A8Srgb) ? m_srgb_supports_linear
-                                                                   : m_unorm_supports_linear;
+                                     vk::Extent2D extent, uint32_t mip_levels) {
+    bool supports_linear =
+        (format == vk::Format::eR8G8B8A8Srgb) ? m_srgb_supports_linear : m_unorm_supports_linear;
     vk::Filter filter = supports_linear ? vk::Filter::eLinear : vk::Filter::eNearest;
 
     if (!supports_linear) {
@@ -334,8 +337,8 @@ void TextureLoader::generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk:
         blit.srcSubresource.baseArrayLayer = 0;
         blit.srcSubresource.layerCount = 1;
         blit.dstOffsets[0] = vk::Offset3D{0, 0, 0};
-        blit.dstOffsets[1] = vk::Offset3D{mip_width > 1 ? mip_width / 2 : 1,
-                                          mip_height > 1 ? mip_height / 2 : 1, 1};
+        blit.dstOffsets[1] =
+            vk::Offset3D{mip_width > 1 ? mip_width / 2 : 1, mip_height > 1 ? mip_height / 2 : 1, 1};
         blit.dstSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
         blit.dstSubresource.mipLevel = i;
         blit.dstSubresource.baseArrayLayer = 0;
@@ -370,8 +373,8 @@ void TextureLoader::generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk:
                         vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
 }
 
-auto TextureLoader::find_memory_type(uint32_t type_filter,
-                                      vk::MemoryPropertyFlags properties) -> uint32_t {
+auto TextureLoader::find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags properties)
+    -> uint32_t {
     auto mem_props = m_physical_device.getMemoryProperties();
 
     for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {

@@ -69,7 +69,7 @@ public:
     void clear_alias_sizes() { m_binder.clear_alias_sizes(); }
 
     void set_texture_binding(const std::string& name, vk::ImageView view, vk::Sampler sampler) {
-        m_texture_bindings[name] = {.view=view, .sampler=sampler};
+        m_texture_bindings[name] = {.view = view, .sampler = sampler};
     }
     void clear_texture_bindings() { m_texture_bindings.clear(); }
 
@@ -87,7 +87,8 @@ private:
     [[nodiscard]] auto create_pipeline_layout() -> Result<void>;
     [[nodiscard]] auto create_pipeline(const std::vector<uint32_t>& vertex_spirv,
                                        const std::vector<uint32_t>& fragment_spirv) -> Result<void>;
-    [[nodiscard]] auto create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wrap_mode) -> Result<void>;
+    [[nodiscard]] auto create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wrap_mode)
+        -> Result<void>;
     [[nodiscard]] auto create_vertex_buffer() -> Result<void>;
     [[nodiscard]] auto create_ubo_buffer() -> Result<void>;
 

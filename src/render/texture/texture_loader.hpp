@@ -26,11 +26,11 @@ struct TextureLoadConfig {
 
 class TextureLoader {
 public:
-    TextureLoader(vk::Device device, vk::PhysicalDevice physical_device,
-                  vk::CommandPool cmd_pool, vk::Queue queue);
+    TextureLoader(vk::Device device, vk::PhysicalDevice physical_device, vk::CommandPool cmd_pool,
+                  vk::Queue queue);
 
     [[nodiscard]] auto load_from_file(const std::filesystem::path& path,
-                                       const TextureLoadConfig& config = {}) -> Result<TextureData>;
+                                      const TextureLoadConfig& config = {}) -> Result<TextureData>;
 
 private:
     struct StagingResources {
@@ -44,7 +44,7 @@ private:
     };
 
     [[nodiscard]] auto upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_t height,
-                                      uint32_t mip_levels, bool linear) -> Result<TextureData>;
+                                     uint32_t mip_levels, bool linear) -> Result<TextureData>;
 
     [[nodiscard]] auto create_staging_buffer(vk::DeviceSize size, const uint8_t* pixels)
         -> Result<StagingResources>;
@@ -53,14 +53,14 @@ private:
         -> Result<ImageResources>;
 
     [[nodiscard]] auto record_and_submit_transfer(vk::Buffer staging_buffer, vk::Image image,
-                                                   ImageSize size, uint32_t mip_levels,
-                                                   vk::Format format) -> Result<void>;
+                                                  ImageSize size, uint32_t mip_levels,
+                                                  vk::Format format) -> Result<void>;
 
     void generate_mipmaps(vk::CommandBuffer cmd, vk::Image image, vk::Format format,
                           vk::Extent2D extent, uint32_t mip_levels);
 
-    [[nodiscard]] auto find_memory_type(uint32_t type_filter,
-                                         vk::MemoryPropertyFlags properties) -> uint32_t;
+    [[nodiscard]] auto find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags properties)
+        -> uint32_t;
 
     [[nodiscard]] static auto calculate_mip_levels(uint32_t width, uint32_t height) -> uint32_t;
 

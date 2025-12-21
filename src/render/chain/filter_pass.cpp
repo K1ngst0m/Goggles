@@ -283,13 +283,14 @@ void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     cmd.endRendering();
 }
 
-auto FilterPass::create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wrap_mode) -> Result<void> {
+auto FilterPass::create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wrap_mode)
+    -> Result<void> {
     vk::Filter filter =
         (filter_mode == FilterMode::LINEAR) ? vk::Filter::eLinear : vk::Filter::eNearest;
 
-    vk::SamplerMipmapMode mipmap_mode =
-        (filter_mode == FilterMode::LINEAR) ? vk::SamplerMipmapMode::eLinear
-                                             : vk::SamplerMipmapMode::eNearest;
+    vk::SamplerMipmapMode mipmap_mode = (filter_mode == FilterMode::LINEAR)
+                                            ? vk::SamplerMipmapMode::eLinear
+                                            : vk::SamplerMipmapMode::eNearest;
 
     vk::SamplerAddressMode address_mode = convert_wrap_mode(wrap_mode);
 

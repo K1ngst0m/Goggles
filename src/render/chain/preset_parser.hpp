@@ -13,12 +13,7 @@ enum class ScaleType : std::uint8_t { SOURCE, VIEWPORT, ABSOLUTE };
 
 enum class FilterMode : std::uint8_t { LINEAR, NEAREST };
 
-enum class WrapMode : std::uint8_t {
-    CLAMP_TO_BORDER,
-    CLAMP_TO_EDGE,
-    REPEAT,
-    MIRRORED_REPEAT
-};
+enum class WrapMode : std::uint8_t { CLAMP_TO_BORDER, CLAMP_TO_EDGE, REPEAT, MIRRORED_REPEAT };
 
 struct ShaderPassConfig {
     std::filesystem::path shader_path;

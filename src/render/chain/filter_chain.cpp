@@ -32,7 +32,7 @@ auto FilterChain::init(const VulkanContext& vk_ctx, vk::Format swapchain_format,
     GOGGLES_TRY(m_output_pass.init(vk_ctx, shader_runtime, output_config));
 
     m_texture_loader = std::make_unique<TextureLoader>(vk_ctx.device, vk_ctx.physical_device,
-                                                        vk_ctx.command_pool, vk_ctx.graphics_queue);
+                                                       vk_ctx.command_pool, vk_ctx.graphics_queue);
 
     m_initialized = true;
     GOGGLES_LOG_DEBUG("FilterChain initialized (passthrough mode)");
@@ -88,9 +88,10 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
 
     GOGGLES_TRY(load_preset_textures());
 
-    GOGGLES_LOG_INFO("FilterChain loaded preset: {} ({} passes, {} textures, {} aliases, {} params)",
-                     preset_path.filename().string(), m_passes.size(), m_texture_registry.size(),
-                     m_alias_to_pass_index.size(), m_preset.parameters.size());
+    GOGGLES_LOG_INFO(
+        "FilterChain loaded preset: {} ({} passes, {} textures, {} aliases, {} params)",
+        preset_path.filename().string(), m_passes.size(), m_texture_registry.size(),
+        m_alias_to_pass_index.size(), m_preset.parameters.size());
     return {};
 }
 
@@ -338,7 +339,8 @@ auto FilterChain::calculate_pass_output_size(const ShaderPassConfig& pass_config
 
 auto FilterChain::load_preset_textures() -> Result<void> {
     for (const auto& tex_config : m_preset.textures) {
-        TextureLoadConfig load_cfg{.generate_mipmaps = tex_config.mipmap, .linear = tex_config.linear};
+        TextureLoadConfig load_cfg{.generate_mipmaps = tex_config.mipmap,
+                                   .linear = tex_config.linear};
 
         auto tex_data_result = m_texture_loader->load_from_file(tex_config.path, load_cfg);
         if (!tex_data_result) {
@@ -358,10 +360,9 @@ auto FilterChain::load_preset_textures() -> Result<void> {
     return {};
 }
 
-auto FilterChain::create_texture_sampler(const TextureConfig& config)
-    -> Result<vk::UniqueSampler> {
-    vk::Filter filter = (config.filter_mode == FilterMode::LINEAR) ? vk::Filter::eLinear
-                                                                   : vk::Filter::eNearest;
+auto FilterChain::create_texture_sampler(const TextureConfig& config) -> Result<vk::UniqueSampler> {
+    vk::Filter filter =
+        (config.filter_mode == FilterMode::LINEAR) ? vk::Filter::eLinear : vk::Filter::eNearest;
 
     vk::SamplerAddressMode address_mode;
     switch (config.wrap_mode) {
@@ -404,8 +405,8 @@ auto FilterChain::create_texture_sampler(const TextureConfig& config)
     auto [result, sampler] = m_vk_ctx.device.createSamplerUnique(sampler_info);
     if (result != vk::Result::eSuccess) {
         return make_error<vk::UniqueSampler>(ErrorCode::VULKAN_INIT_FAILED,
-                                              "Failed to create texture sampler: " +
-                                                  vk::to_string(result));
+                                             "Failed to create texture sampler: " +
+                                                 vk::to_string(result));
     }
     return Result<vk::UniqueSampler>{std::move(sampler)};
 }
