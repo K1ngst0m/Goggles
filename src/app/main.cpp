@@ -62,7 +62,6 @@ auto main() -> int {
         SDL_Quit();
         return EXIT_FAILURE;
     }
-    GOGGLES_LOG_INFO("Window created (1280x720, Vulkan-enabled)");
 
     goggles::render::VulkanBackend vulkan_backend;
     auto init_result = vulkan_backend.init(window, config.render.enable_validation, "shaders",

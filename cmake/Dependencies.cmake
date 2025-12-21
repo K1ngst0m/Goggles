@@ -55,6 +55,18 @@ CPMAddPackage(
         "CATCH_INSTALL_EXTRAS OFF"
 )
 
+# stb - single-file public domain libraries (image loading)
+CPMAddPackage(
+    NAME stb
+    GITHUB_REPOSITORY nothings/stb
+    GIT_TAG f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31
+    DOWNLOAD_ONLY YES
+)
+if(stb_ADDED)
+    add_library(stb_image INTERFACE)
+    target_include_directories(stb_image INTERFACE ${stb_SOURCE_DIR})
+endif()
+
 # ============================================================================
 # Threading & Concurrency Dependencies
 # ============================================================================

@@ -92,3 +92,15 @@ TODO.local
 # Core dumps
 core
 core.*
+
+# RetroArch shaders - ignore all except tracked zfast-crt files
+shaders/retroarch/*
+!shaders/retroarch/crt/
+shaders/retroarch/crt/*
+!shaders/retroarch/crt/zfast-crt.slangp
+!shaders/retroarch/crt/shaders/
+shaders/retroarch/crt/shaders/*
+!shaders/retroarch/crt/shaders/zfast_crt/
+shaders/retroarch/crt/shaders/zfast_crt/*
+!shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_finemask.slang
+!shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_impl.inc

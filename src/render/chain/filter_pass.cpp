@@ -9,6 +9,20 @@ namespace goggles::render {
 
 namespace {
 
+auto convert_wrap_mode(WrapMode mode) -> vk::SamplerAddressMode {
+    switch (mode) {
+    case WrapMode::CLAMP_TO_EDGE:
+        return vk::SamplerAddressMode::eClampToEdge;
+    case WrapMode::REPEAT:
+        return vk::SamplerAddressMode::eRepeat;
+    case WrapMode::MIRRORED_REPEAT:
+        return vk::SamplerAddressMode::eMirroredRepeat;
+    case WrapMode::CLAMP_TO_BORDER:
+    default:
+        return vk::SamplerAddressMode::eClampToBorder;
+    }
+}
+
 constexpr std::array<Vertex, 6> FULLSCREEN_QUAD_VERTICES = {{
     {.position = {-1.0F, -1.0F, 0.0F, 1.0F}, .texcoord = {0.0F, 0.0F}},
     {.position = {1.0F, -1.0F, 0.0F, 1.0F}, .texcoord = {1.0F, 0.0F}},
@@ -66,7 +80,7 @@ auto FilterPass::init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime
         GOGGLES_LOG_DEBUG("  Param: '{}' default={}", param.name, param.default_value);
     }
 
-    GOGGLES_TRY(create_sampler(config.filter_mode));
+    GOGGLES_TRY(create_sampler(config.filter_mode, config.mipmap, config.wrap_mode));
 
     if (m_has_vertex_inputs) {
         GOGGLES_TRY(create_vertex_buffer());
@@ -137,9 +151,20 @@ void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
     image_infos.reserve(m_merged_reflection.textures.size());
 
     for (const auto& tex : m_merged_reflection.textures) {
+        vk::ImageView view = source_view;
+        vk::Sampler sampler = *m_sampler;
+
+        auto it = m_texture_bindings.find(tex.name);
+        if (it != m_texture_bindings.end()) {
+            view = it->second.view;
+            if (it->second.sampler) {
+                sampler = it->second.sampler;
+            }
+        }
+
         vk::DescriptorImageInfo image_info{};
-        image_info.sampler = *m_sampler;
-        image_info.imageView = source_view;
+        image_info.sampler = sampler;
+        image_info.imageView = view;
         image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         image_infos.push_back(image_info);
 
@@ -184,10 +209,20 @@ void FilterPass::build_push_constants() {
             std::memcpy(dest, &frame_count, sizeof(uint32_t));
         } else if (member.name == "FinalViewportSize") {
             std::memcpy(dest, m_binder.final_viewport_size().data(), sizeof(SizeVec4));
+        } else if (member.name.size() > 4 && member.name.ends_with("Size")) {
+            auto alias_name = member.name.substr(0, member.name.size() - 4);
+            if (auto alias_size = m_binder.get_alias_size(alias_name)) {
+                std::memcpy(dest, alias_size->data(), sizeof(SizeVec4));
+            }
         } else {
             for (const auto& param : m_parameters) {
                 if (param.name == member.name) {
-                    std::memcpy(dest, &param.default_value, sizeof(float));
+                    float value = param.default_value;
+                    auto override_it = m_parameter_overrides.find(param.name);
+                    if (override_it != m_parameter_overrides.end()) {
+                        value = override_it->second;
+                    }
+                    std::memcpy(dest, &value, sizeof(float));
                     break;
                 }
             }
@@ -248,22 +283,28 @@ void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     cmd.endRendering();
 }
 
-auto FilterPass::create_sampler(FilterMode filter_mode) -> Result<void> {
+auto FilterPass::create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wrap_mode) -> Result<void> {
     vk::Filter filter =
         (filter_mode == FilterMode::LINEAR) ? vk::Filter::eLinear : vk::Filter::eNearest;
+
+    vk::SamplerMipmapMode mipmap_mode =
+        (filter_mode == FilterMode::LINEAR) ? vk::SamplerMipmapMode::eLinear
+                                             : vk::SamplerMipmapMode::eNearest;
+
+    vk::SamplerAddressMode address_mode = convert_wrap_mode(wrap_mode);
 
     vk::SamplerCreateInfo create_info{};
     create_info.magFilter = filter;
     create_info.minFilter = filter;
-    create_info.mipmapMode = vk::SamplerMipmapMode::eNearest;
-    create_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-    create_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-    create_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+    create_info.mipmapMode = mipmap_mode;
+    create_info.addressModeU = address_mode;
+    create_info.addressModeV = address_mode;
+    create_info.addressModeW = address_mode;
     create_info.mipLodBias = 0.0F;
     create_info.anisotropyEnable = VK_FALSE;
     create_info.compareEnable = VK_FALSE;
     create_info.minLod = 0.0F;
-    create_info.maxLod = 0.0F;
+    create_info.maxLod = mipmap ? VK_LOD_CLAMP_NONE : 0.0F;
     create_info.borderColor = vk::BorderColor::eFloatOpaqueBlack;
     create_info.unnormalizedCoordinates = VK_FALSE;
 
@@ -332,10 +373,14 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
     }
 
     m_has_ubo = true;
-    auto ubo_size = m_merged_reflection.ubo->total_size;
+    m_ubo_size = m_merged_reflection.ubo->total_size;
+
+    for (const auto& member : m_merged_reflection.ubo->members) {
+        m_ubo_member_offsets[member.name] = member.offset;
+    }
 
     vk::BufferCreateInfo buffer_info{};
-    buffer_info.size = ubo_size;
+    buffer_info.size = m_ubo_size;
     buffer_info.usage = vk::BufferUsageFlagBits::eUniformBuffer;
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
@@ -365,20 +410,21 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
                                 "Failed to bind UBO memory: " + vk::to_string(bind_result));
     }
 
-    auto [map_result, data] = m_device.mapMemory(*memory, 0, ubo_size);
+    auto [map_result, data] = m_device.mapMemory(*memory, 0, m_ubo_size);
     if (map_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
                                 "Failed to map UBO memory: " + vk::to_string(map_result));
     }
 
     auto ubo_data = m_binder.get_ubo();
-    std::memcpy(data, &ubo_data, std::min(ubo_size, sizeof(ubo_data)));
+    std::memcpy(data, &ubo_data, std::min(m_ubo_size, sizeof(ubo_data)));
     m_device.unmapMemory(*memory);
 
     m_ubo_buffer = std::move(buffer);
     m_ubo_memory = std::move(memory);
 
-    GOGGLES_LOG_DEBUG("UBO buffer created, size={}", ubo_size);
+    GOGGLES_LOG_DEBUG("UBO buffer created, size={}, members={}", m_ubo_size,
+                      m_ubo_member_offsets.size());
     return {};
 }
 
@@ -632,6 +678,35 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
     }
 
     m_pipeline = std::move(pipelines[0]);
+    return {};
+}
+
+auto FilterPass::update_ubo_parameters() -> Result<void> {
+    if (!m_has_ubo || !m_ubo_memory || m_ubo_size == 0) {
+        return {};
+    }
+
+    auto [map_result, data] = m_device.mapMemory(*m_ubo_memory, 0, m_ubo_size);
+    if (map_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::VULKAN_INIT_FAILED,
+                                "Failed to map UBO memory: " + vk::to_string(map_result));
+    }
+
+    auto* ubo_data = static_cast<char*>(data);
+
+    for (const auto& param : m_parameters) {
+        auto it = m_ubo_member_offsets.find(param.name);
+        if (it != m_ubo_member_offsets.end()) {
+            float value = param.default_value;
+            auto override_it = m_parameter_overrides.find(param.name);
+            if (override_it != m_parameter_overrides.end()) {
+                value = override_it->second;
+            }
+            std::memcpy(ubo_data + it->second, &value, sizeof(float));
+        }
+    }
+
+    m_device.unmapMemory(*m_ubo_memory);
     return {};
 }
 

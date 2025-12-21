@@ -2,7 +2,13 @@
 
 A hooking-based frame streaming tool with support for RetroArch shader processing.
 
-![Showcase](showcase.webp)
+| zfast-crt |
+| :---: |
+| ![showcase_zfast_crt](showcase-zfast-crt.webp) |
+
+| crt-royale |
+| :---: |
+| ![showcase_crt_royale](showcase-crt-royale.png)|
 
 Goggles captures Vulkan application frames and shares them across processes using Linux DMA-BUF with DRM format modifiers. 
 

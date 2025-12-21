@@ -7,6 +7,7 @@
 #include <array>
 #include <render/shader/retroarch_preprocessor.hpp>
 #include <render/shader/slang_reflect.hpp>
+#include <unordered_map>
 #include <vector>
 
 namespace goggles::render {
@@ -18,12 +19,19 @@ struct FilterPassConfig {
     std::string fragment_source;
     std::string shader_name;
     FilterMode filter_mode = FilterMode::LINEAR;
+    bool mipmap = false;
+    WrapMode wrap_mode = WrapMode::CLAMP_TO_EDGE;
     std::vector<ShaderParameter> parameters;
 };
 
 struct Vertex {
     std::array<float, 4> position;
     std::array<float, 2> texcoord;
+};
+
+struct PassTextureBinding {
+    vk::ImageView view;
+    vk::Sampler sampler;
 };
 
 class FilterPass : public Pass {
@@ -55,6 +63,22 @@ public:
     void set_final_viewport_size(uint32_t width, uint32_t height) {
         m_binder.set_final_viewport_size(width, height);
     }
+    void set_alias_size(const std::string& alias, uint32_t width, uint32_t height) {
+        m_binder.set_alias_size(alias, width, height);
+    }
+    void clear_alias_sizes() { m_binder.clear_alias_sizes(); }
+
+    void set_texture_binding(const std::string& name, vk::ImageView view, vk::Sampler sampler) {
+        m_texture_bindings[name] = {.view=view, .sampler=sampler};
+    }
+    void clear_texture_bindings() { m_texture_bindings.clear(); }
+
+    void set_parameter_override(const std::string& name, float value) {
+        m_parameter_overrides[name] = value;
+    }
+    void clear_parameter_overrides() { m_parameter_overrides.clear(); }
+
+    [[nodiscard]] auto update_ubo_parameters() -> Result<void>;
 
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 
@@ -63,7 +87,7 @@ private:
     [[nodiscard]] auto create_pipeline_layout() -> Result<void>;
     [[nodiscard]] auto create_pipeline(const std::vector<uint32_t>& vertex_spirv,
                                        const std::vector<uint32_t>& fragment_spirv) -> Result<void>;
-    [[nodiscard]] auto create_sampler(FilterMode filter_mode) -> Result<void>;
+    [[nodiscard]] auto create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wrap_mode) -> Result<void>;
     [[nodiscard]] auto create_vertex_buffer() -> Result<void>;
     [[nodiscard]] auto create_ubo_buffer() -> Result<void>;
 
@@ -104,6 +128,10 @@ private:
 
     std::vector<uint8_t> m_push_data;
     std::vector<ShaderParameter> m_parameters;
+    std::unordered_map<std::string, PassTextureBinding> m_texture_bindings;
+    std::unordered_map<std::string, size_t> m_ubo_member_offsets;
+    std::unordered_map<std::string, float> m_parameter_overrides;
+    size_t m_ubo_size = 0;
 };
 
 } // namespace goggles::render

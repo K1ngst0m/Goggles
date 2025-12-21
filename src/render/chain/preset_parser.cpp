@@ -4,6 +4,7 @@
 #include <fstream>
 #include <optional>
 #include <regex>
+#include <format>
 #include <sstream>
 #include <unordered_map>
 #include <util/logging.hpp>
@@ -53,6 +54,22 @@ auto parse_int_safe(const std::string& str) -> std::optional<int> {
     return std::nullopt;
 }
 
+auto parse_wrap_mode_value(const std::string& value) -> WrapMode {
+    std::string lower = value;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+    if (lower == "clamp_to_edge") {
+        return WrapMode::CLAMP_TO_EDGE;
+    }
+    if (lower == "repeat") {
+        return WrapMode::REPEAT;
+    }
+    if (lower == "mirrored_repeat") {
+        return WrapMode::MIRRORED_REPEAT;
+    }
+    return WrapMode::CLAMP_TO_BORDER;
+}
+
 using ValueMap = std::unordered_map<std::string, std::string>;
 
 void parse_textures(const ValueMap& values, const std::filesystem::path& base_path,
@@ -79,15 +96,21 @@ void parse_textures(const ValueMap& values, const std::filesystem::path& base_pa
             tex.path = base_path / tex_path_it->second;
         }
 
-        auto tex_filter_it = values.find(tex_name + "_linear");
-        if (tex_filter_it != values.end()) {
-            tex.filter_mode =
-                parse_bool(tex_filter_it->second) ? FilterMode::LINEAR : FilterMode::NEAREST;
+        auto tex_linear_it = values.find(tex_name + "_linear");
+        if (tex_linear_it != values.end()) {
+            bool is_linear = parse_bool(tex_linear_it->second);
+            tex.linear = is_linear;
+            tex.filter_mode = is_linear ? FilterMode::LINEAR : FilterMode::NEAREST;
         }
 
         auto tex_mipmap_it = values.find(tex_name + "_mipmap");
         if (tex_mipmap_it != values.end()) {
             tex.mipmap = parse_bool(tex_mipmap_it->second);
+        }
+
+        auto tex_wrap_it = values.find(tex_name + "_wrap_mode");
+        if (tex_wrap_it != values.end()) {
+            tex.wrap_mode = parse_wrap_mode_value(tex_wrap_it->second);
         }
 
         textures.push_back(std::move(tex));
@@ -98,8 +121,10 @@ void parse_parameters(const ValueMap& values, std::vector<ParameterOverride>& pa
     for (const auto& [key, value] : values) {
         if (key.starts_with("shader") || key.starts_with("scale") || key.starts_with("filter") ||
             key.starts_with("float") || key.starts_with("srgb") || key.starts_with("alias") ||
-            key.starts_with("mipmap") || key == "shaders" || key == "textures" ||
-            key.find("_linear") != std::string::npos || key.find("_mipmap") != std::string::npos) {
+            key.starts_with("mipmap") || key.starts_with("wrap_mode") || key == "shaders" ||
+            key == "textures" || key.find("_linear") != std::string::npos ||
+            key.find("_mipmap") != std::string::npos ||
+            key.find("_wrap_mode") != std::string::npos) {
             continue;
         }
 
@@ -205,11 +230,11 @@ auto PresetParser::parse_ini(const std::string& content, const std::filesystem::
             pass.scale_x = parse_float_safe(scale_it->second, 1.0F);
             pass.scale_y = pass.scale_x;
         }
-        auto scale_x_it = values.find(scale_prefix + "_x");
+        auto scale_x_it = values.find("scale_x" + std::to_string(i));
         if (scale_x_it != values.end()) {
             pass.scale_x = parse_float_safe(scale_x_it->second, 1.0F);
         }
-        auto scale_y_it = values.find(scale_prefix + "_y");
+        auto scale_y_it = values.find("scale_y" + std::to_string(i));
         if (scale_y_it != values.end()) {
             pass.scale_y = parse_float_safe(scale_y_it->second, 1.0F);
         }
@@ -246,6 +271,13 @@ auto PresetParser::parse_ini(const std::string& content, const std::filesystem::
             pass.mipmap = parse_bool(mipmap_it->second);
         }
 
+        // Wrap mode
+        auto wrap_prefix = std::format("wrap_mode{}", i);
+        auto wrap_it = values.find(wrap_prefix);
+        if (wrap_it != values.end()) {
+            pass.wrap_mode = parse_wrap_mode_value(wrap_it->second);
+        }
+
         config.passes.push_back(std::move(pass));
     }
 
@@ -279,6 +311,10 @@ auto PresetParser::parse_format(bool is_float, bool is_srgb) -> vk::Format {
         return vk::Format::eR8G8B8A8Srgb;
     }
     return vk::Format::eR8G8B8A8Unorm;
+}
+
+auto PresetParser::parse_wrap_mode(const std::string& value) -> WrapMode {
+    return parse_wrap_mode_value(value);
 }
 
 } // namespace goggles::render

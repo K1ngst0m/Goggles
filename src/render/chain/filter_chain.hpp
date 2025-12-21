@@ -6,9 +6,16 @@
 #include "preset_parser.hpp"
 
 #include <memory>
+#include <render/texture/texture_loader.hpp>
+#include <unordered_map>
 #include <vector>
 
 namespace goggles::render {
+
+struct LoadedTexture {
+    TextureData data;
+    vk::UniqueSampler sampler;
+};
 
 struct FramebufferExtents {
     vk::Extent2D viewport;
@@ -51,6 +58,9 @@ private:
     [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents,
                                            vk::Extent2D viewport_extent) -> Result<void>;
 
+    [[nodiscard]] auto load_preset_textures() -> Result<void>;
+    [[nodiscard]] auto create_texture_sampler(const TextureConfig& config) -> Result<vk::UniqueSampler>;
+
     VulkanContext m_vk_ctx;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     uint32_t m_num_sync_indices = 0;
@@ -63,6 +73,10 @@ private:
 
     PresetConfig m_preset;
     uint32_t m_frame_count = 0;
+
+    std::unique_ptr<TextureLoader> m_texture_loader;
+    std::unordered_map<std::string, LoadedTexture> m_texture_registry;
+    std::unordered_map<std::string, size_t> m_alias_to_pass_index;
 
     ScaleMode m_last_scale_mode = ScaleMode::STRETCH;
     uint32_t m_last_integer_scale = 0;

@@ -68,13 +68,20 @@ auto ShaderRuntime::init() -> Result<void> {
     target_desc.format = SLANG_SPIRV;
     target_desc.profile = m_impl->global_session->findProfile("spirv_1_3");
 
-    std::array<slang::CompilerOptionEntry, 1> options = {
-        {{.name = slang::CompilerOptionName::EmitSpirvDirectly,
-          .value = {.kind = slang::CompilerOptionValueKind::Int,
-                    .intValue0 = 1,
-                    .intValue1 = 0,
-                    .stringValue0 = nullptr,
-                    .stringValue1 = nullptr}}}};
+    std::array<slang::CompilerOptionEntry, 2> options = {{
+        {.name = slang::CompilerOptionName::EmitSpirvDirectly,
+         .value = {.kind = slang::CompilerOptionValueKind::Int,
+                   .intValue0 = 1,
+                   .intValue1 = 0,
+                   .stringValue0 = nullptr,
+                   .stringValue1 = nullptr}},
+        {.name = slang::CompilerOptionName::Optimization,
+         .value = {.kind = slang::CompilerOptionValueKind::Int,
+                   .intValue0 = SLANG_OPTIMIZATION_LEVEL_HIGH,
+                   .intValue1 = 0,
+                   .stringValue0 = nullptr,
+                   .stringValue1 = nullptr}}
+    }};
 
     // HLSL session (existing behavior)
     slang::SessionDesc hlsl_session_desc = {};
