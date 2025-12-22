@@ -27,3 +27,27 @@ The application SHALL run an event loop that processes window events until the u
 - **THEN** the event loop SHALL exit
 - **AND** SDL3 resources SHALL be cleaned up
 
+### Requirement: Command Line Interface
+The application SHALL support command-line arguments to override default behavior and provide information without throwing exceptions into the main execution flow.
+
+#### Scenario: Display help
+- **WHEN** the application is run with `--help`
+- **THEN** it SHALL print usage information
+- **AND** it SHALL exit with code 0
+
+#### Scenario: Display version
+- **WHEN** the application is run with `--version`
+- **THEN** it SHALL print "Goggles v0.1.0"
+- **AND** it SHALL exit with code 0
+
+#### Scenario: Exception encapsulation
+- **GIVEN** the application uses CLI11 for parsing
+- **WHEN** `parse_cli` is called
+- **THEN** it MUST catch all library exceptions internally
+- **AND** it MUST return a `nonstd::expected` value-based result
+
+#### Scenario: Override shader preset
+- **GIVEN** a valid `.slangp` file exists
+- **WHEN** run with `--shader <path>`
+- **THEN** the specified preset SHALL be loaded regardless of config file settings
+
