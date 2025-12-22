@@ -157,9 +157,9 @@ auto VulkanBackend::create_instance(bool enable_validation) -> Result<void> {
 
     vk::ApplicationInfo app_info{};
     app_info.pApplicationName = "Goggles";
-    app_info.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
+    app_info.applicationVersion = VK_MAKE_VERSION(GOGGLES_VERSION_MAJOR, GOGGLES_VERSION_MINOR, GOGGLES_VERSION_PATCH);
     app_info.pEngineName = "Goggles";
-    app_info.engineVersion = VK_MAKE_VERSION(0, 1, 0);
+    app_info.engineVersion = VK_MAKE_VERSION(GOGGLES_VERSION_MAJOR, GOGGLES_VERSION_MINOR, GOGGLES_VERSION_PATCH);
     app_info.apiVersion = VK_API_VERSION_1_3;
 
     vk::InstanceCreateInfo create_info{};
