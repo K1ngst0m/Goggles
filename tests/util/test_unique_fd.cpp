@@ -97,7 +97,11 @@ TEST_CASE("UniqueFd move semantics", "[unique_fd]") {
         REQUIRE(raw_fd >= 0);
 
         UniqueFd fd{raw_fd};
-        fd = std::move(fd);
+
+        // Test self-move using indirection to avoid compiler warning
+        // This still tests the same runtime behavior (this == &other)
+        UniqueFd* ptr = &fd;
+        fd = std::move(*ptr);
 
         // Should still be valid after self-assignment
         REQUIRE(fd.valid());

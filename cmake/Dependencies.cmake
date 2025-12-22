@@ -64,7 +64,7 @@ CPMAddPackage(
 )
 if(stb_ADDED)
     add_library(stb_image INTERFACE)
-    target_include_directories(stb_image INTERFACE ${stb_SOURCE_DIR})
+    target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
 endif()
 
 # ============================================================================
