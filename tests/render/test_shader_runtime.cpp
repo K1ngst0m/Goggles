@@ -1,6 +1,8 @@
 #include "render/shader/shader_runtime.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
+#include <fstream>
 
 using namespace goggles::render;
 
@@ -113,6 +115,59 @@ void main() {
         REQUIRE(result.has_value());
         REQUIRE(!result.value().vertex_spirv.empty());
         REQUIRE(!result.value().fragment_spirv.empty());
+    }
+}
+
+TEST_CASE("ShaderRuntime caching", "[shader][cache]") {
+    ShaderRuntime runtime;
+    REQUIRE(runtime.init().has_value());
+
+    const std::string vert = R"(
+#version 450
+layout(location = 0) in vec2 Position;
+void main() { gl_Position = vec4(Position, 0.0, 1.0); }
+)";
+    const std::string frag = R"(
+#version 450
+layout(location = 0) out vec4 FragColor;
+void main() { FragColor = vec4(1.0, 0.0, 0.0, 1.0); }
+)";
+    const std::string module_name = "test_cache";
+
+    // Ensure cache is clean for this test
+    auto cache_dir = runtime.get_cache_dir();
+    auto cache_file = cache_dir / (module_name + "_ra.cache");
+    if (std::filesystem::exists(cache_file)) {
+        std::filesystem::remove(cache_file);
+    }
+
+    SECTION("Initial compilation creates cache") {
+        auto result = runtime.compile_retroarch_shader(vert, frag, module_name);
+        REQUIRE(result.has_value());
+        REQUIRE(std::filesystem::exists(cache_file));
+
+        auto first_spirv = result->vertex_spirv;
+
+        // Second call should load from cache
+        auto result2 = runtime.compile_retroarch_shader(vert, frag, module_name);
+        REQUIRE(result2.has_value());
+        REQUIRE(result2->vertex_spirv == first_spirv);
+    }
+
+    SECTION("Source change invalidates cache") {
+        REQUIRE(runtime.compile_retroarch_shader(vert, frag, module_name).has_value());
+        auto old_time = std::filesystem::last_write_time(cache_file);
+
+        // Slightly modified source
+        const std::string frag_mod = R"(
+#version 450
+layout(location = 0) out vec4 FragColor;
+void main() { FragColor = vec4(0.0, 1.0, 0.0, 1.0); }
+)";
+
+        auto result = runtime.compile_retroarch_shader(vert, frag_mod, module_name);
+        REQUIRE(result.has_value());
+        REQUIRE(std::filesystem::last_write_time(cache_file) > old_time);
     }
 }
 
