@@ -1,29 +1,43 @@
 #include "capture/capture_receiver.hpp"
+#include "cli.hpp"
 
 #include <SDL3/SDL.h>
+#include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <render/backend/vulkan_backend.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/logging.hpp>
 
-auto main() -> int {
-    goggles::initialize_logger("goggles");
-    GOGGLES_LOG_INFO("Goggles v0.1.0 starting");
+static auto run_app(int argc, char** argv) -> int {
+    auto cli_result = goggles::app::parse_cli(argc, argv);
+    if (!cli_result) {
+        return (cli_result.error().code == goggles::ErrorCode::ok) ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    const auto& cli_opts = cli_result.value();
 
-    const auto config_path = std::filesystem::path("config/goggles.toml");
-    auto config_result = goggles::load_config(config_path);
+    goggles::initialize_logger("goggles");
+    GOGGLES_LOG_INFO(GOGGLES_PROJECT_NAME " v" GOGGLES_VERSION " starting");
+
+    auto config_result = goggles::load_config(cli_opts.config_path);
 
     goggles::Config config;
     if (!config_result) {
         const auto& error = config_result.error();
-        GOGGLES_LOG_ERROR("Failed to load configuration: {} ({})", error.message,
+        GOGGLES_LOG_ERROR("Failed to load configuration from '{}': {} ({})",
+                          cli_opts.config_path.string(), error.message,
                           goggles::error_code_name(error.code));
         GOGGLES_LOG_INFO("Using default configuration");
         config = goggles::default_config();
     } else {
         config = config_result.value();
+    }
+
+    if (!cli_opts.shader_preset.empty()) {
+        config.shader.preset = cli_opts.shader_preset;
+        GOGGLES_LOG_INFO("Shader preset overridden by CLI: {}", config.shader.preset);
     }
 
     if (config.logging.level == "trace") {
@@ -136,4 +150,22 @@ auto main() -> int {
     GOGGLES_LOG_INFO("Goggles terminated successfully");
 
     return EXIT_SUCCESS;
+}
+
+auto main(int argc, char** argv) -> int {
+    try {
+        return run_app(argc, argv);
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[CRITICAL] Unhandled exception: %s\n", e.what());
+        try {
+            GOGGLES_LOG_CRITICAL("Unhandled exception caught in main: {}", e.what());
+            spdlog::shutdown();
+        } catch (...) {
+            std::fprintf(stderr, "[CRITICAL] Logger failed to handle exception\n");
+        }
+        return EXIT_FAILURE;
+    } catch (...) {
+        std::fprintf(stderr, "[CRITICAL] Unknown exception caught in main\n");
+        return EXIT_FAILURE;
+    }
 }

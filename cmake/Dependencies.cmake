@@ -55,6 +55,15 @@ CPMAddPackage(
         "CATCH_INSTALL_EXTRAS OFF"
 )
 
+CPMAddPackage(
+    NAME CLI11
+    GITHUB_REPOSITORY CLIUtils/CLI11
+    VERSION 2.6.0
+    OPTIONS
+        "CLI11_BUILD_TESTS OFF"
+        "CLI11_BUILD_EXAMPLES OFF"
+)
+
 # stb - single-file public domain libraries (image loading)
 CPMAddPackage(
     NAME stb
