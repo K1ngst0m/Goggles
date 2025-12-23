@@ -117,20 +117,20 @@ goggles/
 
 ## External Dependencies
 - **CPM.cmake Managed:**
-    - `tl::expected` v0.8.0 (martinmoene/expected-lite) - error handling
-    - `spdlog` v1.15.0 - logging
-    - `toml11` v4.2.0 - configuration parsing
-    - `Catch2` v3.8.0 - testing framework
-    - `SDL3` release-3.2.0 (libsdl-org/SDL) - window creation and Vulkan surface support
-    - `Slang` v2025.23.2 - shader compilation (downloaded as prebuilt binary)
-    - `Tracy` v0.11.1 (wolfpld/tracy) - profiling (optional, enabled via `ENABLE_PROFILING=ON`)
+  - `tl::expected` v0.8.0 (martinmoene/expected-lite) - error handling
+  - `spdlog` v1.15.0 - logging
+  - `toml11` v4.2.0 - configuration parsing
+  - `Catch2` v3.8.0 - testing framework
+  - `SDL3` release-3.2.0 (libsdl-org/SDL) - window creation and Vulkan surface support
+  - `Slang` v2025.23.2 - shader compilation (downloaded as prebuilt binary)
+  - `Tracy` v0.13.1 (wolfpld/tracy) - profiling (optional, enabled via `ENABLE_PROFILING=ON`)
 - **System Provided:**
-    - Vulkan SDK
+  - Vulkan SDK
 - **Threading:**
-    - `BS::thread_pool` v3.5.0 (Phase 1 job system, already integrated)
-    - `Taskflow` v3.10.0 (Phase 2 upgrade path, dependency-aware, commented out)
+  - `BS::thread_pool` v3.5.0 (Phase 1 job system, already integrated)
+  - `Taskflow` v3.10.0 (Phase 2 upgrade path, dependency-aware, commented out)
 - **Internal Implementations:**
-    - `goggles::util::SPSCQueue` - custom wait-free SPSC queue in `src/util/queues.hpp`
+  - `goggles::util::SPSCQueue` - custom wait-free SPSC queue in `src/util/queues.hpp`
 
 ## Documentation Policy
 

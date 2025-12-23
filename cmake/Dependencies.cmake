@@ -107,7 +107,7 @@ if(ENABLE_PROFILING)
     CPMAddPackage(
         NAME tracy
         GITHUB_REPOSITORY wolfpld/tracy
-        VERSION 0.11.1
+        VERSION 0.13.1
         OPTIONS
             "TRACY_ENABLE ON"
             "TRACY_ON_DEMAND ON"

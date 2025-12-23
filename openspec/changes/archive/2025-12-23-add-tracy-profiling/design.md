@@ -43,10 +43,9 @@ Goggles is a real-time frame capture and post-processing application with strict
 #define GOGGLES_PROFILE_SCOPE(name)     ZoneScopedN(name)
 #define GOGGLES_PROFILE_FUNCTION()      ZoneScoped
 #define GOGGLES_PROFILE_FRAME(name)     FrameMarkNamed(name)
-#define GOGGLES_PROFILE_BEGIN(name)     /* TracyZoneBegin equivalent */
-#define GOGGLES_PROFILE_END()           /* TracyZoneEnd equivalent */
 #define GOGGLES_PROFILE_TAG(text)       ZoneText(text, strlen(text))
 #define GOGGLES_PROFILE_VALUE(name, v)  TracyPlot(name, v)
+// Note: GOGGLES_PROFILE_BEGIN/END not implemented - scoped zones preferred (see tasks.md 2.5)
 
 // When ENABLE_PROFILING is OFF:
 // All macros expand to nothing (zero overhead)

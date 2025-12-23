@@ -35,10 +35,7 @@ The system SHALL provide profiling macros in `src/util/profiling.hpp` that abstr
 - **WHEN** `GOGGLES_PROFILE_FRAME(name)` is used
 - **THEN** a frame boundary marker SHALL be emitted for frame-rate analysis
 
-#### Scenario: Manual zone control
-
-- **WHEN** `GOGGLES_PROFILE_BEGIN(name)` and `GOGGLES_PROFILE_END()` are used as a pair
-- **THEN** a profiling zone SHALL span from BEGIN to END
+> **Note:** Manual zone control via `GOGGLES_PROFILE_BEGIN/END` is not implemented. Scoped zones (`GOGGLES_PROFILE_SCOPE`, `GOGGLES_PROFILE_FUNCTION`) are used instead for RAII safety. See tasks.md item 2.5.
 
 #### Scenario: Zone annotation
 
