@@ -294,6 +294,36 @@ static uint32_t find_export_memory_type(const VkPhysicalDeviceMemoryProperties& 
     return UINT32_MAX;
 }
 
+static bool allocate_export_memory(SwapData* swap, VkDeviceData* dev_data,
+                                   const VkMemoryRequirements& mem_reqs, uint32_t mem_type_index) {
+    auto& funcs = dev_data->funcs;
+    VkDevice device = swap->device;
+
+    VkExportMemoryAllocateInfo export_info{};
+    export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+    export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.pNext = &export_info;
+    alloc_info.allocationSize = mem_reqs.size;
+    alloc_info.memoryTypeIndex = mem_type_index;
+
+    VkResult res = funcs.AllocateMemory(device, &alloc_info, nullptr, &swap->export_mem);
+    if (res != VK_SUCCESS) {
+        return false;
+    }
+
+    res = funcs.BindImageMemory(device, swap->export_image, swap->export_mem, 0);
+    if (res != VK_SUCCESS) {
+        funcs.FreeMemory(device, swap->export_mem, nullptr);
+        swap->export_mem = VK_NULL_HANDLE;
+        return false;
+    }
+
+    return true;
+}
+
 bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
@@ -380,29 +410,9 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
         return false;
     }
 
-    VkExportMemoryAllocateInfo export_info{};
-    export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
-    export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-
-    VkMemoryAllocateInfo alloc_info{};
-    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    alloc_info.pNext = &export_info;
-    alloc_info.allocationSize = mem_reqs.size;
-    alloc_info.memoryTypeIndex = mem_type_index;
-
-    res = funcs.AllocateMemory(device, &alloc_info, nullptr, &swap->export_mem);
-    if (res != VK_SUCCESS) {
+    if (!allocate_export_memory(swap, dev_data, mem_reqs, mem_type_index)) {
         funcs.DestroyImage(device, swap->export_image, nullptr);
         swap->export_image = VK_NULL_HANDLE;
-        return false;
-    }
-
-    res = funcs.BindImageMemory(device, swap->export_image, swap->export_mem, 0);
-    if (res != VK_SUCCESS) {
-        funcs.FreeMemory(device, swap->export_mem, nullptr);
-        funcs.DestroyImage(device, swap->export_image, nullptr);
-        swap->export_image = VK_NULL_HANDLE;
-        swap->export_mem = VK_NULL_HANDLE;
         return false;
     }
 
