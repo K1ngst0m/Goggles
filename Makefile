@@ -54,7 +54,7 @@ help:
 	@echo "  distclean Clean all build directories"
 	@echo ""
 	@echo "Variables:"
-	@echo "  PRESET=debug|release  Build preset (default: debug)"
+	@echo "  PRESET=debug|release|profile  Build preset (default: debug)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make dev              # Development setup"

@@ -163,6 +163,12 @@
       "displayName": "Release (i686)",
       "description": "32-bit layer only - release build",
       "inherits": [".i686", ".release"]
+    },
+    {
+      "name": "profile-i686",
+      "displayName": "Profile (i686)",
+      "description": "32-bit layer only - release build with Tracy profiler",
+      "inherits": [".i686", ".release", ".profiling"]
     }
   ],
   "buildPresets": [
@@ -218,6 +224,10 @@
     {
       "name": "release-i686",
       "configurePreset": "release-i686"
+    },
+    {
+      "name": "profile-i686",
+      "configurePreset": "profile-i686"
     }
   ],
   "testPresets": [
