@@ -73,6 +73,13 @@
       }
     },
     {
+      "name": ".profiling",
+      "hidden": true,
+      "cacheVariables": {
+        "ENABLE_PROFILING": "ON"
+      }
+    },
+    {
       "name": "debug",
       "displayName": "Debug",
       "description": "Debug build with no optimizations",
@@ -126,6 +133,13 @@
       "displayName": "Quality Assurance (Debug + ASAN + Clang-Tidy)",
       "description": "Debug build with comprehensive code quality checks",
       "inherits": [".debug", ".asan", ".clang-tidy"]
+    },
+
+    {
+      "name": "profile",
+      "displayName": "Profile (Release + Tracy)",
+      "description": "Release build with Tracy profiler enabled",
+      "inherits": [".release", ".profiling"]
     },
 
     {
@@ -190,6 +204,11 @@
     {
       "name": "quality",
       "configurePreset": "quality"
+    },
+
+    {
+      "name": "profile",
+      "configurePreset": "profile"
     },
 
     {

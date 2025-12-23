@@ -3,6 +3,7 @@
 #include "ipc_socket.hpp"
 
 #include <cinttypes>
+#include <util/profiling.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -34,6 +35,7 @@ static bool should_use_async_capture() {
 // =============================================================================
 
 void CaptureManager::worker_func() {
+    GOGGLES_PROFILE_FUNCTION();
     while (!shutdown_.load(std::memory_order_acquire)) {
         std::unique_lock lock(cv_mutex_);
         cv_.wait(lock, [this] {
@@ -293,6 +295,7 @@ static uint32_t find_export_memory_type(const VkPhysicalDeviceMemoryProperties& 
 }
 
 bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     auto* inst_data = dev_data->inst_data;
     VkDevice device = swap->device;
@@ -445,6 +448,7 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
 }
 
 bool CaptureManager::init_sync_primitives(SwapData* swap, VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
@@ -534,6 +538,7 @@ void CaptureManager::destroy_frame_resources(SwapData* swap, VkDeviceData* dev_d
 
 void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_info,
                                 VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     if (present_info->swapchainCount == 0) {
         return;
     }
@@ -576,6 +581,7 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
 void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue,
                                    VkDeviceData* dev_data,
                                    [[maybe_unused]] VkPresentInfoKHR* present_info) {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
@@ -702,6 +708,7 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
 
 void CaptureManager::record_copy_commands(SwapData* swap, FrameData& frame, VkImage src_image,
                                           VkDeviceFuncs& funcs) {
+    GOGGLES_PROFILE_FUNCTION();
     VkImage dst_image = swap->export_image;
 
     VkCommandBufferBeginInfo begin_info{};

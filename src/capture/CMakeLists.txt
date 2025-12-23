@@ -55,7 +55,10 @@ if(NOT GOGGLES_LAYER_ONLY)
     target_link_libraries(goggles_capture PRIVATE
         goggles_util
     )
+
+    goggles_enable_profiling(goggles_capture)
 endif()
 
 goggles_enable_clang_tidy(goggles_vklayer)
 goggles_enable_sanitizers(goggles_vklayer)
+goggles_enable_profiling(goggles_vklayer)

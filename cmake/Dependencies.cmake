@@ -100,6 +100,25 @@ CPMAddPackage(
 # )
 
 # ============================================================================
+# Profiling Dependencies
+# ============================================================================
+
+if(ENABLE_PROFILING)
+    CPMAddPackage(
+        NAME tracy
+        GITHUB_REPOSITORY wolfpld/tracy
+        VERSION 0.11.1
+        OPTIONS
+            "TRACY_ENABLE ON"
+            "TRACY_ON_DEMAND ON"
+    )
+    # Ensure Tracy is built with PIC for linking into shared libraries
+    if(TARGET TracyClient)
+        set_target_properties(TracyClient PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+endif()
+
+# ============================================================================
 # Windowing & Platform Dependencies
 # ============================================================================
 

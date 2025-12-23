@@ -7,6 +7,7 @@
 #include <cstring>
 #include <render/chain/pass.hpp>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 #include <util/unique_fd.hpp>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
@@ -47,6 +48,8 @@ VulkanBackend::~VulkanBackend() {
 auto VulkanBackend::init(SDL_Window* window, bool enable_validation,
                          const std::filesystem::path& shader_dir, ScaleMode scale_mode,
                          uint32_t integer_scale) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (m_initialized) {
         return {};
     }
@@ -332,6 +335,8 @@ auto VulkanBackend::create_device() -> Result<void> {
 
 auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format preferred_format)
     -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     auto [cap_result, capabilities] = m_physical_device.getSurfaceCapabilitiesKHR(*m_surface);
     if (cap_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
@@ -429,6 +434,8 @@ void VulkanBackend::cleanup_swapchain() {
 }
 
 auto VulkanBackend::recreate_swapchain() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     int width = 0;
     int height = 0;
     SDL_GetWindowSize(m_window, &width, &height);
@@ -575,6 +582,8 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
 }
 
 auto VulkanBackend::init_filter_chain() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     GOGGLES_TRY(m_shader_runtime.init());
 
     VulkanContext vk_ctx{.device = *m_device,
@@ -586,6 +595,8 @@ auto VulkanBackend::init_filter_chain() -> Result<void> {
 }
 
 void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path) {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (!m_initialized) {
         GOGGLES_LOG_WARN("Cannot load shader preset: VulkanBackend not initialized");
         return;
@@ -606,6 +617,8 @@ void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path)
 }
 
 auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost, "waitIdle failed before reimport");
     cleanup_imported_image();
 
@@ -762,6 +775,8 @@ void VulkanBackend::cleanup_imported_image() {
 }
 
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
+    GOGGLES_PROFILE_SCOPE("AcquireImage");
+
     auto& frame = m_frames[m_current_frame];
 
     auto wait_result = m_device->waitForFences(frame.in_flight_fence, VK_TRUE, UINT64_MAX);
@@ -793,6 +808,8 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
 
 auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index)
     -> Result<void> {
+    GOGGLES_PROFILE_SCOPE("RecordCommands");
+
     VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
 
     vk::CommandBufferBeginInfo begin_info{};
@@ -906,6 +923,8 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
 }
 
 auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
+    GOGGLES_PROFILE_SCOPE("SubmitPresent");
+
     auto& frame = m_frames[m_current_frame];
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     vk::Semaphore render_finished_sem = m_render_finished_sems[image_index];
@@ -948,6 +967,8 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 }
 
 auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (!m_initialized) {
         return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
@@ -968,6 +989,8 @@ auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
 }
 
 auto VulkanBackend::render_clear() -> Result<bool> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (!m_initialized) {
         return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }

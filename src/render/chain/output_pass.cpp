@@ -3,6 +3,7 @@
 #include <array>
 #include <render/shader/shader_runtime.hpp>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -12,6 +13,8 @@ OutputPass::~OutputPass() {
 
 auto OutputPass::init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
                       const OutputPassConfig& config) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (m_initialized) {
         return {};
     }
@@ -67,6 +70,8 @@ void OutputPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
 }
 
 void OutputPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
+    GOGGLES_PROFILE_FUNCTION();
+
     update_descriptor(ctx.frame_index, ctx.source_texture);
 
     auto scaled = calculate_viewport(ctx.source_extent.width, ctx.source_extent.height,

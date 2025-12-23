@@ -34,3 +34,4 @@ target_compile_definitions(goggles_render PUBLIC
 
 goggles_enable_clang_tidy(goggles_render)
 goggles_enable_sanitizers(goggles_render)
+goggles_enable_profiling(goggles_render)

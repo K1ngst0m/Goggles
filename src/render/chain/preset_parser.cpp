@@ -8,6 +8,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -139,6 +140,8 @@ void parse_parameters(const ValueMap& values, std::vector<ParameterOverride>& pa
 } // namespace
 
 auto PresetParser::load(const std::filesystem::path& preset_path) -> Result<PresetConfig> {
+    GOGGLES_PROFILE_FUNCTION();
+
     auto content_result = read_file(preset_path);
     if (!content_result) {
         return make_error<PresetConfig>(content_result.error().code,

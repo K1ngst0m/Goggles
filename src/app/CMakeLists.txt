@@ -22,3 +22,4 @@ set_target_properties(goggles PROPERTIES
 
 goggles_enable_clang_tidy(goggles)
 goggles_enable_sanitizers(goggles)
+goggles_enable_profiling(goggles)

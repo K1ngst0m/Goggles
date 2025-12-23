@@ -123,6 +123,7 @@ goggles/
     - `Catch2` v3.8.0 - testing framework
     - `SDL3` release-3.2.0 (libsdl-org/SDL) - window creation and Vulkan surface support
     - `Slang` v2025.23.2 - shader compilation (downloaded as prebuilt binary)
+    - `Tracy` v0.11.1 (wolfpld/tracy) - profiling (optional, enabled via `ENABLE_PROFILING=ON`)
 - **System Provided:**
     - Vulkan SDK
 - **Threading:**

@@ -4,6 +4,7 @@
 #include <cstring>
 #include <render/shader/shader_runtime.hpp>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -40,6 +41,8 @@ FilterPass::~FilterPass() {
 
 auto FilterPass::init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
                       const FilterPassConfig& config) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (m_initialized) {
         return {};
     }
@@ -129,6 +132,8 @@ void FilterPass::shutdown() {
 }
 
 void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
+    GOGGLES_PROFILE_SCOPE("UpdateDescriptor");
+
     std::vector<vk::WriteDescriptorSet> writes;
     std::vector<vk::DescriptorImageInfo> image_infos;
     vk::DescriptorBufferInfo ubo_info{};
@@ -184,6 +189,8 @@ void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
 }
 
 void FilterPass::build_push_constants() {
+    GOGGLES_PROFILE_SCOPE("BuildPushConstants");
+
     if (!m_has_push_constants || m_push_data.empty() ||
         !m_merged_reflection.push_constants.has_value()) {
         return;
@@ -231,6 +238,8 @@ void FilterPass::build_push_constants() {
 }
 
 void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
+    GOGGLES_PROFILE_FUNCTION();
+
     update_descriptor(ctx.frame_index, ctx.source_texture);
 
     vk::RenderingAttachmentInfo color_attachment{};
@@ -560,6 +569,8 @@ auto FilterPass::create_pipeline_layout() -> Result<void> {
 
 auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
                                  const std::vector<uint32_t>& fragment_spirv) -> Result<void> {
+    GOGGLES_PROFILE_SCOPE("CreatePipeline");
+
     vk::ShaderModuleCreateInfo vert_module_info{};
     vert_module_info.codeSize = vertex_spirv.size() * sizeof(uint32_t);
     vert_module_info.pCode = vertex_spirv.data();
