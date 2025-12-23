@@ -660,6 +660,15 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
 
     SwapData* swap = &it->second;
 
+    auto& socket = get_layer_socket();
+    if (!socket.is_connected()) {
+        if (socket.connect()) {
+            LAYER_DEBUG("Connected to Goggles app");
+        } else {
+            return;
+        }
+    }
+
     if (!swap->export_initialized) {
         LAYER_DEBUG("Initializing export image...");
         if (!init_export_image(swap, dev_data)) {
@@ -669,13 +678,6 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
         if (!init_copy_cmds(swap, dev_data)) {
             LAYER_DEBUG("Copy commands init FAILED");
             return;
-        }
-    }
-
-    auto& socket = get_layer_socket();
-    if (!socket.is_connected()) {
-        if (socket.connect()) {
-            LAYER_DEBUG("Connected to Goggles app");
         }
     }
 
