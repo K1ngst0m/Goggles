@@ -157,6 +157,7 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
         VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
         VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
         VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
+        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
     };
 
     for (const auto* req_ext : required_exts) {
@@ -175,6 +176,12 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
     VkDeviceCreateInfo modified_info = *pCreateInfo;
     modified_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     modified_info.ppEnabledExtensionNames = extensions.data();
+
+    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_features{};
+    timeline_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    timeline_features.timelineSemaphore = VK_TRUE;
+    timeline_features.pNext = const_cast<void*>(modified_info.pNext);
+    modified_info.pNext = &timeline_features;
 
     auto create_func =
         reinterpret_cast<PFN_vkCreateDevice>(gipa(inst_data->instance, "vkCreateDevice"));
@@ -228,6 +235,7 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
     GETADDR(ResetFences);
     GETADDR(CreateSemaphore);
     GETADDR(DestroySemaphore);
+    GETADDR(WaitSemaphoresKHR);
 
 #undef GETADDR
 

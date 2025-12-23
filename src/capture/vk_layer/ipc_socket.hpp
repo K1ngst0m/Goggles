@@ -2,6 +2,8 @@
 
 #include "capture/capture_protocol.hpp"
 
+#include <mutex>
+
 namespace goggles::capture {
 
 class LayerSocketClient {
@@ -14,12 +16,13 @@ public:
 
     bool connect();
     void disconnect();
-    bool is_connected() const { return socket_fd_ >= 0; }
+    bool is_connected() const;
     bool send_texture(const CaptureTextureData& data, int dmabuf_fd);
     bool poll_control(CaptureControl& control);
-    bool is_capturing() const { return capturing_; }
+    bool is_capturing() const;
 
 private:
+    mutable std::mutex mutex_;
     int socket_fd_ = -1;
     bool capturing_ = false;
     int64_t last_connect_attempt_ = 0;

@@ -69,6 +69,7 @@ struct VkDeviceFuncs {
     PFN_vkResetFences ResetFences;
     PFN_vkCreateSemaphore CreateSemaphore;
     PFN_vkDestroySemaphore DestroySemaphore;
+    PFN_vkWaitSemaphoresKHR WaitSemaphoresKHR;
 };
 
 struct VkInstData {

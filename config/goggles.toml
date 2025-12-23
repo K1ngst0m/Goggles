@@ -16,6 +16,7 @@ backend = "vulkan_layer"
 # Path to shader preset file (.slangp)
 # Leave empty for passthrough mode (no processing)
 preset = "shaders/retroarch/crt/crt-royale.slangp"
+# preset = "shaders/retroarch/handheld/lcd3x.slangp"
 
 # =============================================================================
 # Render Settings

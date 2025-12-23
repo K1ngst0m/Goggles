@@ -91,6 +91,11 @@ public:
         return (current_head - current_tail) & m_capacity_mask;
     }
 
+    [[nodiscard]] auto empty() const -> bool {
+        const size_t current_tail = m_tail.load(std::memory_order_relaxed);
+        return current_tail == m_head.load(std::memory_order_acquire);
+    }
+
     [[nodiscard]] auto capacity() const -> size_t { return m_capacity; }
 
 private:

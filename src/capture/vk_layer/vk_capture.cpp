@@ -4,12 +4,107 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
+
+struct Time {
+    static constexpr uint64_t one_sec = 1'000'000'000;
+    static constexpr uint64_t infinite = UINT64_MAX;
+};
+
+// =============================================================================
+// Async Worker Configuration
+// =============================================================================
+
+static bool should_use_async_capture() {
+    static const bool use_async = []() {
+        const char* env = std::getenv("GOGGLES_CAPTURE_ASYNC");
+        return env == nullptr || std::strcmp(env, "0") != 0;
+    }();
+    return use_async;
+}
+
+// =============================================================================
+// Async Worker Thread
+// =============================================================================
+
+void CaptureManager::worker_func() {
+    while (!shutdown_.load(std::memory_order_acquire)) {
+        std::unique_lock lock(cv_mutex_);
+        cv_.wait(lock, [this] {
+            return shutdown_.load(std::memory_order_acquire) || !async_queue_.empty();
+        });
+
+        while (!async_queue_.empty()) {
+            auto opt_item = async_queue_.try_pop();
+            if (!opt_item) {
+                break;
+            }
+            AsyncCaptureItem item = *opt_item;
+
+            auto* dev_data = get_object_tracker().get_device(item.device);
+            if (!dev_data) {
+                close(item.dmabuf_fd);
+                continue;
+            }
+
+            auto& funcs = dev_data->funcs;
+
+            VkSemaphoreWaitInfo wait_info{};
+            wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            wait_info.semaphoreCount = 1;
+            wait_info.pSemaphores = &item.timeline_sem;
+            wait_info.pValues = &item.timeline_value;
+
+            VkResult res = funcs.WaitSemaphoresKHR(item.device, &wait_info, Time::one_sec);
+            if (res != VK_SUCCESS) {
+                close(item.dmabuf_fd);
+                continue;
+            }
+
+            auto& socket = get_layer_socket();
+            if (socket.is_connected()) {
+                socket.send_texture(item.metadata, item.dmabuf_fd);
+            }
+
+            close(item.dmabuf_fd);
+        }
+    }
+
+    // Drain remaining items on shutdown
+    while (!async_queue_.empty()) {
+        auto opt_item = async_queue_.try_pop();
+        if (!opt_item) {
+            break;
+        }
+        AsyncCaptureItem item = *opt_item;
+
+        auto* dev_data = get_object_tracker().get_device(item.device);
+        if (dev_data) {
+            auto& funcs = dev_data->funcs;
+
+            VkSemaphoreWaitInfo wait_info{};
+            wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            wait_info.semaphoreCount = 1;
+            wait_info.pSemaphores = &item.timeline_sem;
+            wait_info.pValues = &item.timeline_value;
+
+            VkResult res = funcs.WaitSemaphoresKHR(item.device, &wait_info, Time::one_sec);
+            if (res == VK_SUCCESS) {
+                auto& socket = get_layer_socket();
+                if (socket.is_connected()) {
+                    socket.send_texture(item.metadata, item.dmabuf_fd);
+                }
+            }
+        }
+        close(item.dmabuf_fd);
+    }
+}
 
 // =============================================================================
 // Global Instance
@@ -18,6 +113,33 @@ namespace goggles::capture {
 CaptureManager& get_capture_manager() {
     static CaptureManager manager;
     return manager;
+}
+
+CaptureManager::CaptureManager() {
+    if (should_use_async_capture()) {
+        LAYER_DEBUG("Async capture mode enabled");
+        shutdown_.store(false, std::memory_order_release);
+        worker_thread_ = std::thread(&CaptureManager::worker_func, this);
+    } else {
+        LAYER_DEBUG("Sync capture mode enabled");
+    }
+}
+
+CaptureManager::~CaptureManager() {
+    shutdown();
+}
+
+void CaptureManager::shutdown() {
+    bool expected = false;
+    if (!shutdown_.compare_exchange_strong(expected, true, std::memory_order_release)) {
+        return;  // Already shutdown
+    }
+
+    cv_.notify_one();
+
+    if (worker_thread_.joinable()) {
+        worker_thread_.join();
+    }
 }
 
 // =============================================================================
@@ -244,11 +366,8 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
 
     VkMemoryRequirements mem_reqs;
     funcs.GetImageMemoryRequirements(device, swap->export_image, &mem_reqs);
-
-    // HOST_VISIBLE is not required for modifier-based tiling
     VkPhysicalDeviceMemoryProperties mem_props;
     inst_data->funcs.GetPhysicalDeviceMemoryProperties(dev_data->physical_device, &mem_props);
-
     uint32_t mem_type_index = find_export_memory_type(mem_props, mem_reqs.memoryTypeBits);
 
     if (mem_type_index == UINT32_MAX) {
@@ -309,9 +428,55 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     swap->dmabuf_stride = static_cast<uint32_t>(layout.rowPitch);
     swap->dmabuf_offset = static_cast<uint32_t>(layout.offset);
 
+    if (!init_sync_primitives(swap, dev_data)) {
+        close(swap->dmabuf_fd);
+        swap->dmabuf_fd = -1;
+        funcs.FreeMemory(device, swap->export_mem, nullptr);
+        funcs.DestroyImage(device, swap->export_image, nullptr);
+        swap->export_image = VK_NULL_HANDLE;
+        swap->export_mem = VK_NULL_HANDLE;
+        return false;
+    }
+
     swap->export_initialized = true;
     LAYER_DEBUG("Export image initialized: fd=%d, stride=%u, offset=%u, modifier=0x%" PRIx64,
                 swap->dmabuf_fd, swap->dmabuf_stride, swap->dmabuf_offset, swap->dmabuf_modifier);
+    return true;
+}
+
+bool CaptureManager::init_sync_primitives(SwapData* swap, VkDeviceData* dev_data) {
+    auto& funcs = dev_data->funcs;
+    VkDevice device = swap->device;
+
+    VkSemaphoreTypeCreateInfo timeline_info{};
+    timeline_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timeline_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    timeline_info.initialValue = 0;
+
+    VkSemaphoreCreateInfo sem_info{};
+    sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    sem_info.pNext = &timeline_info;
+
+    VkResult res = funcs.CreateSemaphore(device, &sem_info, nullptr, &swap->timeline_sem);
+    if (res == VK_SUCCESS) {
+        LAYER_DEBUG("Timeline semaphore created");
+    } else {
+        LAYER_DEBUG("Timeline semaphore creation failed: %d", res);
+        swap->timeline_sem = VK_NULL_HANDLE;
+    }
+
+    VkFenceCreateInfo fence_info{};
+    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    res = funcs.CreateFence(device, &fence_info, nullptr, &swap->sync_fence);
+    if (res != VK_SUCCESS) {
+        LAYER_DEBUG("Fence creation failed: %d, capture disabled", res);
+        if (swap->timeline_sem != VK_NULL_HANDLE) {
+            funcs.DestroySemaphore(device, swap->timeline_sem, nullptr);
+            swap->timeline_sem = VK_NULL_HANDLE;
+        }
+        return false;
+    }
+
     return true;
 }
 
@@ -339,14 +504,6 @@ void CaptureManager::create_frame_resources(SwapData* swap, VkDeviceData* dev_da
         cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cmd_info.commandBufferCount = 1;
         funcs.AllocateCommandBuffers(device, &cmd_info, &frame.cmd_buffer);
-
-        VkFenceCreateInfo fence_info{};
-        fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        funcs.CreateFence(device, &fence_info, nullptr, &frame.fence);
-
-        VkSemaphoreCreateInfo sem_info{};
-        sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        funcs.CreateSemaphore(device, &sem_info, nullptr, &frame.semaphore);
     }
 }
 
@@ -355,14 +512,14 @@ void CaptureManager::destroy_frame_resources(SwapData* swap, VkDeviceData* dev_d
     VkDevice device = swap->device;
 
     for (auto& frame : swap->frames) {
-        if (frame.cmd_buffer_busy && frame.fence != VK_NULL_HANDLE) {
-            funcs.WaitForFences(device, 1, &frame.fence, VK_TRUE, UINT64_MAX);
-        }
-        if (frame.semaphore != VK_NULL_HANDLE) {
-            funcs.DestroySemaphore(device, frame.semaphore, nullptr);
-        }
-        if (frame.fence != VK_NULL_HANDLE) {
-            funcs.DestroyFence(device, frame.fence, nullptr);
+        if (frame.cmd_buffer_busy && swap->timeline_sem != VK_NULL_HANDLE) {
+            VkSemaphoreWaitInfo wait_info{};
+            wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            wait_info.semaphoreCount = 1;
+            wait_info.pSemaphores = &swap->timeline_sem;
+            wait_info.pValues = &frame.timeline_value;
+
+            funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
         }
         if (frame.cmd_pool != VK_NULL_HANDLE) {
             funcs.DestroyCommandPool(device, frame.cmd_pool, nullptr);
@@ -431,21 +588,125 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     FrameData& frame = swap->frames[frame_idx];
 
     if (frame.cmd_buffer_busy) {
-        funcs.WaitForFences(device, 1, &frame.fence, VK_TRUE, UINT64_MAX);
-        funcs.ResetFences(device, 1, &frame.fence);
+        VkSemaphoreWaitInfo wait_info{};
+        wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        wait_info.semaphoreCount = 1;
+        wait_info.pSemaphores = &swap->timeline_sem;
+        wait_info.pValues = &frame.timeline_value;
+
+        funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
         frame.cmd_buffer_busy = false;
     }
 
     funcs.ResetCommandPool(device, frame.cmd_pool, 0);
 
+    VkImage src_image = swap->swap_images[image_index];
+    record_copy_commands(swap, frame, src_image, funcs);
+
+    VkResult res;
+
+    if (swap->timeline_sem != VK_NULL_HANDLE && should_use_async_capture()) {
+        uint64_t timeline_value = ++swap->frame_counter;
+        frame.timeline_value = timeline_value;
+
+        VkTimelineSemaphoreSubmitInfo timeline_submit{};
+        timeline_submit.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timeline_submit.signalSemaphoreValueCount = 1;
+        timeline_submit.pSignalSemaphoreValues = &timeline_value;
+
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.pNext = &timeline_submit;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &frame.cmd_buffer;
+        submit_info.signalSemaphoreCount = 1;
+        submit_info.pSignalSemaphores = &swap->timeline_sem;
+
+        res = funcs.QueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+        if (res != VK_SUCCESS) {
+            return;
+        }
+
+        int dup_fd = dup(swap->dmabuf_fd);
+        if (dup_fd < 0) {
+            VkSemaphoreWaitInfo wait_info{};
+            wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            wait_info.semaphoreCount = 1;
+            wait_info.pSemaphores = &swap->timeline_sem;
+            wait_info.pValues = &timeline_value;
+
+            funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
+            return;
+        }
+
+        CaptureTextureData tex_data{};
+        tex_data.type = CaptureMessageType::texture_data;
+        tex_data.width = swap->extent.width;
+        tex_data.height = swap->extent.height;
+        tex_data.format = swap->format;
+        tex_data.stride = swap->dmabuf_stride;
+        tex_data.offset = swap->dmabuf_offset;
+        tex_data.modifier = swap->dmabuf_modifier;
+
+        AsyncCaptureItem item{};
+        item.device = device;
+        item.timeline_sem = swap->timeline_sem;
+        item.timeline_value = timeline_value;
+        item.dmabuf_fd = dup_fd;
+        item.metadata = tex_data;
+
+        if (!async_queue_.try_push(item)) {
+            close(dup_fd);
+            VkSemaphoreWaitInfo wait_info{};
+            wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            wait_info.semaphoreCount = 1;
+            wait_info.pSemaphores = &swap->timeline_sem;
+            wait_info.pValues = &timeline_value;
+
+            funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
+            return;
+        }
+
+        cv_.notify_one();
+        frame.cmd_buffer_busy = true;
+    } else {
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &frame.cmd_buffer;
+
+        res = funcs.QueueSubmit(queue, 1, &submit_info, swap->sync_fence);
+        if (res != VK_SUCCESS) {
+            return;
+        }
+
+        funcs.WaitForFences(device, 1, &swap->sync_fence, VK_TRUE, Time::infinite);
+        funcs.ResetFences(device, 1, &swap->sync_fence);
+
+        auto& socket = get_layer_socket();
+        if (socket.is_connected()) {
+            CaptureTextureData tex_data{};
+            tex_data.type = CaptureMessageType::texture_data;
+            tex_data.width = swap->extent.width;
+            tex_data.height = swap->extent.height;
+            tex_data.format = swap->format;
+            tex_data.stride = swap->dmabuf_stride;
+            tex_data.offset = swap->dmabuf_offset;
+            tex_data.modifier = swap->dmabuf_modifier;
+
+            socket.send_texture(tex_data, swap->dmabuf_fd);
+        }
+    }
+}
+
+void CaptureManager::record_copy_commands(SwapData* swap, FrameData& frame, VkImage src_image,
+                                          VkDeviceFuncs& funcs) {
+    VkImage dst_image = swap->export_image;
+
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
     funcs.BeginCommandBuffer(frame.cmd_buffer, &begin_info);
-
-    VkImage src_image = swap->swap_images[image_index];
-    VkImage dst_image = swap->export_image;
 
     VkImageMemoryBarrier src_barrier{};
     src_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -503,7 +764,6 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     src_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     src_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    // GENERAL layout for external (DMA-BUF) access
     dst_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     dst_barrier.dstAccessMask = 0;
     dst_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -517,40 +777,6 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
                              0, 0, nullptr, 0, nullptr, 2, barriers);
 
     funcs.EndCommandBuffer(frame.cmd_buffer);
-
-    VkSubmitInfo submit_info{};
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &frame.cmd_buffer;
-
-    VkResult res = funcs.QueueSubmit(queue, 1, &submit_info, frame.fence);
-    if (res != VK_SUCCESS) {
-        LAYER_DEBUG("QueueSubmit failed: %d", res);
-        return;
-    }
-
-    // Synchronous wait ensures DMA-BUF contains valid data before IPC send
-    funcs.WaitForFences(device, 1, &frame.fence, VK_TRUE, UINT64_MAX);
-    funcs.ResetFences(device, 1, &frame.fence);
-    auto& socket = get_layer_socket();
-    if (socket.is_connected()) {
-        CaptureTextureData tex_data{};
-        tex_data.type = CaptureMessageType::texture_data;
-        tex_data.width = swap->extent.width;
-        tex_data.height = swap->extent.height;
-        tex_data.format = swap->format;
-        tex_data.stride = swap->dmabuf_stride;
-        tex_data.offset = swap->dmabuf_offset;
-        tex_data.modifier = swap->dmabuf_modifier;
-
-        static uint64_t frame_count = 0;
-        bool sent = socket.send_texture(tex_data, swap->dmabuf_fd);
-        if (++frame_count % 60 == 1) { // Log every 60 frames
-            LAYER_DEBUG("Frame %" PRIu64 ": send=%s, fd=%d, %ux%u, modifier=0x%" PRIx64,
-                        frame_count, sent ? "ok" : "FAIL", swap->dmabuf_fd, tex_data.width,
-                        tex_data.height, tex_data.modifier);
-        }
-    }
 }
 
 // =============================================================================
@@ -576,6 +802,16 @@ void CaptureManager::cleanup_swap_data(SwapData* swap, VkDeviceData* dev_data) {
     if (swap->export_image != VK_NULL_HANDLE) {
         funcs.DestroyImage(device, swap->export_image, nullptr);
         swap->export_image = VK_NULL_HANDLE;
+    }
+
+    if (swap->timeline_sem != VK_NULL_HANDLE) {
+        funcs.DestroySemaphore(device, swap->timeline_sem, nullptr);
+        swap->timeline_sem = VK_NULL_HANDLE;
+    }
+
+    if (swap->sync_fence != VK_NULL_HANDLE) {
+        funcs.DestroyFence(device, swap->sync_fence, nullptr);
+        swap->sync_fence = VK_NULL_HANDLE;
     }
 
     swap->export_initialized = false;
