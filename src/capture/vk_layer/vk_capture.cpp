@@ -587,7 +587,8 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     swap->frame_index = (frame_idx + 1) % static_cast<uint32_t>(swap->frames.size());
     FrameData& frame = swap->frames[frame_idx];
 
-    if (frame.cmd_buffer_busy) {
+
+    if (frame.cmd_buffer_busy && swap->timeline_sem != VK_NULL_HANDLE) {
         VkSemaphoreWaitInfo wait_info{};
         wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
         wait_info.semaphoreCount = 1;
