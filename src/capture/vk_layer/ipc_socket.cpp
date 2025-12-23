@@ -22,6 +22,8 @@ LayerSocketClient::~LayerSocketClient() {
 }
 
 bool LayerSocketClient::connect() {
+    std::lock_guard lock(mutex_);
+
     if (socket_fd_ >= 0) {
         return true;
     }
@@ -45,7 +47,6 @@ bool LayerSocketClient::connect() {
         static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + CAPTURE_SOCKET_PATH_LEN);
 
     if (::connect(socket_fd_, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
-        LAYER_DEBUG("Socket connect failed: %s (is Goggles app running?)", strerror(errno));
         close(socket_fd_);
         socket_fd_ = -1;
         return false;
@@ -75,6 +76,8 @@ bool LayerSocketClient::connect() {
 }
 
 void LayerSocketClient::disconnect() {
+    std::lock_guard lock(mutex_);
+
     if (socket_fd_ >= 0) {
         close(socket_fd_);
         socket_fd_ = -1;
@@ -82,7 +85,19 @@ void LayerSocketClient::disconnect() {
     capturing_ = false;
 }
 
+bool LayerSocketClient::is_connected() const {
+    std::lock_guard lock(mutex_);
+    return socket_fd_ >= 0;
+}
+
+bool LayerSocketClient::is_capturing() const {
+    std::lock_guard lock(mutex_);
+    return capturing_;
+}
+
 bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_fd) {
+    std::lock_guard lock(mutex_);
+
     if (socket_fd_ < 0 || dmabuf_fd < 0) {
         return false;
     }
@@ -107,7 +122,9 @@ bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_
     ssize_t sent = sendmsg(socket_fd_, &msg, MSG_NOSIGNAL);
     if (sent < 0) {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            disconnect();
+            close(socket_fd_);
+            socket_fd_ = -1;
+            capturing_ = false;
         }
         return false;
     }
@@ -116,20 +133,31 @@ bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_
 }
 
 bool LayerSocketClient::poll_control(CaptureControl& control) {
-    if (socket_fd_ < 0) {
+    int fd;
+    {
+        std::lock_guard lock(mutex_);
+        fd = socket_fd_;
+    }
+
+    if (fd < 0) {
         return false;
     }
 
-    ssize_t received = recv(socket_fd_, &control, sizeof(control), MSG_DONTWAIT);
+    ssize_t received = recv(fd, &control, sizeof(control), MSG_DONTWAIT);
+
     if (received == sizeof(control) && control.type == CaptureMessageType::control) {
+        std::lock_guard lock(mutex_);
         capturing_ = (control.capturing != 0);
         return true;
     }
 
-    if (received == 0) {
-        disconnect();
-    } else if (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-        disconnect();
+    if (received == 0 || (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+        std::lock_guard lock(mutex_);
+        if (socket_fd_ == fd) {
+            close(socket_fd_);
+            socket_fd_ = -1;
+            capturing_ = false;
+        }
     }
 
     return false;

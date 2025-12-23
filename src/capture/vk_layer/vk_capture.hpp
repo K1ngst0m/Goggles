@@ -1,9 +1,14 @@
 #pragma once
 
 #include "vk_dispatch.hpp"
+#include "capture/capture_protocol.hpp"
+#include "util/queues.hpp"
 
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -13,9 +18,16 @@ namespace goggles::capture {
 struct FrameData {
     VkCommandPool cmd_pool = VK_NULL_HANDLE;
     VkCommandBuffer cmd_buffer = VK_NULL_HANDLE;
-    VkFence fence = VK_NULL_HANDLE;
-    VkSemaphore semaphore = VK_NULL_HANDLE;
+    uint64_t timeline_value = 0;
     bool cmd_buffer_busy = false;
+};
+
+struct AsyncCaptureItem {
+    VkDevice device = VK_NULL_HANDLE;
+    VkSemaphore timeline_sem = VK_NULL_HANDLE;
+    uint64_t timeline_value = 0;
+    int dmabuf_fd = -1;
+    CaptureTextureData metadata{};
 };
 
 struct SwapData {
@@ -40,6 +52,13 @@ struct SwapData {
     uint32_t dmabuf_offset = 0;
     uint64_t dmabuf_modifier = 0;
 
+    // Timeline semaphore for async capture
+    VkSemaphore timeline_sem = VK_NULL_HANDLE;
+    uint64_t frame_counter = 0;
+
+    // Fence for sync mode fallback
+    VkFence sync_fence = VK_NULL_HANDLE;
+
     // Per-frame resources
     std::vector<FrameData> frames;
     uint32_t frame_index = 0;
@@ -51,22 +70,38 @@ struct SwapData {
 
 class CaptureManager {
 public:
+    CaptureManager();
+    ~CaptureManager();
+
     void on_swapchain_created(VkDevice device, VkSwapchainKHR swapchain,
                               const VkSwapchainCreateInfoKHR* create_info, VkDeviceData* dev_data);
     void on_swapchain_destroyed(VkDevice device, VkSwapchainKHR swapchain);
     void on_present(VkQueue queue, const VkPresentInfoKHR* present_info, VkDeviceData* dev_data);
     SwapData* get_swap_data(VkSwapchainKHR swapchain);
+    void shutdown();
 
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
+    bool init_sync_primitives(SwapData* swap, VkDeviceData* dev_data);
     void create_frame_resources(SwapData* swap, VkDeviceData* dev_data, uint32_t count);
     void destroy_frame_resources(SwapData* swap, VkDeviceData* dev_data);
     void capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue, VkDeviceData* dev_data,
                        VkPresentInfoKHR* present_info);
+    void record_copy_commands(SwapData* swap, FrameData& frame, VkImage src_image,
+                              VkDeviceFuncs& funcs);
     void cleanup_swap_data(SwapData* swap, VkDeviceData* dev_data);
+
+    void worker_func();
 
     std::mutex mutex_;
     std::unordered_map<VkSwapchainKHR, SwapData> swaps_;
+
+    // Async worker state
+    util::SPSCQueue<AsyncCaptureItem> async_queue_{16};
+    std::thread worker_thread_;
+    std::atomic<bool> shutdown_{false};
+    std::mutex cv_mutex_;
+    std::condition_variable cv_;
 };
 
 CaptureManager& get_capture_manager();
