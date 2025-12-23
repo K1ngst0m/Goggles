@@ -25,3 +25,4 @@ target_include_directories(goggles_util PUBLIC
 
 goggles_enable_clang_tidy(goggles_util)
 goggles_enable_sanitizers(goggles_util)
+goggles_enable_profiling(goggles_util)

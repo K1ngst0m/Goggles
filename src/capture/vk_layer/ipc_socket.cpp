@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <util/profiling.hpp>
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
@@ -22,6 +23,7 @@ LayerSocketClient::~LayerSocketClient() {
 }
 
 bool LayerSocketClient::connect() {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
 
     if (socket_fd_ >= 0) {
@@ -96,6 +98,7 @@ bool LayerSocketClient::is_capturing() const {
 }
 
 bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_fd) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
 
     if (socket_fd_ < 0 || dmabuf_fd < 0) {
@@ -133,6 +136,7 @@ bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_
 }
 
 bool LayerSocketClient::poll_control(CaptureControl& control) {
+    GOGGLES_PROFILE_FUNCTION();
     int fd;
     {
         std::lock_guard lock(mutex_);

@@ -7,6 +7,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 #include <utility>
 
 namespace goggles {
@@ -70,6 +71,8 @@ void CaptureReceiver::shutdown() {
 }
 
 bool CaptureReceiver::poll_frame() {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (m_client_fd < 0) {
         accept_client();
     }

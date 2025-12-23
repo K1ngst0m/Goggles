@@ -73,6 +73,13 @@
       }
     },
     {
+      "name": ".profiling",
+      "hidden": true,
+      "cacheVariables": {
+        "ENABLE_PROFILING": "ON"
+      }
+    },
+    {
       "name": "debug",
       "displayName": "Debug",
       "description": "Debug build with no optimizations",
@@ -129,6 +136,13 @@
     },
 
     {
+      "name": "profile",
+      "displayName": "Profile (Release + Tracy)",
+      "description": "Release build with Tracy profiler enabled",
+      "inherits": [".release", ".profiling"]
+    },
+
+    {
       "name": ".i686",
       "hidden": true,
       "inherits": ".common",
@@ -149,6 +163,12 @@
       "displayName": "Release (i686)",
       "description": "32-bit layer only - release build",
       "inherits": [".i686", ".release"]
+    },
+    {
+      "name": "profile-i686",
+      "displayName": "Profile (i686)",
+      "description": "32-bit layer only - release build with Tracy profiler",
+      "inherits": [".i686", ".release", ".profiling"]
     }
   ],
   "buildPresets": [
@@ -193,12 +213,21 @@
     },
 
     {
+      "name": "profile",
+      "configurePreset": "profile"
+    },
+
+    {
       "name": "debug-i686",
       "configurePreset": "debug-i686"
     },
     {
       "name": "release-i686",
       "configurePreset": "release-i686"
+    },
+    {
+      "name": "profile-i686",
+      "configurePreset": "profile-i686"
     }
   ],
   "testPresets": [

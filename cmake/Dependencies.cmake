@@ -2,16 +2,35 @@
 # Dependencies Management
 # ============================================================================
 
+include(cmake/CPM.cmake)
+
+# Use a global CPM source cache to speed up builds
+set(CPM_SOURCE_CACHE $ENV{HOME}/.cache/CPM CACHE PATH "CPM source cache directory")
+
+# ============================================================================
+# Profiling Dependencies (loaded early for layer-only builds)
+# ============================================================================
+
+if(ENABLE_PROFILING)
+    CPMAddPackage(
+        NAME tracy
+        GITHUB_REPOSITORY wolfpld/tracy
+        VERSION 0.13.1
+        OPTIONS
+            "TRACY_ENABLE ON"
+            "TRACY_ON_DEMAND ON"
+    )
+    # Ensure Tracy is built with PIC for linking into shared libraries
+    if(TARGET TracyClient)
+        set_target_properties(TracyClient PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+endif()
+
 # Layer-only builds skip most dependencies
 if(GOGGLES_LAYER_ONLY)
     find_package(Vulkan REQUIRED)
     return()
 endif()
-
-include(cmake/CPM.cmake)
-
-# Use a global CPM source cache to speed up builds
-set(CPM_SOURCE_CACHE $ENV{HOME}/.cache/CPM CACHE PATH "CPM source cache directory")
 
 # ============================================================================
 # Core Dependencies

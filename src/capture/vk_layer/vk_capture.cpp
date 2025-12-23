@@ -3,6 +3,7 @@
 #include "ipc_socket.hpp"
 
 #include <cinttypes>
+#include <util/profiling.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -34,6 +35,7 @@ static bool should_use_async_capture() {
 // =============================================================================
 
 void CaptureManager::worker_func() {
+    GOGGLES_PROFILE_FUNCTION();
     while (!shutdown_.load(std::memory_order_acquire)) {
         std::unique_lock lock(cv_mutex_);
         cv_.wait(lock, [this] {
@@ -292,7 +294,38 @@ static uint32_t find_export_memory_type(const VkPhysicalDeviceMemoryProperties& 
     return UINT32_MAX;
 }
 
+static bool allocate_export_memory(SwapData* swap, VkDeviceData* dev_data,
+                                   const VkMemoryRequirements& mem_reqs, uint32_t mem_type_index) {
+    auto& funcs = dev_data->funcs;
+    VkDevice device = swap->device;
+
+    VkExportMemoryAllocateInfo export_info{};
+    export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+    export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.pNext = &export_info;
+    alloc_info.allocationSize = mem_reqs.size;
+    alloc_info.memoryTypeIndex = mem_type_index;
+
+    VkResult res = funcs.AllocateMemory(device, &alloc_info, nullptr, &swap->export_mem);
+    if (res != VK_SUCCESS) {
+        return false;
+    }
+
+    res = funcs.BindImageMemory(device, swap->export_image, swap->export_mem, 0);
+    if (res != VK_SUCCESS) {
+        funcs.FreeMemory(device, swap->export_mem, nullptr);
+        swap->export_mem = VK_NULL_HANDLE;
+        return false;
+    }
+
+    return true;
+}
+
 bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     auto* inst_data = dev_data->inst_data;
     VkDevice device = swap->device;
@@ -377,29 +410,9 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
         return false;
     }
 
-    VkExportMemoryAllocateInfo export_info{};
-    export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
-    export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-
-    VkMemoryAllocateInfo alloc_info{};
-    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    alloc_info.pNext = &export_info;
-    alloc_info.allocationSize = mem_reqs.size;
-    alloc_info.memoryTypeIndex = mem_type_index;
-
-    res = funcs.AllocateMemory(device, &alloc_info, nullptr, &swap->export_mem);
-    if (res != VK_SUCCESS) {
+    if (!allocate_export_memory(swap, dev_data, mem_reqs, mem_type_index)) {
         funcs.DestroyImage(device, swap->export_image, nullptr);
         swap->export_image = VK_NULL_HANDLE;
-        return false;
-    }
-
-    res = funcs.BindImageMemory(device, swap->export_image, swap->export_mem, 0);
-    if (res != VK_SUCCESS) {
-        funcs.FreeMemory(device, swap->export_mem, nullptr);
-        funcs.DestroyImage(device, swap->export_image, nullptr);
-        swap->export_image = VK_NULL_HANDLE;
-        swap->export_mem = VK_NULL_HANDLE;
         return false;
     }
 
@@ -445,6 +458,7 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
 }
 
 bool CaptureManager::init_sync_primitives(SwapData* swap, VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
@@ -534,6 +548,7 @@ void CaptureManager::destroy_frame_resources(SwapData* swap, VkDeviceData* dev_d
 
 void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_info,
                                 VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     if (present_info->swapchainCount == 0) {
         return;
     }
@@ -576,6 +591,7 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
 void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue,
                                    VkDeviceData* dev_data,
                                    [[maybe_unused]] VkPresentInfoKHR* present_info) {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
@@ -702,6 +718,7 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
 
 void CaptureManager::record_copy_commands(SwapData* swap, FrameData& frame, VkImage src_image,
                                           VkDeviceFuncs& funcs) {
+    GOGGLES_PROFILE_FUNCTION();
     VkImage dst_image = swap->export_image;
 
     VkCommandBufferBeginInfo begin_info{};

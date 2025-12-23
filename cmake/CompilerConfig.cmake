@@ -65,3 +65,26 @@ endif()
 function(goggles_enable_sanitizers target)
     target_link_libraries(${target} PRIVATE goggles_sanitizer_options)
 endfunction()
+
+# ============================================================================
+# Profiling Configuration
+# ============================================================================
+
+option(ENABLE_PROFILING "Enable Tracy profiler integration" OFF)
+
+add_library(goggles_profiling_options INTERFACE)
+
+if(ENABLE_PROFILING)
+    message(STATUS "Tracy profiling enabled")
+    target_compile_definitions(goggles_profiling_options INTERFACE
+        TRACY_ENABLE
+    )
+endif()
+
+# Helper function to enable profiling on a target
+function(goggles_enable_profiling target)
+    target_link_libraries(${target} PRIVATE goggles_profiling_options)
+    if(ENABLE_PROFILING)
+        target_link_libraries(${target} PRIVATE TracyClient)
+    endif()
+endfunction()

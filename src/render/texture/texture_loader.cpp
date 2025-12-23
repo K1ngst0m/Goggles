@@ -6,6 +6,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -27,6 +28,8 @@ TextureLoader::TextureLoader(vk::Device device, vk::PhysicalDevice physical_devi
 
 auto TextureLoader::load_from_file(const std::filesystem::path& path,
                                    const TextureLoadConfig& config) -> Result<TextureData> {
+    GOGGLES_PROFILE_FUNCTION();
+
     int width = 0;
     int height = 0;
     int channels = 0;

@@ -12,6 +12,7 @@
 #include <slang.h>
 #include <sstream>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -52,6 +53,8 @@ ShaderRuntime::ShaderRuntime(ShaderRuntime&&) noexcept = default;
 ShaderRuntime& ShaderRuntime::operator=(ShaderRuntime&&) noexcept = default;
 
 auto ShaderRuntime::init() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (m_initialized) {
         return {};
     }
@@ -137,6 +140,8 @@ void ShaderRuntime::shutdown() {
 
 auto ShaderRuntime::compile_shader(const std::filesystem::path& source_path,
                                    const std::string& entry_point) -> Result<CompiledShader> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (!m_initialized) {
         return make_error<CompiledShader>(ErrorCode::shader_compile_failed,
                                           "ShaderRuntime not initialized");
@@ -267,6 +272,8 @@ auto ShaderRuntime::save_cached_spirv(const std::filesystem::path& cache_path,
 
 auto ShaderRuntime::compile_slang(const std::string& module_name, const std::string& source,
                                   const std::string& entry_point) -> Result<std::vector<uint32_t>> {
+    GOGGLES_PROFILE_SCOPE("CompileSlang");
+
     Slang::ComPtr<slang::IBlob> diagnostics_blob;
     std::string module_path = module_name + ".slang";
     slang::IModule* module_ptr = m_impl->hlsl_session->loadModuleFromSourceString(
@@ -340,6 +347,8 @@ auto ShaderRuntime::compile_slang(const std::string& module_name, const std::str
 auto ShaderRuntime::compile_glsl(const std::string& module_name, const std::string& source,
                                  const std::string& entry_point, ShaderStage stage)
     -> Result<std::vector<uint32_t>> {
+    GOGGLES_PROFILE_SCOPE("CompileGlsl");
+
     auto result =
         GOGGLES_TRY(compile_glsl_with_reflection(module_name, source, entry_point, stage));
     return std::move(result.spirv);
@@ -349,6 +358,8 @@ auto ShaderRuntime::compile_glsl_with_reflection(const std::string& module_name,
                                                  const std::string& source,
                                                  const std::string& entry_point, ShaderStage stage)
     -> Result<GlslCompileResult> {
+    GOGGLES_PROFILE_SCOPE("CompileGlslWithReflection");
+
     Slang::ComPtr<slang::IBlob> diagnostics_blob;
     std::string module_path = module_name + ".glsl";
     slang::IModule* module_ptr = m_impl->glsl_session->loadModuleFromSourceString(
@@ -439,6 +450,8 @@ auto ShaderRuntime::compile_retroarch_shader(const std::string& vertex_source,
                                              const std::string& fragment_source,
                                              const std::string& module_name)
     -> Result<RetroArchCompiledShader> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (!m_initialized) {
         return make_error<RetroArchCompiledShader>(ErrorCode::shader_compile_failed,
                                                    "ShaderRuntime not initialized");

@@ -4,6 +4,7 @@
 #include <render/backend/vulkan_error.hpp>
 #include <render/shader/retroarch_preprocessor.hpp>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -14,6 +15,8 @@ FilterChain::~FilterChain() {
 auto FilterChain::init(const VulkanContext& vk_ctx, vk::Format swapchain_format,
                        uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
                        const std::filesystem::path& shader_dir) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (m_initialized) {
         return {};
     }
@@ -40,6 +43,8 @@ auto FilterChain::init(const VulkanContext& vk_ctx, vk::Format swapchain_format,
 }
 
 auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     if (!m_initialized) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "FilterChain not initialized");
     }
@@ -99,6 +104,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
                          vk::Extent2D original_extent, vk::ImageView swapchain_view,
                          vk::Extent2D viewport_extent, uint32_t frame_index, ScaleMode scale_mode,
                          uint32_t integer_scale) {
+    GOGGLES_PROFILE_FUNCTION();
+
     m_last_scale_mode = scale_mode;
     m_last_integer_scale = integer_scale;
     m_last_source_extent = original_extent;
@@ -232,6 +239,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
 }
 
 auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
     GOGGLES_LOG_DEBUG("FilterChain::handle_resize called: {}x{}", new_viewport_extent.width,
                       new_viewport_extent.height);
 
@@ -278,6 +287,8 @@ void FilterChain::shutdown() {
 
 auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents,
                                       vk::Extent2D viewport_extent) -> Result<void> {
+    GOGGLES_PROFILE_SCOPE("EnsureFramebuffers");
+
     if (m_preset.passes.empty()) {
         return {};
     }
@@ -338,6 +349,8 @@ auto FilterChain::calculate_pass_output_size(const ShaderPassConfig& pass_config
 }
 
 auto FilterChain::load_preset_textures() -> Result<void> {
+    GOGGLES_PROFILE_SCOPE("LoadPresetTextures");
+
     for (const auto& tex_config : m_preset.textures) {
         TextureLoadConfig load_cfg{.generate_mipmaps = tex_config.mipmap,
                                    .linear = tex_config.linear};
