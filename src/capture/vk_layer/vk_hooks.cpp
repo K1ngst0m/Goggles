@@ -298,8 +298,8 @@ void VKAPI_CALL Goggles_DestroyDevice(VkDevice device, const VkAllocationCallbac
 // =============================================================================
 
 VkResult VKAPI_CALL Goggles_CreateXlibSurfaceKHR(VkInstance instance,
-                                                  const VkXlibSurfaceCreateInfoKHR*,
-                                                  const VkAllocationCallbacks*,
+                                                  const VkXlibSurfaceCreateInfoKHR* /*pCreateInfo*/,
+                                                  const VkAllocationCallbacks* /*pAllocator*/,
                                                   VkSurfaceKHR* pSurface) {
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_enabled()) {
@@ -307,13 +307,15 @@ VkResult VKAPI_CALL Goggles_CreateXlibSurfaceKHR(VkInstance instance,
     }
 
     auto* data = get_object_tracker().get_instance(instance);
-    if (!data) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!data) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
 VkResult VKAPI_CALL Goggles_CreateXcbSurfaceKHR(VkInstance instance,
-                                                 const VkXcbSurfaceCreateInfoKHR*,
-                                                 const VkAllocationCallbacks*,
+                                                 const VkXcbSurfaceCreateInfoKHR* /*pCreateInfo*/,
+                                                 const VkAllocationCallbacks* /*pAllocator*/,
                                                  VkSurfaceKHR* pSurface) {
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_enabled()) {
@@ -321,13 +323,15 @@ VkResult VKAPI_CALL Goggles_CreateXcbSurfaceKHR(VkInstance instance,
     }
 
     auto* data = get_object_tracker().get_instance(instance);
-    if (!data) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!data) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
 VkResult VKAPI_CALL Goggles_CreateWaylandSurfaceKHR(VkInstance instance,
-                                                     const VkWaylandSurfaceCreateInfoKHR*,
-                                                     const VkAllocationCallbacks*,
+                                                     const VkWaylandSurfaceCreateInfoKHR* /*pCreateInfo*/,
+                                                     const VkAllocationCallbacks* /*pAllocator*/,
                                                      VkSurfaceKHR* pSurface) {
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_enabled()) {
@@ -335,7 +339,9 @@ VkResult VKAPI_CALL Goggles_CreateWaylandSurfaceKHR(VkInstance instance,
     }
 
     auto* data = get_object_tracker().get_instance(instance);
-    if (!data) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!data) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
@@ -410,7 +416,9 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice 
                                                                 VkSurfaceKHR surface,
                                                                 VkBool32* pSupported) {
     auto* data = get_object_tracker().get_instance_by_physical_device(physicalDevice);
-    if (!data) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!data) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_surface(surface)) {
@@ -479,7 +487,9 @@ VkResult VKAPI_CALL Goggles_CreateSwapchainKHR(VkDevice device,
                                                const VkAllocationCallbacks* pAllocator,
                                                VkSwapchainKHR* pSwapchain) {
     auto* data = get_object_tracker().get_device(device);
-    if (!data) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!data) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_surface(pCreateInfo->surface)) {
@@ -507,7 +517,9 @@ VkResult VKAPI_CALL Goggles_CreateSwapchainKHR(VkDevice device,
 void VKAPI_CALL Goggles_DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
                                             const VkAllocationCallbacks* pAllocator) {
     auto* data = get_object_tracker().get_device(device);
-    if (!data) return;
+    if (!data) {
+        return;
+    }
 
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_swapchain(swapchain)) {
@@ -515,7 +527,9 @@ void VKAPI_CALL Goggles_DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swap
         return;
     }
 
-    if (!data->funcs.DestroySwapchainKHR) return;
+    if (!data->funcs.DestroySwapchainKHR) {
+        return;
+    }
 
     get_capture_manager().on_swapchain_destroyed(device, swapchain);
     data->funcs.DestroySwapchainKHR(device, swapchain, pAllocator);
@@ -541,7 +555,9 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
                                                  uint64_t timeout, VkSemaphore semaphore,
                                                  VkFence fence, uint32_t* pImageIndex) {
     auto* data = get_object_tracker().get_device(device);
-    if (!data) return VK_ERROR_DEVICE_LOST;
+    if (!data) {
+        return VK_ERROR_DEVICE_LOST;
+    }
 
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_swapchain(swapchain)) {
@@ -552,7 +568,9 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
     auto gipa = data->inst_data->funcs.GetInstanceProcAddr;
     auto acquire_func = reinterpret_cast<PFN_vkAcquireNextImageKHR>(
         gipa(data->inst_data->instance, "vkAcquireNextImageKHR"));
-    if (!acquire_func) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!acquire_func) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     return acquire_func(device, swapchain, timeout, semaphore, fence, pImageIndex);
 }
@@ -583,7 +601,9 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
             if (swap && img_idx < swap->dmabuf_fds.size() && img_idx < swap->strides.size()) {
                 int fd = swap->dmabuf_fds[img_idx];
                 auto& socket = get_layer_socket();
-                if (!socket.is_connected()) socket.connect();
+                if (!socket.is_connected()) {
+                    socket.connect();
+                }
                 if (socket.is_connected()) {
                     CaptureTextureData tex{};
                     tex.type = CaptureMessageType::texture_data;
