@@ -125,3 +125,181 @@ jobs:
 
     - name: Show ccache statistics
       run: ccache --show-stats
+
+  openspec-check:
+    name: OpenSpec Validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install openspec
+      run: npm install -g @fission-ai/openspec
+
+    - name: Run OpenSpec validation
+      id: openspec
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        COMMENT_BODY=""
+        HAS_ERRORS=false
+
+        # 1. Validate all proposals
+        echo "::group::Validating proposals..."
+        if ! validation_output=$(openspec validate --all --strict 2>&1); then
+          HAS_ERRORS=true
+          COMMENT_BODY+="### ❌ Proposal Validation Failed
+
+        The following proposals have validation errors:
+
+        \`\`\`
+        $validation_output
+        \`\`\`
+
+        **How to fix:**
+        1. Run \`openspec validate <change-id> --strict\` locally to see detailed errors
+        2. Common issues:
+           - Missing \`#### Scenario:\` headers (must use 4 hashtags)
+           - Requirements without scenarios
+           - Invalid delta operations (use \`## ADDED/MODIFIED/REMOVED Requirements\`)
+        3. See \`openspec/AGENTS.md\` for spec format reference
+
+        ---
+        "
+        fi
+        echo "::endgroup::"
+
+        # 2. Check task completion
+        echo "::group::Checking task completion..."
+        output=$(openspec list 2>/dev/null)
+        incomplete_tasks=""
+
+        while IFS= read -r line; do
+          if [[ "$line" =~ ^[[:space:]]+([a-z0-9-]+)[[:space:]]+([0-9]+)/([0-9]+) ]]; then
+            change_id="${BASH_REMATCH[1]}"
+            completed="${BASH_REMATCH[2]}"
+            total="${BASH_REMATCH[3]}"
+
+            if [ "$completed" -lt "$total" ]; then
+              remaining=$((total - completed))
+              incomplete_tasks+="| \`$change_id\` | $completed | $total | $remaining |
+        "
+            fi
+          fi
+        done <<< "$output"
+
+        if [ -n "$incomplete_tasks" ]; then
+          HAS_ERRORS=true
+          COMMENT_BODY+="### ❌ Incomplete Tasks Found
+
+        The following proposals have incomplete tasks:
+
+        | Proposal | Completed | Total | Remaining |
+        |----------|-----------|-------|-----------|
+        $incomplete_tasks
+
+        **How to fix:**
+        1. Open \`openspec/changes/<proposal-id>/tasks.md\`
+        2. Complete all tasks marked with \`- [ ]\`
+        3. Mark completed tasks with \`- [x]\`
+        4. If tasks are no longer needed, remove them from the list
+
+        ---
+        "
+        fi
+        echo "::endgroup::"
+
+        # 3. Check unarchived completed proposals (main branch only)
+        if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+          echo "::group::Checking for unarchived proposals..."
+          unarchived=""
+
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]+([a-z0-9-]+)[[:space:]]+([0-9]+)/([0-9]+) ]]; then
+              change_id="${BASH_REMATCH[1]}"
+              completed="${BASH_REMATCH[2]}"
+              total="${BASH_REMATCH[3]}"
+
+              if [ "$completed" -eq "$total" ] && [ "$total" -gt 0 ]; then
+                unarchived+="- \`$change_id\` ($completed/$total tasks complete)
+        "
+              fi
+            fi
+          done <<< "$output"
+
+          if [ -n "$unarchived" ]; then
+            HAS_ERRORS=true
+            COMMENT_BODY+="### ❌ Unarchived Completed Proposals
+
+        The following proposals have all tasks complete but are not archived:
+
+        $unarchived
+
+        **How to fix:**
+        1. Run \`openspec archive <change-id> --yes\` to archive the proposal
+        2. This will move the proposal to \`openspec/changes/archive/\`
+        3. Create a separate PR with the archived proposal
+
+        ---
+        "
+          fi
+          echo "::endgroup::"
+        fi
+
+        # Post comment if there are errors (PR only)
+        if [ "$HAS_ERRORS" = true ] && [ "${{ github.event_name }}" = "pull_request" ]; then
+          # Add header and footer
+          FULL_COMMENT="## 🔍 OpenSpec Validation Report
+
+        $COMMENT_BODY
+        <details>
+        <summary>📚 Quick Reference</summary>
+
+        \`\`\`bash
+        # Validate a specific proposal
+        openspec validate <change-id> --strict
+
+        # List all active proposals
+        openspec list
+
+        # Archive a completed proposal
+        openspec archive <change-id> --yes
+
+        # View proposal details
+        openspec show <change-id>
+        \`\`\`
+
+        </details>
+        "
+
+          # Post or update comment
+          COMMENT_TAG="<!-- openspec-validation -->"
+          FULL_COMMENT="$COMMENT_TAG
+        $FULL_COMMENT"
+
+          # Check if comment already exists
+          existing_comment=$(gh pr view ${{ github.event.pull_request.number }} --json comments --jq '.comments[] | select(.body | startswith("<!-- openspec-validation -->")) | .id' | head -1)
+
+          if [ -n "$existing_comment" ]; then
+            gh api -X PATCH /repos/${{ github.repository }}/issues/comments/$existing_comment -f body="$FULL_COMMENT"
+          else
+            gh pr comment ${{ github.event.pull_request.number }} --body "$FULL_COMMENT"
+          fi
+        fi
+
+        # Fail the job if there were errors
+        if [ "$HAS_ERRORS" = true ]; then
+          echo "::error::OpenSpec validation failed. See PR comment for details."
+          exit 1
+        fi
+
+        echo "✅ All OpenSpec checks passed!"

@@ -69,3 +69,27 @@ The build system SHALL apply clang-tidy static analysis with per-directory confi
 - **AND** functions MUST use `snake_case`
 - **AND** C-style arrays are forbidden in favor of `std::array`
 
+### Requirement: OpenSpec Proposal Validation
+
+The CI system SHALL validate OpenSpec proposals to ensure spec-driven development compliance.
+
+#### Scenario: Proposal validation on pull request
+- **WHEN** a pull request is opened or updated
+- **THEN** CI runs `openspec validate --all --strict`
+- **AND** CI fails if any proposal has validation errors
+
+#### Scenario: Task completion check on pull request
+- **WHEN** a pull request is opened or updated
+- **THEN** CI checks all active proposals for incomplete tasks
+- **AND** CI fails if any proposal has incomplete tasks (tasks marked `- [ ]`)
+
+#### Scenario: Archive check on main branch
+- **WHEN** code is pushed to the main branch
+- **THEN** CI checks for active proposals with all tasks complete
+- **AND** CI fails if any proposal has all tasks complete but is not archived
+
+#### Scenario: PR comment feedback on validation failure
+- **WHEN** OpenSpec validation fails on a pull request
+- **THEN** CI posts a comment to the PR with specific error details
+- **AND** the comment includes guidance on how to fix each issue
+- **AND** the comment is updated on subsequent runs (not duplicated)
