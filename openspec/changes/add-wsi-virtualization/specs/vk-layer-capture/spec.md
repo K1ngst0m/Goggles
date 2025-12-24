@@ -113,3 +113,28 @@ The layer SHALL send DMA-BUF frames to the Goggles application on present.
 - **THEN** the layer SHALL send the presented image's DMA-BUF fd to Goggles
 - **AND** SHALL NOT present to any physical display
 - **AND** SHALL return `VK_SUCCESS`
+
+### Requirement: Virtual Swapchain Frame Rate Limiting
+
+The layer SHALL provide frame rate limiting for virtual swapchains to prevent runaway frame rates.
+
+#### Scenario: Default frame rate limit
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** `GOGGLES_FPS_LIMIT` environment variable is not set
+- **WHEN** the application calls `vkAcquireNextImageKHR`
+- **THEN** the layer SHALL limit acquisition rate to 60 FPS
+
+#### Scenario: Custom frame rate limit
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** `GOGGLES_FPS_LIMIT` is set to a positive integer
+- **WHEN** the application calls `vkAcquireNextImageKHR`
+- **THEN** the layer SHALL limit acquisition rate to the specified FPS
+
+#### Scenario: Disable frame rate limit
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** `GOGGLES_FPS_LIMIT=0` is set
+- **WHEN** the application calls `vkAcquireNextImageKHR`
+- **THEN** the layer SHALL NOT limit acquisition rate

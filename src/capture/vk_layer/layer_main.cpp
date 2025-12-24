@@ -1,5 +1,6 @@
 #include "vk_dispatch.hpp"
 #include "vk_hooks.hpp"
+#include "wsi_virtual.hpp"
 
 #include <cstring>
 #include <vulkan/vk_layer.h>
@@ -36,6 +37,11 @@ static PFN_vkVoidFunction VKAPI_CALL Goggles_GetDeviceProcAddr(VkDevice device, 
     GETPROCADDR(DestroySwapchainKHR);
     GETPROCADDR(QueuePresentKHR);
 
+    if (should_use_wsi_proxy()) {
+        GETPROCADDR(GetSwapchainImagesKHR);
+        GETPROCADDR(AcquireNextImageKHR);
+    }
+
     auto* data = get_object_tracker().get_device(device);
     if (data && data->funcs.GetDeviceProcAddr) {
         return data->funcs.GetDeviceProcAddr(device, pName);
@@ -51,8 +57,24 @@ static PFN_vkVoidFunction VKAPI_CALL Goggles_GetInstanceProcAddr(VkInstance inst
     GETPROCADDR(GetDeviceProcAddr);
     GETPROCADDR(CreateDevice);
     GETPROCADDR(DestroyDevice);
+
+    if (should_use_wsi_proxy()) {
+        GETPROCADDR(CreateXlibSurfaceKHR);
+        GETPROCADDR(CreateXcbSurfaceKHR);
+        GETPROCADDR(CreateWaylandSurfaceKHR);
+        GETPROCADDR(DestroySurfaceKHR);
+        GETPROCADDR(GetPhysicalDeviceSurfaceCapabilitiesKHR);
+        GETPROCADDR(GetPhysicalDeviceSurfaceFormatsKHR);
+        GETPROCADDR(GetPhysicalDeviceSurfacePresentModesKHR);
+        GETPROCADDR(GetPhysicalDeviceSurfaceSupportKHR);
+        GETPROCADDR(GetPhysicalDeviceSurfaceCapabilities2KHR);
+        GETPROCADDR(GetPhysicalDeviceSurfaceFormats2KHR);
+    }
+
     GETPROCADDR(CreateSwapchainKHR);
     GETPROCADDR(DestroySwapchainKHR);
+    GETPROCADDR(GetSwapchainImagesKHR);
+    GETPROCADDR(AcquireNextImageKHR);
     GETPROCADDR(QueuePresentKHR);
 
     if (instance) {
