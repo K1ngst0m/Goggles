@@ -1,5 +1,6 @@
 #include "wsi_virtual.hpp"
 
+#include <bit>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -16,7 +17,9 @@ constexpr uint64_t DRM_FORMAT_MOD_INVALID = 0xffffffffffffffULL;
 static uint32_t get_fps_limit() {
     static const uint32_t limit = []() {
         const char* env = std::getenv("GOGGLES_FPS_LIMIT");
-        if (!env) return 60u;
+        if (!env) {
+            return 60u;
+        }
         int val = std::atoi(env);
         return val >= 0 ? static_cast<uint32_t>(val) : 60u;
     }();
@@ -44,11 +47,11 @@ WsiVirtualizer::WsiVirtualizer() : enabled_(should_use_wsi_proxy()) {
 }
 
 VkSurfaceKHR WsiVirtualizer::generate_surface_handle() {
-    return reinterpret_cast<VkSurfaceKHR>(next_handle_++);
+    return std::bit_cast<VkSurfaceKHR>(next_handle_++);
 }
 
 VkSwapchainKHR WsiVirtualizer::generate_swapchain_handle() {
-    return reinterpret_cast<VkSwapchainKHR>(next_handle_++);
+    return std::bit_cast<VkSwapchainKHR>(next_handle_++);
 }
 
 VkResult WsiVirtualizer::create_surface(VkInstance inst, VkSurfaceKHR* surface) {
@@ -60,8 +63,12 @@ VkResult WsiVirtualizer::create_surface(VkInstance inst, VkSurfaceKHR* surface) 
 
     const char* width_env = std::getenv("GOGGLES_WIDTH");
     const char* height_env = std::getenv("GOGGLES_HEIGHT");
-    if (width_env) vs.width = static_cast<uint32_t>(std::atoi(width_env));
-    if (height_env) vs.height = static_cast<uint32_t>(std::atoi(height_env));
+    if (width_env) {
+        vs.width = static_cast<uint32_t>(std::atoi(width_env));
+    }
+    if (height_env) {
+        vs.height = static_cast<uint32_t>(std::atoi(height_env));
+    }
 
     surfaces_[vs.handle] = vs;
     *surface = vs.handle;
@@ -71,7 +78,7 @@ VkResult WsiVirtualizer::create_surface(VkInstance inst, VkSurfaceKHR* surface) 
     return VK_SUCCESS;
 }
 
-void WsiVirtualizer::destroy_surface(VkInstance, VkSurfaceKHR surface) {
+void WsiVirtualizer::destroy_surface(VkInstance /*instance*/, VkSurfaceKHR surface) {
     std::lock_guard lock(mutex_);
     surfaces_.erase(surface);
 }
@@ -87,11 +94,13 @@ VirtualSurface* WsiVirtualizer::get_surface(VkSurfaceKHR surface) {
     return it != surfaces_.end() ? &it->second : nullptr;
 }
 
-VkResult WsiVirtualizer::get_surface_capabilities(VkPhysicalDevice, VkSurfaceKHR surface,
+VkResult WsiVirtualizer::get_surface_capabilities(VkPhysicalDevice /*physDev*/, VkSurfaceKHR surface,
                                                    VkSurfaceCapabilitiesKHR* caps) {
     std::lock_guard lock(mutex_);
     auto it = surfaces_.find(surface);
-    if (it == surfaces_.end()) return VK_ERROR_SURFACE_LOST_KHR;
+    if (it == surfaces_.end()) {
+        return VK_ERROR_SURFACE_LOST_KHR;
+    }
 
     auto& vs = it->second;
     caps->minImageCount = 2;
@@ -109,7 +118,7 @@ VkResult WsiVirtualizer::get_surface_capabilities(VkPhysicalDevice, VkSurfaceKHR
     return VK_SUCCESS;
 }
 
-VkResult WsiVirtualizer::get_surface_formats(VkPhysicalDevice, VkSurfaceKHR,
+VkResult WsiVirtualizer::get_surface_formats(VkPhysicalDevice /*physDev*/, VkSurfaceKHR /*surface*/,
                                               uint32_t* count, VkSurfaceFormatKHR* formats) {
     constexpr VkSurfaceFormatKHR supported[] = {
         {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
@@ -127,7 +136,7 @@ VkResult WsiVirtualizer::get_surface_formats(VkPhysicalDevice, VkSurfaceKHR,
     return to_copy < 2 ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
-VkResult WsiVirtualizer::get_surface_present_modes(VkPhysicalDevice, VkSurfaceKHR,
+VkResult WsiVirtualizer::get_surface_present_modes(VkPhysicalDevice /*physDev*/, VkSurfaceKHR /*surface*/,
                                                     uint32_t* count, VkPresentModeKHR* modes) {
     constexpr VkPresentModeKHR supported[] = {
         VK_PRESENT_MODE_FIFO_KHR,
@@ -146,7 +155,7 @@ VkResult WsiVirtualizer::get_surface_present_modes(VkPhysicalDevice, VkSurfaceKH
 }
 
 VkResult WsiVirtualizer::get_surface_support(VkPhysicalDevice phys_dev, uint32_t queue_family,
-                                              VkSurfaceKHR, VkBool32* supported,
+                                              VkSurfaceKHR /*surface*/, VkBool32* supported,
                                               VkInstData* inst_data) {
     uint32_t count = 0;
     inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(phys_dev, &count, nullptr);
@@ -171,7 +180,9 @@ static uint32_t find_memory_type(const VkPhysicalDeviceMemoryProperties& props,
         }
     }
     for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
-        if (type_bits & (1u << i)) return i;
+        if (type_bits & (1u << i)) {
+            return i;
+        }
     }
     return UINT32_MAX;
 }
@@ -278,7 +289,9 @@ VkResult WsiVirtualizer::create_swapchain(VkDevice device, const VkSwapchainCrea
     swap.format = info->imageFormat;
     swap.extent = info->imageExtent;
     swap.image_count = info->minImageCount < 2 ? 2 : info->minImageCount;
-    if (swap.image_count > 3) swap.image_count = 3;
+    if (swap.image_count > 3) {
+        swap.image_count = 3;
+    }
 
     if (!create_exportable_images(swap, device, dev_data)) {
         destroy_swapchain_resources(swap, device, dev_data);
@@ -301,17 +314,23 @@ void WsiVirtualizer::destroy_swapchain_resources(VirtualSwapchain& swap, VkDevic
     auto& funcs = dev_data->funcs;
 
     for (int fd : swap.dmabuf_fds) {
-        if (fd >= 0) close(fd);
+        if (fd >= 0) {
+            close(fd);
+        }
     }
     swap.dmabuf_fds.clear();
 
     for (auto mem : swap.memory) {
-        if (mem != VK_NULL_HANDLE) funcs.FreeMemory(device, mem, nullptr);
+        if (mem != VK_NULL_HANDLE) {
+            funcs.FreeMemory(device, mem, nullptr);
+        }
     }
     swap.memory.clear();
 
     for (auto img : swap.images) {
-        if (img != VK_NULL_HANDLE) funcs.DestroyImage(device, img, nullptr);
+        if (img != VK_NULL_HANDLE) {
+            funcs.DestroyImage(device, img, nullptr);
+        }
     }
     swap.images.clear();
 }
@@ -320,7 +339,9 @@ void WsiVirtualizer::destroy_swapchain(VkDevice device, VkSwapchainKHR swapchain
                                         VkDeviceData* dev_data) {
     std::lock_guard lock(mutex_);
     auto it = swapchains_.find(swapchain);
-    if (it == swapchains_.end()) return;
+    if (it == swapchains_.end()) {
+        return;
+    }
 
     destroy_swapchain_resources(it->second, device, dev_data);
     swapchains_.erase(it);
@@ -341,7 +362,9 @@ VkResult WsiVirtualizer::get_swapchain_images(VkSwapchainKHR swapchain,
                                                uint32_t* count, VkImage* images) {
     std::lock_guard lock(mutex_);
     auto it = swapchains_.find(swapchain);
-    if (it == swapchains_.end()) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    if (it == swapchains_.end()) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
 
     auto& swap = it->second;
     if (!images) {
@@ -358,7 +381,7 @@ VkResult WsiVirtualizer::get_swapchain_images(VkSwapchainKHR swapchain,
 }
 
 VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swapchain,
-                                             uint64_t, VkSemaphore semaphore, VkFence fence,
+                                             uint64_t /*timeout*/, VkSemaphore semaphore, VkFence fence,
                                              uint32_t* index, VkDeviceData* dev_data) {
     std::chrono::steady_clock::time_point last_acquire;
     uint32_t current_idx;
@@ -367,7 +390,9 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swap
     {
         std::lock_guard lock(mutex_);
         auto it = swapchains_.find(swapchain);
-        if (it == swapchains_.end()) return VK_ERROR_OUT_OF_DATE_KHR;
+        if (it == swapchains_.end()) {
+            return VK_ERROR_OUT_OF_DATE_KHR;
+        }
 
         last_acquire = it->second.last_acquire;
         current_idx = it->second.current_index;
@@ -388,7 +413,9 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swap
     {
         std::lock_guard lock(mutex_);
         auto it = swapchains_.find(swapchain);
-        if (it == swapchains_.end()) return VK_ERROR_OUT_OF_DATE_KHR;
+        if (it == swapchains_.end()) {
+            return VK_ERROR_OUT_OF_DATE_KHR;
+        }
 
         it->second.last_acquire = std::chrono::steady_clock::now();
         it->second.current_index = (current_idx + 1) % image_count;
