@@ -19,6 +19,25 @@ The layer SHALL provide a WSI proxy mode that virtualizes all window system inte
 - **THEN** WSI proxy mode SHALL be disabled
 - **AND** surface creation calls SHALL pass through to the driver
 
+### Requirement: Virtual Surface Resolution Configuration
+
+The layer SHALL allow configuring the virtual surface resolution via environment variables.
+
+#### Scenario: Default resolution
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** `GOGGLES_WIDTH` and `GOGGLES_HEIGHT` are not set
+- **WHEN** a virtual surface is created
+- **THEN** the surface SHALL have resolution 1920x1080
+
+#### Scenario: Custom resolution
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** `GOGGLES_WIDTH` is set to a positive integer
+- **AND** `GOGGLES_HEIGHT` is set to a positive integer
+- **WHEN** a virtual surface is created
+- **THEN** the surface SHALL have the specified resolution
+
 ### Requirement: Virtual Surface Creation
 
 The layer SHALL intercept platform-specific surface creation calls and return virtual surfaces when WSI proxy mode is enabled.

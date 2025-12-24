@@ -3,6 +3,7 @@
 - [x] 1.1 Create `wsi_virtual.hpp` with VirtualSurface/VirtualSwapchain structs
 - [x] 1.2 Create `wsi_virtual.cpp` with WsiVirtualizer implementation
 - [x] 1.3 Add `should_use_wsi_proxy()` config function
+- [x] 1.4 Add `GOGGLES_WIDTH`/`GOGGLES_HEIGHT` resolution config (default 1920x1080)
 
 ## 2. Dispatch Table Updates
 

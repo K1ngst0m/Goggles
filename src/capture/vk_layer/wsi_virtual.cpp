@@ -360,26 +360,41 @@ VkResult WsiVirtualizer::get_swapchain_images(VkSwapchainKHR swapchain,
 VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swapchain,
                                              uint64_t, VkSemaphore semaphore, VkFence fence,
                                              uint32_t* index, VkDeviceData* dev_data) {
-    std::lock_guard lock(mutex_);
-    auto it = swapchains_.find(swapchain);
-    if (it == swapchains_.end()) return VK_ERROR_OUT_OF_DATE_KHR;
+    std::chrono::steady_clock::time_point last_acquire;
+    uint32_t current_idx;
+    uint32_t image_count;
 
-    auto& swap = it->second;
+    {
+        std::lock_guard lock(mutex_);
+        auto it = swapchains_.find(swapchain);
+        if (it == swapchains_.end()) return VK_ERROR_OUT_OF_DATE_KHR;
+
+        last_acquire = it->second.last_acquire;
+        current_idx = it->second.current_index;
+        image_count = it->second.image_count;
+    }
 
     uint32_t fps = get_fps_limit();
     if (fps > 0) {
         using namespace std::chrono;
         auto now = steady_clock::now();
         auto frame_duration = nanoseconds(1'000'000'000 / fps);
-        auto next_frame = swap.last_acquire + frame_duration;
+        auto next_frame = last_acquire + frame_duration;
         if (now < next_frame) {
             std::this_thread::sleep_until(next_frame);
         }
-        swap.last_acquire = steady_clock::now();
     }
 
-    *index = swap.current_index;
-    swap.current_index = (swap.current_index + 1) % swap.image_count;
+    {
+        std::lock_guard lock(mutex_);
+        auto it = swapchains_.find(swapchain);
+        if (it == swapchains_.end()) return VK_ERROR_OUT_OF_DATE_KHR;
+
+        it->second.last_acquire = std::chrono::steady_clock::now();
+        it->second.current_index = (current_idx + 1) % image_count;
+    }
+
+    *index = current_idx;
 
     auto& funcs = dev_data->funcs;
 

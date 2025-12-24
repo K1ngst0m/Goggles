@@ -30,7 +30,7 @@ struct VirtualSwapchain {
     std::vector<uint32_t> strides;
     uint32_t image_count = 0;
     uint32_t current_index = 0;
-    std::chrono::steady_clock::time_point last_acquire{};
+    std::chrono::steady_clock::time_point last_acquire;
 };
 
 class WsiVirtualizer {
