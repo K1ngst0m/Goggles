@@ -594,6 +594,7 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
 
     auto& virt = WsiVirtualizer::instance();
 
+    bool all_virtual = true;
     for (uint32_t i = 0; i < pPresentInfo->swapchainCount; ++i) {
         if (virt.is_virtual_swapchain(pPresentInfo->pSwapchains[i])) {
             auto* swap = virt.get_swapchain(pPresentInfo->pSwapchains[i]);
@@ -616,8 +617,13 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
                     socket.send_texture(tex, fd);
                 }
             }
-            return VK_SUCCESS;
+        } else {
+            all_virtual = false;
         }
+    }
+
+    if (all_virtual) {
+        return VK_SUCCESS;
     }
 
     if (!data->funcs.QueuePresentKHR) {

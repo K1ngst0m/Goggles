@@ -67,7 +67,7 @@ public:
 
 private:
     WsiVirtualizer();
-    ~WsiVirtualizer() = default;
+    ~WsiVirtualizer();
 
     VkSurfaceKHR generate_surface_handle();
     VkSwapchainKHR generate_swapchain_handle();

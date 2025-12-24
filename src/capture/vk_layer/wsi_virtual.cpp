@@ -4,25 +4,43 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <thread>
 #include <unistd.h>
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
+#define LAYER_WARN(fmt, ...) fprintf(stderr, "[goggles-layer] WARN: " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
 
 constexpr uint64_t DRM_FORMAT_MOD_LINEAR = 0;
 constexpr uint64_t DRM_FORMAT_MOD_INVALID = 0xffffffffffffffULL;
 
+static std::optional<uint32_t> parse_env_uint(const char* name, uint32_t min_val, uint32_t max_val) {
+    const char* env = std::getenv(name);
+    if (!env || env[0] == '\0') {
+        return std::nullopt;
+    }
+
+    char* endptr = nullptr;
+    long val = std::strtol(env, &endptr, 10);
+
+    if (endptr == env || *endptr != '\0') {
+        LAYER_WARN("%s='%s' is not a valid integer, ignoring", name, env);
+        return std::nullopt;
+    }
+
+    if (val < 0 || static_cast<unsigned long>(val) < min_val ||
+        static_cast<unsigned long>(val) > max_val) {
+        LAYER_WARN("%s=%ld is out of range [%u, %u], ignoring", name, val, min_val, max_val);
+        return std::nullopt;
+    }
+
+    return static_cast<uint32_t>(val);
+}
+
 static uint32_t get_fps_limit() {
-    static const uint32_t limit = []() {
-        const char* env = std::getenv("GOGGLES_FPS_LIMIT");
-        if (!env) {
-            return 60u;
-        }
-        int val = std::atoi(env);
-        return val >= 0 ? static_cast<uint32_t>(val) : 60u;
-    }();
+    static const uint32_t limit = parse_env_uint("GOGGLES_FPS_LIMIT", 0, 1000).value_or(60);
     return limit;
 }
 
@@ -46,6 +64,16 @@ WsiVirtualizer::WsiVirtualizer() : enabled_(should_use_wsi_proxy()) {
     }
 }
 
+WsiVirtualizer::~WsiVirtualizer() {
+    for (auto& [handle, swap] : swapchains_) {
+        for (int fd : swap.dmabuf_fds) {
+            if (fd >= 0) {
+                close(fd);
+            }
+        }
+    }
+}
+
 VkSurfaceKHR WsiVirtualizer::generate_surface_handle() {
     return std::bit_cast<VkSurfaceKHR>(next_handle_++);
 }
@@ -60,15 +88,8 @@ VkResult WsiVirtualizer::create_surface(VkInstance inst, VkSurfaceKHR* surface) 
     VirtualSurface vs{};
     vs.handle = generate_surface_handle();
     vs.instance = inst;
-
-    const char* width_env = std::getenv("GOGGLES_WIDTH");
-    const char* height_env = std::getenv("GOGGLES_HEIGHT");
-    if (width_env) {
-        vs.width = static_cast<uint32_t>(std::atoi(width_env));
-    }
-    if (height_env) {
-        vs.height = static_cast<uint32_t>(std::atoi(height_env));
-    }
+    vs.width = parse_env_uint("GOGGLES_WIDTH", 1, 16384).value_or(1920);
+    vs.height = parse_env_uint("GOGGLES_HEIGHT", 1, 16384).value_or(1080);
 
     surfaces_[vs.handle] = vs;
     *surface = vs.handle;
@@ -383,33 +404,27 @@ VkResult WsiVirtualizer::get_swapchain_images(VkSwapchainKHR swapchain,
 VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swapchain,
                                              uint64_t /*timeout*/, VkSemaphore semaphore, VkFence fence,
                                              uint32_t* index, VkDeviceData* dev_data) {
-    std::chrono::steady_clock::time_point last_acquire;
-    uint32_t current_idx;
-    uint32_t image_count;
-
-    {
-        std::lock_guard lock(mutex_);
-        auto it = swapchains_.find(swapchain);
-        if (it == swapchains_.end()) {
-            return VK_ERROR_OUT_OF_DATE_KHR;
-        }
-
-        last_acquire = it->second.last_acquire;
-        current_idx = it->second.current_index;
-        image_count = it->second.image_count;
-    }
-
     uint32_t fps = get_fps_limit();
     if (fps > 0) {
+        std::chrono::steady_clock::time_point last_acquire;
+        {
+            std::lock_guard lock(mutex_);
+            auto it = swapchains_.find(swapchain);
+            if (it == swapchains_.end()) {
+                return VK_ERROR_OUT_OF_DATE_KHR;
+            }
+            last_acquire = it->second.last_acquire;
+        }
+
         using namespace std::chrono;
-        auto now = steady_clock::now();
         auto frame_duration = nanoseconds(1'000'000'000 / fps);
         auto next_frame = last_acquire + frame_duration;
-        if (now < next_frame) {
+        if (steady_clock::now() < next_frame) {
             std::this_thread::sleep_until(next_frame);
         }
     }
 
+    uint32_t current_idx;
     {
         std::lock_guard lock(mutex_);
         auto it = swapchains_.find(swapchain);
@@ -417,25 +432,23 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swap
             return VK_ERROR_OUT_OF_DATE_KHR;
         }
 
-        it->second.last_acquire = std::chrono::steady_clock::now();
-        it->second.current_index = (current_idx + 1) % image_count;
+        auto& swap = it->second;
+        current_idx = swap.current_index;
+        swap.current_index = (current_idx + 1) % swap.image_count;
+        swap.last_acquire = std::chrono::steady_clock::now();
     }
 
     *index = current_idx;
 
     auto& funcs = dev_data->funcs;
 
-    if (semaphore != VK_NULL_HANDLE) {
+    if (semaphore != VK_NULL_HANDLE || fence != VK_NULL_HANDLE) {
         VkSubmitInfo submit{};
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit.signalSemaphoreCount = 1;
-        submit.pSignalSemaphores = &semaphore;
-        funcs.QueueSubmit(dev_data->graphics_queue, 1, &submit, VK_NULL_HANDLE);
-    }
-
-    if (fence != VK_NULL_HANDLE) {
-        VkSubmitInfo submit{};
-        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        if (semaphore != VK_NULL_HANDLE) {
+            submit.signalSemaphoreCount = 1;
+            submit.pSignalSemaphores = &semaphore;
+        }
         funcs.QueueSubmit(dev_data->graphics_queue, 1, &submit, fence);
     }
 

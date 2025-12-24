@@ -73,9 +73,12 @@ static PFN_vkVoidFunction VKAPI_CALL Goggles_GetInstanceProcAddr(VkInstance inst
 
     GETPROCADDR(CreateSwapchainKHR);
     GETPROCADDR(DestroySwapchainKHR);
-    GETPROCADDR(GetSwapchainImagesKHR);
-    GETPROCADDR(AcquireNextImageKHR);
     GETPROCADDR(QueuePresentKHR);
+
+    if (should_use_wsi_proxy()) {
+        GETPROCADDR(GetSwapchainImagesKHR);
+        GETPROCADDR(AcquireNextImageKHR);
+    }
 
     if (instance) {
         auto* data = get_object_tracker().get_instance(instance);
