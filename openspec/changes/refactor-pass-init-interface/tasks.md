@@ -33,5 +33,5 @@
 ## Validation
 
 - [x] Build passes with no warnings
-- [x] Run existing tests (if any for chain module)
-- [x] Manual test: load a filter preset and verify rendering works
+- [ ] Run existing tests (if any for chain module)
+- [ ] Manual test: load a filter preset and verify rendering works

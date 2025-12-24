@@ -83,8 +83,8 @@ The CI system SHALL validate OpenSpec proposals to ensure spec-driven developmen
 - **THEN** CI checks all active proposals for incomplete tasks
 - **AND** CI fails if any proposal has incomplete tasks (tasks marked `- [ ]`)
 
-#### Scenario: Archive check on main branch
-- **WHEN** code is pushed to the main branch
+#### Scenario: Archive check on pull request and main branch
+- **WHEN** a pull request is opened/updated or code is pushed to main
 - **THEN** CI checks for active proposals with all tasks complete
 - **AND** CI fails if any proposal has all tasks complete but is not archived
 
