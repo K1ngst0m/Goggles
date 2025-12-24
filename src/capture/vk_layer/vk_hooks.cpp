@@ -217,6 +217,7 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
     GETADDR(CreateSwapchainKHR);
     GETADDR(DestroySwapchainKHR);
     GETADDR(GetSwapchainImagesKHR);
+    GETADDR(AcquireNextImageKHR);
     GETADDR(QueuePresentKHR);
     GETADDR(AllocateMemory);
     GETADDR(FreeMemory);
@@ -565,14 +566,11 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
                                         data);
     }
 
-    auto gipa = data->inst_data->funcs.GetInstanceProcAddr;
-    auto acquire_func = reinterpret_cast<PFN_vkAcquireNextImageKHR>(
-        gipa(data->inst_data->instance, "vkAcquireNextImageKHR"));
-    if (!acquire_func) {
+    if (!data->funcs.AcquireNextImageKHR) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    return acquire_func(device, swapchain, timeout, semaphore, fence, pImageIndex);
+    return data->funcs.AcquireNextImageKHR(device, swapchain, timeout, semaphore, fence, pImageIndex);
 }
 
 // =============================================================================
@@ -597,10 +595,9 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
     bool all_virtual = true;
     for (uint32_t i = 0; i < pPresentInfo->swapchainCount; ++i) {
         if (virt.is_virtual_swapchain(pPresentInfo->pSwapchains[i])) {
-            auto* swap = virt.get_swapchain(pPresentInfo->pSwapchains[i]);
             uint32_t img_idx = pPresentInfo->pImageIndices[i];
-            if (swap && img_idx < swap->dmabuf_fds.size() && img_idx < swap->strides.size()) {
-                int fd = swap->dmabuf_fds[img_idx];
+            auto frame = virt.get_frame_data(pPresentInfo->pSwapchains[i], img_idx);
+            if (frame.valid) {
                 auto& socket = get_layer_socket();
                 if (!socket.is_connected()) {
                     socket.connect();
@@ -608,13 +605,13 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
                 if (socket.is_connected()) {
                     CaptureTextureData tex{};
                     tex.type = CaptureMessageType::texture_data;
-                    tex.width = swap->extent.width;
-                    tex.height = swap->extent.height;
-                    tex.format = swap->format;
-                    tex.stride = swap->strides[img_idx];
+                    tex.width = frame.width;
+                    tex.height = frame.height;
+                    tex.format = frame.format;
+                    tex.stride = frame.stride;
                     tex.offset = 0;
                     tex.modifier = 0;
-                    socket.send_texture(tex, fd);
+                    socket.send_texture(tex, frame.dmabuf_fd);
                 }
             }
         } else {

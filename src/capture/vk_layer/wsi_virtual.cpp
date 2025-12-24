@@ -455,4 +455,26 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swap
     return VK_SUCCESS;
 }
 
+SwapchainFrameData WsiVirtualizer::get_frame_data(VkSwapchainKHR swapchain, uint32_t image_index) {
+    std::lock_guard lock(mutex_);
+    auto it = swapchains_.find(swapchain);
+    if (it == swapchains_.end()) {
+        return {};
+    }
+
+    auto& swap = it->second;
+    if (image_index >= swap.dmabuf_fds.size() || image_index >= swap.strides.size()) {
+        return {};
+    }
+
+    return {
+        .valid = true,
+        .width = swap.extent.width,
+        .height = swap.extent.height,
+        .format = swap.format,
+        .stride = swap.strides[image_index],
+        .dmabuf_fd = swap.dmabuf_fds[image_index],
+    };
+}
+
 } // namespace goggles::capture

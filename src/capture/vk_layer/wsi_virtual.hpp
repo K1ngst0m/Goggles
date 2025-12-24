@@ -33,6 +33,15 @@ struct VirtualSwapchain {
     std::chrono::steady_clock::time_point last_acquire;
 };
 
+struct SwapchainFrameData {
+    bool valid = false;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    uint32_t stride = 0;
+    int dmabuf_fd = -1;
+};
+
 class WsiVirtualizer {
 public:
     static WsiVirtualizer& instance();
@@ -64,6 +73,7 @@ public:
     VkResult acquire_next_image(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
                                  VkSemaphore semaphore, VkFence fence, uint32_t* index,
                                  VkDeviceData* dev_data);
+    SwapchainFrameData get_frame_data(VkSwapchainKHR swapchain, uint32_t image_index);
 
 private:
     WsiVirtualizer();
