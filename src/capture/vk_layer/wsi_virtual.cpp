@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
 #include <unistd.h>
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
@@ -11,6 +12,16 @@ namespace goggles::capture {
 
 constexpr uint64_t DRM_FORMAT_MOD_LINEAR = 0;
 constexpr uint64_t DRM_FORMAT_MOD_INVALID = 0xffffffffffffffULL;
+
+static uint32_t get_fps_limit() {
+    static const uint32_t limit = []() {
+        const char* env = std::getenv("GOGGLES_FPS_LIMIT");
+        if (!env) return 60u;
+        int val = std::atoi(env);
+        return val >= 0 ? static_cast<uint32_t>(val) : 60u;
+    }();
+    return limit;
+}
 
 bool should_use_wsi_proxy() {
     static const bool enabled = []() {
@@ -354,6 +365,19 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swap
     if (it == swapchains_.end()) return VK_ERROR_OUT_OF_DATE_KHR;
 
     auto& swap = it->second;
+
+    uint32_t fps = get_fps_limit();
+    if (fps > 0) {
+        using namespace std::chrono;
+        auto now = steady_clock::now();
+        auto frame_duration = nanoseconds(1'000'000'000 / fps);
+        auto next_frame = swap.last_acquire + frame_duration;
+        if (now < next_frame) {
+            std::this_thread::sleep_until(next_frame);
+        }
+        swap.last_acquire = steady_clock::now();
+    }
+
     *index = swap.current_index;
     swap.current_index = (swap.current_index + 1) % swap.image_count;
 

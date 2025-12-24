@@ -2,6 +2,7 @@
 
 #include "vk_dispatch.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
@@ -29,6 +30,7 @@ struct VirtualSwapchain {
     std::vector<uint32_t> strides;
     uint32_t image_count = 0;
     uint32_t current_index = 0;
+    std::chrono::steady_clock::time_point last_acquire{};
 };
 
 class WsiVirtualizer {

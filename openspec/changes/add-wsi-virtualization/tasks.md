@@ -46,5 +46,5 @@
 
 ## 9. Frame Rate Limiting
 
-- [ ] 9.1 Add `GOGGLES_FPS_LIMIT` config (default 60)
-- [ ] 9.2 Implement rate limiting in `acquire_next_image`
+- [x] 9.1 Add `GOGGLES_FPS_LIMIT` config (default 60)
+- [x] 9.2 Implement rate limiting in `acquire_next_image`
