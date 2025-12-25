@@ -785,8 +785,8 @@ void VulkanBackend::cleanup_imported_image() {
     }
 }
 
-auto VulkanBackend::import_sync_semaphores(int frame_ready_fd, int frame_consumed_fd)
-    -> Result<void> {
+auto VulkanBackend::import_sync_semaphores(util::UniqueFd frame_ready_fd,
+                                           util::UniqueFd frame_consumed_fd) -> Result<void> {
     cleanup_sync_semaphores();
 
     vk::SemaphoreTypeCreateInfo timeline_info{};
@@ -812,7 +812,7 @@ auto VulkanBackend::import_sync_semaphores(int frame_ready_fd, int frame_consume
     import_info.flags = 0;
 
     import_info.semaphore = ready_sem;
-    import_info.fd = frame_ready_fd;
+    import_info.fd = frame_ready_fd.get();
     auto import_res = static_cast<vk::Result>(
         VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(*m_device, &import_info));
     if (import_res != vk::Result::eSuccess) {
@@ -821,9 +821,10 @@ auto VulkanBackend::import_sync_semaphores(int frame_ready_fd, int frame_consume
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to import frame_ready semaphore FD");
     }
+    frame_ready_fd.release();
 
     import_info.semaphore = consumed_sem;
-    import_info.fd = frame_consumed_fd;
+    import_info.fd = frame_consumed_fd.get();
     import_res = static_cast<vk::Result>(
         VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(*m_device, &import_info));
     if (import_res != vk::Result::eSuccess) {
@@ -832,6 +833,7 @@ auto VulkanBackend::import_sync_semaphores(int frame_ready_fd, int frame_consume
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to import frame_consumed semaphore FD");
     }
+    frame_consumed_fd.release();
 
     m_frame_ready_sem = ready_sem;
     m_frame_consumed_sem = consumed_sem;

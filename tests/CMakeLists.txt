@@ -30,6 +30,9 @@ target_sources(goggles_tests PRIVATE
     render/test_zfast_integration.cpp
     render/test_filter_chain.cpp
 
+    # Capture module tests
+    capture/test_capture_protocol.cpp
+
     # Future: Pipeline module tests (when implemented)
     # pipeline/graph/test_pipeline_graph.cpp
 )
@@ -43,6 +46,7 @@ target_include_directories(goggles_tests PRIVATE
 target_link_libraries(goggles_tests PRIVATE
     goggles_util
     goggles_render
+    goggles_capture
     Catch2::Catch2WithMain
 )
 

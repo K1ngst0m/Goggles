@@ -39,8 +39,8 @@ public:
 
     void load_shader_preset(const std::filesystem::path& preset_path);
 
-    [[nodiscard]] auto import_sync_semaphores(int frame_ready_fd, int frame_consumed_fd)
-        -> Result<void>;
+    [[nodiscard]] auto import_sync_semaphores(util::UniqueFd frame_ready_fd,
+                                              util::UniqueFd frame_consumed_fd) -> Result<void>;
     [[nodiscard]] auto has_sync_semaphores() const -> bool { return m_sync_semaphores_imported; }
     void cleanup_sync_semaphores();
 
