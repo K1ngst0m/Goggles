@@ -61,7 +61,7 @@ if command -v rsync &> /dev/null; then
 else
     # Remove existing contents first to match rsync --delete behavior
     find "${SHADERS_DIR}" -mindepth 1 -delete
-    cp -r "${SOURCE_DIR}/"* "${SHADERS_DIR}/"
+    cp -r "${SOURCE_DIR}/." "${SHADERS_DIR}/"
 fi
 
 echo ""
