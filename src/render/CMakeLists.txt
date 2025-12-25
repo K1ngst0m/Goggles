@@ -11,6 +11,7 @@ add_library(goggles_render STATIC
     chain/filter_pass.cpp
     chain/framebuffer.cpp
     chain/filter_chain.cpp
+    chain/frame_history.cpp
     texture/texture_loader.cpp
 )
 
