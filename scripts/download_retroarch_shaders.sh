@@ -77,7 +77,7 @@ for dir in "${REQUIRED_DIRS[@]}"; do
 done
 
 # Count shader files
-SHADER_COUNT=$(find "${SHADERS_DIR}" -name "*.slang" -o -name "*.slangp" | wc -l)
+SHADER_COUNT=$(find "${SHADERS_DIR}" \( -name "*.slang" -o -name "*.slangp" \) | wc -l)
 echo "Installed ${SHADER_COUNT} shader files"
 
 echo ""
