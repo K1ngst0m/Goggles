@@ -104,6 +104,16 @@ For Steam games, set launch options:
 GOGGLES_CAPTURE=1 %command%
 ```
 
+### RetroArch Shaders
+
+The repository tracks minimal zfast-crt shaders. For the full shader collection:
+
+```bash
+./scripts/download_retroarch_shaders.sh
+```
+
+This downloads from [libretro/slang-shaders](https://github.com/libretro/slang-shaders). All shaders except zfast-crt are gitignored.
+
 ## Documentation
 
 See [docs/architecture.md](docs/architecture.md) for project architecture and design.
