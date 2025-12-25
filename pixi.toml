@@ -38,8 +38,11 @@ build-quality = { cmd = "cmake --build build/quality", depends-on = ["configure-
 [dependencies]
 cmake = ">=3.31.2,<5"
 ninja = ">=1.13.2,<2"
-cxx-compiler = ">=1.11.0,<2"
-clang-tools = ">=21.1.7,<22"
+clang_linux-64 = ">=18"
+clangxx_linux-64 = ">=18"
+sysroot_linux-64 = ">=2.17"
+gxx_linux-64 = ">=13"
+clang-tools = ">=18"       
 spdlog = ">=1.16.0,<2"
 catch2 = ">=3.8.0,<4"
 toml11 = ">=4.4.0,<5"
