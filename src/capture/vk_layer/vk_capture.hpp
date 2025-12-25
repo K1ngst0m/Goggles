@@ -100,16 +100,15 @@ private:
 
     void worker_func();
 
-    std::mutex mutex_;
-    std::unordered_map<VkSwapchainKHR, SwapData> swaps_;
-    std::unordered_map<VkDevice, DeviceSyncState> device_sync_;
-
-    // Async worker state
+    // Ordered for optimal padding (clang-analyzer-optin.performance.Padding)
     util::SPSCQueue<AsyncCaptureItem> async_queue_{16};
     std::thread worker_thread_;
-    std::atomic<bool> shutdown_{false};
+    std::mutex mutex_;
     std::mutex cv_mutex_;
     std::condition_variable cv_;
+    std::unordered_map<VkSwapchainKHR, SwapData> swaps_;
+    std::unordered_map<VkDevice, DeviceSyncState> device_sync_;
+    std::atomic<bool> shutdown_{false};
 };
 
 CaptureManager& get_capture_manager();
