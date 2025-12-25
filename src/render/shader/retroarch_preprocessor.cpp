@@ -215,7 +215,7 @@ auto RetroArchPreprocessor::extract_metadata(const std::string& source)
             metadata.name_alias = match[1].str();
             // Don't add the pragma line to output
         } else if (std::regex_search(line, match, format_regex)) {
-            metadata.format = match[1].str();
+            metadata.format = match[1].str(); // NOLINT(bugprone-branch-clone)
             // Don't add the pragma line to output
         } else {
             result += line;

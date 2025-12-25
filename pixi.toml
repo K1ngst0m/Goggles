@@ -30,7 +30,10 @@ test-asan = { cmd = "ctest --test-dir build/asan --output-on-failure", depends-o
 # Profiling Preset (Release + Tracy)
 configure-profile = "cmake -B build/profile -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_PROFILING=ON -DCPM_USE_LOCAL_PACKAGES=ON"
 build-profile = { cmd = "cmake --build build/profile", depends-on = ["configure-profile"] }
-start-profile = { cmd = "./build/profile/bin/goggles", depends-on = ["build-profile"] }
+
+# Quality Preset (Debug + ASAN + Clang-Tidy)
+configure-quality = "cmake -B build/quality -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON -DENABLE_CLANG_TIDY=ON -DCPM_USE_LOCAL_PACKAGES=ON"
+build-quality = { cmd = "cmake --build build/quality", depends-on = ["configure-quality"] }
 
 [dependencies]
 cmake = ">=4.2.1,<5"
