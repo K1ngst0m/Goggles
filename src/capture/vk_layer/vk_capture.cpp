@@ -495,51 +495,136 @@ bool CaptureManager::init_sync_primitives(SwapData* swap, VkDeviceData* dev_data
 }
 
 // =============================================================================
-// Frame Resources
+// Copy Command Buffers
 // =============================================================================
 
-void CaptureManager::create_frame_resources(SwapData* swap, VkDeviceData* dev_data,
-                                            uint32_t count) {
+void CaptureManager::init_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
-    swap->frames.resize(count);
+    size_t count = swap->swap_images.size();
+    swap->copy_cmds.resize(count);
 
-    for (auto& frame : swap->frames) {
+    for (size_t i = 0; i < count; ++i) {
+        CopyCmd& cmd = swap->copy_cmds[i];
+
+        // Create command pool (no RESET flag - buffers are static)
         VkCommandPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        pool_info.flags = 0;
         pool_info.queueFamilyIndex = dev_data->graphics_queue_family;
-        funcs.CreateCommandPool(device, &pool_info, nullptr, &frame.cmd_pool);
+        funcs.CreateCommandPool(device, &pool_info, nullptr, &cmd.pool);
 
         VkCommandBufferAllocateInfo cmd_info{};
         cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        cmd_info.commandPool = frame.cmd_pool;
+        cmd_info.commandPool = cmd.pool;
         cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cmd_info.commandBufferCount = 1;
-        funcs.AllocateCommandBuffers(device, &cmd_info, &frame.cmd_buffer);
+        funcs.AllocateCommandBuffers(device, &cmd_info, &cmd.cmd);
+
+        // Record copy commands for this swapchain image
+        VkImage src_image = swap->swap_images[i];
+        VkImage dst_image = swap->export_image;
+
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin_info.flags = 0;  // Reusable
+        funcs.BeginCommandBuffer(cmd.cmd, &begin_info);
+
+        VkImageMemoryBarrier src_barrier{};
+        src_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        src_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        src_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        src_barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        src_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        src_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        src_barrier.image = src_image;
+        src_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        src_barrier.subresourceRange.baseMipLevel = 0;
+        src_barrier.subresourceRange.levelCount = 1;
+        src_barrier.subresourceRange.baseArrayLayer = 0;
+        src_barrier.subresourceRange.layerCount = 1;
+
+        VkImageMemoryBarrier dst_barrier{};
+        dst_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        dst_barrier.srcAccessMask = 0;
+        dst_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        dst_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        dst_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        dst_barrier.image = dst_image;
+        dst_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        dst_barrier.subresourceRange.baseMipLevel = 0;
+        dst_barrier.subresourceRange.levelCount = 1;
+        dst_barrier.subresourceRange.baseArrayLayer = 0;
+        dst_barrier.subresourceRange.layerCount = 1;
+
+        VkImageMemoryBarrier barriers[2] = {src_barrier, dst_barrier};
+        funcs.CmdPipelineBarrier(cmd.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2,
+                                 barriers);
+
+        VkImageCopy copy_region{};
+        copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy_region.srcSubresource.mipLevel = 0;
+        copy_region.srcSubresource.baseArrayLayer = 0;
+        copy_region.srcSubresource.layerCount = 1;
+        copy_region.srcOffset = {0, 0, 0};
+        copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy_region.dstSubresource.mipLevel = 0;
+        copy_region.dstSubresource.baseArrayLayer = 0;
+        copy_region.dstSubresource.layerCount = 1;
+        copy_region.dstOffset = {0, 0, 0};
+        copy_region.extent = {swap->extent.width, swap->extent.height, 1};
+
+        funcs.CmdCopyImage(cmd.cmd, src_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst_image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
+
+        src_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        src_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        src_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        src_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        dst_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        dst_barrier.dstAccessMask = 0;
+        dst_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        dst_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+        barriers[0] = src_barrier;
+        barriers[1] = dst_barrier;
+        funcs.CmdPipelineBarrier(cmd.cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
+                                     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                 0, 0, nullptr, 0, nullptr, 2, barriers);
+
+        funcs.EndCommandBuffer(cmd.cmd);
     }
+
+    LAYER_DEBUG("Initialized %zu copy command buffers", count);
 }
 
-void CaptureManager::destroy_frame_resources(SwapData* swap, VkDeviceData* dev_data) {
+void CaptureManager::destroy_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
-    for (auto& frame : swap->frames) {
-        if (frame.cmd_buffer_busy && swap->timeline_sem != VK_NULL_HANDLE) {
+    for (auto& cmd : swap->copy_cmds) {
+        if (cmd.busy && swap->timeline_sem != VK_NULL_HANDLE) {
             VkSemaphoreWaitInfo wait_info{};
             wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
             wait_info.semaphoreCount = 1;
             wait_info.pSemaphores = &swap->timeline_sem;
-            wait_info.pValues = &frame.timeline_value;
+            wait_info.pValues = &cmd.timeline_value;
 
             funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
         }
-        if (frame.cmd_pool != VK_NULL_HANDLE) {
-            funcs.DestroyCommandPool(device, frame.cmd_pool, nullptr);
+        if (cmd.pool != VK_NULL_HANDLE) {
+            funcs.DestroyCommandPool(device, cmd.pool, nullptr);
         }
     }
-    swap->frames.clear();
+    swap->copy_cmds.clear();
 }
 
 // =============================================================================
@@ -571,7 +656,7 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
             LAYER_DEBUG("Export image init FAILED");
             return;
         }
-        create_frame_resources(swap, dev_data, static_cast<uint32_t>(swap->swap_images.size()));
+        init_copy_cmds(swap, dev_data);
     }
 
     auto& socket = get_layer_socket();
@@ -595,36 +680,31 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
-    if (swap->frames.empty() || image_index >= swap->swap_images.size()) {
+    if (swap->copy_cmds.empty() || image_index >= swap->copy_cmds.size()) {
         return;
     }
 
-    uint32_t frame_idx = swap->frame_index;
-    swap->frame_index = (frame_idx + 1) % static_cast<uint32_t>(swap->frames.size());
-    FrameData& frame = swap->frames[frame_idx];
+    CopyCmd& cmd = swap->copy_cmds[image_index];
 
-
-    if (frame.cmd_buffer_busy && swap->timeline_sem != VK_NULL_HANDLE) {
+    // Wait if this command buffer is still in flight
+    if (cmd.busy && swap->timeline_sem != VK_NULL_HANDLE) {
         VkSemaphoreWaitInfo wait_info{};
         wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
         wait_info.semaphoreCount = 1;
         wait_info.pSemaphores = &swap->timeline_sem;
-        wait_info.pValues = &frame.timeline_value;
+        wait_info.pValues = &cmd.timeline_value;
 
         funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
-        frame.cmd_buffer_busy = false;
+        cmd.busy = false;
     }
 
-    funcs.ResetCommandPool(device, frame.cmd_pool, 0);
-
-    VkImage src_image = swap->swap_images[image_index];
-    record_copy_commands(swap, frame, src_image, funcs);
+    // No recording needed - command buffer is pre-recorded
 
     VkResult res;
 
     if (swap->timeline_sem != VK_NULL_HANDLE && should_use_async_capture()) {
         uint64_t timeline_value = ++swap->frame_counter;
-        frame.timeline_value = timeline_value;
+        cmd.timeline_value = timeline_value;
 
         VkTimelineSemaphoreSubmitInfo timeline_submit{};
         timeline_submit.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
@@ -635,7 +715,7 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.pNext = &timeline_submit;
         submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &frame.cmd_buffer;
+        submit_info.pCommandBuffers = &cmd.cmd;
         submit_info.signalSemaphoreCount = 1;
         submit_info.pSignalSemaphores = &swap->timeline_sem;
 
@@ -685,12 +765,12 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
         }
 
         cv_.notify_one();
-        frame.cmd_buffer_busy = true;
+        cmd.busy = true;
     } else {
         VkSubmitInfo submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &frame.cmd_buffer;
+        submit_info.pCommandBuffers = &cmd.cmd;
 
         res = funcs.QueueSubmit(queue, 1, &submit_info, swap->sync_fence);
         if (res != VK_SUCCESS) {
@@ -716,87 +796,6 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     }
 }
 
-void CaptureManager::record_copy_commands(SwapData* swap, FrameData& frame, VkImage src_image,
-                                          VkDeviceFuncs& funcs) {
-    GOGGLES_PROFILE_FUNCTION();
-    VkImage dst_image = swap->export_image;
-
-    VkCommandBufferBeginInfo begin_info{};
-    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    funcs.BeginCommandBuffer(frame.cmd_buffer, &begin_info);
-
-    VkImageMemoryBarrier src_barrier{};
-    src_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    src_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    src_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    src_barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    src_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    src_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    src_barrier.image = src_image;
-    src_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    src_barrier.subresourceRange.baseMipLevel = 0;
-    src_barrier.subresourceRange.levelCount = 1;
-    src_barrier.subresourceRange.baseArrayLayer = 0;
-    src_barrier.subresourceRange.layerCount = 1;
-
-    VkImageMemoryBarrier dst_barrier{};
-    dst_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    dst_barrier.srcAccessMask = 0;
-    dst_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    dst_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    dst_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    dst_barrier.image = dst_image;
-    dst_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    dst_barrier.subresourceRange.baseMipLevel = 0;
-    dst_barrier.subresourceRange.levelCount = 1;
-    dst_barrier.subresourceRange.baseArrayLayer = 0;
-    dst_barrier.subresourceRange.layerCount = 1;
-
-    VkImageMemoryBarrier barriers[2] = {src_barrier, dst_barrier};
-    funcs.CmdPipelineBarrier(frame.cmd_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2,
-                             barriers);
-
-    VkImageCopy copy_region{};
-    copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copy_region.srcSubresource.mipLevel = 0;
-    copy_region.srcSubresource.baseArrayLayer = 0;
-    copy_region.srcSubresource.layerCount = 1;
-    copy_region.srcOffset = {0, 0, 0};
-    copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copy_region.dstSubresource.mipLevel = 0;
-    copy_region.dstSubresource.baseArrayLayer = 0;
-    copy_region.dstSubresource.layerCount = 1;
-    copy_region.dstOffset = {0, 0, 0};
-    copy_region.extent = {swap->extent.width, swap->extent.height, 1};
-
-    funcs.CmdCopyImage(frame.cmd_buffer, src_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst_image,
-                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
-
-    src_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    src_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    src_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    src_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    dst_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    dst_barrier.dstAccessMask = 0;
-    dst_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    dst_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    barriers[0] = src_barrier;
-    barriers[1] = dst_barrier;
-    funcs.CmdPipelineBarrier(frame.cmd_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
-                                 VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                             0, 0, nullptr, 0, nullptr, 2, barriers);
-
-    funcs.EndCommandBuffer(frame.cmd_buffer);
-}
-
 // =============================================================================
 // Cleanup
 // =============================================================================
@@ -805,7 +804,7 @@ void CaptureManager::cleanup_swap_data(SwapData* swap, VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
-    destroy_frame_resources(swap, dev_data);
+    destroy_copy_cmds(swap, dev_data);
 
     if (swap->dmabuf_fd >= 0) {
         close(swap->dmabuf_fd);
