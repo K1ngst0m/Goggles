@@ -498,7 +498,7 @@ bool CaptureManager::init_sync_primitives(SwapData* swap, VkDeviceData* dev_data
 // Copy Command Buffers
 // =============================================================================
 
-void CaptureManager::init_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
+bool CaptureManager::init_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
     GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
@@ -509,19 +509,28 @@ void CaptureManager::init_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
     for (size_t i = 0; i < count; ++i) {
         CopyCmd& cmd = swap->copy_cmds[i];
 
-        // Create command pool (no RESET flag - buffers are static)
         VkCommandPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         pool_info.flags = 0;
         pool_info.queueFamilyIndex = dev_data->graphics_queue_family;
-        funcs.CreateCommandPool(device, &pool_info, nullptr, &cmd.pool);
+        VkResult res = funcs.CreateCommandPool(device, &pool_info, nullptr, &cmd.pool);
+        if (res != VK_SUCCESS) {
+            LAYER_DEBUG("CreateCommandPool failed for copy cmd %zu: %d", i, res);
+            destroy_copy_cmds(swap, dev_data);
+            return false;
+        }
 
         VkCommandBufferAllocateInfo cmd_info{};
         cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         cmd_info.commandPool = cmd.pool;
         cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cmd_info.commandBufferCount = 1;
-        funcs.AllocateCommandBuffers(device, &cmd_info, &cmd.cmd);
+        res = funcs.AllocateCommandBuffers(device, &cmd_info, &cmd.cmd);
+        if (res != VK_SUCCESS) {
+            LAYER_DEBUG("AllocateCommandBuffers failed for copy cmd %zu: %d", i, res);
+            destroy_copy_cmds(swap, dev_data);
+            return false;
+        }
 
         // Record copy commands for this swapchain image
         VkImage src_image = swap->swap_images[i];
@@ -604,6 +613,7 @@ void CaptureManager::init_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
     }
 
     LAYER_DEBUG("Initialized %zu copy command buffers", count);
+    return true;
 }
 
 void CaptureManager::destroy_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
@@ -656,7 +666,10 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
             LAYER_DEBUG("Export image init FAILED");
             return;
         }
-        init_copy_cmds(swap, dev_data);
+        if (!init_copy_cmds(swap, dev_data)) {
+            LAYER_DEBUG("Copy commands init FAILED");
+            return;
+        }
     }
 
     auto& socket = get_layer_socket();

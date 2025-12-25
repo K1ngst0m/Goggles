@@ -82,7 +82,7 @@ public:
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
     bool init_sync_primitives(SwapData* swap, VkDeviceData* dev_data);
-    void init_copy_cmds(SwapData* swap, VkDeviceData* dev_data);
+    bool init_copy_cmds(SwapData* swap, VkDeviceData* dev_data);
     void destroy_copy_cmds(SwapData* swap, VkDeviceData* dev_data);
     void capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue, VkDeviceData* dev_data,
                        VkPresentInfoKHR* present_info);
