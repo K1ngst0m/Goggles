@@ -152,12 +152,14 @@ Result<void> write_spirv(BinaryWriter& writer, const std::vector<uint32_t>& spir
 
 bool read_spirv(BinaryReader& reader, std::vector<uint32_t>& spirv) {
     uint32_t size = 0;
-    if (!reader.read_pod(size))
+    if (!reader.read_pod(size)) {
         return false;
+    }
     spirv.resize(size);
     for (size_t i = 0; i < size; ++i) {
-        if (!reader.read_pod(spirv[i]))
+        if (!reader.read_pod(spirv[i])) {
             return false;
+        }
     }
     return true;
 }
