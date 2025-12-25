@@ -15,11 +15,11 @@
 
 namespace goggles::capture {
 
-struct FrameData {
-    VkCommandPool cmd_pool = VK_NULL_HANDLE;
-    VkCommandBuffer cmd_buffer = VK_NULL_HANDLE;
+struct CopyCmd {
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
     uint64_t timeline_value = 0;
-    bool cmd_buffer_busy = false;
+    bool busy = false;
 };
 
 struct AsyncCaptureItem {
@@ -59,9 +59,8 @@ struct SwapData {
     // Fence for sync mode fallback
     VkFence sync_fence = VK_NULL_HANDLE;
 
-    // Per-frame resources
-    std::vector<FrameData> frames;
-    uint32_t frame_index = 0;
+    // Copy command buffers (one per swapchain image)
+    std::vector<CopyCmd> copy_cmds;
 
     // State
     bool export_initialized = false;
@@ -83,12 +82,10 @@ public:
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
     bool init_sync_primitives(SwapData* swap, VkDeviceData* dev_data);
-    void create_frame_resources(SwapData* swap, VkDeviceData* dev_data, uint32_t count);
-    void destroy_frame_resources(SwapData* swap, VkDeviceData* dev_data);
+    bool init_copy_cmds(SwapData* swap, VkDeviceData* dev_data);
+    void destroy_copy_cmds(SwapData* swap, VkDeviceData* dev_data);
     void capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue, VkDeviceData* dev_data,
                        VkPresentInfoKHR* present_info);
-    void record_copy_commands(SwapData* swap, FrameData& frame, VkImage src_image,
-                              VkDeviceFuncs& funcs);
     void cleanup_swap_data(SwapData* swap, VkDeviceData* dev_data);
 
     void worker_func();
