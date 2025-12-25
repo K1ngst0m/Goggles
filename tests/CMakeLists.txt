@@ -20,6 +20,7 @@ target_sources(goggles_tests PRIVATE
     util/test_job_system.cpp
     util/test_queues.cpp
     util/test_unique_fd.cpp
+    util/test_serializer.cpp
 
     # Render module tests
     render/test_shader_runtime.cpp
@@ -53,6 +54,8 @@ target_compile_features(goggles_tests PRIVATE cxx_std_20)
 target_compile_definitions(goggles_tests PRIVATE
     GOGGLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
+
+goggles_enable_sanitizers(goggles_tests)
 
 # Copy test data files to build directory
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/util/test_data/

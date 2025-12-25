@@ -105,7 +105,7 @@ void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& dat
         auto kind = type_layout->getKind();
         auto category = param->getCategory();
 
-        GOGGLES_LOG_DEBUG("Parameter {}: name='{}', kind={}, category={}", i,
+        GOGGLES_LOG_TRACE("Parameter {}: name='{}', kind={}, category={}", i,
                           name ? name : "(null)", static_cast<int>(kind),
                           static_cast<int>(category));
 
@@ -123,7 +123,7 @@ void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& dat
                 push.members = extract_members(type_layout, 0);
             }
 
-            GOGGLES_LOG_DEBUG("Found push constant block: size={}, members={}", push.total_size,
+            GOGGLES_LOG_TRACE("Found push constant block: size={}, members={}", push.total_size,
                               push.members.size());
             data.push_constants = std::move(push);
         } else if (category == slang::ParameterCategory::DescriptorTableSlot) {
@@ -147,7 +147,7 @@ void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& dat
                     ubo.members = extract_members(type_layout, 0);
                 }
 
-                GOGGLES_LOG_DEBUG("Found UBO: binding={}, set={}, size={}, members={}", binding,
+                GOGGLES_LOG_TRACE("Found UBO: binding={}, set={}, size={}, members={}", binding,
                                   set, ubo.total_size, ubo.members.size());
                 data.ubo = std::move(ubo);
             } else if (kind == slang::TypeReflection::Kind::Resource ||
@@ -159,12 +159,12 @@ void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& dat
                 tex.set = set;
                 tex.stage_flags = vk::ShaderStageFlagBits::eFragment;
 
-                GOGGLES_LOG_DEBUG("Found texture: name='{}', binding={}, set={}", tex.name, binding,
+                GOGGLES_LOG_TRACE("Found texture: name='{}', binding={}, set={}", tex.name, binding,
                                   set);
                 data.textures.push_back(std::move(tex));
             }
         } else if (category == slang::ParameterCategory::Uniform) {
-            GOGGLES_LOG_DEBUG("Found direct uniform: name='{}'", name ? name : "(null)");
+            GOGGLES_LOG_TRACE("Found direct uniform: name='{}'", name ? name : "(null)");
         }
     }
 }
@@ -207,7 +207,7 @@ void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
 
                     offset += get_format_size(input.format);
 
-                    GOGGLES_LOG_DEBUG("Found vertex input: name='{}', location={}, format={}",
+                    GOGGLES_LOG_TRACE("Found vertex input: name='{}', location={}, format={}",
                                       input.name, input.location, vk::to_string(input.format));
                     data.vertex_inputs.push_back(std::move(input));
                 }
@@ -215,7 +215,7 @@ void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
 
             // RetroArch shaders always use: Position (vec4, loc 0), TexCoord (vec2, loc 1)
             if (data.vertex_inputs.empty() && data.push_constants.has_value()) {
-                GOGGLES_LOG_DEBUG(
+                GOGGLES_LOG_TRACE(
                     "No vertex inputs from reflection, using RetroArch standard layout");
                 data.vertex_inputs.push_back({"Position", 0, vk::Format::eR32G32B32A32Sfloat, 0});
                 data.vertex_inputs.push_back({"TexCoord", 1, vk::Format::eR32G32Sfloat, 16});
@@ -248,7 +248,7 @@ void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
                 tex.stage_flags = is_vertex ? vk::ShaderStageFlagBits::eVertex
                                             : vk::ShaderStageFlagBits::eFragment;
 
-                GOGGLES_LOG_DEBUG("Found entry point texture: name='{}', binding={}, set={}",
+                GOGGLES_LOG_TRACE("Found entry point texture: name='{}', binding={}, set={}",
                                   tex.name, binding, set);
                 data.textures.push_back(std::move(tex));
             }

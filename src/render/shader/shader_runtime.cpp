@@ -13,6 +13,7 @@
 #include <sstream>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
+#include <util/serializer.hpp>
 
 namespace goggles::render {
 
@@ -20,6 +21,7 @@ namespace {
 
 constexpr std::string_view CACHE_SUBDIR = "goggles/shaders";
 constexpr std::string_view CACHE_MAGIC = "GSPV";
+constexpr std::string_view RETROARCH_CACHE_MAGIC = "GRAC";
 constexpr uint32_t CACHE_VERSION = 1;
 
 struct CacheHeader {
@@ -28,6 +30,139 @@ struct CacheHeader {
     uint32_t hash_length;
     uint32_t spirv_size;
 };
+
+// Serialization helpers
+using util::BinaryReader;
+using util::BinaryWriter;
+
+Result<void> write_uniform_member(BinaryWriter& writer, const UniformMember& member) {
+    GOGGLES_TRY(writer.write_str(member.name));
+    writer.write_pod(member.offset);
+    writer.write_pod(member.size);
+    return {};
+}
+
+bool read_uniform_member(BinaryReader& reader, UniformMember& member) {
+    return reader.read_str(member.name) && reader.read_pod(member.offset) &&
+           reader.read_pod(member.size);
+}
+
+Result<void> write_uniform_layout(BinaryWriter& writer, const UniformBufferLayout& layout) {
+    writer.write_pod(layout.binding);
+    writer.write_pod(layout.set);
+    writer.write_pod(layout.total_size);
+    writer.write_pod(layout.stage_flags);
+    return writer.write_vec(layout.members, write_uniform_member);
+}
+
+bool read_uniform_layout(BinaryReader& reader, UniformBufferLayout& layout) {
+    return reader.read_pod(layout.binding) && reader.read_pod(layout.set) &&
+           reader.read_pod(layout.total_size) && reader.read_pod(layout.stage_flags) &&
+           reader.read_vec(layout.members, read_uniform_member);
+}
+
+Result<void> write_push_layout(BinaryWriter& writer, const PushConstantLayout& layout) {
+    writer.write_pod(layout.total_size);
+    writer.write_pod(layout.stage_flags);
+    return writer.write_vec(layout.members, write_uniform_member);
+}
+
+bool read_push_layout(BinaryReader& reader, PushConstantLayout& layout) {
+    return reader.read_pod(layout.total_size) && reader.read_pod(layout.stage_flags) &&
+           reader.read_vec(layout.members, read_uniform_member);
+}
+
+Result<void> write_texture_binding(BinaryWriter& writer, const TextureBinding& binding) {
+    GOGGLES_TRY(writer.write_str(binding.name));
+    writer.write_pod(binding.binding);
+    writer.write_pod(binding.set);
+    writer.write_pod(binding.stage_flags);
+    return {};
+}
+
+bool read_texture_binding(BinaryReader& reader, TextureBinding& binding) {
+    return reader.read_str(binding.name) && reader.read_pod(binding.binding) &&
+           reader.read_pod(binding.set) && reader.read_pod(binding.stage_flags);
+}
+
+Result<void> write_vertex_input(BinaryWriter& writer, const VertexInput& input) {
+    GOGGLES_TRY(writer.write_str(input.name));
+    writer.write_pod(input.location);
+    writer.write_pod(input.format);
+    writer.write_pod(input.offset);
+    return {};
+}
+
+bool read_vertex_input(BinaryReader& reader, VertexInput& input) {
+    return reader.read_str(input.name) && reader.read_pod(input.location) &&
+           reader.read_pod(input.format) && reader.read_pod(input.offset);
+}
+
+template <typename T, typename Func>
+Result<void> write_optional(BinaryWriter& writer, const std::optional<T>& opt, Func func) {
+    bool has_value = opt.has_value();
+    writer.write_pod(has_value);
+    if (has_value) {
+        return func(writer, *opt);
+    }
+    return {};
+}
+
+template <typename T, typename Func>
+bool read_optional(BinaryReader& reader, std::optional<T>& opt, Func func) {
+    bool has_value = false;
+    if (!reader.read_pod(has_value)) {
+        return false;
+    }
+    if (has_value) {
+        T val;
+        if (!func(reader, val)) {
+            return false;
+        }
+        opt = std::move(val);
+    } else {
+        opt = std::nullopt;
+    }
+    return true;
+}
+
+Result<void> write_reflection(BinaryWriter& writer, const ReflectionData& reflection) {
+    GOGGLES_TRY(write_optional(writer, reflection.ubo, write_uniform_layout));
+    GOGGLES_TRY(write_optional(writer, reflection.push_constants, write_push_layout));
+    GOGGLES_TRY(writer.write_vec(reflection.textures, write_texture_binding));
+    GOGGLES_TRY(writer.write_vec(reflection.vertex_inputs, write_vertex_input));
+    return {};
+}
+
+bool read_reflection(BinaryReader& reader, ReflectionData& reflection) {
+    return read_optional(reader, reflection.ubo, read_uniform_layout) &&
+           read_optional(reader, reflection.push_constants, read_push_layout) &&
+           reader.read_vec(reflection.textures, read_texture_binding) &&
+           reader.read_vec(reflection.vertex_inputs, read_vertex_input);
+}
+
+Result<void> write_spirv(BinaryWriter& writer, const std::vector<uint32_t>& spirv) {
+    // Write SPIR-V as generic vector of u32
+    writer.write_pod(static_cast<uint32_t>(spirv.size()));
+    for (auto word : spirv) {
+        writer.write_pod(word);
+    }
+    return {};
+}
+
+bool read_spirv(BinaryReader& reader, std::vector<uint32_t>& spirv) {
+    uint32_t size = 0;
+    if (!reader.read_pod(size)) {
+        return false;
+    }
+    spirv.resize(size);
+    for (size_t i = 0; i < size; ++i) {
+        if (!reader.read_pod(spirv[i])) {
+            return false;
+        }
+    }
+    return true;
+}
 
 } // namespace
 
@@ -270,6 +405,74 @@ auto ShaderRuntime::save_cached_spirv(const std::filesystem::path& cache_path,
     return {};
 }
 
+// Helpers for RetroArch caching
+auto load_cached_retroarch(const std::filesystem::path& cache_path,
+                           const std::string& expected_hash) -> Result<RetroArchCompiledShader> {
+    auto file_data = util::read_file_binary(cache_path);
+    if (!file_data) {
+        return nonstd::make_unexpected(file_data.error());
+    }
+
+    BinaryReader reader(file_data->data(), file_data->size());
+
+    // Read magic and version
+    std::array<char, 4> magic;
+    if (!reader.read(magic.data(), 4) ||
+        std::string_view(magic.data(), 4) != RETROARCH_CACHE_MAGIC) {
+        return make_error<RetroArchCompiledShader>(ErrorCode::parse_error, "Invalid cache magic");
+    }
+
+    uint32_t version;
+    if (!reader.read_pod(version) || version != CACHE_VERSION) {
+        return make_error<RetroArchCompiledShader>(ErrorCode::parse_error,
+                                                   "Cache version mismatch");
+    }
+
+    // Check hash
+    std::string stored_hash;
+    if (!reader.read_str(stored_hash) || stored_hash != expected_hash) {
+        return make_error<RetroArchCompiledShader>(ErrorCode::parse_error, "Source hash mismatch");
+    }
+
+    RetroArchCompiledShader result;
+
+    if (!read_spirv(reader, result.vertex_spirv) ||
+        !read_reflection(reader, result.vertex_reflection) ||
+        !read_spirv(reader, result.fragment_spirv) ||
+        !read_reflection(reader, result.fragment_reflection)) {
+        return make_error<RetroArchCompiledShader>(ErrorCode::parse_error, "Failed to read data");
+    }
+
+    return result;
+}
+
+auto save_cached_retroarch(const std::filesystem::path& cache_path, const std::string& source_hash,
+                           const RetroArchCompiledShader& shader) -> Result<void> {
+    BinaryWriter writer;
+
+    writer.write(RETROARCH_CACHE_MAGIC.data(), 4);
+    writer.write_pod(CACHE_VERSION);
+    GOGGLES_TRY(writer.write_str(source_hash));
+
+    GOGGLES_TRY(write_spirv(writer, shader.vertex_spirv));
+    GOGGLES_TRY(write_reflection(writer, shader.vertex_reflection));
+    GOGGLES_TRY(write_spirv(writer, shader.fragment_spirv));
+    GOGGLES_TRY(write_reflection(writer, shader.fragment_reflection));
+
+    std::ofstream file(cache_path, std::ios::binary);
+    if (!file) {
+        return make_error<void>(ErrorCode::file_write_failed,
+                                "Failed to create cache file: " + cache_path.string());
+    }
+
+    file.write(writer.buffer.data(), static_cast<std::streamsize>(writer.buffer.size()));
+    if (!file) {
+        return make_error<void>(ErrorCode::file_write_failed, "Failed to write cache file");
+    }
+
+    return {};
+}
+
 auto ShaderRuntime::compile_slang(const std::string& module_name, const std::string& source,
                                   const std::string& entry_point) -> Result<std::vector<uint32_t>> {
     GOGGLES_PROFILE_SCOPE("CompileSlang");
@@ -457,6 +660,16 @@ auto ShaderRuntime::compile_retroarch_shader(const std::string& vertex_source,
                                                    "ShaderRuntime not initialized");
     }
 
+    // Check cache
+    auto source_hash = compute_source_hash(vertex_source + fragment_source);
+    auto cache_path = get_cache_dir() / (module_name + "_ra.cache");
+
+    auto cached = load_cached_retroarch(cache_path, source_hash);
+    if (cached) {
+        GOGGLES_LOG_DEBUG("Loaded cached RetroArch shader: {}", cache_path.filename().string());
+        return std::move(cached.value());
+    }
+
     auto vertex_result = compile_glsl_with_reflection(module_name + "_vert", vertex_source, "main",
                                                       ShaderStage::vertex);
     if (!vertex_result) {
@@ -473,11 +686,19 @@ auto ShaderRuntime::compile_retroarch_shader(const std::string& vertex_source,
                                                        fragment_result.error().message);
     }
 
-    GOGGLES_LOG_INFO("Compiled RetroArch shader: {}", module_name);
-    return RetroArchCompiledShader{.vertex_spirv = std::move(vertex_result->spirv),
+    RetroArchCompiledShader result{.vertex_spirv = std::move(vertex_result->spirv),
                                    .fragment_spirv = std::move(fragment_result->spirv),
                                    .vertex_reflection = std::move(vertex_result->reflection),
                                    .fragment_reflection = std::move(fragment_result->reflection)};
+
+    // Save to cache
+    auto save_result = save_cached_retroarch(cache_path, source_hash, result);
+    if (!save_result) {
+        GOGGLES_LOG_WARN("Failed to cache RetroArch shader: {}", save_result.error().message);
+    }
+
+    GOGGLES_LOG_INFO("Compiled RetroArch shader: {}", module_name);
+    return result;
 }
 
 } // namespace goggles::render
