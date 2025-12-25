@@ -116,21 +116,25 @@ goggles/
 - **Configuration Format:** All configuration MUST be in TOML format.
 
 ## External Dependencies
+- **Pixi Managed (Reproducible Env):**
+  - `SDL3` - Windowing and Input
+  - `CLI11` - Command line parsing
+  - `Vulkan Headers` / `libvulkan-headers` - API definitions
+  - **System Libs**: Wayland, X11, ALSA, PulseAudio, JACK, libdrm, etc.
+
 - **CPM.cmake Managed:**
   - `tl::expected` v0.8.0 (martinmoene/expected-lite) - error handling
   - `spdlog` v1.15.0 - logging
   - `toml11` v4.2.0 - configuration parsing
   - `Catch2` v3.8.0 - testing framework
-  - `SDL3` release-3.2.0 (libsdl-org/SDL) - window creation and Vulkan surface support
-  - `Slang` v2025.23.2 - shader compilation (downloaded as prebuilt binary)
-  - `Tracy` v0.13.1 (wolfpld/tracy) - profiling (optional, enabled via `ENABLE_PROFILING=ON`)
-- **System Provided:**
-  - Vulkan SDK
+  - `stb` - Image loading (header only)
+  - `BS::thread_pool` v3.5.0 - Job system
+  - `Slang` v2025.23.2 - Shader compilation (CPM used to ensure correct "Shader-Slang" binary)
+  - `Tracy` v0.13.1 - Profiling (optional)
+
 - **Threading:**
-  - `BS::thread_pool` v3.5.0 (Phase 1 job system, already integrated)
-  - `Taskflow` v3.10.0 (Phase 2 upgrade path, dependency-aware, commented out)
-- **Internal Implementations:**
-  - `goggles::util::SPSCQueue` - custom wait-free SPSC queue in `src/util/queues.hpp`
+  - `BS::thread_pool` v3.5.0 (Phase 1 job system)
+  - `goggles::util::SPSCQueue` (Internal wait-free queue)
 
 ## Documentation Policy
 
