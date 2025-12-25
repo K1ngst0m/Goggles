@@ -16,7 +16,8 @@ namespace goggles::capture {
 constexpr uint64_t DRM_FORMAT_MOD_LINEAR = 0;
 constexpr uint64_t DRM_FORMAT_MOD_INVALID = 0xffffffffffffffULL;
 
-static std::optional<uint32_t> parse_env_uint(const char* name, uint32_t min_val, uint32_t max_val) {
+static std::optional<uint32_t> parse_env_uint(const char* name, uint32_t min_val,
+                                              uint32_t max_val) {
     const char* env = std::getenv(name);
     if (!env || env[0] == '\0') {
         return std::nullopt;
@@ -94,8 +95,8 @@ VkResult WsiVirtualizer::create_surface(VkInstance inst, VkSurfaceKHR* surface) 
     surfaces_[vs.handle] = vs;
     *surface = vs.handle;
 
-    LAYER_DEBUG("Virtual surface created: %p (%ux%u)", reinterpret_cast<void*>(vs.handle),
-                vs.width, vs.height);
+    LAYER_DEBUG("Virtual surface created: %p (%ux%u)", reinterpret_cast<void*>(vs.handle), vs.width,
+                vs.height);
     return VK_SUCCESS;
 }
 
@@ -115,8 +116,9 @@ VirtualSurface* WsiVirtualizer::get_surface(VkSurfaceKHR surface) {
     return it != surfaces_.end() ? &it->second : nullptr;
 }
 
-VkResult WsiVirtualizer::get_surface_capabilities(VkPhysicalDevice /*physDev*/, VkSurfaceKHR surface,
-                                                   VkSurfaceCapabilitiesKHR* caps) {
+VkResult WsiVirtualizer::get_surface_capabilities(VkPhysicalDevice /*physDev*/,
+                                                  VkSurfaceKHR surface,
+                                                  VkSurfaceCapabilitiesKHR* caps) {
     std::lock_guard lock(mutex_);
     auto it = surfaces_.find(surface);
     if (it == surfaces_.end()) {
@@ -134,13 +136,12 @@ VkResult WsiVirtualizer::get_surface_capabilities(VkPhysicalDevice /*physDev*/, 
     caps->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     caps->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     caps->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     return VK_SUCCESS;
 }
 
 VkResult WsiVirtualizer::get_surface_formats(VkPhysicalDevice /*physDev*/, VkSurfaceKHR /*surface*/,
-                                              uint32_t* count, VkSurfaceFormatKHR* formats) {
+                                             uint32_t* count, VkSurfaceFormatKHR* formats) {
     constexpr VkSurfaceFormatKHR supported[] = {
         {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
@@ -157,8 +158,9 @@ VkResult WsiVirtualizer::get_surface_formats(VkPhysicalDevice /*physDev*/, VkSur
     return to_copy < 2 ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
-VkResult WsiVirtualizer::get_surface_present_modes(VkPhysicalDevice /*physDev*/, VkSurfaceKHR /*surface*/,
-                                                    uint32_t* count, VkPresentModeKHR* modes) {
+VkResult WsiVirtualizer::get_surface_present_modes(VkPhysicalDevice /*physDev*/,
+                                                   VkSurfaceKHR /*surface*/, uint32_t* count,
+                                                   VkPresentModeKHR* modes) {
     constexpr VkPresentModeKHR supported[] = {
         VK_PRESENT_MODE_FIFO_KHR,
         VK_PRESENT_MODE_IMMEDIATE_KHR,
@@ -176,8 +178,8 @@ VkResult WsiVirtualizer::get_surface_present_modes(VkPhysicalDevice /*physDev*/,
 }
 
 VkResult WsiVirtualizer::get_surface_support(VkPhysicalDevice phys_dev, uint32_t queue_family,
-                                              VkSurfaceKHR /*surface*/, VkBool32* supported,
-                                              VkInstData* inst_data) {
+                                             VkSurfaceKHR /*surface*/, VkBool32* supported,
+                                             VkInstData* inst_data) {
     uint32_t count = 0;
     inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(phys_dev, &count, nullptr);
     if (queue_family >= count) {
@@ -193,7 +195,7 @@ VkResult WsiVirtualizer::get_surface_support(VkPhysicalDevice phys_dev, uint32_t
 }
 
 static uint32_t find_memory_type(const VkPhysicalDeviceMemoryProperties& props,
-                                  uint32_t type_bits) {
+                                 uint32_t type_bits) {
     for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
         if ((type_bits & (1u << i)) &&
             (props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
@@ -209,7 +211,7 @@ static uint32_t find_memory_type(const VkPhysicalDeviceMemoryProperties& props,
 }
 
 bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice device,
-                                               VkDeviceData* dev_data) {
+                                              VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
     auto* inst_data = dev_data->inst_data;
 
@@ -300,7 +302,7 @@ bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice d
 }
 
 VkResult WsiVirtualizer::create_swapchain(VkDevice device, const VkSwapchainCreateInfoKHR* info,
-                                           VkSwapchainKHR* swapchain, VkDeviceData* dev_data) {
+                                          VkSwapchainKHR* swapchain, VkDeviceData* dev_data) {
     std::lock_guard lock(mutex_);
 
     VirtualSwapchain swap{};
@@ -323,15 +325,14 @@ VkResult WsiVirtualizer::create_swapchain(VkDevice device, const VkSwapchainCrea
     swapchains_[handle] = std::move(swap);
     *swapchain = handle;
 
-    LAYER_DEBUG("Virtual swapchain created: %p (%ux%u, %u images)",
-                reinterpret_cast<void*>(handle),
+    LAYER_DEBUG("Virtual swapchain created: %p (%ux%u, %u images)", reinterpret_cast<void*>(handle),
                 swapchains_[handle].extent.width, swapchains_[handle].extent.height,
                 swapchains_[handle].image_count);
     return VK_SUCCESS;
 }
 
 void WsiVirtualizer::destroy_swapchain_resources(VirtualSwapchain& swap, VkDevice device,
-                                                  VkDeviceData* dev_data) {
+                                                 VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
 
     for (int fd : swap.dmabuf_fds) {
@@ -357,7 +358,7 @@ void WsiVirtualizer::destroy_swapchain_resources(VirtualSwapchain& swap, VkDevic
 }
 
 void WsiVirtualizer::destroy_swapchain(VkDevice device, VkSwapchainKHR swapchain,
-                                        VkDeviceData* dev_data) {
+                                       VkDeviceData* dev_data) {
     std::lock_guard lock(mutex_);
     auto it = swapchains_.find(swapchain);
     if (it == swapchains_.end()) {
@@ -379,8 +380,8 @@ VirtualSwapchain* WsiVirtualizer::get_swapchain(VkSwapchainKHR swapchain) {
     return it != swapchains_.end() ? &it->second : nullptr;
 }
 
-VkResult WsiVirtualizer::get_swapchain_images(VkSwapchainKHR swapchain,
-                                               uint32_t* count, VkImage* images) {
+VkResult WsiVirtualizer::get_swapchain_images(VkSwapchainKHR swapchain, uint32_t* count,
+                                              VkImage* images) {
     std::lock_guard lock(mutex_);
     auto it = swapchains_.find(swapchain);
     if (it == swapchains_.end()) {
