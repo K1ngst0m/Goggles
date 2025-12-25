@@ -119,7 +119,7 @@ bool CaptureReceiver::receive_message() {
     }
 
     std::array<char, 128> buf{};
-    std::array<char, CMSG_SPACE(sizeof(int))> cmsg_buf{};
+    std::array<char, CMSG_SPACE(2 * sizeof(int))> cmsg_buf{};
 
     iovec iov{};
     iov.iov_base = buf.data();
@@ -208,12 +208,82 @@ bool CaptureReceiver::receive_message() {
         return m_frame.dmabuf_fd.valid();
     }
 
+    if (msg_type == CaptureMessageType::semaphore_init) {
+        if (std::cmp_less(received, sizeof(CaptureSemaphoreInit))) {
+            return false;
+        }
+
+        int fds[2] = {-1, -1};
+        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+                size_t fd_count = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+                if (fd_count >= 2) {
+                    std::memcpy(fds, CMSG_DATA(cmsg), sizeof(fds));
+                }
+                break;
+            }
+        }
+
+        if (fds[0] >= 0 && fds[1] >= 0) {
+            clear_sync_semaphores();
+            m_frame.dmabuf_fd = util::UniqueFd{};
+            m_frame_ready_fd = fds[0];
+            m_frame_consumed_fd = fds[1];
+            m_semaphores_updated = true;
+            GOGGLES_LOG_INFO("Received sync semaphores: ready_fd={}, consumed_fd={}",
+                             m_frame_ready_fd, m_frame_consumed_fd);
+        }
+        return false;
+    }
+
+    if (msg_type == CaptureMessageType::frame_metadata) {
+        if (std::cmp_less(received, sizeof(CaptureFrameMetadata))) {
+            return false;
+        }
+
+        auto* metadata = reinterpret_cast<CaptureFrameMetadata*>(buf.data());
+
+        int new_fd = -1;
+        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+                std::memcpy(&new_fd, CMSG_DATA(cmsg), sizeof(int));
+                break;
+            }
+        }
+
+        if (new_fd >= 0) {
+            m_frame.dmabuf_fd = util::UniqueFd{new_fd};
+            GOGGLES_LOG_INFO("Received new DMA-BUF fd={}", new_fd);
+        }
+
+        m_frame.width = metadata->width;
+        m_frame.height = metadata->height;
+        m_frame.stride = metadata->stride;
+        m_frame.format = static_cast<uint32_t>(metadata->format);
+        m_frame.modifier = metadata->modifier;
+        m_frame.frame_number = metadata->frame_number;
+
+        return m_frame.dmabuf_fd.valid();
+    }
+
     return false;
+}
+
+void CaptureReceiver::clear_sync_semaphores() {
+    if (m_frame_ready_fd >= 0) {
+        close(m_frame_ready_fd);
+        m_frame_ready_fd = -1;
+    }
+    if (m_frame_consumed_fd >= 0) {
+        close(m_frame_consumed_fd);
+        m_frame_consumed_fd = -1;
+    }
 }
 
 void CaptureReceiver::cleanup_frame() {
     m_frame = {};
     m_last_texture = {};
+    clear_sync_semaphores();
 }
 
 } // namespace goggles

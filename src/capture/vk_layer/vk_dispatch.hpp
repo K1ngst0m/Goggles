@@ -56,6 +56,9 @@ struct VkDeviceFuncs {
     PFN_vkGetMemoryFdKHR GetMemoryFdKHR;
     PFN_vkGetImageDrmFormatModifierPropertiesEXT GetImageDrmFormatModifierPropertiesEXT;
 
+    // External semaphore
+    PFN_vkGetSemaphoreFdKHR GetSemaphoreFdKHR;
+
     // Images
     PFN_vkCreateImage CreateImage;
     PFN_vkDestroyImage DestroyImage;

@@ -45,6 +45,20 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
             capture_receiver.poll_frame();
         }
 
+        if (capture_receiver.semaphores_updated()) {
+            vulkan_backend.cleanup_sync_semaphores();
+            auto import_result = vulkan_backend.import_sync_semaphores(
+                capture_receiver.get_frame_ready_fd(), capture_receiver.get_frame_consumed_fd());
+            if (!import_result) {
+                GOGGLES_LOG_ERROR("Failed to import sync semaphores: {}",
+                                  import_result.error().message);
+                capture_receiver.clear_sync_semaphores();
+            } else {
+                GOGGLES_LOG_INFO("Sync semaphores imported successfully");
+            }
+            capture_receiver.clear_semaphores_updated();
+        }
+
         bool needs_resize = false;
         if (capture_receiver.has_frame()) {
             GOGGLES_PROFILE_SCOPE("RenderFrame");

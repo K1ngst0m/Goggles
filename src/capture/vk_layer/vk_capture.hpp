@@ -52,12 +52,13 @@ struct SwapData {
     uint32_t dmabuf_offset = 0;
     uint64_t dmabuf_modifier = 0;
 
-    // Timeline semaphore for async capture
-    VkSemaphore timeline_sem = VK_NULL_HANDLE;
+    // Cross-process timeline semaphores
+    VkSemaphore frame_ready_sem = VK_NULL_HANDLE;   // Layer signals, Goggles waits
+    VkSemaphore frame_consumed_sem = VK_NULL_HANDLE; // Goggles signals, Layer waits
+    int frame_ready_fd = -1;
+    int frame_consumed_fd = -1;
+    bool semaphores_sent = false;
     uint64_t frame_counter = 0;
-
-    // Fence for sync mode fallback
-    VkFence sync_fence = VK_NULL_HANDLE;
 
     // Copy command buffers (one per swapchain image)
     std::vector<CopyCmd> copy_cmds;
@@ -82,6 +83,7 @@ public:
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
     bool init_sync_primitives(SwapData* swap, VkDeviceData* dev_data);
+    void reset_sync_primitives(SwapData* swap, VkDeviceData* dev_data);
     bool init_copy_cmds(SwapData* swap, VkDeviceData* dev_data);
     void destroy_copy_cmds(SwapData* swap, VkDeviceData* dev_data);
     void capture_frame(SwapData* swap, uint32_t image_index, VkQueue queue, VkDeviceData* dev_data,

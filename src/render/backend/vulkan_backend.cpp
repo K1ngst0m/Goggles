@@ -27,6 +27,7 @@ constexpr std::array REQUIRED_DEVICE_EXTENSIONS = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,          VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
     VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
     VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,  VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
+    VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
 };
 
 auto find_memory_type(const vk::PhysicalDeviceMemoryProperties& mem_props, uint32_t type_bits)
@@ -103,6 +104,7 @@ void VulkanBackend::shutdown() {
     m_filter_chain.shutdown();
     m_shader_runtime.shutdown();
     cleanup_imported_image();
+    cleanup_sync_semaphores();
 
     if (m_device) {
         for (auto& frame : m_frames) {
@@ -619,6 +621,10 @@ void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path)
 auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
+    if (!frame.dmabuf_fd.valid()) {
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Invalid DMA-BUF fd");
+    }
+
     VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost, "waitIdle failed before reimport");
     cleanup_imported_image();
 
@@ -677,14 +683,16 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     m_device->getImageMemoryRequirements2(&mem_reqs_info, &mem_reqs2);
     auto mem_reqs = mem_reqs2.memoryRequirements;
 
-    auto [fd_props_result, fd_props] = m_device->getMemoryFdPropertiesKHR(
-        vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, frame.dmabuf_fd.get());
+    VkMemoryFdPropertiesKHR fd_props_raw{};
+    fd_props_raw.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR;
+    auto fd_props_result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkGetMemoryFdPropertiesKHR(
+        *m_device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, frame.dmabuf_fd.get(), &fd_props_raw));
     if (fd_props_result != vk::Result::eSuccess) {
         cleanup_imported_image();
         return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to get DMA-BUF fd properties: " +
-                                    vk::to_string(fd_props_result));
+                                "Stale DMA-BUF fd, skipping frame");
     }
+    vk::MemoryFdPropertiesKHR fd_props = fd_props_raw;
 
     auto mem_props = m_physical_device.getMemoryProperties();
     uint32_t combined_bits = mem_reqs.memoryTypeBits & fd_props.memoryTypeBits;
@@ -764,14 +772,93 @@ void VulkanBackend::cleanup_imported_image() {
     if (m_device) {
         if (m_import.view) {
             m_device->destroyImageView(m_import.view);
+            m_import.view = nullptr;
         }
         if (m_import.memory) {
             m_device->freeMemory(m_import.memory);
+            m_import.memory = nullptr;
         }
         if (m_import.image) {
             m_device->destroyImage(m_import.image);
+            m_import.image = nullptr;
         }
     }
+}
+
+auto VulkanBackend::import_sync_semaphores(int frame_ready_fd, int frame_consumed_fd)
+    -> Result<void> {
+    cleanup_sync_semaphores();
+
+    vk::SemaphoreTypeCreateInfo timeline_info{};
+    timeline_info.semaphoreType = vk::SemaphoreType::eTimeline;
+    timeline_info.initialValue = 0;
+
+    vk::SemaphoreCreateInfo sem_info{};
+    sem_info.pNext = &timeline_info;
+
+    auto [res1, ready_sem] = m_device->createSemaphore(sem_info);
+    VK_TRY(res1, ErrorCode::vulkan_init_failed, "Failed to create frame_ready semaphore");
+
+    auto [res2, consumed_sem] = m_device->createSemaphore(sem_info);
+    if (res2 != vk::Result::eSuccess) {
+        m_device->destroySemaphore(ready_sem);
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to create frame_consumed semaphore");
+    }
+
+    VkImportSemaphoreFdInfoKHR import_info{};
+    import_info.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
+    import_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+    import_info.flags = 0;
+
+    import_info.semaphore = ready_sem;
+    import_info.fd = frame_ready_fd;
+    auto import_res = static_cast<vk::Result>(
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(*m_device, &import_info));
+    if (import_res != vk::Result::eSuccess) {
+        m_device->destroySemaphore(ready_sem);
+        m_device->destroySemaphore(consumed_sem);
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to import frame_ready semaphore FD");
+    }
+
+    import_info.semaphore = consumed_sem;
+    import_info.fd = frame_consumed_fd;
+    import_res = static_cast<vk::Result>(
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(*m_device, &import_info));
+    if (import_res != vk::Result::eSuccess) {
+        m_device->destroySemaphore(ready_sem);
+        m_device->destroySemaphore(consumed_sem);
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to import frame_consumed semaphore FD");
+    }
+
+    m_frame_ready_sem = ready_sem;
+    m_frame_consumed_sem = consumed_sem;
+    m_sync_semaphores_imported = true;
+    m_last_frame_number = 0;
+
+    GOGGLES_LOG_INFO("Cross-process sync semaphores imported");
+    return {};
+}
+
+void VulkanBackend::cleanup_sync_semaphores() {
+    if (m_device) {
+        if (m_frame_ready_sem || m_frame_consumed_sem) {
+            static_cast<void>(m_device->waitIdle());
+        }
+        if (m_frame_ready_sem) {
+            m_device->destroySemaphore(m_frame_ready_sem);
+            m_frame_ready_sem = nullptr;
+        }
+        if (m_frame_consumed_sem) {
+            m_device->destroySemaphore(m_frame_consumed_sem);
+            m_frame_consumed_sem = nullptr;
+        }
+    }
+    m_sync_semaphores_imported = false;
+    m_last_frame_number = 0;
+    m_last_signaled_frame = 0;
 }
 
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
@@ -784,8 +871,9 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
         return make_error<uint32_t>(ErrorCode::vulkan_device_lost, "Fence wait failed");
     }
 
-    auto [result, image_index] =
-        m_device->acquireNextImageKHR(*m_swapchain, UINT64_MAX, frame.image_available_sem, nullptr);
+    uint32_t image_index = 0;
+    auto result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkAcquireNextImageKHR(
+        *m_device, *m_swapchain, UINT64_MAX, frame.image_available_sem, nullptr, &image_index));
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
         m_needs_resize = true;
@@ -926,22 +1014,64 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     GOGGLES_PROFILE_SCOPE("SubmitPresent");
 
     auto& frame = m_frames[m_current_frame];
-    vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     vk::Semaphore render_finished_sem = m_render_finished_sems[image_index];
 
+    if (m_sync_semaphores_imported && m_last_frame_number > 0) {
+        vk::SemaphoreWaitInfo wait_info{};
+        wait_info.semaphoreCount = 1;
+        wait_info.pSemaphores = &m_frame_ready_sem;
+        wait_info.pValues = &m_last_frame_number;
+
+        constexpr uint64_t TIMEOUT_NS = 100'000'000;
+        auto wait_result = m_device->waitSemaphores(wait_info, TIMEOUT_NS);
+        if (wait_result == vk::Result::eTimeout) {
+            GOGGLES_LOG_WARN("Timeout waiting for frame_ready semaphore, layer disconnected?");
+            cleanup_sync_semaphores();
+        } else if (wait_result != vk::Result::eSuccess) {
+            return make_error<bool>(ErrorCode::vulkan_device_lost,
+                                    "Semaphore wait failed: " + vk::to_string(wait_result));
+        }
+    }
+
+    std::array<vk::Semaphore, 1> wait_sems = {frame.image_available_sem};
+    std::array<vk::PipelineStageFlags, 1> wait_stages = {
+        vk::PipelineStageFlagBits::eColorAttachmentOutput};
+
     vk::SubmitInfo submit_info{};
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &frame.image_available_sem;
-    submit_info.pWaitDstStageMask = &wait_stage;
+    submit_info.waitSemaphoreCount = static_cast<uint32_t>(wait_sems.size());
+    submit_info.pWaitSemaphores = wait_sems.data();
+    submit_info.pWaitDstStageMask = wait_stages.data();
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &frame.command_buffer;
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &render_finished_sem;
+
+    std::array<vk::Semaphore, 2> signal_sems;
+    std::array<uint64_t, 2> signal_values = {0, 0};
+    vk::TimelineSemaphoreSubmitInfo timeline_info{};
+
+    bool should_signal_timeline =
+        m_sync_semaphores_imported && m_last_frame_number > m_last_signaled_frame;
+
+    if (should_signal_timeline) {
+        signal_sems = {render_finished_sem, m_frame_consumed_sem};
+        signal_values = {0, m_last_frame_number};
+        timeline_info.signalSemaphoreValueCount = static_cast<uint32_t>(signal_values.size());
+        timeline_info.pSignalSemaphoreValues = signal_values.data();
+        submit_info.pNext = &timeline_info;
+        submit_info.signalSemaphoreCount = 2;
+    } else {
+        signal_sems[0] = render_finished_sem;
+        submit_info.signalSemaphoreCount = 1;
+    }
+    submit_info.pSignalSemaphores = signal_sems.data();
 
     auto submit_result = m_graphics_queue.submit(submit_info, frame.in_flight_fence);
     if (submit_result != vk::Result::eSuccess) {
         return make_error<bool>(ErrorCode::vulkan_device_lost,
                                 "Queue submit failed: " + vk::to_string(submit_result));
+    }
+
+    if (should_signal_timeline) {
+        m_last_signaled_frame = m_last_frame_number;
     }
 
     vk::PresentInfoKHR present_info{};
@@ -972,6 +1102,8 @@ auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
     if (!m_initialized) {
         return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
+
+    m_last_frame_number = frame.frame_number;
 
     auto vk_format = static_cast<vk::Format>(frame.format);
     if (m_source_format != vk_format) {

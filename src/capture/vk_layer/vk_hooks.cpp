@@ -167,6 +167,8 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
         VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
         VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
         VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
     };
 
     for (const auto* req_ext : required_exts) {
@@ -226,6 +228,7 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
     GETADDR(GetImageSubresourceLayout);
     GETADDR(GetMemoryFdKHR);
     GETADDR(GetImageDrmFormatModifierPropertiesEXT);
+    GETADDR(GetSemaphoreFdKHR);
     GETADDR(CreateImage);
     GETADDR(DestroyImage);
     GETADDR(CreateCommandPool);

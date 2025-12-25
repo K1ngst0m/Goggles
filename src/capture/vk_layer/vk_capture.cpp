@@ -462,8 +462,13 @@ bool CaptureManager::init_sync_primitives(SwapData* swap, VkDeviceData* dev_data
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
 
+    VkExportSemaphoreCreateInfo export_info{};
+    export_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+    export_info.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+
     VkSemaphoreTypeCreateInfo timeline_info{};
     timeline_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timeline_info.pNext = &export_info;
     timeline_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
     timeline_info.initialValue = 0;
 
@@ -471,27 +476,85 @@ bool CaptureManager::init_sync_primitives(SwapData* swap, VkDeviceData* dev_data
     sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     sem_info.pNext = &timeline_info;
 
-    VkResult res = funcs.CreateSemaphore(device, &sem_info, nullptr, &swap->timeline_sem);
-    if (res == VK_SUCCESS) {
-        LAYER_DEBUG("Timeline semaphore created");
-    } else {
-        LAYER_DEBUG("Timeline semaphore creation failed: %d", res);
-        swap->timeline_sem = VK_NULL_HANDLE;
-    }
-
-    VkFenceCreateInfo fence_info{};
-    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    res = funcs.CreateFence(device, &fence_info, nullptr, &swap->sync_fence);
+    VkResult res = funcs.CreateSemaphore(device, &sem_info, nullptr, &swap->frame_ready_sem);
     if (res != VK_SUCCESS) {
-        LAYER_DEBUG("Fence creation failed: %d, capture disabled", res);
-        if (swap->timeline_sem != VK_NULL_HANDLE) {
-            funcs.DestroySemaphore(device, swap->timeline_sem, nullptr);
-            swap->timeline_sem = VK_NULL_HANDLE;
-        }
+        LAYER_DEBUG("frame_ready_sem creation failed: %d", res);
         return false;
     }
 
+    res = funcs.CreateSemaphore(device, &sem_info, nullptr, &swap->frame_consumed_sem);
+    if (res != VK_SUCCESS) {
+        LAYER_DEBUG("frame_consumed_sem creation failed: %d", res);
+        funcs.DestroySemaphore(device, swap->frame_ready_sem, nullptr);
+        swap->frame_ready_sem = VK_NULL_HANDLE;
+        return false;
+    }
+
+    VkSemaphoreGetFdInfoKHR fd_info{};
+    fd_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+    fd_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+    fd_info.semaphore = swap->frame_ready_sem;
+    res = funcs.GetSemaphoreFdKHR(device, &fd_info, &swap->frame_ready_fd);
+    if (res != VK_SUCCESS || swap->frame_ready_fd < 0) {
+        LAYER_DEBUG("frame_ready_sem FD export failed: %d", res);
+        funcs.DestroySemaphore(device, swap->frame_ready_sem, nullptr);
+        funcs.DestroySemaphore(device, swap->frame_consumed_sem, nullptr);
+        swap->frame_ready_sem = VK_NULL_HANDLE;
+        swap->frame_consumed_sem = VK_NULL_HANDLE;
+        return false;
+    }
+
+    fd_info.semaphore = swap->frame_consumed_sem;
+    res = funcs.GetSemaphoreFdKHR(device, &fd_info, &swap->frame_consumed_fd);
+    if (res != VK_SUCCESS || swap->frame_consumed_fd < 0) {
+        LAYER_DEBUG("frame_consumed_sem FD export failed: %d", res);
+        close(swap->frame_ready_fd);
+        swap->frame_ready_fd = -1;
+        funcs.DestroySemaphore(device, swap->frame_ready_sem, nullptr);
+        funcs.DestroySemaphore(device, swap->frame_consumed_sem, nullptr);
+        swap->frame_ready_sem = VK_NULL_HANDLE;
+        swap->frame_consumed_sem = VK_NULL_HANDLE;
+        return false;
+    }
+
+    LAYER_DEBUG("Cross-process semaphores created: ready_fd=%d, consumed_fd=%d",
+                swap->frame_ready_fd, swap->frame_consumed_fd);
     return true;
+}
+
+void CaptureManager::reset_sync_primitives(SwapData* swap, VkDeviceData* dev_data) {
+    auto& funcs = dev_data->funcs;
+    VkDevice device = swap->device;
+
+    if (swap->frame_ready_fd >= 0) {
+        close(swap->frame_ready_fd);
+        swap->frame_ready_fd = -1;
+    }
+    if (swap->frame_consumed_fd >= 0) {
+        close(swap->frame_consumed_fd);
+        swap->frame_consumed_fd = -1;
+    }
+    if (swap->frame_ready_sem != VK_NULL_HANDLE) {
+        funcs.DestroySemaphore(device, swap->frame_ready_sem, nullptr);
+        swap->frame_ready_sem = VK_NULL_HANDLE;
+    }
+    if (swap->frame_consumed_sem != VK_NULL_HANDLE) {
+        funcs.DestroySemaphore(device, swap->frame_consumed_sem, nullptr);
+        swap->frame_consumed_sem = VK_NULL_HANDLE;
+    }
+
+    for (auto& cmd : swap->copy_cmds) {
+        cmd.timeline_value = 0;
+        cmd.busy = false;
+    }
+
+    swap->semaphores_sent = false;
+    swap->frame_counter = 0;
+
+    if (!init_sync_primitives(swap, dev_data)) {
+        LAYER_DEBUG("Failed to recreate sync primitives on reconnect");
+    }
 }
 
 // =============================================================================
@@ -621,11 +684,11 @@ void CaptureManager::destroy_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
     VkDevice device = swap->device;
 
     for (auto& cmd : swap->copy_cmds) {
-        if (cmd.busy && swap->timeline_sem != VK_NULL_HANDLE) {
+        if (cmd.busy && swap->frame_ready_sem != VK_NULL_HANDLE) {
             VkSemaphoreWaitInfo wait_info{};
             wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
             wait_info.semaphoreCount = 1;
-            wait_info.pSemaphores = &swap->timeline_sem;
+            wait_info.pSemaphores = &swap->frame_ready_sem;
             wait_info.pValues = &cmd.timeline_value;
 
             funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
@@ -692,120 +755,97 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = swap->device;
+    auto& socket = get_layer_socket();
 
     if (swap->copy_cmds.empty() || image_index >= swap->copy_cmds.size()) {
         return;
     }
 
-    CopyCmd& cmd = swap->copy_cmds[image_index];
+    if (!socket.is_connected()) {
+        return;
+    }
 
-    // Wait if this command buffer is still in flight
-    if (cmd.busy && swap->timeline_sem != VK_NULL_HANDLE) {
+    CopyCmd& cmd = swap->copy_cmds[image_index];
+    uint64_t current_frame = swap->frame_counter + 1;
+
+    // Send semaphore FDs on first frame
+    if (!swap->semaphores_sent && swap->frame_ready_fd >= 0 && swap->frame_consumed_fd >= 0) {
+        if (socket.send_semaphores(swap->frame_ready_fd, swap->frame_consumed_fd)) {
+            swap->semaphores_sent = true;
+            LAYER_DEBUG("Semaphore FDs sent to Goggles");
+        }
+    }
+
+    // Back-pressure: wait for Goggles to consume previous frame (N-1)
+    if (current_frame > 1) {
+        uint64_t wait_value = current_frame - 1;
         VkSemaphoreWaitInfo wait_info{};
         wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
         wait_info.semaphoreCount = 1;
-        wait_info.pSemaphores = &swap->timeline_sem;
+        wait_info.pSemaphores = &swap->frame_consumed_sem;
+        wait_info.pValues = &wait_value;
+
+        constexpr uint64_t timeout_ns = 500'000'000; // 500ms
+        VkResult res = funcs.WaitSemaphoresKHR(device, &wait_info, timeout_ns);
+        if (res == VK_TIMEOUT) {
+            LAYER_DEBUG("Timeout waiting for frame_consumed, resetting sync primitives");
+            reset_sync_primitives(swap, dev_data);
+            return;
+        }
+    }
+
+    // Wait if this command buffer is still in flight
+    if (cmd.busy) {
+        VkSemaphoreWaitInfo wait_info{};
+        wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        wait_info.semaphoreCount = 1;
+        wait_info.pSemaphores = &swap->frame_ready_sem;
         wait_info.pValues = &cmd.timeline_value;
 
         funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
         cmd.busy = false;
     }
 
-    // No recording needed - command buffer is pre-recorded
+    // Submit copy with signal on frame_ready
+    cmd.timeline_value = current_frame;
 
-    VkResult res;
+    VkTimelineSemaphoreSubmitInfo timeline_submit{};
+    timeline_submit.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timeline_submit.signalSemaphoreValueCount = 1;
+    timeline_submit.pSignalSemaphoreValues = &current_frame;
 
-    if (swap->timeline_sem != VK_NULL_HANDLE && should_use_async_capture()) {
-        uint64_t timeline_value = ++swap->frame_counter;
-        cmd.timeline_value = timeline_value;
+    VkSubmitInfo submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.pNext = &timeline_submit;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &cmd.cmd;
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = &swap->frame_ready_sem;
 
-        VkTimelineSemaphoreSubmitInfo timeline_submit{};
-        timeline_submit.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-        timeline_submit.signalSemaphoreValueCount = 1;
-        timeline_submit.pSignalSemaphoreValues = &timeline_value;
+    VkResult res = funcs.QueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+    if (res != VK_SUCCESS) {
+        return;
+    }
 
-        VkSubmitInfo submit_info{};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.pNext = &timeline_submit;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &cmd.cmd;
-        submit_info.signalSemaphoreCount = 1;
-        submit_info.pSignalSemaphores = &swap->timeline_sem;
+    swap->frame_counter = current_frame;
+    cmd.busy = true;
 
-        res = funcs.QueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
-        if (res != VK_SUCCESS) {
-            return;
-        }
+    // Send frame metadata
+    CaptureFrameMetadata metadata{};
+    metadata.type = CaptureMessageType::frame_metadata;
+    metadata.width = swap->extent.width;
+    metadata.height = swap->extent.height;
+    metadata.format = swap->format;
+    metadata.stride = swap->dmabuf_stride;
+    metadata.offset = swap->dmabuf_offset;
+    metadata.modifier = swap->dmabuf_modifier;
+    metadata.frame_number = current_frame;
 
-        int dup_fd = dup(swap->dmabuf_fd);
-        if (dup_fd < 0) {
-            VkSemaphoreWaitInfo wait_info{};
-            wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-            wait_info.semaphoreCount = 1;
-            wait_info.pSemaphores = &swap->timeline_sem;
-            wait_info.pValues = &timeline_value;
-
-            funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
-            return;
-        }
-
-        CaptureTextureData tex_data{};
-        tex_data.type = CaptureMessageType::texture_data;
-        tex_data.width = swap->extent.width;
-        tex_data.height = swap->extent.height;
-        tex_data.format = swap->format;
-        tex_data.stride = swap->dmabuf_stride;
-        tex_data.offset = swap->dmabuf_offset;
-        tex_data.modifier = swap->dmabuf_modifier;
-
-        AsyncCaptureItem item{};
-        item.device = device;
-        item.timeline_sem = swap->timeline_sem;
-        item.timeline_value = timeline_value;
-        item.dmabuf_fd = dup_fd;
-        item.metadata = tex_data;
-
-        if (!async_queue_.try_push(item)) {
-            close(dup_fd);
-            VkSemaphoreWaitInfo wait_info{};
-            wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-            wait_info.semaphoreCount = 1;
-            wait_info.pSemaphores = &swap->timeline_sem;
-            wait_info.pValues = &timeline_value;
-
-            funcs.WaitSemaphoresKHR(device, &wait_info, Time::infinite);
-            return;
-        }
-
-        cv_.notify_one();
-        cmd.busy = true;
+    // First frame also sends DMA-BUF FD
+    if (current_frame == 1) {
+        socket.send_texture_with_fd(metadata, swap->dmabuf_fd);
     } else {
-        VkSubmitInfo submit_info{};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &cmd.cmd;
-
-        res = funcs.QueueSubmit(queue, 1, &submit_info, swap->sync_fence);
-        if (res != VK_SUCCESS) {
-            return;
-        }
-
-        funcs.WaitForFences(device, 1, &swap->sync_fence, VK_TRUE, Time::infinite);
-        funcs.ResetFences(device, 1, &swap->sync_fence);
-
-        auto& socket = get_layer_socket();
-        if (socket.is_connected()) {
-            CaptureTextureData tex_data{};
-            tex_data.type = CaptureMessageType::texture_data;
-            tex_data.width = swap->extent.width;
-            tex_data.height = swap->extent.height;
-            tex_data.format = swap->format;
-            tex_data.stride = swap->dmabuf_stride;
-            tex_data.offset = swap->dmabuf_offset;
-            tex_data.modifier = swap->dmabuf_modifier;
-
-            socket.send_texture(tex_data, swap->dmabuf_fd);
-        }
+        socket.send_frame_metadata(metadata);
     }
 }
 
@@ -834,14 +874,22 @@ void CaptureManager::cleanup_swap_data(SwapData* swap, VkDeviceData* dev_data) {
         swap->export_image = VK_NULL_HANDLE;
     }
 
-    if (swap->timeline_sem != VK_NULL_HANDLE) {
-        funcs.DestroySemaphore(device, swap->timeline_sem, nullptr);
-        swap->timeline_sem = VK_NULL_HANDLE;
+    if (swap->frame_ready_fd >= 0) {
+        close(swap->frame_ready_fd);
+        swap->frame_ready_fd = -1;
+    }
+    if (swap->frame_consumed_fd >= 0) {
+        close(swap->frame_consumed_fd);
+        swap->frame_consumed_fd = -1;
     }
 
-    if (swap->sync_fence != VK_NULL_HANDLE) {
-        funcs.DestroyFence(device, swap->sync_fence, nullptr);
-        swap->sync_fence = VK_NULL_HANDLE;
+    if (swap->frame_ready_sem != VK_NULL_HANDLE) {
+        funcs.DestroySemaphore(device, swap->frame_ready_sem, nullptr);
+        swap->frame_ready_sem = VK_NULL_HANDLE;
+    }
+    if (swap->frame_consumed_sem != VK_NULL_HANDLE) {
+        funcs.DestroySemaphore(device, swap->frame_consumed_sem, nullptr);
+        swap->frame_consumed_sem = VK_NULL_HANDLE;
     }
 
     swap->export_initialized = false;
