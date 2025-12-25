@@ -36,7 +36,7 @@ configure-quality = "cmake -B build/quality -G Ninja -DCMAKE_BUILD_TYPE=Debug -D
 build-quality = { cmd = "cmake --build build/quality", depends-on = ["configure-quality"] }
 
 [dependencies]
-cmake = ">=4.2.1,<5"
+cmake = ">=3.31.2,<5"
 ninja = ">=1.13.2,<2"
 cxx-compiler = ">=1.11.0,<2"
 clang-tools = ">=21.1.7,<22"
