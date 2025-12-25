@@ -74,14 +74,8 @@ CPMAddPackage(
         "CATCH_INSTALL_EXTRAS OFF"
 )
 
-CPMAddPackage(
-    NAME CLI11
-    GITHUB_REPOSITORY CLIUtils/CLI11
-    VERSION 2.6.0
-    OPTIONS
-        "CLI11_BUILD_TESTS OFF"
-        "CLI11_BUILD_EXAMPLES OFF"
-)
+# CLI11 is provided by Pixi
+find_package(CLI11 REQUIRED)
 
 # stb - single-file public domain libraries (image loading)
 CPMAddPackage(
@@ -122,21 +116,8 @@ CPMAddPackage(
 # Windowing & Platform Dependencies
 # ============================================================================
 
-CPMAddPackage(
-    NAME SDL3
-    GITHUB_REPOSITORY libsdl-org/SDL
-    GIT_TAG release-3.2.0
-    OPTIONS
-        "SDL_SHARED OFF"
-        "SDL_STATIC ON"
-        "SDL_TEST OFF"
-        "SDL_TESTS OFF"
-        "SDL_EXAMPLES OFF"
-        "SDL_VULKAN ON"
-        "SDL_WAYLAND ON"
-        "SDL_X11 ON"
-        "SDL_PIPEWIRE OFF"
-)
+# SDL3 is provided by Pixi
+find_package(SDL3 REQUIRED)
 
 # ============================================================================
 # Shader Compilation Dependencies

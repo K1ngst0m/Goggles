@@ -12,7 +12,7 @@ target_link_libraries(goggles PRIVATE
     goggles_util
     goggles_render
     goggles_capture
-    SDL3::SDL3-static
+    SDL3::SDL3
     CLI11::CLI11
 )
 
