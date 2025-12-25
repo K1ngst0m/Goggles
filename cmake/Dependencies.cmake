@@ -6,7 +6,6 @@ include(cmake/CPM.cmake)
 
 # Use a global CPM source cache to speed up builds
 set(CPM_SOURCE_CACHE $ENV{HOME}/.cache/CPM CACHE PATH "CPM source cache directory")
-set(CPM_USE_LOCAL_PACKAGES ON CACHE BOOL "Prefer system packages over downloading")
 
 # ============================================================================
 # Profiling Dependencies (loaded early for layer-only builds)
@@ -39,8 +38,8 @@ endif()
 
 CPMAddPackage(
     NAME expected-lite
-    GIT_REPOSITORY git@github.com:martinmoene/expected-lite.git
-    GIT_TAG v0.8.0
+    GITHUB_REPOSITORY martinmoene/expected-lite
+    VERSION 0.8.0
     OPTIONS
         "EXPECTED_LITE_OPT_BUILD_TESTS OFF"
         "EXPECTED_LITE_OPT_BUILD_EXAMPLES OFF"

@@ -541,6 +541,16 @@ void CaptureManager::reset_device_sync(VkDevice device, VkDeviceData* dev_data) 
 
     cleanup_device_sync(device, dev_data);
 
+    // Reset copy_cmds busy state for all swapchains on this device
+    for (auto& [_, swap] : swaps_) {
+        if (swap.device == device) {
+            for (auto& cmd : swap.copy_cmds) {
+                cmd.busy = false;
+                cmd.timeline_value = 0;
+            }
+        }
+    }
+
     if (!init_device_sync(device, dev_data)) {
         LAYER_DEBUG("Failed to recreate sync primitives on reconnect");
     }
