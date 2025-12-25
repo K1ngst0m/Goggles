@@ -291,6 +291,7 @@ void VKAPI_CALL Goggles_DestroyDevice(VkDevice device, const VkAllocationCallbac
 
     PFN_vkDestroyDevice destroy_func = data->funcs.DestroyDevice;
 
+    get_capture_manager().on_device_destroyed(device, data);
     get_object_tracker().remove_queues_for_device(device);
     get_object_tracker().remove_device(device);
 

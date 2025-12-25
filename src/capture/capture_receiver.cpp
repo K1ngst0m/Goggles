@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
-#include <utility>
 
 namespace goggles {
 
@@ -118,8 +117,8 @@ bool CaptureReceiver::receive_message() {
         return false;
     }
 
-    std::array<char, 128> buf{};
-    std::array<char, CMSG_SPACE(2 * sizeof(int))> cmsg_buf{};
+    std::array<char, 256> buf{};
+    std::array<char, CMSG_SPACE(4 * sizeof(int))> cmsg_buf{};
 
     iovec iov{};
     iov.iov_base = buf.data();
@@ -147,51 +146,101 @@ bool CaptureReceiver::receive_message() {
         return false;
     }
 
-    if (std::cmp_less(received, sizeof(CaptureMessageType))) {
-        return false;
+    // Extract all FDs from ancillary data upfront
+    std::vector<int> received_fds;
+    for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+            size_t fd_count = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+            for (size_t i = 0; i < fd_count; ++i) {
+                int fd;
+                std::memcpy(&fd, CMSG_DATA(cmsg) + i * sizeof(int), sizeof(int));
+                received_fds.push_back(fd);
+            }
+        }
     }
 
-    auto msg_type = *reinterpret_cast<CaptureMessageType*>(buf.data());
+    // Append to persistent buffer
+    m_recv_buf.insert(m_recv_buf.end(), buf.data(), buf.data() + received);
+
+    // Process all complete messages
+    bool got_frame = false;
+    size_t fd_index = 0;
+
+    while (m_recv_buf.size() >= sizeof(CaptureMessageType)) {
+        auto msg_type = *reinterpret_cast<CaptureMessageType*>(m_recv_buf.data());
+        size_t msg_size = 0;
+
+        switch (msg_type) {
+            case CaptureMessageType::client_hello:
+                msg_size = sizeof(CaptureClientHello);
+                break;
+            case CaptureMessageType::texture_data:
+                msg_size = sizeof(CaptureTextureData);
+                break;
+            case CaptureMessageType::control:
+                msg_size = sizeof(CaptureControl);
+                break;
+            case CaptureMessageType::semaphore_init:
+                msg_size = sizeof(CaptureSemaphoreInit);
+                break;
+            case CaptureMessageType::frame_metadata:
+                msg_size = sizeof(CaptureFrameMetadata);
+                break;
+            default:
+                GOGGLES_LOG_WARN("Unknown message type: {}", static_cast<uint32_t>(msg_type));
+                m_recv_buf.clear();
+                break;
+        }
+
+        if (msg_size == 0 || m_recv_buf.size() < msg_size) {
+            break;
+        }
+
+        if (process_message(m_recv_buf.data(), msg_size, received_fds, fd_index)) {
+            got_frame = true;
+        }
+
+        m_recv_buf.erase(m_recv_buf.begin(), m_recv_buf.begin() + static_cast<ptrdiff_t>(msg_size));
+    }
+
+    // Close unused FDs
+    for (size_t i = fd_index; i < received_fds.size(); ++i) {
+        close(received_fds[i]);
+    }
+
+    return got_frame;
+}
+
+bool CaptureReceiver::process_message(const char* data, size_t len,
+                                       const std::vector<int>& fds, size_t& fd_index) {
+    auto msg_type = *reinterpret_cast<const CaptureMessageType*>(data);
 
     if (msg_type == CaptureMessageType::client_hello) {
-        if (std::cmp_greater_equal(received, sizeof(CaptureClientHello))) {
-            auto* hello = reinterpret_cast<CaptureClientHello*>(buf.data());
+        if (len >= sizeof(CaptureClientHello)) {
+            auto* hello = reinterpret_cast<const CaptureClientHello*>(data);
             GOGGLES_LOG_INFO("Capture client: {}", hello->exe_name.data());
         }
         return false;
     }
 
     if (msg_type == CaptureMessageType::texture_data) {
-        if (std::cmp_less(received, sizeof(CaptureTextureData))) {
+        if (len < sizeof(CaptureTextureData)) {
             return false;
         }
 
-        auto* tex_data = reinterpret_cast<CaptureTextureData*>(buf.data());
+        auto* tex_data = reinterpret_cast<const CaptureTextureData*>(data);
 
-        int new_fd = -1;
-        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
-                std::memcpy(&new_fd, CMSG_DATA(cmsg), sizeof(int));
-                break;
-            }
-        }
-
-        if (new_fd < 0) {
-            GOGGLES_LOG_WARN("TEXTURE_DATA received but no fd in ancillary data");
+        if (fd_index >= fds.size()) {
+            GOGGLES_LOG_WARN("TEXTURE_DATA received but no fd available");
             return false;
         }
-
-        GOGGLES_LOG_TRACE("Received texture: {}x{}, fd={}, stride={}, format={}", tex_data->width,
-                          tex_data->height, new_fd, tex_data->stride,
-                          static_cast<int>(tex_data->format));
+        int new_fd = fds[fd_index++];
 
         bool texture_changed =
             (tex_data->width != m_last_texture.width || tex_data->height != m_last_texture.height ||
              tex_data->format != m_last_texture.format ||
              tex_data->modifier != m_last_texture.modifier);
 
-        // Always accept the new fd - the old one may point to freed memory
-        // after swapchain recreation (even if dimensions are the same)
         m_frame.dmabuf_fd = util::UniqueFd{new_fd};
         m_frame.width = tex_data->width;
         m_frame.height = tex_data->height;
@@ -209,49 +258,37 @@ bool CaptureReceiver::receive_message() {
     }
 
     if (msg_type == CaptureMessageType::semaphore_init) {
-        if (std::cmp_less(received, sizeof(CaptureSemaphoreInit))) {
+        if (len < sizeof(CaptureSemaphoreInit)) {
             return false;
         }
 
-        int fds[2] = {-1, -1};
-        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
-                size_t fd_count = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-                if (fd_count >= 2) {
-                    std::memcpy(fds, CMSG_DATA(cmsg), sizeof(fds));
-                }
-                break;
-            }
+        if (fd_index + 2 > fds.size()) {
+            GOGGLES_LOG_WARN("semaphore_init: need 2 fds, have {}", fds.size() - fd_index);
+            return false;
         }
 
-        if (fds[0] >= 0 && fds[1] >= 0) {
-            clear_sync_semaphores();
-            m_frame.dmabuf_fd = util::UniqueFd{};
-            m_frame_ready_fd = fds[0];
-            m_frame_consumed_fd = fds[1];
-            m_semaphores_updated = true;
-            GOGGLES_LOG_INFO("Received sync semaphores: ready_fd={}, consumed_fd={}",
-                             m_frame_ready_fd, m_frame_consumed_fd);
-        }
+        int ready_fd = fds[fd_index++];
+        int consumed_fd = fds[fd_index++];
+
+        clear_sync_semaphores();
+        m_frame.dmabuf_fd = util::UniqueFd{};
+        m_frame_ready_fd = ready_fd;
+        m_frame_consumed_fd = consumed_fd;
+        m_semaphores_updated = true;
+        GOGGLES_LOG_INFO("Received sync semaphores: ready_fd={}, consumed_fd={}",
+                         m_frame_ready_fd, m_frame_consumed_fd);
         return false;
     }
 
     if (msg_type == CaptureMessageType::frame_metadata) {
-        if (std::cmp_less(received, sizeof(CaptureFrameMetadata))) {
+        if (len < sizeof(CaptureFrameMetadata)) {
             return false;
         }
 
-        auto* metadata = reinterpret_cast<CaptureFrameMetadata*>(buf.data());
+        auto* metadata = reinterpret_cast<const CaptureFrameMetadata*>(data);
 
-        int new_fd = -1;
-        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
-                std::memcpy(&new_fd, CMSG_DATA(cmsg), sizeof(int));
-                break;
-            }
-        }
-
-        if (new_fd >= 0) {
+        if (fd_index < fds.size()) {
+            int new_fd = fds[fd_index++];
             m_frame.dmabuf_fd = util::UniqueFd{new_fd};
             GOGGLES_LOG_INFO("Received new DMA-BUF fd={}", new_fd);
         }
@@ -283,6 +320,7 @@ void CaptureReceiver::clear_sync_semaphores() {
 void CaptureReceiver::cleanup_frame() {
     m_frame = {};
     m_last_texture = {};
+    m_recv_buf.clear();
     clear_sync_semaphores();
 }
 

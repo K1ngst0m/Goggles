@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <util/unique_fd.hpp>
+#include <vector>
 
 namespace goggles {
 
@@ -47,6 +48,8 @@ private:
     bool receive_message();
     void cleanup_frame();
 
+    bool process_message(const char* data, size_t len, const std::vector<int>& fds, size_t& fd_index);
+
     int m_listen_fd = -1;
     int m_client_fd = -1;
     CaptureFrame m_frame{};
@@ -55,6 +58,8 @@ private:
     int m_frame_consumed_fd = -1;
     bool m_semaphores_updated = false;
     bool m_awaiting_new_fd = false;
+
+    std::vector<char> m_recv_buf;
 };
 
 } // namespace goggles
