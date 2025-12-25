@@ -95,19 +95,11 @@ The layer SHALL intercept `vkQueuePresentKHR` and perform GPU-to-GPU copy to the
 ### Requirement: Unix Socket IPC
 The layer SHALL communicate with the Goggles application via Unix domain socket to transfer DMA-BUF file descriptors.
 
-#### Scenario: Socket connection
-- **WHEN** the layer captures its first frame
-- **THEN** the layer SHALL connect to abstract socket `/goggles/vkcapture`
-- **AND** send client identification data
-
-#### Scenario: DMA-BUF fd transfer
-- **WHEN** the export image is ready
-- **THEN** the layer SHALL send texture metadata (width, height, format, stride, offset)
-- **AND** send the DMA-BUF file descriptor via `SCM_RIGHTS` ancillary data
-
-#### Scenario: Capture control
-- **WHEN** the Goggles app sends control data
-- **THEN** the layer SHALL start or stop capture based on the control message
+#### Scenario: Early Connection Check
+- **WHEN** `on_present` is called
+- **THEN** the layer SHALL check the socket connection status first
+- **AND** if not connected and connection attempt fails, return immediately
+- **AND** skip export image initialization and frame capture
 
 ### Requirement: Layer Logging Constraints
 The layer SHALL follow project logging policies for capture layer code.
