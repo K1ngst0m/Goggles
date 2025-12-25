@@ -1,5 +1,7 @@
 # Goggles
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/K1ngst0m/Goggles)
+
 A hooking-based frame streaming tool with support for RetroArch shader processing.
 
 | zfast-crt |
@@ -124,3 +126,4 @@ Topic-specific docs:
 - [Filter Chain](docs/filter_chain_workflow.md) - RetroArch shader pipeline
 - [RetroArch](docs/retroarch.md) - Shader preset compatibility
 - [Project Policies](docs/project_policies.md) - Development rules and conventions
+- [Roadmap](ROADMAP.md) - Development pending work
