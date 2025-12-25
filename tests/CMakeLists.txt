@@ -55,6 +55,8 @@ target_compile_definitions(goggles_tests PRIVATE
     GOGGLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
+goggles_enable_sanitizers(goggles_tests)
+
 # Copy test data files to build directory
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/util/test_data/
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/util/test_data/)
