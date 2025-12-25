@@ -142,13 +142,64 @@ void parse_parameters(const ValueMap& values, std::vector<ParameterOverride>& pa
 auto PresetParser::load(const std::filesystem::path& preset_path) -> Result<PresetConfig> {
     GOGGLES_PROFILE_FUNCTION();
 
+    std::vector<std::filesystem::path> visited;
+    return load_recursive(preset_path, 0, visited);
+}
+
+auto PresetParser::load_recursive(const std::filesystem::path& preset_path, int depth,
+                                  std::vector<std::filesystem::path>& visited)
+    -> Result<PresetConfig> {
+    if (depth > MAX_REFERENCE_DEPTH) {
+        return make_error<PresetConfig>(
+            ErrorCode::parse_error,
+            std::format("Reference depth exceeded (max {})", MAX_REFERENCE_DEPTH));
+    }
+
+    auto canonical = std::filesystem::weakly_canonical(preset_path);
+    for (const auto& v : visited) {
+        if (std::filesystem::equivalent(canonical, v)) {
+            return make_error<PresetConfig>(ErrorCode::parse_error,
+                                            "Circular reference detected: " + preset_path.string());
+        }
+    }
+    visited.push_back(canonical);
+
     auto content_result = read_file(preset_path);
     if (!content_result) {
         return make_error<PresetConfig>(content_result.error().code,
                                         content_result.error().message);
     }
 
+    auto ref_path = parse_reference(content_result.value());
+    if (ref_path) {
+        auto resolved = preset_path.parent_path() / *ref_path;
+        GOGGLES_LOG_DEBUG("Following #reference: {} -> {}", preset_path.filename().string(),
+                          ref_path.value());
+        return load_recursive(resolved, depth + 1, visited);
+    }
+
     return parse_ini(content_result.value(), preset_path.parent_path());
+}
+
+auto PresetParser::parse_reference(const std::string& content) -> std::optional<std::string> {
+    std::istringstream stream(content);
+    std::string line;
+
+    while (std::getline(stream, line)) {
+        auto trimmed = trim(line);
+        if (trimmed.empty() || trimmed[0] == '#') {
+            if (trimmed.starts_with("#reference")) {
+                auto quote_start = trimmed.find('"');
+                auto quote_end = trimmed.rfind('"');
+                if (quote_start != std::string::npos && quote_end > quote_start) {
+                    return trimmed.substr(quote_start + 1, quote_end - quote_start - 1);
+                }
+            }
+            continue;
+        }
+        break;
+    }
+    return std::nullopt;
 }
 
 auto PresetParser::parse_ini(const std::string& content, const std::filesystem::path& base_path)
@@ -279,6 +330,14 @@ auto PresetParser::parse_ini(const std::string& content, const std::filesystem::
         auto wrap_it = values.find(wrap_prefix);
         if (wrap_it != values.end()) {
             pass.wrap_mode = parse_wrap_mode_value(wrap_it->second);
+        }
+
+        // Frame count modulo
+        auto fcm_it = values.find(std::format("frame_count_mod{}", i));
+        if (fcm_it != values.end()) {
+            if (auto mod_val = parse_int_safe(fcm_it->second)) {
+                pass.frame_count_mod = static_cast<uint32_t>(*mod_val);
+            }
         }
 
         config.passes.push_back(std::move(pass));

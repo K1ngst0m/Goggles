@@ -165,7 +165,7 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
         pass->set_source_size(source_extent.width, source_extent.height);
         pass->set_output_size(target_extent.width, target_extent.height);
         pass->set_original_size(original_extent.width, original_extent.height);
-        pass->set_frame_count(m_frame_count);
+        pass->set_frame_count(m_frame_count, m_preset.passes[i].frame_count_mod);
         pass->set_final_viewport_size(vp.width, vp.height);
 
         pass->clear_alias_sizes();
@@ -179,6 +179,18 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::ImageView original_view,
         pass->clear_texture_bindings();
         pass->set_texture_binding("Source", source_view, nullptr);
         pass->set_texture_binding("Original", original_view, nullptr);
+
+        // Bind OriginalHistory textures
+        for (uint32_t h = 0; h < m_frame_history.depth(); ++h) {
+            auto hist_view = m_frame_history.get(h);
+            if (hist_view) {
+                auto name = std::format("OriginalHistory{}", h);
+                pass->set_texture_binding(name, hist_view, nullptr);
+                auto ext = m_frame_history.get_extent(h);
+                pass->set_alias_size(name, ext.width, ext.height);
+            }
+        }
+
         for (const auto& [alias, pass_idx] : m_alias_to_pass_index) {
             if (pass_idx < i && m_framebuffers[pass_idx].is_initialized()) {
                 pass->set_texture_binding(alias, m_framebuffers[pass_idx].view(), nullptr);
