@@ -36,7 +36,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gstreamer-orc-0.4.41-h17648ed_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.1-h33c6efd_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/jack-1.9.22-hf4617a5_3.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-6.12.0-he073ed8_5.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-hb9d3cd8_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/krb5-1.21.3-h659f571_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/lame-3.100-h166bdaf_1003.tar.bz2
@@ -109,7 +109,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/sdl3-3.2.28-h3b84278_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/soxr-0.1.3-h0b41bf4_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/spdlog-1.16.0-hffee6e0_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.39-he3f20f0_5.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/toml11-4.4.0-h7aa8ee6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-h8577fbf_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/wayland-1.24.0-hd6090a7_1.conda
@@ -142,6 +142,12 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/xorg-xineramaproto-1.2.1-hb9d3cd8_1002.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/xorg-xproto-7.0.31-hb9d3cd8_1008.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_6.conda
+      - conda: packages/bs-thread-pool
+      - conda: packages/expected-lite
+      - conda: packages/slang-shaders
+      - conda: packages/stb
+      - conda: packages/tracy
+      - conda: packages/vulkansdk
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
   sha256: fe51de6107f9edc7aa4f786a70f4a883943bc9d39b3bb7307c04c41410990726
@@ -200,6 +206,17 @@ packages:
   license: GPL-3.0-only
   size: 36310
   timestamp: 1766513143566
+- conda: packages/bs-thread-pool
+  name: bs-thread-pool
+  version: 3.5.0
+  build: hb0f4dca_0
+  subdir: linux-64
+  license: MIT
+  input:
+    hash: 8d9152cc5fa308b52121a094f8452abe5fc15914a1f6ab4ace586efdeddc16c4
+    globs:
+    - recipe.yaml
+    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_8.conda
   sha256: c30daba32ddebbb7ded490f0e371eae90f51e72db620554089103b4a6934b0d5
   md5: 51a19bba1b8ebfb60df25cde030b7ebc
@@ -443,6 +460,21 @@ packages:
   license: AFL-2.1 OR GPL-2.0-or-later
   size: 447649
   timestamp: 1764536047944
+- conda: packages/expected-lite
+  name: expected-lite
+  version: 0.8.0
+  build: hb0f4dca_0
+  subdir: linux-64
+  depends:
+  - libgcc >=15
+  - libgcc >=15
+  - libstdcxx >=15
+  license: BSL-1.0
+  input:
+    hash: 60f346d4663d75e142d3e157b10ee67e1c63037f2f1652bee4ce0873ced3f230
+    globs:
+    - recipe.yaml
+    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/linux-64/fftw-3.3.10-nompi_h3b011a4_111.conda
   sha256: c29a9196c344620267287d6cd931f6defda13874a25f9547fc153a12f3377ade
   md5: f6612d7b30fdd5b5db1c8c39313f9787
@@ -499,15 +531,15 @@ packages:
   license_family: LGPL
   size: 461260
   timestamp: 1747574434594
-- conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
-  sha256: 41557eeadf641de6aeae49486cef30d02a6912d8da98585d687894afd65b356a
-  md5: 86d9cba083cd041bfbf242a01a7a1999
+- conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-6.12.0-he073ed8_5.conda
+  sha256: ba53274bb216ea005281274c44d40640288f95b43f38556919e2107fb8085d87
+  md5: 5cc622606f004d411998e3d53167684f
   constrains:
-  - sysroot_linux-64 ==2.28
+  - sysroot_linux-64 ==2.39
   license: LGPL-2.0-or-later AND LGPL-2.0-or-later WITH exceptions AND GPL-2.0-or-later
   license_family: GPL
-  size: 1278712
-  timestamp: 1765578681495
+  size: 1534945
+  timestamp: 1765739737048
 - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-hb9d3cd8_0.conda
   sha256: 0960d06048a7185d3542d850986d807c6e37ca2e644342dd0c72feefcf26c2a4
   md5: b38117a3c920364aff79f870c984b4a3
@@ -1347,6 +1379,17 @@ packages:
   license: Zlib
   size: 1939082
   timestamp: 1764713273386
+- conda: packages/slang-shaders
+  name: slang-shaders
+  version: 2025.23.2
+  build: hb0f4dca_0
+  subdir: linux-64
+  license: Apache-2.0
+  input:
+    hash: 9f57e2735b7bfeb4aa1311b989e1ec42e7172b17dde49e43e828ce15775d71dc
+    globs:
+    - recipe.yaml
+    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/linux-64/soxr-0.1.3-h0b41bf4_3.conda
   sha256: 141e3364d26f162bfeae8491787c0d8796ada6c29a8cd567c1cd17c3c6b418f9
   md5: e8d261785be19b1575d23ccbbeae4ddd
@@ -1368,17 +1411,31 @@ packages:
   license_family: MIT
   size: 197841
   timestamp: 1760384828619
-- conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
-  sha256: c47299fe37aebb0fcf674b3be588e67e4afb86225be4b0d452c7eb75c086b851
-  md5: 13dc3adbc692664cd3beabd216434749
+- conda: packages/stb
+  name: stb
+  version: 0.0.1
+  build: hb0f4dca_0
+  subdir: linux-64
+  license: MIT
+  input:
+    hash: 637c13270f44f6d2c26dc13faf536baa29ee960335cb98ac13c7107e1ee3392c
+    globs:
+    - recipe.yaml
+    - variants.yaml
+- conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.39-he3f20f0_5.conda
+  sha256: 1cdd4defdc3fa202b01783e9a5157b1a55b556926ad2979f5ca7bd7a02dc4fb4
+  md5: 65f3e2fd0cef90809945fb4543cea55e
   depends:
-  - __glibc >=2.28
-  - kernel-headers_linux-64 4.18.0 he073ed8_9
+  - kernel-headers_linux-64 6.12.0 he073ed8_5
   - tzdata
+  track_features:
+  - sysroot_linux-64_2.39
+  - sysroot_linux-64_2.39_feature_2
+  - sysroot_linux-64_2.39_feature_3
   license: LGPL-2.0-or-later AND LGPL-2.0-or-later WITH exceptions AND GPL-2.0-or-later
   license_family: GPL
-  size: 24008591
-  timestamp: 1765578833462
+  size: 41534564
+  timestamp: 1765739764296
 - conda: https://conda.anaconda.org/conda-forge/linux-64/toml11-4.4.0-h7aa8ee6_0.conda
   sha256: cf3a100323037d8a06e0b8764e9aaf9560ac653550a55cf0f32ea74553da6c49
   md5: 40f41cf3d2d09d7eb20e32885d9e1089
@@ -1390,12 +1447,39 @@ packages:
   license_family: MIT
   size: 91906
   timestamp: 1751025861936
+- conda: packages/tracy
+  name: tracy
+  version: 0.13.1
+  build: hb0f4dca_0
+  subdir: linux-64
+  depends:
+  - libgcc >=15
+  - libgcc >=15
+  - libstdcxx >=15
+  - __glibc >=2.28,<3.0.a0
+  license: BSD-3-Clause
+  input:
+    hash: c7ff3f478cd26ade742c3db4651e166a37c541d1d49334d4081b2073e3b6a1a5
+    globs:
+    - recipe.yaml
+    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-h8577fbf_0.conda
   sha256: 50fad5db6734d1bb73df1cf5db73215e326413d4b2137933f70708aa1840e25b
   md5: 338201218b54cadff2e774ac27733990
   license: LicenseRef-Public-Domain
   size: 119204
   timestamp: 1765745742795
+- conda: packages/vulkansdk
+  name: vulkansdk
+  version: 1.4.328.1
+  build: hb0f4dca_0
+  subdir: linux-64
+  license: LicenseRef-VulkanSDK-Bundle
+  input:
+    hash: a1084c8a532f11f4a2e274733ae3fc5e748f3b7d9b0073fa79544168f4244a32
+    globs:
+    - recipe.yaml
+    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/linux-64/wayland-1.24.0-hd6090a7_1.conda
   sha256: 3aa04ae8e9521d9b56b562376d944c3e52b69f9d2a0667f77b8953464822e125
   md5: 035da2e4f5770f036ff704fa17aace24

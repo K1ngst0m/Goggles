@@ -1,0 +1,36 @@
+package:
+  name: tracy
+  version: "0.13.1"
+
+source:
+  git: https://github.com/wolfpld/tracy.git
+  tag: v0.13.1
+
+build:
+  number: 0
+  script:
+    - export CFLAGS="$(echo "$CFLAGS" | sed 's/-D_FORTIFY_SOURCE=[0-9]//g') -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+    - export CXXFLAGS="$(echo "$CXXFLAGS" | sed 's/-D_FORTIFY_SOURCE=[0-9]//g') -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+    - cmake -B build -G Ninja
+      -DCMAKE_BUILD_TYPE=Release
+      -DCMAKE_INSTALL_PREFIX=$PREFIX
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+      -DTRACY_ENABLE=ON
+      -DTRACY_ON_DEMAND=ON
+      -DTRACY_NO_SYSTEM_TRACING=ON
+      -DBUILD_SHARED_LIBS=OFF
+    - cmake --build build -j
+    - cmake --install build
+
+requirements:
+  build:
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
+    - sysroot_linux-64
+    - ninja
+    - pkg-config
+
+about:
+  homepage: https://github.com/wolfpld/tracy
+  license: BSD-3-Clause
+  summary: Tracy real-time profiler client library built from source
