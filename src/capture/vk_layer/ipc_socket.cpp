@@ -147,24 +147,31 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
         return false;
     }
 
-    ssize_t received = recv(fd, &control, sizeof(control), MSG_DONTWAIT);
+    bool got_msg = false;
+    while (true) {
+        CaptureControl msg{};
+        ssize_t received = recv(fd, &msg, sizeof(msg), MSG_DONTWAIT);
 
-    if (received == sizeof(control) && control.type == CaptureMessageType::control) {
-        std::lock_guard lock(mutex_);
-        capturing_ = (control.capturing != 0);
-        return true;
-    }
-
-    if (received == 0 || (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
-        std::lock_guard lock(mutex_);
-        if (socket_fd_ == fd) {
-            close(socket_fd_);
-            socket_fd_ = -1;
-            capturing_ = false;
+        if (received == sizeof(msg) && msg.type == CaptureMessageType::control) {
+            std::lock_guard lock(mutex_);
+            capturing_ = (msg.capturing != 0);
+            control = msg;
+            got_msg = true;
+        } else if (received == 0 || (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+            std::lock_guard lock(mutex_);
+            if (socket_fd_ == fd) {
+                close(socket_fd_);
+                socket_fd_ = -1;
+                capturing_ = false;
+            }
+            return false;
+        } else {
+            // EAGAIN or partial read (shouldn't happen with SOCK_STREAM and small struct)
+            break;
         }
     }
 
-    return false;
+    return got_msg;
 }
 
 } // namespace goggles::capture

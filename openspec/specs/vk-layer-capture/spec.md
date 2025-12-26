@@ -99,7 +99,14 @@ The layer SHALL communicate with the Goggles application via Unix domain socket 
 - **WHEN** `on_present` is called
 - **THEN** the layer SHALL check the socket connection status first
 - **AND** if not connected and connection attempt fails, return immediately
-- **AND** skip export image initialization and frame capture
+- **AND** skip polling control messages, resource initialization, and frame capture
+
+#### Scenario: Synchronized Capture State
+- **GIVEN** the layer is connected to a viewer
+- **WHEN** `on_present` is called
+- **THEN** the layer SHALL poll all pending control messages
+- **AND** update its internal capturing state
+- **AND** if capture is disabled, skip resource initialization and frame capture
 
 ### Requirement: Layer Logging Constraints
 The layer SHALL follow project logging policies for capture layer code.
@@ -206,16 +213,7 @@ The layer SHALL manage worker thread lifecycle to ensure clean startup and shutd
 - **THEN** the layer SHALL set a shutdown flag atomically
 - **AND** notify the worker thread via condition variable
 - **AND** join the worker thread before the method returns
-
-#### Scenario: Idempotent shutdown
-- **WHEN** `shutdown()` is called multiple times
-- **THEN** only the first call SHALL perform shutdown operations
-- **AND** subsequent calls SHALL return immediately
-
-#### Scenario: Queue drain on shutdown
-- **WHEN** the worker thread receives shutdown signal
-- **THEN** the worker SHALL process all remaining queued items
-- **AND** close all file descriptors before exiting
+- **AND** explicitly cleanup all Vulkan resources associated with active swapchains
 
 ### Requirement: Resource Lifetime Management
 The layer SHALL ensure file descriptor and Vulkan handle lifetimes are independent between main and worker threads.

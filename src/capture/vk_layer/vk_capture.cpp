@@ -142,6 +142,15 @@ void CaptureManager::shutdown() {
     if (worker_thread_.joinable()) {
         worker_thread_.join();
     }
+
+    std::lock_guard lock(mutex_);
+    for (auto& [handle, swap] : swaps_) {
+        auto* dev_data = get_object_tracker().get_device(swap.device);
+        if (dev_data) {
+            cleanup_swap_data(&swap, dev_data);
+        }
+    }
+    swaps_.clear();
 }
 
 // =============================================================================
@@ -644,6 +653,36 @@ void CaptureManager::destroy_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
 void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_info,
                                 VkDeviceData* dev_data) {
     GOGGLES_PROFILE_FUNCTION();
+
+    auto& socket = get_layer_socket();
+    if (!socket.is_connected()) {
+        if (!socket.connect()) {
+            return;
+        }
+        LAYER_DEBUG("Connected to Goggles app");
+    }
+
+    CaptureControl ctrl{};
+    if (socket.poll_control(ctrl)) {
+        LAYER_DEBUG("Control message received: capturing=%d", ctrl.capturing);
+    }
+
+    if (!socket.is_capturing()) {
+        static bool last_capturing = true;
+        if (last_capturing) {
+            LAYER_DEBUG("Capture inactive, skipping GPU work");
+            last_capturing = false;
+        }
+        return;
+    }
+    
+    // Reset the static flag when we start capturing
+    static bool last_capturing_active = false;
+    if (!last_capturing_active) {
+        LAYER_DEBUG("Capture active, proceeding with GPU work");
+        last_capturing_active = true;
+    }
+
     if (present_info->swapchainCount == 0) {
         return;
     }
@@ -660,15 +699,6 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
 
     SwapData* swap = &it->second;
 
-    auto& socket = get_layer_socket();
-    if (!socket.is_connected()) {
-        if (socket.connect()) {
-            LAYER_DEBUG("Connected to Goggles app");
-        } else {
-            return;
-        }
-    }
-
     if (!swap->export_initialized) {
         LAYER_DEBUG("Initializing export image...");
         if (!init_export_image(swap, dev_data)) {
@@ -680,9 +710,6 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
             return;
         }
     }
-
-    CaptureControl ctrl{};
-    socket.poll_control(ctrl);
 
     VkPresentInfoKHR modified_present = *present_info;
     capture_frame(swap, image_index, queue, dev_data, &modified_present);
