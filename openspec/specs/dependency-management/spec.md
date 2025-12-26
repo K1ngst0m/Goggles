@@ -18,7 +18,7 @@ The project SHALL use [Pixi](https://pixi.sh) as the primary dependency manager 
 #### Scenario: Pixi-managed dependencies
 - **GIVEN** the `pixi.toml` configuration
 - **THEN** the following categories SHALL be managed by Pixi:
-  - Compilers (clang, gcc)
+  - Clang toolchain (clang, clang++, compiler-rt, libcxx)
   - Build tools (cmake, ninja, ccache)
   - System libraries (SDL3, CLI11, Vulkan headers)
   - X11/Wayland/audio libraries
