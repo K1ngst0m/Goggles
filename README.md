@@ -87,10 +87,24 @@ The filter chain transforms captured DMA-BUF images through a series of shader p
 
 ## Build
 
+This project uses [Pixi](https://pixi.sh) for dependency management and build tasks.
+
 ```bash
-cmake --list-presets    # List available presets
-make app                # Build (debug by default)
-make help               # See all targets
+# Install dependencies (first time only)
+pixi install
+
+# Build
+pixi run build            # Debug build (default)
+pixi run build-release    # Release build
+pixi run build-asan       # Debug + AddressSanitizer
+pixi run build-quality    # Debug + ASAN + clang-tidy
+
+# Test
+pixi run test             # Run tests (debug)
+pixi run test-asan        # Run tests with ASAN
+
+# Run
+pixi run start            # Build and run goggles
 ```
 
 Build output:
@@ -104,8 +118,8 @@ build/<preset>/
 ## Usage
 
 ```bash
-# 1. Build and install layer manifests
-make dev
+# 1. Build the project
+pixi run build
 
 # 2. Run goggles app (receiver)
 ./build/debug/bin/goggles
