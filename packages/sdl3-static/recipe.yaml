@@ -1,0 +1,96 @@
+package:
+  name: sdl3-static
+  version: "3.2.28"
+
+source:
+  git: https://github.com/libsdl-org/SDL.git
+  tag: release-3.2.28
+
+build:
+  number: 0
+  script:
+    - cmake -B build -G Ninja
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_INSTALL_PREFIX=$PREFIX
+        -DSDL_SHARED=OFF
+        -DSDL_STATIC=ON
+        -DSDL_TEST_LIBRARY=OFF
+        -DSDL_TESTS=OFF
+        -DSDL_EXAMPLES=OFF
+    - cmake --build build -j
+    - cmake --install build
+
+requirements:
+  build:
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
+    - cmake
+    - ninja
+    - pkg-config
+  host:
+    # X11 headers (protocols)
+    - xorg-xproto
+    - xorg-xextproto
+    - xorg-renderproto
+    - xorg-randrproto
+    - xorg-inputproto
+    - xorg-fixesproto
+    - xorg-scrnsaverproto
+    - xorg-xineramaproto
+    - xorg-kbproto
+    - xorg-glproto
+    # X11 libraries
+    - xorg-libx11
+    - xorg-libxext
+    - xorg-libxcursor
+    - xorg-libxi
+    - xorg-libxfixes
+    - xorg-libxrandr
+    - xorg-libxrender
+    - xorg-libxscrnsaver
+    - xorg-libxinerama
+    - xorg-libxcb
+    - xorg-libxau
+    - xorg-libxdmcp
+    # Wayland
+    - wayland
+    - wayland-protocols
+    - libxkbcommon
+    # Audio
+    - alsa-lib
+    - pulseaudio
+    - jack
+    # Graphics
+    - libdrm
+    - libgl
+    # System
+    - dbus
+    - libudev1
+  # SDL's backends dlopen these optional system libraries, so we don't want
+  # them to be promoted to runtime requirements for this static package.
+  ignore_run_exports:
+    from_package:
+      - xorg-libx11
+      - xorg-libxext
+      - xorg-libxcursor
+      - xorg-libxi
+      - xorg-libxfixes
+      - xorg-libxrandr
+      - xorg-libxrender
+      - xorg-libxscrnsaver
+      - xorg-libxinerama
+      - xorg-libxau
+      - xorg-libxdmcp
+      - wayland
+      - wayland-protocols
+      - libxkbcommon
+      - alsa-lib
+      - pulseaudio
+      - jack
+      - libdrm
+      - dbus
+
+about:
+  homepage: https://www.libsdl.org/
+  license: Zlib
+  summary: SDL3 built as static library

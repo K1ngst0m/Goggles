@@ -1,0 +1,6 @@
+[package]
+name = "sdl3-static"
+version = "3.2.28"
+
+[package.build]
+backend = { name = "pixi-build-rattler-build", version = "*" }
