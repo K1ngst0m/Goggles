@@ -19,6 +19,34 @@ The CI system SHALL automatically format code using clang-format and commit the 
 - **AND** no commit is created
 - **AND** the format check job succeeds
 
+#### Scenario: All C/C++ file types are formatted
+- **WHEN** clang-format is run in CI
+- **THEN** files with extensions `.c`, `.h`, `.cpp`, `.hpp` are formatted
+- **AND** the same clang-format version from pixi is used
+
+### Requirement: Unified Clang-Format via Pixi
+
+The project SHALL use a pixi-managed clang-format to ensure consistent formatting across all contributors regardless of their local IDE or system toolchain.
+
+#### Scenario: IDE configuration uses pixi clang-format
+- **WHEN** a contributor runs `pixi run setup-ide`
+- **THEN** IDE-specific configuration files are generated locally
+- **AND** the configuration points to `.pixi/envs/default/bin/clang-format`
+- **AND** the generated files are in `.gitignore`
+
+#### Scenario: Supported IDEs
+- **GIVEN** the setup-ide script
+- **THEN** VSCode is supported via `.vscode/settings.json`
+- **AND** Emacs is supported via `.dir-locals.el`
+- **AND** Vim is supported via `.exrc`
+- **AND** Neovim is supported via `.nvim.lua`
+- **AND** CLion is supported via `.idea/clangFormatSettings.xml`
+
+#### Scenario: First-time contributor setup check
+- **WHEN** a contributor runs `pixi run init`
+- **THEN** the system checks if any IDE configuration exists
+- **AND** if not configured, displays instructions to run `pixi run setup-ide`
+
 ### Requirement: Scoped Sanitizer Instrumentation
 
 The build system SHALL apply sanitizer instrumentation only to first-party Goggles code, excluding all third-party dependencies.

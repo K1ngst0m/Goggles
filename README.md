@@ -105,6 +105,11 @@ pixi run shader-list [pattern]  # List shader presets (optional filter)
 # Test
 pixi run test [preset]          # Run tests for preset
 
+# IDE Setup (configure clang-format)
+pixi run init                   # Check if IDE is configured
+pixi run setup-ide              # Interactive IDE selection
+pixi run setup-ide vscode       # Or specify: vscode/emacs/vim/neovim/clion
+
 # Run (builds via `dev` first)
 pixi run start <app> [preset]   # e.g., pixi run start vkcube
 ```
