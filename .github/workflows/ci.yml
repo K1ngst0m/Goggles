@@ -6,83 +6,132 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: write
+  actions: read
+  checks: read
+
+env:
+  PIXI_VERSION: v0.40.1
+  CCACHE_MAX_SIZE: 500M
+
 jobs:
-  build-and-test:
-    name: Build and Test
+  format:
+    name: Auto Format
     runs-on: ubuntu-latest
-
+    outputs:
+      formatted: ${{ steps.format.outputs.formatted }}
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup Pixi
-      uses: prefix-dev/setup-pixi@v0.8.1
-      with:
-        pixi-version: v0.40.1
-        cache: true
-        manifest-path: pixi.toml
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          cache: true
+          manifest-path: pixi.toml
 
-    - name: Install Vulkan SDK
-      run: |
-        wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
-        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
-        sudo apt-get update
-        sudo apt-get install -y vulkan-sdk
+      - name: Run clang-format
+        run: pixi run clang-format -i $(git ls-files '*.cpp' '*.hpp')
 
-    - name: Setup ccache
-      uses: actions/cache@v4
-      with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-pixi-ccache-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-pixi-ccache-
+      - name: Commit formatted code if needed
+        id: format
+        run: |
+          if git diff --quiet; then
+            echo "formatted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-    - name: Configure ccache
-      run: |
-        pixi run ccache --set-config=max_size=500M
-        pixi run ccache --set-config=compression=true
-        pixi run ccache --zero-stats
+          IS_FORK=$(jq -r '.pull_request.head.repo.fork // false' "$GITHUB_EVENT_PATH")
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "$IS_FORK" = "true" ]; then
+            echo "Formatted changes detected but skipping auto-commit on forked PR"
+            echo "formatted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-    # Replaces "Configure with ASAN preset" and "Build" with single Pixi task
-    - name: Build
-      run: pixi run build-asan
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "style: auto-format code"
+          git push
+          echo "formatted=true" >> "$GITHUB_OUTPUT"
 
-    - name: Show ccache statistics
-      run: pixi run ccache --show-stats
+  build-and-test:
+    name: Build and Test (test preset)
+    runs-on: ubuntu-latest
+    needs: format
+    if: ${{ needs.format.outputs.formatted != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Run Tests
-      run: pixi run test-asan
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          cache: true
+          manifest-path: pixi.toml
+
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-pixi-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pixi-ccache-
+
+      - name: Configure ccache
+        run: |
+          pixi run ccache --set-config=max_size=${{ env.CCACHE_MAX_SIZE }}
+          pixi run ccache --set-config=compression=true
+          pixi run ccache --zero-stats
+
+      - name: Build (test preset)
+        run: pixi run build test
+
+      - name: Run Tests (test preset)
+        run: pixi run test test
+
+      - name: Show ccache statistics
+        if: always()
+        run: pixi run ccache --show-stats
 
   static-analysis:
     name: Static Analysis (clang-tidy)
     runs-on: ubuntu-latest
-
+    needs: format
+    if: ${{ needs.format.outputs.formatted != 'true' }}
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup Pixi
-      uses: prefix-dev/setup-pixi@v0.8.1
-      with:
-        pixi-version: v0.40.1
-        cache: true
-        manifest-path: pixi.toml
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          cache: true
+          manifest-path: pixi.toml
 
-    - name: Setup ccache
-      uses: actions/cache@v4
-      with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-pixi-ccache-tidy-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-pixi-ccache-tidy-
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-pixi-ccache-tidy-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pixi-ccache-tidy-
 
-    - name: Configure ccache
-      run: |
-        pixi run ccache --set-config=max_size=500M
-        pixi run ccache --set-config=compression=true
-        pixi run ccache --zero-stats
+      - name: Configure ccache
+        run: |
+          pixi run ccache --set-config=max_size=${{ env.CCACHE_MAX_SIZE }}
+          pixi run ccache --set-config=compression=true
+          pixi run ccache --zero-stats
 
-    # Replaces "Configure" and "Build with clang-tidy"
-    - name: Build with clang-tidy
-      run: pixi run build-quality
+      - name: Build with clang-tidy (quality preset)
+        run: pixi run build quality
 
-    - name: Show ccache statistics
-      run: pixi run ccache --show-stats
+      - name: Show ccache statistics
+        if: always()
+        run: pixi run ccache --show-stats

@@ -1,7 +1,7 @@
 # dependency-management Specification
 
 ## Purpose
-Defines the dual-layer dependency management strategy using Pixi for system dependencies and toolchains, and CPM for C++ libraries.
+Defines the dual-layer dependency management strategy using Pixi for system dependencies, toolchains, and source-built/prebuilt packages. CPM is not used in the current configuration.
 
 ## Requirements
 
@@ -23,14 +23,13 @@ The project SHALL use [Pixi](https://pixi.sh) as the primary dependency manager 
   - System libraries (SDL3, CLI11, Vulkan headers)
   - X11/Wayland/audio libraries
 
-### Requirement: CPM for C++ Libraries
+### Requirement: Pixi for C++ Libraries (Primary)
 
-The build system SHALL use CPM (CMake Package Manager) for C++ header-only and compiled libraries that are not available or suitable via Pixi.
+The build system SHALL consume C++ libraries from Pixi packages (including source-built recipes) as the primary source.
 
-#### Scenario: CPM-managed dependencies
-- **GIVEN** the `cmake/Dependencies.cmake` file
-- **WHEN** CMake configure is run
-- **THEN** CPM SHALL download and cache C++ libraries including:
+#### Scenario: Pixi-managed C++ libraries
+- **GIVEN** the `pixi.toml` configuration
+- **THEN** the following libraries SHALL be provided by Pixi packages (built from source where applicable):
   - expected-lite (error handling)
   - spdlog (logging)
   - toml11 (configuration)
@@ -38,11 +37,12 @@ The build system SHALL use CPM (CMake Package Manager) for C++ header-only and c
   - stb (image loading)
   - BS_thread_pool (concurrency)
   - slang (shader compiler)
+  - Tracy (profiling, optional)
 
-#### Scenario: CPM cache reuse
-- **GIVEN** a library is already in the CPM cache (`~/.cache/CPM`)
-- **WHEN** CMake configure is run
-- **THEN** CPM SHALL reuse the cached library without re-downloading
+#### Scenario: Pixi package discovery
+- **GIVEN** `CPM_USE_LOCAL_PACKAGES=ON` is set during CMake configure
+- **WHEN** `find_package()` is invoked for the above libraries
+- **THEN** the Pixi-provided packages SHALL be found without CPM downloads
 
 ### Requirement: Pixi-CPM Integration
 
@@ -72,4 +72,3 @@ All dependencies SHALL be pinned to specific versions to ensure reproducible bui
 - **GIVEN** the `cmake/Dependencies.cmake` file
 - **WHEN** a library is added via CPM
 - **THEN** a specific VERSION or GIT_TAG SHALL be specified
-
