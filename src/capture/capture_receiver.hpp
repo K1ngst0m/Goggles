@@ -32,13 +32,18 @@ public:
     [[nodiscard]] bool is_connected() const { return m_client_fd >= 0; }
     [[nodiscard]] bool has_frame() const { return m_frame.dmabuf_fd.valid(); }
 
+    // Set input display number for config handshake
+    void set_input_display(int display_num) { m_input_display_number = display_num; }
+
 private:
     bool accept_client();
     bool receive_message();
     void cleanup_frame();
+    void handle_config_request(int fd);
 
     int m_listen_fd = -1;
     int m_client_fd = -1;
+    int m_input_display_number = -1; // DISPLAY number from InputForwarder
     CaptureFrame m_frame{};
     capture::CaptureTextureData m_last_texture{};
 };

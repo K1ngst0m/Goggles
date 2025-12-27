@@ -2,13 +2,14 @@
 
 ## Problem Statement
 
-Captured Vulkan applications run with redirected display (`DISPLAY=:N`) and receive frames from the Goggles viewer, but users cannot control them because keyboard input goes to the Goggles window instead. Standard input forwarding methods fail because:
+When Goggles captures frames from a Vulkan application via the layer, users cannot control the captured application by pressing keys in the Goggles viewer window. Input events go to the Goggles window instead of the captured application.
 
-1. Captured apps run on a different X11 display server
-2. Synthetic input methods (uinput, XTest to host) are filtered by applications (especially Wine/DXVK)
-3. No mechanism exists to route input from viewer window to captured application
+Standard input forwarding approaches fail:
 
-Users must manually focus the captured application window (which may be invisible) or use workarounds like SSH + xinput, breaking the seamless capture experience.
+1. **Synthetic input injection** (uinput, XTest to host DISPLAY) is filtered by many applications, especially Wine/DXVK
+2. **Focusing the captured app window** breaks the seamless viewing experience and may not work if the app is headless
+
+Users currently have no way to interact with captured applications while viewing through Goggles.
 
 ## Proposed Solution
 

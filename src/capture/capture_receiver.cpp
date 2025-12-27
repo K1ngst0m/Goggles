@@ -97,6 +97,18 @@ bool CaptureReceiver::accept_client() {
         return false;
     }
 
+    // Peek at message type to detect config requests
+    CaptureMessageType msg_type{};
+    ssize_t peeked = recv(new_fd, &msg_type, sizeof(msg_type), MSG_PEEK | MSG_DONTWAIT);
+
+    if (peeked == sizeof(msg_type) && msg_type == CaptureMessageType::config_request) {
+        // This is a config request connection - handle and close
+        handle_config_request(new_fd);
+        close(new_fd);
+        return false; // Don't set as client_fd
+    }
+
+    // Normal frame capture connection
     if (m_client_fd >= 0) {
         close(m_client_fd);
         cleanup_frame();
@@ -214,6 +226,35 @@ bool CaptureReceiver::receive_message() {
 void CaptureReceiver::cleanup_frame() {
     m_frame = {};
     m_last_texture = {};
+}
+
+void CaptureReceiver::handle_config_request(int fd) {
+    // Read the full config request message
+    CaptureConfigRequest request{};
+    ssize_t received = recv(fd, &request, sizeof(request), 0);
+
+    if (received != sizeof(request)) {
+        GOGGLES_LOG_WARN("Config request: incomplete message received");
+        return;
+    }
+
+    if (request.type != CaptureMessageType::config_request) {
+        GOGGLES_LOG_WARN("Config request: unexpected message type");
+        return;
+    }
+
+    // Send response with input display number
+    CaptureInputDisplayReady response{};
+    response.type = CaptureMessageType::input_display_ready;
+    response.display_number = m_input_display_number;
+
+    ssize_t sent = send(fd, &response, sizeof(response), MSG_NOSIGNAL);
+    if (sent != sizeof(response)) {
+        GOGGLES_LOG_WARN("Config response: failed to send");
+        return;
+    }
+
+    GOGGLES_LOG_INFO("Config request handled: sent DISPLAY={}", m_input_display_number);
 }
 
 } // namespace goggles

@@ -15,6 +15,9 @@ enum class CaptureMessageType : uint32_t {
     client_hello = 1,
     texture_data = 2,
     control = 3,
+    // Note: values 4-5 reserved for pending PR #16 (semaphore_init, frame_metadata)
+    config_request = 6,
+    input_display_ready = 7,
 };
 ;
 
@@ -45,5 +48,21 @@ struct CaptureControl {
 };
 
 static_assert(sizeof(CaptureControl) == 16);
+
+struct CaptureConfigRequest {
+    CaptureMessageType type = CaptureMessageType::config_request;
+    uint32_t version = 1;
+    std::array<uint32_t, 2> reserved{};
+};
+
+static_assert(sizeof(CaptureConfigRequest) == 16);
+
+struct CaptureInputDisplayReady {
+    CaptureMessageType type = CaptureMessageType::input_display_ready;
+    int32_t display_number = 0;
+    std::array<uint32_t, 2> reserved{};
+};
+
+static_assert(sizeof(CaptureInputDisplayReady) == 16);
 
 } // namespace goggles::capture

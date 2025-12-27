@@ -1,61 +1,76 @@
 # vk-layer-capture Specification (Delta)
 
-## MODIFIED Requirements
+## ADDED Requirements
 
-### Requirement: Unix Socket IPC
+### Requirement: Config Handshake Protocol
 
-The layer SHALL communicate with the Goggles application via Unix domain socket to transfer DMA-BUF file descriptors **and input display configuration**.
+The layer SHALL perform a separate config handshake connection in its constructor to receive input forwarding configuration before the application initializes.
 
-#### Scenario: Early Connection Check
-- **WHEN** `on_present` is called
-- **THEN** the layer SHALL check the socket connection status first
-- **AND** if not connected and connection attempt fails, return immediately
-- **AND** skip export image initialization and frame capture
-
-#### Scenario: Receive input DISPLAY number (NEW)
+#### Scenario: Config connection in constructor
 - **WHEN** the layer constructor runs with priority 101
-- **THEN** the layer SHALL attempt to receive a `CaptureInputDisplayReady` message
-- **AND** SHALL wait up to 100ms for the message
-- **AND** if received, extract the DISPLAY number from the message
-- **AND** call `setenv("DISPLAY", ":N", 1)` where N is the received display number
-- **AND** if timeout expires, SHALL NOT modify DISPLAY environment variable
+- **THEN** the layer SHALL create a temporary socket connection to `\0goggles/vkcapture`
+- **AND** send `CaptureConfigRequest` message
+- **AND** wait up to 100ms for `CaptureInputDisplayReady` response
+- **AND** close the config connection after receiving response or timeout
+- **AND** the config connection SHALL be independent of the frame capture connection
 
-#### Scenario: Constructor priority ordering (NEW)
+#### Scenario: Config request message
+- **WHEN** the config connection is established
+- **THEN** the layer SHALL send `CaptureConfigRequest` with type = 6
+- **AND** version = 1
+- **AND** message size SHALL be 16 bytes
+
+#### Scenario: Receive input DISPLAY response
+- **WHEN** `CaptureInputDisplayReady` is received (type = 7)
+- **THEN** extract `display_number` field
+- **AND** call `setenv("DISPLAY", ":N", 1)` where N is the display number
+- **AND** if timeout expires (100ms), SHALL NOT modify DISPLAY environment variable
+
+#### Scenario: Constructor priority ordering
 - **WHEN** the shared library is loaded into the target application
 - **THEN** the layer constructor SHALL have `__attribute__((constructor(101)))`
 - **AND** SHALL execute before default priority (100) constructors
 - **AND** SHALL set DISPLAY before the application's global initializers run
 
-## ADDED Requirements
+#### Scenario: Frame capture connection independence
+- **WHEN** `on_present` connects for frame capture
+- **THEN** the frame capture connection SHALL be a NEW socket connection
+- **AND** SHALL NOT reuse the config connection
+- **AND** SHALL send `client_hello` message as before
+- **AND** existing frame capture protocol SHALL remain unchanged
 
-### Requirement: Input Display Handshake Message
+### Requirement: Protocol Message Types
 
-The IPC protocol SHALL support a new message type for communicating the nested XWayland DISPLAY number.
+The IPC protocol SHALL add two new message types for input forwarding configuration.
 
-#### Scenario: Message structure
-- **GIVEN** a new message type `input_display_ready`
-- **THEN** the message SHALL have type `CaptureMessageType::input_display_ready` (value 4)
-- **AND** SHALL contain `int32_t display_number` field
-- **AND** SHALL be 20 bytes total (4 + 4 + 12 padding)
+#### Scenario: Config request message type
+- **GIVEN** `CaptureMessageType::config_request = 6`
+- **THEN** the struct SHALL contain type field and version field
+- **AND** SHALL be 16 bytes total (type:4 + version:4 + reserved:8)
 
-#### Scenario: Message send from Goggles
-- **WHEN** `InputForwarder::init()` successfully starts XWayland on :N
-- **THEN** Goggles SHALL construct `CaptureInputDisplayReady` with display_number = N
-- **AND** send the message over the Unix socket before any captured apps start
+#### Scenario: Input display ready message type
+- **GIVEN** `CaptureMessageType::input_display_ready = 7`
+- **THEN** the struct SHALL contain type field and display_number field
+- **AND** SHALL be 16 bytes total (type:4 + display_number:4 + reserved:8)
 
-#### Scenario: Message receive in layer
-- **WHEN** the layer constructor calls `receive_with_timeout(100ms)`
-- **THEN** if a message is received, check if type == `input_display_ready`
-- **AND** if so, read `display_number` and set DISPLAY environment variable
-- **AND** if timeout or wrong message type, proceed with default behavior (no DISPLAY modification)
+#### Scenario: Message type numbering
+- **GIVEN** existing message types (client_hello=1, texture_data=2, control=3, semaphore_init=4, frame_metadata=5)
+- **THEN** new message types SHALL use values 6 and 7
+- **AND** SHALL NOT conflict with existing protocol messages
 
-#### Scenario: Protocol version compatibility
-- **WHEN** an older layer version (without input support) connects
-- **THEN** the layer SHALL ignore unknown message types (forward compatibility)
-- **AND** Goggles SHALL NOT require acknowledgment of `input_display_ready`
+### Requirement: CaptureReceiver Config Handling
 
-#### Scenario: Message ordering
-- **GIVEN** the IPC protocol message sequence
-- **THEN** `input_display_ready` SHALL be sent before `client_hello` is expected
-- **AND** the layer SHALL receive `input_display_ready` before connecting to the socket for frame capture
-- **AND** the layer SHALL send `client_hello` after setting DISPLAY (if received)
+The CaptureReceiver SHALL handle config requests separately from frame capture connections.
+
+#### Scenario: Detect config request
+- **WHEN** CaptureReceiver receives a new connection
+- **THEN** read the message type
+- **AND** if type == `config_request`, respond with `input_display_ready` and close connection
+- **AND** if type == `client_hello`, proceed with normal frame capture flow
+
+#### Scenario: Config response
+- **WHEN** a config request is received
+- **THEN** construct `CaptureInputDisplayReady` with current DISPLAY number from InputForwarder
+- **AND** send response message
+- **AND** close the client connection immediately after sending
+- **AND** wait for next connection (frame capture)
