@@ -1,0 +1,6 @@
+[package]
+name = "slang-shaders"
+version = "2025.23.2"
+
+[package.build]
+backend = { name = "pixi-build-rattler-build", version = "*" }

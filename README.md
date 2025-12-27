@@ -74,10 +74,31 @@ The filter chain transforms captured DMA-BUF images through a series of shader p
 
 ## Build
 
+This project uses [Pixi](https://pixi.sh) for dependency management and build tasks.
+
 ```bash
-cmake --list-presets    # List available presets
-make app                # Build (debug by default)
-make help               # See all targets
+# Install dependencies (first time only)
+pixi install
+
+# Build (preset defaults to `debug`)
+pixi run build [preset]         # 64-bit app + layer (e.g., release, asan, quality)
+pixi run build-i686 [preset]    # 32-bit layer only
+pixi run dev [preset]           # Build both layers + install manifests
+pixi run tasks                  # Show Pixi task cheatsheet
+pixi run goggles-help [preset]  # Build (if needed) and show goggles --help
+pixi run shader-refresh         # Download/refresh RetroArch slang shaders
+pixi run shader-list [pattern]  # List shader presets (optional filter)
+
+# Test
+pixi run test [preset]          # Run tests for preset
+
+# IDE Setup (configure clang-format)
+pixi run init                   # Check if IDE is configured
+pixi run setup-ide              # Interactive IDE selection
+pixi run setup-ide vscode       # Or specify: vscode/emacs/vim/neovim/clion
+
+# Run (builds via `dev` first)
+pixi run start <app> [preset]   # e.g., pixi run start vkcube
 ```
 
 Build output:
@@ -91,14 +112,13 @@ build/<preset>/
 ## Usage
 
 ```bash
-# 1. Build and install layer manifests
-make dev
+# Quick smoke test (build + manifests as needed)
+pixi run start vkcube
 
-# 2. Run goggles app (receiver)
-./build/debug/bin/goggles
-
-# 3. Run target app with capture enabled
-GOGGLES_CAPTURE=1 vkcube
+# Standard flow
+pixi run build                   # 1. Build the project
+./build/debug/bin/goggles        # 2. Run goggles app (receiver)
+GOGGLES_CAPTURE=1 vkcube         # 3. Run target app with capture enabled
 ```
 
 For Steam games, set launch options:
@@ -111,7 +131,8 @@ GOGGLES_CAPTURE=1 %command%
 The repository tracks minimal zfast-crt shaders. For the full shader collection:
 
 ```bash
-./scripts/download_retroarch_shaders.sh
+pixi run shader-refresh          # Download/refresh full RetroArch shaders into shaders/retroarch
+pixi run shader-list [pattern]   # List available .slangp presets (optional filter)
 ```
 
 This downloads from [libretro/slang-shaders](https://github.com/libretro/slang-shaders). All shaders except zfast-crt are gitignored.

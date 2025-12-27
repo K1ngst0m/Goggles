@@ -1,0 +1,18 @@
+package:
+  name: stb
+  version: "0.0.1"
+
+source:
+  git: https://github.com/nothings/stb.git
+  rev: f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31
+
+build:
+  number: 0
+  script:
+    - mkdir -p $PREFIX/include/stb
+    - cp *.h $PREFIX/include/stb/
+
+about:
+  homepage: https://github.com/nothings/stb
+  license: MIT
+  summary: stb single-file public domain libraries for C/C++
