@@ -177,7 +177,7 @@ static auto run_app(int argc, char** argv) -> int {
 
     goggles::CaptureReceiver capture_receiver;
     if (!capture_receiver.init()) {
-        GOGGLES_LOG_WARN("Failed to initialize capture receiver");
+        GOGGLES_LOG_WARN("Capture disabled - running in viewer-only mode");
     }
 
     run_main_loop(vulkan_backend, capture_receiver);

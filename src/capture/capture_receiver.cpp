@@ -38,7 +38,11 @@ bool CaptureReceiver::init() {
         static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + CAPTURE_SOCKET_PATH_LEN);
 
     if (bind(m_listen_fd, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
-        GOGGLES_LOG_ERROR("Failed to bind socket: {}", strerror(errno));
+        if (errno == EADDRINUSE) {
+            GOGGLES_LOG_ERROR("Capture socket already in use (another instance running?)");
+        } else {
+            GOGGLES_LOG_ERROR("Failed to bind socket: {}", strerror(errno));
+        }
         close(m_listen_fd);
         m_listen_fd = -1;
         return false;
@@ -97,8 +101,9 @@ bool CaptureReceiver::accept_client() {
     }
 
     if (m_client_fd >= 0) {
-        close(m_client_fd);
-        cleanup_frame();
+        GOGGLES_LOG_WARN("Rejecting new client: already connected");
+        close(new_fd);
+        return false;
     }
 
     m_client_fd = new_fd;

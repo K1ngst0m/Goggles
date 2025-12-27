@@ -386,7 +386,16 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
     create_info.imageSharingMode = vk::SharingMode::eExclusive;
     create_info.preTransform = capabilities.currentTransform;
     create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
-    create_info.presentMode = vk::PresentModeKHR::eFifo;
+
+    auto [pm_result, present_modes] = m_physical_device.getSurfacePresentModesKHR(*m_surface);
+    vk::PresentModeKHR chosen_mode = vk::PresentModeKHR::eFifo;
+    for (auto mode : present_modes) {
+        if (mode == vk::PresentModeKHR::eMailbox) {
+            chosen_mode = vk::PresentModeKHR::eMailbox;
+            break;
+        }
+    }
+    create_info.presentMode = chosen_mode;
     create_info.clipped = VK_TRUE;
 
     auto [result, swapchain] = m_device->createSwapchainKHRUnique(create_info);

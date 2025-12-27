@@ -5,6 +5,8 @@
 #include "vk_dispatch.hpp"
 #include "wsi_virtual.hpp"
 
+#include <util/profiling.hpp>
+
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -582,6 +584,8 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
 // =============================================================================
 
 VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
+    GOGGLES_PROFILE_FRAME("Layer");
+
     static bool first_call = true;
     if (first_call) {
         LAYER_DEBUG("QueuePresentKHR hook called (first frame)");
