@@ -34,7 +34,7 @@ jobs:
           manifest-path: pixi.toml
 
       - name: Run clang-format
-        run: pixi run clang-format -i $(git ls-files '*.c' '*.h' '*.cpp' '*.hpp')
+        run: git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 -r pixi run clang-format -i
 
       - name: Commit formatted code if needed
         id: format

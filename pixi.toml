@@ -3,6 +3,7 @@ channels = ["conda-forge"]
 name = "Goggles"
 platforms = ["linux-64"]
 version = "0.1.0"
+requires-pixi = ">=0.45.0"
 preview = ["pixi-build"]
 
 [tasks]
