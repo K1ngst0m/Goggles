@@ -54,9 +54,9 @@ The IPC protocol SHALL add two new message types for input forwarding configurat
 - **AND** SHALL be 16 bytes total (type:4 + display_number:4 + reserved:8)
 
 #### Scenario: Message type numbering
-- **GIVEN** existing message types (client_hello=1, texture_data=2, control=3, semaphore_init=4, frame_metadata=5)
+- **GIVEN** existing message types (client_hello=1, texture_data=2, control=3)
 - **THEN** new message types SHALL use values 6 and 7
-- **AND** SHALL NOT conflict with existing protocol messages
+- **AND** SHALL NOT conflict with existing or reserved protocol messages (e.g. values 4-5 may be used by other capture features)
 
 ### Requirement: CaptureReceiver Config Handling
 
