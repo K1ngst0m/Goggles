@@ -18,6 +18,9 @@ public:
     void disconnect();
     bool is_connected() const;
     bool send_texture(const CaptureTextureData& data, int dmabuf_fd);
+    bool send_semaphores(int frame_ready_fd, int frame_consumed_fd);
+    bool send_texture_with_fd(const CaptureFrameMetadata& metadata, int dmabuf_fd);
+    bool send_frame_metadata(const CaptureFrameMetadata& metadata);
     bool poll_control(CaptureControl& control);
     bool is_capturing() const;
 

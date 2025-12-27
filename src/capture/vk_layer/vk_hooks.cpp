@@ -5,6 +5,8 @@
 #include "vk_dispatch.hpp"
 #include "wsi_virtual.hpp"
 
+#include <util/profiling.hpp>
+
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -167,6 +169,8 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
         VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
         VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
         VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
     };
 
     for (const auto* req_ext : required_exts) {
@@ -226,6 +230,7 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
     GETADDR(GetImageSubresourceLayout);
     GETADDR(GetMemoryFdKHR);
     GETADDR(GetImageDrmFormatModifierPropertiesEXT);
+    GETADDR(GetSemaphoreFdKHR);
     GETADDR(CreateImage);
     GETADDR(DestroyImage);
     GETADDR(CreateCommandPool);
@@ -288,6 +293,7 @@ void VKAPI_CALL Goggles_DestroyDevice(VkDevice device, const VkAllocationCallbac
 
     PFN_vkDestroyDevice destroy_func = data->funcs.DestroyDevice;
 
+    get_capture_manager().on_device_destroyed(device, data);
     get_object_tracker().remove_queues_for_device(device);
     get_object_tracker().remove_device(device);
 
@@ -578,6 +584,8 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
 // =============================================================================
 
 VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
+    GOGGLES_PROFILE_FRAME("Layer");
+
     static bool first_call = true;
     if (first_call) {
         LAYER_DEBUG("QueuePresentKHR hook called (first frame)");

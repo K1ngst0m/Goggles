@@ -39,6 +39,11 @@ public:
 
     void load_shader_preset(const std::filesystem::path& preset_path);
 
+    [[nodiscard]] auto import_sync_semaphores(util::UniqueFd frame_ready_fd,
+                                              util::UniqueFd frame_consumed_fd) -> Result<void>;
+    [[nodiscard]] auto has_sync_semaphores() const -> bool { return m_sync_semaphores_imported; }
+    void cleanup_sync_semaphores();
+
 private:
     [[nodiscard]] auto create_instance(bool enable_validation) -> Result<void>;
     [[nodiscard]] auto create_debug_messenger() -> Result<void>;
@@ -114,6 +119,12 @@ private:
     uint32_t m_integer_scale = 0;
     bool m_initialized = false;
     bool m_needs_resize = false;
+
+    vk::Semaphore m_frame_ready_sem;
+    vk::Semaphore m_frame_consumed_sem;
+    bool m_sync_semaphores_imported = false;
+    uint64_t m_last_frame_number = 0;
+    uint64_t m_last_signaled_frame = 0;
 };
 
 } // namespace goggles::render
