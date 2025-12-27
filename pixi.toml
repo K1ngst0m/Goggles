@@ -87,21 +87,7 @@ args = [{ "arg" = "preset", "default" = "debug" }]
 depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
 
 [tasks.tasks]
-cmd = "cat <<'EOF'\nGoggles Pixi Tasks\n===================
-- pixi run dev [preset]              : Build app + both 32/64-bit layers + install manifests
-- pixi run build [preset]            : Build 64-bit app + layer only
-- pixi run build-i686 [preset]       : Build 32-bit layer only
-- pixi run install-manifests [preset]: Install Vulkan layer manifests
-- pixi run test [preset]             : Run tests for preset
-- pixi run start <app> [preset]      : Build, then launch app with capture + goggles viewer
-- pixi run clean [preset]            : Remove build directories for preset
-- pixi run distclean                 : Remove all build directories
-- pixi run goggles-help [preset]     : Build (if needed) and show `goggles --help`
-- pixi run shader-refresh            : Download/refresh RetroArch slang shaders
-- pixi run shader-list [pattern]     : List shader presets (optional filter)
-- pixi run setup-ide [ide]           : Configure IDE clang-format (vscode/emacs/vim/neovim/clion)
-- pixi run init                      : First-time project setup
-EOF"
+cmd = "printf '%s\\n' \\\n  'Goggles Pixi Tasks' \\\n  '===================' \\\n  '- pixi run dev [preset]              : Build app + both 32/64-bit layers + install manifests' \\\n  '- pixi run build [preset]            : Build 64-bit app + layer only' \\\n  '- pixi run build-i686 [preset]       : Build 32-bit layer only' \\\n  '- pixi run install-manifests [preset]: Install Vulkan layer manifests' \\\n  '- pixi run test [preset]             : Run tests for preset' \\\n  '- pixi run start <app> [preset]      : Build, then launch app with capture + goggles viewer' \\\n  '- pixi run clean [preset]            : Remove build directories for preset' \\\n  '- pixi run distclean                 : Remove all build directories' \\\n  '- pixi run goggles-help [preset]     : Build (if needed) and show `goggles --help`' \\\n  '- pixi run shader-refresh            : Download/refresh RetroArch slang shaders' \\\n  '- pixi run shader-list [pattern]     : List shader presets (optional filter)' \\\n  '- pixi run setup-ide [ide]           : Configure IDE clang-format (vscode/emacs/vim/neovim/clion)' \\\n  '- pixi run init                      : First-time project setup'"
 
 [tasks.goggles-help]
 cmd = "./build/{{ preset }}/bin/goggles --help"
