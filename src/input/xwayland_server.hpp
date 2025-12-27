@@ -13,6 +13,7 @@ struct wlr_seat;           // NOLINT(readability-identifier-naming)
 struct wlr_xwayland;       // NOLINT(readability-identifier-naming)
 struct wlr_renderer;       // NOLINT(readability-identifier-naming)
 struct wlr_allocator;      // NOLINT(readability-identifier-naming)
+struct wlr_xdg_shell;      // NOLINT(readability-identifier-naming)
 }
 
 namespace goggles::input {
@@ -38,6 +39,7 @@ private:
     struct wlr_renderer* m_renderer = nullptr;
     struct wlr_allocator* m_allocator = nullptr;
     struct wlr_compositor* m_compositor = nullptr;
+    struct wlr_xdg_shell* m_xdg_shell = nullptr;
     struct wlr_seat* m_seat = nullptr;
     struct wlr_xwayland* m_xwayland = nullptr;
     std::jthread m_compositor_thread;
