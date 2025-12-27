@@ -19,7 +19,9 @@ else()
 endif()
 
 if(NOT EXISTS "${SYSROOT_PATH}")
-    message(WARNING "Sysroot not found at ${SYSROOT_PATH}. Build the sysroot-i686 package first.")
+    message(FATAL_ERROR
+        "Sysroot not found at ${SYSROOT_PATH}.\n"
+        "Build the sysroot-i686 package first with: pixi run build-i686")
 endif()
 
 set(CMAKE_SYSROOT "${SYSROOT_PATH}")

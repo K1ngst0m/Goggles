@@ -17,6 +17,7 @@ target_link_libraries(goggles_util PUBLIC
     spdlog::spdlog
     toml11::toml11
     BS_thread_pool
+    Threads::Threads
 )
 
 goggles_enable_clang_tidy(goggles_util)

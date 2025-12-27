@@ -36,7 +36,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gstreamer-orc-0.4.41-h17648ed_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.1-h33c6efd_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/jack-1.9.22-hf4617a5_3.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-6.12.0-he073ed8_5.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-hb9d3cd8_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/krb5-1.21.3-h659f571_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/lame-3.100-h166bdaf_1003.tar.bz2
@@ -110,7 +110,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/sdl3-3.2.28-h3b84278_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/soxr-0.1.3-h0b41bf4_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/spdlog-1.16.0-hffee6e0_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.39-he3f20f0_5.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/toml11-4.4.0-h7aa8ee6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-h8577fbf_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/wayland-1.24.0-hd6090a7_1.conda
@@ -533,15 +533,15 @@ packages:
   license_family: LGPL
   size: 461260
   timestamp: 1747574434594
-- conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-6.12.0-he073ed8_5.conda
-  sha256: ba53274bb216ea005281274c44d40640288f95b43f38556919e2107fb8085d87
-  md5: 5cc622606f004d411998e3d53167684f
+- conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
+  sha256: 41557eeadf641de6aeae49486cef30d02a6912d8da98585d687894afd65b356a
+  md5: 86d9cba083cd041bfbf242a01a7a1999
   constrains:
-  - sysroot_linux-64 ==2.39
+  - sysroot_linux-64 ==2.28
   license: LGPL-2.0-or-later AND LGPL-2.0-or-later WITH exceptions AND GPL-2.0-or-later
   license_family: GPL
-  size: 1534945
-  timestamp: 1765739737048
+  size: 1278712
+  timestamp: 1765578681495
 - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-hb9d3cd8_0.conda
   sha256: 0960d06048a7185d3542d850986d807c6e37ca2e644342dd0c72feefcf26c2a4
   md5: b38117a3c920364aff79f870c984b4a3
@@ -1443,27 +1443,24 @@ packages:
 - conda: packages/sysroot-i686
   name: sysroot-i686
   version: '2.39'
-  build: hb0f4dca_8
+  build: hb0f4dca_11
   subdir: linux-64
   input:
-    hash: 89dc7fd37aa27e9002a1bc9d06448d4a7cf8118d6299be331eb818d777bca928
+    hash: 18089e00ec9fce6153000a528f529ee344450fb1ed82b7158ea639fb036ae00b
     globs:
     - recipe.yaml
     - variants.yaml
-- conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.39-he3f20f0_5.conda
-  sha256: 1cdd4defdc3fa202b01783e9a5157b1a55b556926ad2979f5ca7bd7a02dc4fb4
-  md5: 65f3e2fd0cef90809945fb4543cea55e
+- conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
+  sha256: c47299fe37aebb0fcf674b3be588e67e4afb86225be4b0d452c7eb75c086b851
+  md5: 13dc3adbc692664cd3beabd216434749
   depends:
-  - kernel-headers_linux-64 6.12.0 he073ed8_5
+  - __glibc >=2.28
+  - kernel-headers_linux-64 4.18.0 he073ed8_9
   - tzdata
-  track_features:
-  - sysroot_linux-64_2.39
-  - sysroot_linux-64_2.39_feature_2
-  - sysroot_linux-64_2.39_feature_3
   license: LGPL-2.0-or-later AND LGPL-2.0-or-later WITH exceptions AND GPL-2.0-or-later
   license_family: GPL
-  size: 41534564
-  timestamp: 1765739764296
+  size: 24008591
+  timestamp: 1765578833462
 - conda: https://conda.anaconda.org/conda-forge/linux-64/toml11-4.4.0-h7aa8ee6_0.conda
   sha256: cf3a100323037d8a06e0b8764e9aaf9560ac653550a55cf0f32ea74553da6c49
   md5: 40f41cf3d2d09d7eb20e32885d9e1089

@@ -115,6 +115,7 @@ shaders/retroarch/crt/shaders/*
 shaders/retroarch/crt/shaders/zfast_crt/*
 !shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_finemask.slang
 !shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_impl.inc
-# pixi environments
+# pixi environments and build artifacts
 .pixi/*
 !.pixi/config.toml
+*.conda
