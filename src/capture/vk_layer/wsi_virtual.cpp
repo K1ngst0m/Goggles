@@ -7,6 +7,7 @@
 #include <optional>
 #include <thread>
 #include <unistd.h>
+#include <utility>
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 #define LAYER_WARN(fmt, ...) fprintf(stderr, "[goggles-layer] WARN: " fmt "\n", ##__VA_ARGS__)
@@ -30,8 +31,7 @@ static std::optional<uint32_t> parse_env_uint(const char* name, uint32_t min_val
         return std::nullopt;
     }
 
-    if (val < 0 || static_cast<unsigned long>(val) < min_val ||
-        static_cast<unsigned long>(val) > max_val) {
+    if (val < 0 || std::cmp_less(val, min_val) || std::cmp_greater(val, max_val)) {
         LAYER_WARN("%s=%ld is out of range [%u, %u], ignoring", name, val, min_val, max_val);
         return std::nullopt;
     }
@@ -401,7 +401,7 @@ VkResult WsiVirtualizer::get_swapchain_images(VkSwapchainKHR swapchain,
     return to_copy < swap.image_count ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
-VkResult WsiVirtualizer::acquire_next_image(VkDevice device, VkSwapchainKHR swapchain,
+VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR swapchain,
                                              uint64_t /*timeout*/, VkSemaphore semaphore, VkFence fence,
                                              uint32_t* index, VkDeviceData* dev_data) {
     uint32_t fps = get_fps_limit();

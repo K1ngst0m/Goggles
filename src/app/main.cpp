@@ -11,6 +11,7 @@
 #include <util/error.hpp>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
+#include <util/unique_fd.hpp>
 
 static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                           goggles::CaptureReceiver& capture_receiver) {
@@ -43,6 +44,27 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
         {
             GOGGLES_PROFILE_SCOPE("CaptureReceive");
             capture_receiver.poll_frame();
+        }
+
+        if (capture_receiver.semaphores_updated()) {
+            vulkan_backend.cleanup_sync_semaphores();
+            auto ready_fd = goggles::util::UniqueFd::dup_from(capture_receiver.get_frame_ready_fd());
+            auto consumed_fd = goggles::util::UniqueFd::dup_from(capture_receiver.get_frame_consumed_fd());
+            if (!ready_fd || !consumed_fd) {
+                GOGGLES_LOG_ERROR("Failed to dup semaphore fds");
+                capture_receiver.clear_sync_semaphores();
+            } else {
+                auto import_result =
+                    vulkan_backend.import_sync_semaphores(std::move(ready_fd), std::move(consumed_fd));
+                if (!import_result) {
+                    GOGGLES_LOG_ERROR("Failed to import sync semaphores: {}",
+                                      import_result.error().message);
+                    capture_receiver.clear_sync_semaphores();
+                } else {
+                    GOGGLES_LOG_INFO("Sync semaphores imported successfully");
+                }
+            }
+            capture_receiver.clear_semaphores_updated();
         }
 
         bool needs_resize = false;
@@ -155,7 +177,7 @@ static auto run_app(int argc, char** argv) -> int {
 
     goggles::CaptureReceiver capture_receiver;
     if (!capture_receiver.init()) {
-        GOGGLES_LOG_WARN("Failed to initialize capture receiver");
+        GOGGLES_LOG_WARN("Capture disabled - running in viewer-only mode");
     }
 
     run_main_loop(vulkan_backend, capture_receiver);

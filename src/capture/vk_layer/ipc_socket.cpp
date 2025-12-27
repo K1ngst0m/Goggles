@@ -135,6 +135,109 @@ bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_
     return sent == sizeof(data);
 }
 
+bool LayerSocketClient::send_semaphores(int frame_ready_fd, int frame_consumed_fd) {
+    GOGGLES_PROFILE_FUNCTION();
+    std::lock_guard lock(mutex_);
+
+    if (socket_fd_ < 0 || frame_ready_fd < 0 || frame_consumed_fd < 0) {
+        return false;
+    }
+
+    CaptureSemaphoreInit init{};
+    init.type = CaptureMessageType::semaphore_init;
+    init.version = 1;
+    init.initial_value = 0;
+
+    msghdr msg{};
+    iovec iov{};
+    iov.iov_base = &init;
+    iov.iov_len = sizeof(init);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    int fds[2] = {frame_ready_fd, frame_consumed_fd};
+    char cmsg_buf[CMSG_SPACE(sizeof(fds))];
+    msg.msg_control = cmsg_buf;
+    msg.msg_controllen = sizeof(cmsg_buf);
+
+    cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(fds));
+    std::memcpy(CMSG_DATA(cmsg), fds, sizeof(fds));
+
+    ssize_t sent = sendmsg(socket_fd_, &msg, MSG_NOSIGNAL);
+    if (sent < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            close(socket_fd_);
+            socket_fd_ = -1;
+            capturing_ = false;
+        }
+        return false;
+    }
+
+    return sent == sizeof(init);
+}
+
+bool LayerSocketClient::send_texture_with_fd(const CaptureFrameMetadata& metadata, int dmabuf_fd) {
+    GOGGLES_PROFILE_FUNCTION();
+    std::lock_guard lock(mutex_);
+
+    if (socket_fd_ < 0 || dmabuf_fd < 0) {
+        return false;
+    }
+
+    msghdr msg{};
+    iovec iov{};
+    iov.iov_base = const_cast<CaptureFrameMetadata*>(&metadata);
+    iov.iov_len = sizeof(metadata);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    char cmsg_buf[CMSG_SPACE(sizeof(int))];
+    msg.msg_control = cmsg_buf;
+    msg.msg_controllen = sizeof(cmsg_buf);
+
+    cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    std::memcpy(CMSG_DATA(cmsg), &dmabuf_fd, sizeof(int));
+
+    ssize_t sent = sendmsg(socket_fd_, &msg, MSG_NOSIGNAL);
+    if (sent < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            close(socket_fd_);
+            socket_fd_ = -1;
+            capturing_ = false;
+        }
+        return false;
+    }
+
+    return sent == sizeof(metadata);
+}
+
+bool LayerSocketClient::send_frame_metadata(const CaptureFrameMetadata& metadata) {
+    GOGGLES_PROFILE_FUNCTION();
+    std::lock_guard lock(mutex_);
+
+    if (socket_fd_ < 0) {
+        return false;
+    }
+
+    ssize_t sent = send(socket_fd_, &metadata, sizeof(metadata), MSG_NOSIGNAL);
+    if (sent < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            close(socket_fd_);
+            socket_fd_ = -1;
+            capturing_ = false;
+        }
+        return false;
+    }
+
+    return sent == sizeof(metadata);
+}
+
 bool LayerSocketClient::poll_control(CaptureControl& control) {
     GOGGLES_PROFILE_FUNCTION();
     int fd;
