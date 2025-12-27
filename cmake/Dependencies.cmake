@@ -14,8 +14,8 @@ if(ENABLE_PROFILING)
     find_package(Tracy REQUIRED CONFIG)
 
     # Ensure Tracy is built with PIC for linking into shared libraries
-    if(TARGET TracyClient)
-        set_target_properties(TracyClient PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    if(TARGET Tracy::TracyClient)
+        set_target_properties(Tracy::TracyClient PROPERTIES POSITION_INDEPENDENT_CODE ON)
     endif()
 endif()
 

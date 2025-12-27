@@ -27,6 +27,7 @@ requirements:
     - ${{ compiler('c') }}
     - ${{ compiler('cxx') }}
     - sysroot_linux-64
+    - cmake
     - ninja
     - pkg-config
 
