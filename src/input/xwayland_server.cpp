@@ -12,9 +12,9 @@ extern "C" {
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_seat.h>
 
-// Forward declare XDG shell (needed for XWayland window management)
-struct wlr_xdg_shell;
+// XDG shell functions (needed for XWayland window management)
 struct wlr_xdg_shell* wlr_xdg_shell_create(struct wl_display*, uint32_t);
+void wlr_xdg_shell_destroy(struct wlr_xdg_shell*);
 
 // xwayland.h contains 'char *class' which conflicts with C++ keyword
 #define class class_
@@ -86,7 +86,19 @@ auto XWaylandServer::start() -> Result<int> {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create compositor");
     }
 
-    wlr_xdg_shell_create(m_display, 3);
+    m_xdg_shell = wlr_xdg_shell_create(m_display, 3);
+    if (!m_xdg_shell) {
+        wlr_allocator_destroy(m_allocator);
+        wlr_renderer_destroy(m_renderer);
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_compositor = nullptr;
+        m_allocator = nullptr;
+        m_renderer = nullptr;
+        m_backend = nullptr;
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to create xdg-shell");
+    }
 
     m_seat = wlr_seat_create(m_display, "seat0");
     if (!m_seat) {
@@ -196,6 +208,11 @@ void XWaylandServer::stop() {
     if (m_seat) {
         wlr_seat_destroy(m_seat);
         m_seat = nullptr;
+    }
+
+    if (m_xdg_shell) {
+        wlr_xdg_shell_destroy(m_xdg_shell);
+        m_xdg_shell = nullptr;
     }
 
     // Compositor is destroyed automatically when display is destroyed
