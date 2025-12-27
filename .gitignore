@@ -117,5 +117,4 @@ shaders/retroarch/crt/shaders/zfast_crt/*
 !shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_impl.inc
 # pixi environments and build artifacts
 .pixi/*
-!.pixi/config.toml
 *.conda
