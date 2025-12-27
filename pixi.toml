@@ -1,0 +1,183 @@
+[workspace]
+channels = ["conda-forge"]
+name = "Goggles"
+platforms = ["linux-64"]
+version = "0.1.0"
+requires-pixi = ">=0.45.0"
+preview = ["pixi-build"]
+
+[tasks]
+# Goggles Build System - Pixi Tasks
+#
+# Available tasks:
+#   pixi run dev [preset]              - Build app + both 32/64-bit layers + install manifests
+#   pixi run build [preset]            - Build 64-bit app + layer only
+#   pixi run build-i686 [preset]       - Build 32-bit layer only
+#   pixi run install-manifests [preset] - Install Vulkan layer manifests
+#   pixi run test [preset]             - Run tests for preset
+#   pixi run start <app> [preset]      - Build, then launch app with capture + goggles viewer
+#   pixi run clean [preset]            - Remove build directories for preset
+#   pixi run distclean                 - Remove all build directories
+#   pixi run tasks                     - Show Pixi task cheatsheet
+#   pixi run goggles-help [preset]     - Build (if needed) and show `goggles --help`
+#   pixi run shader-refresh            - Download/refresh RetroArch slang shaders
+#   pixi run shader-list [pattern]     - List shader presets (filter optional)
+#   pixi run setup-ide [ide]           - Configure IDE to use pixi clang-format
+#   pixi run init                      - First-time setup (IDE config + checks)
+#
+# Examples:
+#   pixi run dev                       # Build debug (default)
+#   pixi run dev release               # Build release preset
+#   pixi run test                      # Run debug tests
+#   pixi run start vkcube              # Launch vkcube with capture
+#   GOGGLES_WSI_PROXY=1 pixi run start vkcube  # With WSI proxy enabled
+#
+# Note: The goggles viewer currently has Vulkan driver loading issues when running
+#       under pixi environment. The capture layer itself works correctly.
+#       Use system vkcube/vulkaninfo to verify capture is working.
+
+# Build 64-bit app + layer
+[tasks.build]
+cmd = "cmake --preset {{ preset }} && cmake --build --preset {{ preset }}"
+args = [{ "arg" = "preset", "default" = "debug" }]
+inputs = ["src/**/*.cpp", "src/**/*.hpp", "CMakeLists.txt"]
+outputs = ["build/{{ preset }}/bin/goggles"]
+
+# Build 32-bit layer
+[tasks.build-i686]
+cmd = "export LDFLAGS='' && export LIBRARY_PATH='' && cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686"
+args = [{ "arg" = "preset", "default" = "debug" }]
+inputs = ["src/capture/**/*.cpp", "src/capture/**/*.hpp"]
+outputs = ["build/{{ preset }}-i686/lib/i386/libgoggles_vklayer.so"]
+
+# Install Vulkan layer manifests (depends on both 64-bit and 32-bit builds)
+[tasks.install-manifests]
+cmd = "mkdir -p $HOME/.local/share/vulkan/implicit_layer.d && cp build/{{ preset }}/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && cp build/{{ preset }}-i686/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && echo 'Manifests installed'"
+args = [{ "arg" = "preset", "default" = "debug" }]
+depends-on = [
+    { task = "build", args = [
+        "{{ preset }}",
+    ] },
+    { task = "build-i686", args = [
+        "{{ preset }}",
+    ] },
+]
+
+# Run tests for preset
+[tasks.test]
+cmd = "ctest --test-dir build/{{ preset }} --output-on-failure"
+args = [{ "arg" = "preset", "default" = "debug" }]
+depends-on = [{ task = "build", args = ["{{ preset }}"] }]
+
+# Development: build app + both layers + install manifests
+[tasks.dev]
+depends-on = [{ task = "install-manifests", args = ["{{ preset }}"] }]
+args = [{ "arg" = "preset", "default" = "debug" }]
+
+# Start Vulkan app with capture + goggles viewer
+[tasks.start]
+cmd = "./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && GOGGLES_CAPTURE=1 {{ app }}; kill $viewer 2>/dev/null || true"
+args = ["app", { "arg" = "preset", "default" = "debug" }]
+depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
+
+# Start 32-bit vkcube with capture + goggles viewer
+[tasks.start-i686]
+cmd = "./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && VK_LAYER_PATH=build/{{ preset }}-i686/share/vulkan/implicit_layer.d LD_LIBRARY_PATH=build/{{ preset }}-i686/lib/i386:$LD_LIBRARY_PATH GOGGLES_CAPTURE=1 vkcube32; kill $viewer 2>/dev/null || true"
+args = [{ "arg" = "preset", "default" = "debug" }]
+depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
+
+[tasks.tasks]
+cmd = "printf '%s\\n' \\\n  'Goggles Pixi Tasks' \\\n  '===================' \\\n  '- pixi run dev [preset]              : Build app + both 32/64-bit layers + install manifests' \\\n  '- pixi run build [preset]            : Build 64-bit app + layer only' \\\n  '- pixi run build-i686 [preset]       : Build 32-bit layer only' \\\n  '- pixi run install-manifests [preset]: Install Vulkan layer manifests' \\\n  '- pixi run test [preset]             : Run tests for preset' \\\n  '- pixi run start <app> [preset]      : Build, then launch app with capture + goggles viewer' \\\n  '- pixi run clean [preset]            : Remove build directories for preset' \\\n  '- pixi run distclean                 : Remove all build directories' \\\n  '- pixi run goggles-help [preset]     : Build (if needed) and show `goggles --help`' \\\n  '- pixi run shader-refresh            : Download/refresh RetroArch slang shaders' \\\n  '- pixi run shader-list [pattern]     : List shader presets (optional filter)' \\\n  '- pixi run setup-ide [ide]           : Configure IDE clang-format (vscode/emacs/vim/neovim/clion)' \\\n  '- pixi run init                      : First-time project setup'"
+
+[tasks.goggles-help]
+cmd = "./build/{{ preset }}/bin/goggles --help"
+args = [{ "arg" = "preset", "default" = "debug" }]
+depends-on = [{ task = "build", args = ["{{ preset }}"] }]
+
+[tasks.shader-refresh]
+cmd = "bash scripts/download_retroarch_shaders.sh"
+
+[tasks.shader-list]
+cmd = [
+    "bash",
+    "-lc",
+    "pattern=\"{{ pattern }}\"; set -e; if [ -z \"$pattern\" ]; then find shaders/retroarch -name '*.slangp' | sort | head -n 50; else find shaders/retroarch -name '*.slangp' | grep -i -- \"$pattern\" | sort | head -n 50; fi",
+]
+args = [{ "arg" = "pattern", "default" = "" }]
+
+# Setup IDE to use pixi-managed clang-format
+[tasks.setup-ide]
+cmd = "bash scripts/setup-ide.sh {{ ide }}"
+args = [{ "arg" = "ide", "default" = "" }]
+description = "Configure IDE to use pixi clang-format (vscode|emacs|vim|neovim|clion|all)"
+
+# First-time project initialization
+[tasks.init]
+cmd = "bash scripts/check-ide-setup.sh"
+description = "First-time setup: check IDE config and show setup instructions"
+
+# Clean build directories for preset
+[tasks.clean]
+cmd = "rm -rf build/{{ preset }} build/{{ preset }}-i686"
+args = [{ "arg" = "preset", "default" = "debug" }]
+
+# Clean all build directories
+[tasks.distclean]
+cmd = "rm -rf build"
+
+[dependencies]
+cmake = "*"
+ninja = "*"
+clang_linux-64 = "*"
+clangxx_linux-64 = "*"
+sysroot_linux-64 = "2.28.*"
+clang-tools = "*"
+clang-format = "*"
+compiler-rt = "*"
+libcxx = "*"
+spdlog = "1.15.*"
+catch2 = "3.8.*"
+toml11 = "4.4.*"
+libvulkan-headers = "1.4.328.*"
+xorg-libxcb = "*"
+xorg-libx11 = "*"
+xorg-xproto = "*"
+wayland = "*"
+wayland-protocols = "*"
+libxkbcommon = "*"
+alsa-lib = "*"
+jack = "*"
+xorg-libxext = "*"
+xorg-libxcursor = "*"
+xorg-libxrandr = "*"
+xorg-libxi = "*"
+xorg-libxscrnsaver = "*"
+xorg-libxinerama = "*"
+xorg-libxfixes = "*"
+xorg-libxrender = "*"
+xorg-libxau = "*"
+xorg-libxdmcp = "*"
+xorg-xextproto = "*"
+xorg-renderproto = "*"
+xorg-randrproto = "*"
+xorg-inputproto = "*"
+xorg-fixesproto = "*"
+xorg-scrnsaverproto = "*"
+xorg-xineramaproto = "*"
+pulseaudio = "*"
+xorg-kbproto = "*"
+xorg-glproto = "*"
+libdrm = "*"
+cli11 = "2.6.*"
+ccache = "*"
+lld = "*"
+
+# Local packages
+vulkansdk = { path = "packages/vulkansdk" }
+tracy = { path = "packages/tracy" }
+sysroot-i686 = { path = "packages/sysroot-i686" }
+sdl3 = "*"
+expected-lite = { path = "packages/expected-lite" }
+stb = { path = "packages/stb" }
+bs-thread-pool = { path = "packages/bs-thread-pool" }
+slang-shaders = { path = "packages/slang-shaders" }
