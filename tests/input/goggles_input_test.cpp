@@ -18,13 +18,27 @@ struct VulkanInstance {
 
     VulkanInstance(const VulkanInstance&) = delete;
     VulkanInstance& operator=(const VulkanInstance&) = delete;
-    VulkanInstance(VulkanInstance&&) = default;
-    VulkanInstance& operator=(VulkanInstance&&) = default;
+
+    VulkanInstance(VulkanInstance&& other) noexcept : handle(other.handle) {
+        other.handle = VK_NULL_HANDLE;
+    }
+
+    VulkanInstance& operator=(VulkanInstance&& other) noexcept {
+        if (this != &other) {
+            if (handle) {
+                vkDestroyInstance(handle, nullptr);
+            }
+            handle = other.handle;
+            other.handle = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
 };
 
 struct SDLContext {
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
+    bool initialized = false;
 
     SDLContext() = default;
 
@@ -35,13 +49,46 @@ struct SDLContext {
         if (window) {
             SDL_DestroyWindow(window);
         }
-        SDL_Quit();
+        if (initialized) {
+            SDL_Quit();
+        }
     }
 
     SDLContext(const SDLContext&) = delete;
     SDLContext& operator=(const SDLContext&) = delete;
-    SDLContext(SDLContext&&) = default;
-    SDLContext& operator=(SDLContext&&) = default;
+
+    SDLContext(SDLContext&& other) noexcept
+        : window(other.window)
+        , renderer(other.renderer)
+        , initialized(other.initialized)
+    {
+        other.window = nullptr;
+        other.renderer = nullptr;
+        other.initialized = false;
+    }
+
+    SDLContext& operator=(SDLContext&& other) noexcept {
+        if (this != &other) {
+            if (renderer) {
+                SDL_DestroyRenderer(renderer);
+            }
+            if (window) {
+                SDL_DestroyWindow(window);
+            }
+            if (initialized) {
+                SDL_Quit();
+            }
+
+            window = other.window;
+            renderer = other.renderer;
+            initialized = other.initialized;
+
+            other.window = nullptr;
+            other.renderer = nullptr;
+            other.initialized = false;
+        }
+        return *this;
+    }
 };
 
 } // namespace
@@ -77,6 +124,8 @@ static auto init_sdl() -> SDLContext {
         fprintf(stderr, "[goggles_input_test] SDL_Init failed: %s\n", SDL_GetError());
         std::exit(1);
     }
+
+    sdl.initialized = true;
 
     sdl.window = SDL_CreateWindow("Goggles Input Test", 1280, 720, SDL_WINDOW_RESIZABLE);
     if (!sdl.window) {
