@@ -192,12 +192,18 @@ bool CaptureReceiver::receive_message() {
                 msg_size = sizeof(CaptureFrameMetadata);
                 break;
             default:
-                GOGGLES_LOG_WARN("Unknown message type: {}", static_cast<uint32_t>(msg_type));
-                m_recv_buf.clear();
-                break;
+                GOGGLES_LOG_ERROR("Unknown message type {}, disconnecting client",
+                                  static_cast<uint32_t>(msg_type));
+                for (size_t i = fd_index; i < received_fds.size(); ++i) {
+                    close(received_fds[i]);
+                }
+                close(m_client_fd);
+                m_client_fd = -1;
+                cleanup_frame();
+                return false;
         }
 
-        if (msg_size == 0 || m_recv_buf.size() < msg_size) {
+        if (m_recv_buf.size() < msg_size) {
             break;
         }
 
@@ -223,7 +229,9 @@ bool CaptureReceiver::process_message(const char* data, size_t len,
     if (msg_type == CaptureMessageType::client_hello) {
         if (len >= sizeof(CaptureClientHello)) {
             auto* hello = reinterpret_cast<const CaptureClientHello*>(data);
-            GOGGLES_LOG_INFO("Capture client: {}", hello->exe_name.data());
+            std::string_view exe_name(hello->exe_name.data(),
+                                      strnlen(hello->exe_name.data(), hello->exe_name.size()));
+            GOGGLES_LOG_INFO("Capture client: {}", exe_name);
         }
         return false;
     }
