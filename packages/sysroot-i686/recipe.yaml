@@ -1,0 +1,152 @@
+package:
+  name: sysroot-i686
+  version: "2.39"
+
+build:
+  number: 8
+  script: |
+    set -e
+    
+    # Define paths
+    SYSROOT_DIR=$PREFIX/i686-sysroot
+    mkdir -p $SYSROOT_DIR
+    
+    # Temporary directory for debs
+    mkdir -p temp_debs
+    cd temp_debs
+    
+    # Function to download and extract .deb
+    download_extract() {
+      url=$1
+      echo "Downloading $url..."
+      curl -L -f -O "$url" || echo "Failed to download $url"
+      filename=$(basename "$url")
+      if [ -f "$filename" ]; then
+        ar x "$filename"
+        if [ -f data.tar.zst ]; then
+          tar --use-compress-program=unzstd -xf data.tar.zst
+        elif [ -f data.tar.xz ]; then
+          tar -xf data.tar.xz
+        elif [ -f data.tar.gz ]; then
+          tar -xf data.tar.gz
+        fi
+        rm "$filename" control.tar.* data.tar.* debian-binary
+      fi
+    }
+
+    # --- 1. Download Core System (Ubuntu Noble 24.04) ---
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.39-0ubuntu8.6_i386.deb"
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8.6_i386.deb"
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-libc-dev_6.8.0-31.31_i386.deb"
+    
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04_i386.deb"
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libgcc-14-dev_14.2.0-4ubuntu2~24.04_i386.deb"
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libstdc++-14-dev_14.2.0-19ubuntu2_i386.deb"
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04_i386.deb"
+    
+    # Vulkan Loader & Headers
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/v/vulkan-loader/libvulkan1_1.4.335.0-1_i386.deb"
+    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/v/vulkan-loader/libvulkan-dev_1.4.335.0-1_i386.deb"
+
+    # Vulkan Tools (vkcube) - Using Debian stable version as fallback if Ubuntu URL fails
+    # vkcube is statically linked or links against libvulkan which we have
+    download_extract "http://ftp.debian.org/debian/pool/main/v/vulkan-tools/vulkan-tools_1.3.239.0+dfsg1-1_i386.deb"
+
+    # --- 2. Merge into Sysroot ---
+    mkdir -p $SYSROOT_DIR/usr/lib
+    mkdir -p $SYSROOT_DIR/usr/include
+    mkdir -p $PREFIX/bin
+    
+    # Merge library paths
+    for d in lib/i386-linux-gnu usr/lib/i386-linux-gnu usr/lib/gcc/i686-linux-gnu/14; do
+      if [ -d "$d" ]; then
+        echo "Syncing $d to usr/lib..."
+        rsync -ak "$d/" $SYSROOT_DIR/usr/lib/
+      fi
+    done
+    
+    # Merge include paths
+    if [ -d "usr/include" ]; then
+      echo "Syncing usr/include..."
+      rsync -ak --exclude="i386-linux-gnu" usr/include/ $SYSROOT_DIR/usr/include/
+      if [ -d "usr/include/i386-linux-gnu" ]; then
+        rsync -ak "usr/include/i386-linux-gnu/" $SYSROOT_DIR/usr/include/
+      fi
+    fi
+
+    # Install vkcube32
+    if [ -f "usr/bin/vkcube" ]; then
+        echo "Installing vkcube32..."
+        cp usr/bin/vkcube $PREFIX/bin/vkcube32
+        chmod +x $PREFIX/bin/vkcube32
+    fi
+
+    # Cleanup temp debs
+    cd ..
+    rm -rf temp_debs
+
+    # --- 3. Fix Linker Scripts ---
+    cd $SYSROOT_DIR
+    echo "OUTPUT_FORMAT(elf32-i386) GROUP ( libc.so.6 libc_nonshared.a AS_NEEDED ( ld-linux.so.2 ) )" > usr/lib/libc.so
+    echo "OUTPUT_FORMAT(elf32-i386) GROUP ( libpthread.so.0 libpthread_nonshared.a )" > usr/lib/libpthread.so
+    
+    # Symlinks
+    ln -sfn usr/lib lib
+    ln -sfn usr/include include
+
+    # --- 4. Build & Install Tracy (32-bit) ---
+    echo "Building Tracy 32-bit..."
+    
+    # Debug: Check include structure
+    echo "--- Sysroot Include Structure ---"
+    find $SYSROOT_DIR/usr/include -maxdepth 3 -name "c++"
+    find $SYSROOT_DIR/usr/include -maxdepth 4 -name "atomic"
+    echo "-------------------------------"
+
+    # Download Tracy Source
+    rm -rf tracy
+    git clone https://github.com/wolfpld/tracy.git
+    cd tracy
+    git checkout v0.13.1
+    
+    # Configure Build using our freshly built sysroot
+    # We point CMake to use the sysroot we just populated
+    export SYSROOT=$SYSROOT_DIR
+    export FLAGS="--target=i686-linux-gnu -m32 --sysroot=$SYSROOT -B$SYSROOT/usr/lib -L$SYSROOT/usr/lib"
+    # Explicitly add C++ include paths as Clang might not find them in the sysroot automatically
+    export CXXFLAGS="$FLAGS -stdlib=libstdc++ -isystem $SYSROOT/usr/include/c++/14 -isystem $SYSROOT/usr/include/c++/14/i686-linux-gnu"
+    
+    cmake -B build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=$SYSROOT/usr \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DCMAKE_C_COMPILER=clang \
+      -DCMAKE_CXX_COMPILER=clang++ \
+      -DCMAKE_C_FLAGS="$FLAGS" \
+      -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
+      -DCMAKE_SYSTEM_NAME=Linux \
+      -DCMAKE_SYSTEM_PROCESSOR=i686 \
+      -DTRACY_ENABLE=ON \
+      -DTRACY_ON_DEMAND=ON \
+      -DTRACY_NO_SYSTEM_TRACING=ON \
+      -DBUILD_SHARED_LIBS=OFF
+      
+    cmake --build build
+    cmake --install build
+    
+    # Cleanup Tracy
+    cd ..
+    rm -rf tracy
+
+requirements:
+  build:
+    - curl
+    - binutils
+    - tar
+    - zstd
+    - rsync
+    - git
+    - cmake
+    - ninja
+    - clang
+    - clangxx
