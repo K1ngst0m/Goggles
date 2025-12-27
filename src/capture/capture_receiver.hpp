@@ -43,6 +43,7 @@ public:
     [[nodiscard]] bool semaphores_updated() const { return m_semaphores_updated; }
     void clear_semaphores_updated() { m_semaphores_updated = false; }
     void clear_sync_semaphores();
+    void set_input_display(int display_num) { m_input_display_number = display_num; }
 
 private:
     CaptureReceiver() = default;
@@ -50,13 +51,14 @@ private:
     bool accept_client();
     bool receive_message();
     void cleanup_frame();
+    void handle_config_request(int fd);
 
     bool process_message(const char* data, size_t len, const std::vector<int>& fds,
                          size_t& fd_index);
 
     int m_listen_fd = -1;
     int m_client_fd = -1;
-
+    int m_input_display_number = -1;
     CaptureFrame m_frame{};
     capture::CaptureTextureData m_last_texture{};
     int m_frame_ready_fd = -1;

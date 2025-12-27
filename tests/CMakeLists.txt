@@ -86,3 +86,25 @@ if(TARGET Catch2::Catch2)
         catch_discover_tests(goggles_tests)
     endif()
 endif()
+
+# graphical test applications
+
+add_executable(goggles_input_test
+    input/goggles_input_test.cpp
+)
+
+target_link_libraries(goggles_input_test PRIVATE
+    SDL3::SDL3-static
+    Vulkan::Vulkan
+    goggles_util
+)
+
+target_compile_definitions(goggles_input_test PRIVATE
+    GOGGLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+set_target_properties(goggles_input_test PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+goggles_enable_sanitizers(goggles_input_test)

@@ -89,49 +89,94 @@ private:
 
 **Existing**: DMA-BUF fd + metadata over Unix socket `\0goggles/vkcapture`
 
-**New message type**:
+**New message types**:
 ```cpp
+enum class CaptureMessageType : uint32_t {
+    client_hello = 1,
+    texture_data = 2,
+    control = 3,
+    semaphore_init = 4,      // Existing
+    frame_metadata = 5,      // Existing
+    config_request = 6,      // NEW
+    input_display_ready = 7, // NEW
+};
+
+struct CaptureConfigRequest {
+    CaptureMessageType type = CaptureMessageType::config_request;
+    uint32_t version = 1;
+    uint32_t reserved[2]{};
+};
+static_assert(sizeof(CaptureConfigRequest) == 16);
+
 struct CaptureInputDisplayReady {
     CaptureMessageType type = CaptureMessageType::input_display_ready;
-    int32_t display_number;  // e.g. 1 for :1
-    std::array<uint32_t, 3> reserved{};
+    int32_t display_number;
+    uint32_t reserved[2]{};
 };
-static_assert(sizeof(CaptureInputDisplayReady) == 20);
+static_assert(sizeof(CaptureInputDisplayReady) == 16);
 ```
 
-**Protocol flow**:
-1. Goggles starts, `InputForwarder::init()` creates XWayland on :N
-2. Goggles sends `input_display_ready` message with N
-3. Layer receives message (blocks with 100ms timeout in constructor)
-4. Layer calls `setenv("DISPLAY", ":N", 1)` before app's `main()` runs
-5. App connects to :N automatically
+**Two-Phase Protocol Flow**:
 
-**Why extend existing socket?**
-- Already established, no new IPC mechanism
-- Layer already has receive infrastructure
-- Ordering guaranteed (input_display_ready before client_hello)
+**Phase 1: Config Handshake (Layer Constructor)**
+1. Layer constructor connects to socket
+2. Sends `config_request` message
+3. Goggles responds with `input_display_ready` containing DISPLAY number
+4. Layer sets `DISPLAY=:N` environment variable
+5. Layer closes config connection
+
+**Phase 2: Frame Capture (on_present)**
+6. Layer reconnects on first `vkQueuePresentKHR`
+7. Sends `client_hello` message
+8. Normal frame capture proceeds
+
+**Why two connections?**
+- Layer constructor runs before app main (need DISPLAY early)
+- Socket connection for frame capture happens on first present (after app main)
+- Separate config connection solves timing issue
+- Clean separation of concerns (config vs frame data)
 
 ### Layer 5: Vulkan Layer Integration (Modified)
 
 **Current**: Layer loads, intercepts `vkQueuePresentKHR`, sends frames
 
-**New**: Layer receives DISPLAY number before app initializes
+**New**: Layer performs config handshake in constructor before app initializes
 
 ```cpp
 __attribute__((constructor(101))) static void
 layer_early_init()
 {
-    // Receive DISPLAY from Goggles via IPC (blocks 100ms max)
-    int display_num = receive_display_from_goggles();
-    if (display_num > 0) {
-        char display_str[32];
-        snprintf(display_str, sizeof(display_str), ":%d", display_num);
-        setenv("DISPLAY", display_str, 1);
+    LayerSocketClient config_socket;
+    if (!config_socket.connect()) {
+        return;  // No Goggles instance running, use default DISPLAY
     }
+
+    CaptureConfigRequest request{};
+    request.type = CaptureMessageType::config_request;
+    request.version = 1;
+
+    if (!config_socket.send(&request, sizeof(request))) {
+        return;
+    }
+
+    CaptureInputDisplayReady response{};
+    if (!config_socket.receive_with_timeout(&response, sizeof(response), 100)) {
+        return;  // Timeout, use default DISPLAY
+    }
+
+    char display_str[32];
+    snprintf(display_str, sizeof(display_str), ":%d", response.display_number);
+    setenv("DISPLAY", display_str, 1);
+
+    // Config socket destroyed on scope exit
 }
 ```
 
 **Constructor priority**: `101` (before default `100` for other constructors, ensures DISPLAY set first)
+
+**Connection lifecycle**:
+- Config connection: Created and destroyed in constructor
+- Frame capture connection: Created later in `on_present()` (existing code unchanged)
 
 ## Data Flow: Keyboard Event Path
 

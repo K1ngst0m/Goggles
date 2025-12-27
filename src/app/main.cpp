@@ -1,11 +1,14 @@
 #include "capture/capture_receiver.hpp"
 #include "cli.hpp"
+#include "input/input_forwarder.hpp"
 
 #include <SDL3/SDL.h>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <memory>
 #include <render/backend/vulkan_backend.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
@@ -14,7 +17,8 @@
 #include <util/unique_fd.hpp>
 
 static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
-                          goggles::CaptureReceiver* capture_receiver) {
+                          goggles::CaptureReceiver* capture_receiver,
+                          goggles::input::InputForwarder* input_forwarder) {
     bool running = true;
     while (running) {
         GOGGLES_PROFILE_FRAME("Main");
@@ -29,6 +33,38 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                     running = false;
                 } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
                     window_resized = true;
+                } else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+                    if (input_forwarder) {
+                        auto forward_result = input_forwarder->forward_key(event.key);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward key: {}", forward_result.error().message);
+                        }
+                    }
+                } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                           event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    if (input_forwarder) {
+                        auto forward_result = input_forwarder->forward_mouse_button(event.button);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward mouse button: {}",
+                                            forward_result.error().message);
+                        }
+                    }
+                } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                    if (input_forwarder) {
+                        auto forward_result = input_forwarder->forward_mouse_motion(event.motion);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward mouse motion: {}",
+                                            forward_result.error().message);
+                        }
+                    }
+                } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                    if (input_forwarder) {
+                        auto forward_result = input_forwarder->forward_mouse_wheel(event.wheel);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward mouse wheel: {}",
+                                            forward_result.error().message);
+                        }
+                    }
                 }
             }
         }
@@ -187,7 +223,26 @@ static auto run_app(int argc, char** argv) -> int {
         capture_receiver = std::move(receiver_result.value());
     }
 
-    run_main_loop(*vulkan_backend, capture_receiver.get());
+    GOGGLES_LOG_INFO("Initializing input forwarding...");
+    goggles::input::InputForwarder input_forwarder;
+    goggles::input::InputForwarder* input_forwarder_ptr = nullptr;
+
+    auto input_init_result = input_forwarder.init();
+    if (!input_init_result) {
+        GOGGLES_LOG_WARN("Input forwarding disabled: {}", input_init_result.error().message);
+    } else {
+        int display_num = input_forwarder.display_number();
+        GOGGLES_LOG_INFO("Input forwarding initialized on DISPLAY :{}", display_num);
+
+        // Pass display number to capture receiver for config handshake
+        if (capture_receiver) {
+            capture_receiver->set_input_display(display_num);
+        }
+
+        input_forwarder_ptr = &input_forwarder;
+    }
+
+    run_main_loop(*vulkan_backend, capture_receiver.get(), input_forwarder_ptr);
 
     GOGGLES_LOG_INFO("Shutting down...");
     if (capture_receiver) {

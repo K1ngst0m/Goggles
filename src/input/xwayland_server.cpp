@@ -1,0 +1,228 @@
+#include "xwayland_server.hpp"
+
+#include <array>
+#include <cstdio>
+
+extern "C" {
+#include <wayland-server-core.h>
+#include <wlr/backend.h>
+#include <wlr/backend/headless.h>
+#include <wlr/render/allocator.h>
+#include <wlr/render/wlr_renderer.h>
+#include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_seat.h>
+
+// Forward declare XDG shell (needed for XWayland window management)
+struct wlr_xdg_shell;
+struct wlr_xdg_shell* wlr_xdg_shell_create(struct wl_display*, uint32_t);
+
+// xwayland.h contains 'char *class' which conflicts with C++ keyword
+#define class class_
+#include <wlr/xwayland/xwayland.h>
+#undef class
+}
+
+namespace goggles::input {
+
+XWaylandServer::XWaylandServer() = default;
+
+XWaylandServer::~XWaylandServer() {
+    stop();
+}
+
+auto XWaylandServer::start() -> Result<int> {
+    m_display = wl_display_create();
+    if (!m_display) {
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to create Wayland display");
+    }
+
+    m_event_loop = wl_display_get_event_loop(m_display);
+    if (!m_event_loop) {
+        wl_display_destroy(m_display);
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to get event loop");
+    }
+
+    m_backend = wlr_headless_backend_create(m_event_loop);
+    if (!m_backend) {
+        wl_display_destroy(m_display);
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to create headless backend");
+    }
+
+    m_renderer = wlr_renderer_autocreate(m_backend);
+    if (!m_renderer) {
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_backend = nullptr;
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to create renderer");
+    }
+
+    // XWayland crashes (segfault in wl_proxy_get_version) without protocol init
+    wlr_renderer_init_wl_display(m_renderer, m_display);
+
+    m_allocator = wlr_allocator_autocreate(m_backend, m_renderer);
+    if (!m_allocator) {
+        wlr_renderer_destroy(m_renderer);
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_renderer = nullptr;
+        m_backend = nullptr;
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to create allocator");
+    }
+
+    m_compositor = wlr_compositor_create(m_display, 6, m_renderer);
+    if (!m_compositor) {
+        wlr_allocator_destroy(m_allocator);
+        wlr_renderer_destroy(m_renderer);
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_allocator = nullptr;
+        m_renderer = nullptr;
+        m_backend = nullptr;
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to create compositor");
+    }
+
+    wlr_xdg_shell_create(m_display, 3);
+
+    m_seat = wlr_seat_create(m_display, "seat0");
+    if (!m_seat) {
+        // Note: compositor is destroyed automatically when display is destroyed
+        wlr_allocator_destroy(m_allocator);
+        wlr_renderer_destroy(m_renderer);
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_compositor = nullptr;
+        m_allocator = nullptr;
+        m_renderer = nullptr;
+        m_backend = nullptr;
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to create seat");
+    }
+
+    wlr_seat_set_capabilities(m_seat, WL_SEAT_CAPABILITY_KEYBOARD);
+
+    bool socket_bound = false;
+    for (int display_num = 1; display_num < 10; ++display_num) {
+        std::array<char, 32> socket_name{};
+        std::snprintf(socket_name.data(), socket_name.size(), "wayland-%d", display_num);
+
+        int result = wl_display_add_socket(m_display, socket_name.data());
+        if (result == 0) {
+            m_display_number = display_num;
+            socket_bound = true;
+            break;
+        }
+    }
+
+    if (!socket_bound) {
+        wlr_allocator_destroy(m_allocator);
+        wlr_renderer_destroy(m_renderer);
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_seat = nullptr;
+        m_compositor = nullptr;
+        m_allocator = nullptr;
+        m_renderer = nullptr;
+        m_backend = nullptr;
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed,
+                               "No available DISPLAY numbers (1-9 all bound)");
+    }
+
+    m_xwayland = wlr_xwayland_create(m_display, m_compositor, false);
+    if (!m_xwayland) {
+        wlr_allocator_destroy(m_allocator);
+        wlr_renderer_destroy(m_renderer);
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_xwayland = nullptr;
+        m_seat = nullptr;
+        m_compositor = nullptr;
+        m_allocator = nullptr;
+        m_renderer = nullptr;
+        m_backend = nullptr;
+        m_display = nullptr;
+        m_display_number = -1;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to create XWayland server");
+    }
+
+    if (!wlr_backend_start(m_backend)) {
+        wlr_xwayland_destroy(m_xwayland);
+        wlr_allocator_destroy(m_allocator);
+        wlr_renderer_destroy(m_renderer);
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_xwayland = nullptr;
+        m_seat = nullptr;
+        m_compositor = nullptr;
+        m_allocator = nullptr;
+        m_renderer = nullptr;
+        m_backend = nullptr;
+        m_display = nullptr;
+        m_display_number = -1;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to start wlroots backend");
+    }
+
+    m_compositor_thread = std::jthread([this] {
+        wl_display_run(m_display);
+    });
+
+    return m_display_number;
+}
+
+void XWaylandServer::stop() {
+    if (!m_display) {
+        return;
+    }
+
+    wl_display_terminate(m_display);
+
+    // Explicitly join compositor thread before destroying objects to prevent use-after-free
+    if (m_compositor_thread.joinable()) {
+        m_compositor_thread.join();
+    }
+
+    // Must be before compositor
+    if (m_xwayland) {
+        wlr_xwayland_destroy(m_xwayland);
+        m_xwayland = nullptr;
+    }
+
+    // Must be before display
+    if (m_seat) {
+        wlr_seat_destroy(m_seat);
+        m_seat = nullptr;
+    }
+
+    // Compositor is destroyed automatically when display is destroyed
+    m_compositor = nullptr;
+
+    if (m_allocator) {
+        wlr_allocator_destroy(m_allocator);
+        m_allocator = nullptr;
+    }
+
+    if (m_renderer) {
+        wlr_renderer_destroy(m_renderer);
+        m_renderer = nullptr;
+    }
+
+    if (m_backend) {
+        wlr_backend_destroy(m_backend);
+        m_backend = nullptr;
+    }
+
+    if (m_display) {
+        wl_display_destroy(m_display);
+        m_display = nullptr;
+    }
+
+    m_event_loop = nullptr; // Part of display, already destroyed
+    m_display_number = -1;
+}
+
+} // namespace goggles::input

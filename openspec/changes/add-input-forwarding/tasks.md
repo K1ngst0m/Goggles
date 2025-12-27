@@ -341,3 +341,92 @@ Ordered implementation tasks for the input forwarding feature. Each task is inde
 
 - **Phase 2 and Phase 4** can proceed in parallel after Phase 1 completes
 - **Tasks 20, 22, 24** (testing and docs) can be done concurrently during final phase
+
+---
+
+## Phase 7: Mouse Input Forwarding (Extension)
+
+### Task 25: Add mouse forwarding methods to InputForwarder
+**Files**: `src/input/input_forwarder.hpp`, `src/input/input_forwarder.cpp`
+
+- Add method declarations to header:
+  - `forward_mouse_button(const SDL_MouseButtonEvent&) -> Result<void>`
+  - `forward_mouse_motion(const SDL_MouseMotionEvent&) -> Result<void>`
+  - `forward_mouse_wheel(const SDL_MouseWheelEvent&) -> Result<void>`
+- Implement methods using XTest extension:
+  - Button: `XTestFakeButtonEvent()` with SDL→X11 button mapping (1=left, 2=middle, 3=right)
+  - Motion: `XTestFakeMotionEvent()` with absolute positioning
+  - Wheel: `XTestFakeButtonEvent()` with buttons 4-7 (4=up, 5=down, 6=left, 7=right) using press+release pattern
+- Follow existing `forward_key()` pattern (early return if not initialized, XFlush after events)
+
+**Status**: ✅ COMPLETED
+
+**Validation**: Mouse events forwarded to XWayland, buttons and wheel work correctly
+
+---
+
+### Task 26: Integrate mouse event handling in main loop
+**File**: `src/app/main.cpp`
+
+- Add mouse event handling in event loop after keyboard handling:
+  - `SDL_EVENT_MOUSE_BUTTON_DOWN/UP` → `forward_mouse_button()`
+  - `SDL_EVENT_MOUSE_MOTION` → `forward_mouse_motion()`
+  - `SDL_EVENT_MOUSE_WHEEL` → `forward_mouse_wheel()`
+- Follow same error handling pattern as keyboard events with `GOGGLES_LOG_ERROR()`
+
+**Status**: ✅ COMPLETED
+
+**Validation**: Mouse events from Goggles viewer forwarded to test app
+
+---
+
+### Task 27: Implement coordinate mapping for mouse motion
+**Files**: `src/input/input_forwarder.hpp`, `src/input/input_forwarder.cpp`, `src/app/main.cpp`
+
+**Status**: ⏸️ DEFERRED - Known Issue
+
+**Description**: Mouse motion events are forwarded with raw coordinates, causing incorrect positioning when viewer and target windows have different sizes.
+
+**Requirements**:
+- Track both window dimensions (Goggles viewer and target app)
+- Calculate scale factors: `scale_x = target_width / viewer_width`, `scale_y = target_height / viewer_height`
+- Transform coordinates: `target_x = event.x * scale_x`, `target_y = event.y * scale_y`
+- Handle window resize events to update scale factors
+- Account for coordinate space transformations (window vs screen coordinates)
+
+**Complexity**: Medium - requires bidirectional communication for window dimensions, resize event handling, and coordinate space management
+
+**Current Behavior**: Mouse clicks are forwarded correctly (buttons work), but all clicks appear at center position (640, 360) regardless of actual click location. Mouse motion events are forwarded but not positioned correctly.
+
+**Workaround**: None - mouse positioning unavailable until coordinate mapping implemented
+
+**See**: `src/input/input_forwarder.cpp:180` for TODO comment
+
+---
+
+## Current Status Summary
+
+### Completed (Phase 1-7)
+- ✅ **Tasks 1-24**: Keyboard input forwarding fully implemented and tested
+- ✅ **Task 25**: Mouse forwarding methods implemented (buttons, motion, wheel)
+- ✅ **Task 26**: Mouse event handling integrated in main loop
+
+### Known Issues
+- ⏸️ **Task 27**: Mouse coordinate mapping not implemented
+  - Impact: Mouse buttons and wheel work, but position is incorrect
+  - Severity: Medium - input forwarding functional but limited
+  - Timeline: Deferred to future proposal for coordinate mapping implementation
+
+### Testing Results
+- Keyboard forwarding: ✅ Working correctly
+- Mouse button forwarding: ✅ Working (clicks detected)
+- Mouse wheel forwarding: ✅ Working (scroll events detected)
+- Mouse position accuracy: ❌ Not working (stuck at center position)
+
+---
+
+## Dependencies Between Tasks
+
+- **Task 25**: Depends on Task 13 (InputForwarder API pattern established)
+- **Task 26**: Depends on Task 25 (mouse methods available)
+- **Task 27**: Depends on Task 26 (mouse events being forwarded)
