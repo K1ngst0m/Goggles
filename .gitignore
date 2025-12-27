@@ -84,6 +84,11 @@ notes/
 *.notes
 TODO.local
 
+# Claude Code
+.claude/
+CLAUDE.md
+AGENTS.md
+
 # Sanitizer outputs
 *.asan
 *.ubsan

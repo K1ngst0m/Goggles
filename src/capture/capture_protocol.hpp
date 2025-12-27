@@ -15,11 +15,11 @@ enum class CaptureMessageType : uint32_t {
     client_hello = 1,
     texture_data = 2,
     control = 3,
-    // Note: values 4-5 reserved for pending PR #16 (semaphore_init, frame_metadata)
+    semaphore_init = 4,
+    frame_metadata = 5,
     config_request = 6,
     input_display_ready = 7,
 };
-;
 
 struct CaptureClientHello {
     CaptureMessageType type = CaptureMessageType::client_hello;
@@ -48,6 +48,28 @@ struct CaptureControl {
 };
 
 static_assert(sizeof(CaptureControl) == 16);
+
+struct CaptureSemaphoreInit {
+    CaptureMessageType type = CaptureMessageType::semaphore_init;
+    uint32_t version = 1;
+    uint64_t initial_value = 0;
+    // Two FDs via SCM_RIGHTS: [frame_ready_fd, frame_consumed_fd]
+};
+
+static_assert(sizeof(CaptureSemaphoreInit) == 16);
+
+struct CaptureFrameMetadata {
+    CaptureMessageType type = CaptureMessageType::frame_metadata;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    uint32_t stride = 0;
+    uint32_t offset = 0;
+    uint64_t modifier = 0;
+    uint64_t frame_number = 0;
+};
+
+static_assert(sizeof(CaptureFrameMetadata) == 40);
 
 struct CaptureConfigRequest {
     CaptureMessageType type = CaptureMessageType::config_request;

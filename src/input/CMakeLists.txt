@@ -16,7 +16,7 @@ target_include_directories(goggles_input
 target_link_libraries(goggles_input
     PUBLIC goggles_util
     PRIVATE PkgConfig::wlroots
-            PkgConfig::wayland_server
+            PkgConfig::wayland-server
             PkgConfig::xkbcommon
             ${X11_LIBRARIES}
             ${X11_XTest_LIB}
