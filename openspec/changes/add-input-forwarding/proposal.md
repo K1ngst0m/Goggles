@@ -13,7 +13,7 @@ Users currently have no way to interact with captured applications while viewing
 
 ## Proposed Solution
 
-Introduce an input forwarding module (`src/input/`) that creates a nested XWayland server for captured applications and forwards keyboard events from the Goggles SDL window via XTest injection into the nested server.
+Introduce an input forwarding module (`src/input/`) that creates a nested XWayland server for captured applications and forwards key + mouse events from the Goggles SDL window via XTest injection into the nested server.
 
 ### Architecture
 
@@ -51,14 +51,15 @@ Introduce an input forwarding module (`src/input/`) that creates a nested XWayla
 ### Components
 
 1. **`src/input/xwayland_server.cpp/hpp`**: Manages headless Wayland compositor (wlroots) and spawns XWayland process
-2. **`src/input/input_forwarder.cpp/hpp`**: Public API class (PIMPL pattern), forwards SDL keyboard events via XTest
-3. **Extended IPC protocol**: Add `input_display_ready` message to existing Unix socket for DISPLAY handshake
+2. **`src/input/input_forwarder.cpp/hpp`**: Public API class (PIMPL pattern), forwards SDL key + mouse events via XTest
+3. **Extended IPC protocol**: Add a small config handshake (`config_request` → `input_display_ready`) on the existing Unix socket for DISPLAY configuration
+4. **`src/capture/capture_receiver.cpp`**: Responds to layer config requests with the DISPLAY selected by `InputForwarder`
 
 ### Integration Points
 
-- **`src/app/main.cpp`**: Instantiate `InputForwarder`, call `init()` before capture receiver starts
-- **`src/capture/vk_layer/vk_capture.cpp`**: Layer constructor receives DISPLAY number via IPC, sets `DISPLAY=:N` before app main
-- **`src/capture/capture_protocol.hpp`**: Add `CaptureInputDisplayReady` message type
+- **`src/app/main.cpp`**: Instantiate `InputForwarder`, call `init()`, and pass `display_number()` to `CaptureReceiver` for the layer handshake
+- **`src/capture/vk_layer/vk_capture.cpp`**: Layer constructor performs a config handshake and sets `DISPLAY=:N` before app main
+- **`src/capture/capture_protocol.hpp`**: Add `CaptureConfigRequest` + `CaptureInputDisplayReady` message types
 
 ## Benefits
 
@@ -66,10 +67,12 @@ Introduce an input forwarding module (`src/input/`) that creates a nested XWayla
 - **Wine/DXVK compatible**: XTest → XWayland generates real X11 events, not filtered
 - **Zero config**: Automatic DISPLAY selection (:1, :2, ...) and handshake via existing socket
 - **Minimal deps**: System packages only (wlroots, wayland-server, xkbcommon, libX11, libXtst)
+- **Basic mouse support**: Button/motion/wheel events are forwarded (coordinate mapping is currently 1:1 with the viewer window)
 
 ## Non-Goals
 
-- Mouse input forwarding (defer to future work)
+- Accurate mouse coordinate mapping / scaling between viewer and captured app
+- Pointer confinement / relative mouse mode support
 - Wayland native app support (X11-only for now)
 - Display/composition (XWayland used only as input server)
 - Multiple app focus management
@@ -106,7 +109,7 @@ SDL3 already in project.
 | DISPLAY conflict (socket already bound) | Auto-select :1, :2, :3... until successful |
 | XWayland startup failure | Propagate error via `Result<void>`, log failure, disable input forwarding |
 | Memory leak in compositor thread | RAII wrappers for all wlroots objects, explicit cleanup |
-| Layer timing (IPC before DISPLAY set) | Layer blocks on IPC receive (timeout: 100ms) before app main |
+| Layer timing (config requested before DISPLAY is ready) | Best-effort handshake with timeout; start Goggles (and `InputForwarder`) before launching the captured app |
 
 ## Success Criteria
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the input forwarding module that enables users to control captured Vulkan applications by pressing keys in the Goggles viewer window. The module creates a nested XWayland server and forwards keyboard events via XTest injection.
+Defines the input forwarding module that enables users to control captured Vulkan applications by pressing keys and using the mouse in the Goggles viewer window. The module creates a nested XWayland server and forwards input events via XTest injection.
 
 ## ADDED Requirements
 
@@ -14,7 +14,7 @@ The input forwarding module SHALL create a headless Wayland compositor with nest
 - **WHEN** `InputForwarder::init()` is called
 - **THEN** the system SHALL attempt to create Wayland sockets on wayland-1, wayland-2, etc. in sequence
 - **AND** start XWayland on the first available DISPLAY (:1, :2, ...)
-- **AND** return the selected DISPLAY number via `Result<void>`
+- **AND** expose the selected DISPLAY number via `InputForwarder::display_number()`
 
 #### Scenario: XWayland startup
 - **WHEN** a Wayland socket is successfully created on wayland-N
@@ -49,7 +49,6 @@ The input forwarding module SHALL translate SDL keyboard events to X11 KeyPress/
 - **WHEN** a valid X11 keycode is obtained
 - **THEN** `XTestFakeKeyEvent(display, keycode, is_press, CurrentTime)` SHALL be called
 - **AND** `XFlush(display)` SHALL be called to send the event immediately
-- **AND** the operation SHALL complete in <100 microseconds
 
 #### Scenario: Press and release events
 - **WHEN** `SDL_EVENT_KEY_DOWN` is received
@@ -72,21 +71,33 @@ The input forwarding module SHALL maintain an X11 client connection to the neste
 - **THEN** `XCloseDisplay()` SHALL be called if connection is open
 - **AND** the connection SHALL be closed before XWaylandServer is stopped
 
-### Requirement: DISPLAY Handshake via IPC
+### Requirement: Expose Selected DISPLAY Number
 
-The input forwarding module SHALL communicate the selected DISPLAY number to the Vulkan capture layer via the existing Unix domain socket.
+The input forwarding module SHALL expose the selected nested DISPLAY number so other subsystems can use it for configuration handshakes.
 
-#### Scenario: Send DISPLAY to layer
-- **WHEN** XWayland server has successfully started on :N
-- **THEN** `InputForwarder::init()` SHALL send a `CaptureInputDisplayReady` message
-- **AND** the message SHALL contain the DISPLAY number N
-- **AND** the message SHALL be sent before any captured applications are expected to start
+#### Scenario: Query DISPLAY after init
+- **WHEN** `InputForwarder::init()` succeeds
+- **THEN** `InputForwarder::display_number()` SHALL return a positive integer N
+- **AND** callers MAY pass N to other subsystems (e.g. capture config handshakes)
 
-#### Scenario: Layer receives DISPLAY before app main
-- **WHEN** the Vulkan layer constructor runs (priority 101)
-- **THEN** the layer SHALL receive the `CaptureInputDisplayReady` message with timeout
-- **AND** call `setenv("DISPLAY", ":N", 1)` before the application's `main()` executes
-- **AND** if timeout expires (100ms), the layer SHALL use default DISPLAY (:0)
+### Requirement: Mouse Event Forwarding (Basic)
+
+The input forwarding module SHALL forward basic mouse input into the nested XWayland server via XTest.
+
+#### Scenario: Mouse button injection
+- **WHEN** `InputForwarder::forward_mouse_button()` receives an SDL_MouseButtonEvent
+- **THEN** `XTestFakeButtonEvent(display, button, is_press, CurrentTime)` SHALL be called
+- **AND** `XFlush(display)` SHALL be called to send the event immediately
+
+#### Scenario: Mouse motion injection
+- **WHEN** `InputForwarder::forward_mouse_motion()` receives an SDL_MouseMotionEvent
+- **THEN** `XTestFakeMotionEvent(display, 0, x, y, CurrentTime)` SHALL be called using the SDL event coordinates
+- **AND** `XFlush(display)` SHALL be called to send the event immediately
+
+#### Scenario: Mouse wheel injection
+- **WHEN** `InputForwarder::forward_mouse_wheel()` receives an SDL_MouseWheelEvent
+- **THEN** wheel input SHALL be translated into X11 button events (4/5 for vertical, 6/7 for horizontal)
+- **AND** a press+release pair SHALL be sent via `XTestFakeButtonEvent`
 
 ### Requirement: Error Handling and Graceful Degradation
 

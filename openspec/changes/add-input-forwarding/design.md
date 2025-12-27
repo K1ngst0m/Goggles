@@ -47,8 +47,8 @@ private:
 - Spawn XWayland process connected to compositor (auto-select :1, :2, ...)
 - Open X11 client connection to :N
 - Translate SDL scancodes to X11 keycodes
-- Call `XTestFakeKeyEvent()` to inject keys
-- Send DISPLAY number to layer via IPC
+- Call `XTestFakeKeyEvent()` / `XTestFakeButtonEvent()` / `XTestFakeMotionEvent()` to inject input
+- Expose the selected DISPLAY number to `CaptureReceiver` for the layer config handshake
 
 ### Layer 3: XWayland Server (New)
 
@@ -95,8 +95,7 @@ enum class CaptureMessageType : uint32_t {
     client_hello = 1,
     texture_data = 2,
     control = 3,
-    semaphore_init = 4,      // Existing
-    frame_metadata = 5,      // Existing
+    // Note: values 4-5 are reserved by other capture features
     config_request = 6,      // NEW
     input_display_ready = 7, // NEW
 };
@@ -146,29 +145,25 @@ static_assert(sizeof(CaptureInputDisplayReady) == 16);
 __attribute__((constructor(101))) static void
 layer_early_init()
 {
-    LayerSocketClient config_socket;
-    if (!config_socket.connect()) {
-        return;  // No Goggles instance running, use default DISPLAY
-    }
+    // Connect to `\0goggles/vkcapture` (best-effort; if unavailable, keep existing DISPLAY)
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    // connect(fd, CAPTURE_SOCKET_PATH, CAPTURE_SOCKET_PATH_LEN)
 
     CaptureConfigRequest request{};
     request.type = CaptureMessageType::config_request;
     request.version = 1;
 
-    if (!config_socket.send(&request, sizeof(request))) {
-        return;
-    }
+    if (send(fd, &request, sizeof(request), MSG_NOSIGNAL) != sizeof(request)) return;
 
     CaptureInputDisplayReady response{};
-    if (!config_socket.receive_with_timeout(&response, sizeof(response), 100)) {
-        return;  // Timeout, use default DISPLAY
-    }
+    // poll(fd, 1, 100) then recv(fd, &response, sizeof(response), 0)
 
     char display_str[32];
     snprintf(display_str, sizeof(display_str), ":%d", response.display_number);
     setenv("DISPLAY", display_str, 1);
 
-    // Config socket destroyed on scope exit
+    close(fd);
 }
 ```
 
@@ -233,15 +228,13 @@ auto InputForwarder::init() -> Result<void> {
     }
     m_impl->x11_display = *x11_result;
 
-    GOGGLES_TRY(send_display_to_layer(m_impl->server.display_number()));
-
     return ok();
 }
 ```
 
 **Error codes**:
 - `ErrorCode::input_init_failed` - XWayland start failed or X11 connection failed
-- `ErrorCode::input_socket_send_failed` - IPC handshake failed
+- `ErrorCode::input_socket_send_failed` - reserved for future IPC-related failures (not currently used)
 
 ### XWaylandServer::start()
 
@@ -346,8 +339,8 @@ struct XWaylandServer {
 ### Integration Tests (Manual)
 1. Start Goggles
 2. Start test app with `GOGGLES_CAPTURE=1`
-3. Press W/A/S/D in Goggles window
-4. Verify test app prints `[Input] KEY DOWN: name='W'`
+3. Press keys and use the mouse in the Goggles window
+4. Verify the test app prints corresponding `[Input] ...` events
 
 ### Compatibility Testing
 - X11 native apps (test_app)
@@ -356,10 +349,9 @@ struct XWaylandServer {
 
 ## Future Enhancements
 
-### Phase 2: Mouse Support
-- Add `forward_mouse()` method
-- XTestFakeMotionEvent, XTestFakeButtonEvent
-- Mouse pointer confinement (optional)
+### Phase 2: Mouse Coordinate Mapping & Constraints
+- Map viewer coordinates to captured app coordinates (scale/offset)
+- Optional pointer confinement and relative mouse mode support
 
 ### Phase 3: Wayland Native Apps
 - Replace XTest with libei (Wayland input injection)
