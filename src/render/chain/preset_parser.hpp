@@ -29,6 +29,7 @@ struct ShaderPassConfig {
     bool mipmap = false;
     WrapMode wrap_mode = WrapMode::clamp_to_edge;
     std::optional<std::string> alias;
+    uint32_t frame_count_mod = 0;  // 0 = disabled
 };
 
 struct TextureConfig {
@@ -53,11 +54,20 @@ struct PresetConfig {
 
 class PresetParser {
 public:
+    static constexpr int MAX_REFERENCE_DEPTH = 8;
+
     [[nodiscard]] auto load(const std::filesystem::path& preset_path) -> Result<PresetConfig>;
 
 private:
+    [[nodiscard]] auto load_recursive(const std::filesystem::path& preset_path, int depth,
+                                      std::vector<std::filesystem::path>& visited)
+        -> Result<PresetConfig>;
+
     [[nodiscard]] auto parse_ini(const std::string& content, const std::filesystem::path& base_path)
         -> Result<PresetConfig>;
+
+    [[nodiscard]] static auto parse_reference(const std::string& content)
+        -> std::optional<std::string>;
 
     [[nodiscard]] auto parse_scale_type(const std::string& value) -> ScaleType;
     [[nodiscard]] auto parse_wrap_mode(const std::string& value) -> WrapMode;

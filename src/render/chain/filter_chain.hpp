@@ -1,6 +1,7 @@
 #pragma once
 
 #include "filter_pass.hpp"
+#include "frame_history.hpp"
 #include "framebuffer.hpp"
 #include "output_pass.hpp"
 #include "preset_parser.hpp"
@@ -82,6 +83,9 @@ private:
     ScaleMode m_last_scale_mode = ScaleMode::stretch;
     uint32_t m_last_integer_scale = 0;
     vk::Extent2D m_last_source_extent;
+
+    FrameHistory m_frame_history;
+    uint32_t m_required_history_depth = 0;
 
     bool m_initialized = false;
 };
