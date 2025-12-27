@@ -45,7 +45,7 @@ outputs = ["build/{{ preset }}/bin/goggles"]
 
 # Build 32-bit layer
 [tasks.build-i686]
-cmd = "cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686"
+cmd = "export LDFLAGS='' && export LIBRARY_PATH='' && cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686"
 args = [{ "arg" = "preset", "default" = "debug" }]
 inputs = ["src/capture/**/*.cpp", "src/capture/**/*.hpp"]
 outputs = ["build/{{ preset }}-i686/lib/i386/libgoggles_vklayer.so"]
@@ -78,6 +78,12 @@ args = [{ "arg" = "preset", "default" = "debug" }]
 [tasks.start]
 cmd = "./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && GOGGLES_CAPTURE=1 {{ app }}; kill $viewer 2>/dev/null || true"
 args = ["app", { "arg" = "preset", "default" = "debug" }]
+depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
+
+# Start 32-bit vkcube with capture + goggles viewer
+[tasks.start-i686]
+cmd = "./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && VK_LAYER_PATH=build/{{ preset }}-i686/share/vulkan/implicit_layer.d LD_LIBRARY_PATH=build/{{ preset }}-i686/lib/i386:$LD_LIBRARY_PATH GOGGLES_CAPTURE=1 vkcube32; kill $viewer 2>/dev/null || true"
+args = [{ "arg" = "preset", "default" = "debug" }]
 depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
 
 [tasks.tasks]
@@ -120,7 +126,7 @@ args = [{ "arg" = "preset", "default" = "debug" }]
 cmd = "rm -rf build"
 
 [dependencies]
-cmake = ">=3.31.2,<5"
+cmake = ">=3.31.10"
 ninja = ">=1.13.2,<2"
 clang_linux-64 = ">=18"
 clangxx_linux-64 = ">=18"
@@ -164,11 +170,13 @@ xorg-glproto = ">=1.4.17,<2"
 libdrm = ">=2.4.125,<3"
 cli11 = ">=2.6.0,<3"
 ccache = ">=4.11.3,<5"
+lld = ">=18"
 
 
 #
 vulkansdk = { path = "packages/vulkansdk" }
 tracy = { path = "packages/tracy" }
+sysroot-i686 = { path = "packages/sysroot-i686" }
 sdl3 = ">=3.2.0"
 expected-lite = { path = "packages/expected-lite" }
 stb = { path = "packages/stb" }
