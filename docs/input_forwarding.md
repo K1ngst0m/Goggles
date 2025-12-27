@@ -107,18 +107,19 @@ The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 
 ### Current Implementation
 
-- **Keyboard only**: Mouse forwarding not yet implemented
-- **Limited scancode map**: Only W/A/S/D/ESC/Enter/Space mapped
-- **No modifier state**: Shift/Ctrl/Alt not forwarded
+- **Basic mouse support**: Mouse button, motion, and wheel events are forwarded but coordinate mapping is 1:1 (no scaling between viewer and target window)
+- **Limited scancode map**: Only common keys (A-Z, 0-9, ESC, Enter, Space, arrows, modifiers) mapped
+- **No modifier state tracking**: Shift/Ctrl/Alt forwarded as key events but state not synchronized
 - **Single app**: Only one captured app receives input
 
 ### Future Enhancements
 
-1. **Full keyboard map**: Complete SDL → X11 scancode translation
-2. **Modifier keys**: Shift, Ctrl, Alt, Super state tracking
-3. **Mouse forwarding**: XTestFakeMotionEvent, XTestFakeButtonEvent
-4. **Multi-app focus**: Input routing to specific captured window
-5. **Wayland native**: Support Wayland apps via libei (Wayland input injection)
+1. **Full keyboard map**: Complete SDL → X11 scancode translation for all keys
+2. **Modifier state synchronization**: Track and synchronize Shift/Ctrl/Alt/Super state between viewer and target
+3. **Mouse coordinate mapping**: Scale/transform mouse coordinates to match target window dimensions
+4. **Pointer confinement**: Optional relative mouse mode and pointer grabbing support
+5. **Multi-app focus**: Input routing to specific captured window
+6. **Wayland native**: Support Wayland apps via libei (Wayland input injection)
 
 ## Dependencies
 

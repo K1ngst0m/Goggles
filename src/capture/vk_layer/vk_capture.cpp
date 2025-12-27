@@ -18,9 +18,6 @@ layer_early_init()
 	const char* old_display = getenv("DISPLAY");
 	LAYER_DEBUG("layer_early_init: DISPLAY was '%s'", old_display ? old_display : "NULL");
 
-	// Create temporary socket connection for config handshake
-	goggles::capture::LayerSocketClient config_socket;
-
 	// Connect with blocking socket (temporary for config)
 	int config_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (config_fd < 0) {
