@@ -5,8 +5,6 @@
 #include "vk_dispatch.hpp"
 #include "wsi_virtual.hpp"
 
-#include <util/profiling.hpp>
-
 #include <cstdio>
 #include <cstring>
 #include <util/profiling.hpp>
