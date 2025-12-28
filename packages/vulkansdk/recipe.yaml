@@ -24,8 +24,13 @@ build:
     - mkdir -p $PREFIX/etc/conda/activate.d $PREFIX/etc/conda/deactivate.d
     - |
       cat <<'EOF' > $PREFIX/etc/conda/activate.d/vulkansdk.sh
+      # Vulkan SDK environment setup
       export VULKAN_SDK="$CONDA_PREFIX"
-      export VK_LAYER_PATH="$CONDA_PREFIX/share/vulkan/explicit_layer.d"
+      # Prepend Pixi SDK layers, preserve any user-set layers
+      VK_ADD_LAYER_PATH="$CONDA_PREFIX/share/vulkan/explicit_layer.d${VK_ADD_LAYER_PATH:+:$VK_ADD_LAYER_PATH}"
+      export VK_ADD_LAYER_PATH
+      # Unset VK_LAYER_PATH as it overrides VK_ADD_LAYER_PATH
+      unset VK_LAYER_PATH
       EOF
     - |
       cat <<'EOF' > $PREFIX/etc/conda/deactivate.d/vulkansdk.sh

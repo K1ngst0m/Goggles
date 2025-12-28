@@ -175,20 +175,20 @@ build:
     echo "Tracy $TRACY_VERSION commit verified: $TRACY_ACTUAL_COMMIT"
 
     # Configure Build using our freshly built sysroot
-    # We point CMake to use the sysroot we just populated
     export SYSROOT=$SYSROOT_DIR
-    export FLAGS="--target=i686-linux-gnu -m32 --sysroot=$SYSROOT -B$SYSROOT/usr/lib -L$SYSROOT/usr/lib"
-    # Explicitly add C++ include paths as Clang might not find them in the sysroot automatically
-    export CXXFLAGS="$FLAGS -stdlib=libstdc++ -isystem $SYSROOT/usr/include/c++/14 -isystem $SYSROOT/usr/include/c++/14/i686-linux-gnu"
+    export FLAGS="-m32 --sysroot=$SYSROOT -B$SYSROOT/usr/lib -L$SYSROOT/usr/lib"
+    export LDFLAGS="-B$SYSROOT/usr/lib -L$SYSROOT/usr/lib"
 
     cmake -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=$SYSROOT/usr \
       -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-      -DCMAKE_C_COMPILER=clang \
-      -DCMAKE_CXX_COMPILER=clang++ \
+      -DCMAKE_C_COMPILER=gcc \
+      -DCMAKE_CXX_COMPILER=g++ \
       -DCMAKE_C_FLAGS="$FLAGS" \
-      -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
+      -DCMAKE_CXX_FLAGS="$FLAGS" \
+      -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" \
+      -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
       -DCMAKE_SYSTEM_NAME=Linux \
       -DCMAKE_SYSTEM_PROCESSOR=i686 \
       -DTRACY_ENABLE=ON \
@@ -213,6 +213,6 @@ requirements:
     - git
     - cmake
     - ninja
-    - clang
-    - clangxx
+    - gcc
+    - gxx
     - patchelf

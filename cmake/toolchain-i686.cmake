@@ -1,12 +1,12 @@
-# CMake toolchain file for 32-bit (i686) cross-compilation using Clang + Local Sysroot
+# CMake toolchain file for 32-bit (i686) cross-compilation
 # Usage: cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-i686.cmake ...
 
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR i686)
 
-# Use Clang from the Pixi environment
-set(CMAKE_C_COMPILER clang)
-set(CMAKE_CXX_COMPILER clang++)
+# Use gcc from the Pixi environment
+set(CMAKE_C_COMPILER gcc)
+set(CMAKE_CXX_COMPILER g++)
 
 # Target triple for 32-bit Linux
 set(TRIPLE "i686-linux-gnu")
@@ -27,20 +27,22 @@ endif()
 set(CMAKE_SYSROOT "${SYSROOT_PATH}")
 
 # Compiler flags
-# --target: Specifies architecture
-# --sysroot: Specifies the root directory for headers/libs
 # -m32: Force 32-bit
-set(ARCH_FLAGS "--target=${TRIPLE} -m32 --sysroot=${SYSROOT_PATH}")
+# --sysroot: Specifies the root directory for headers/libs
+# -B: Directory to search for startup files and libraries
+set(ARCH_FLAGS "-m32 --sysroot=${SYSROOT_PATH} -B${SYSROOT_PATH}/usr/lib")
+
+# Library search path for 32-bit libraries
+set(LIB_FLAGS "-L${SYSROOT_PATH}/usr/lib")
 
 set(CMAKE_C_FLAGS_INIT "${ARCH_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${ARCH_FLAGS}")
 set(CMAKE_ASM_FLAGS_INIT "${ARCH_FLAGS}")
 
 # Linker flags
-# Use lld if available (usually is with clang in conda-forge)
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld ${ARCH_FLAGS}")
-set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=lld ${ARCH_FLAGS}")
-set(CMAKE_MODULE_LINKER_FLAGS_INIT "-fuse-ld=lld ${ARCH_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "${LIB_FLAGS}")
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "${LIB_FLAGS}")
+set(CMAKE_MODULE_LINKER_FLAGS_INIT "${LIB_FLAGS}")
 
 # Search paths
 set(CMAKE_FIND_ROOT_PATH "${SYSROOT_PATH}")
