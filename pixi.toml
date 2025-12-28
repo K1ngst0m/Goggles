@@ -114,7 +114,7 @@ description = "Configure IDE to use pixi clang-format (vscode|emacs|vim|neovim|c
 
 # First-time project initialization
 [tasks.init]
-cmd = "bash scripts/check-ide-setup.sh"
+cmd = "bash scripts/check-ide-setup.sh && bash scripts/install-pre-commit-hook.sh"
 description = "First-time setup: check IDE config and show setup instructions"
 
 # Clean build directories for preset

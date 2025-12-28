@@ -29,7 +29,7 @@ Checks: >
   -readability-identifier-length,
   -readability-implicit-bool-conversion
 
-WarningsAsErrors: '*'
+WarningsAsErrors: "*"
 # Filter out third-party library warnings from CPM cache
 HeaderFilterRegex: '^(?!.*\.cache/CPM).*$'
 FormatStyle: file
@@ -51,7 +51,7 @@ CheckOptions:
   - key: readability-identifier-naming.MemberCase
     value: lower_case
   - key: readability-identifier-naming.PrivateMemberPrefix
-    value: 'm_'
+    value: "m_"
   # Only true constants (static const, constexpr) should be UPPER_CASE
   - key: readability-identifier-naming.ConstantCase
     value: lower_case
@@ -66,4 +66,3 @@ CheckOptions:
     value: lower_case
   - key: readability-function-size.LineThreshold
     value: 150
-...
