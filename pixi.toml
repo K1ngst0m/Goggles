@@ -114,8 +114,8 @@ description = "Configure IDE to use pixi clang-format (vscode|emacs|vim|neovim|c
 
 # First-time project initialization
 [tasks.init]
-cmd = "bash scripts/check-ide-setup.sh && bash scripts/install-pre-commit-hook.sh"
-description = "First-time setup: check IDE config and show setup instructions"
+cmd = "bash scripts/init-format-setup.sh"
+description = "First-time setup: non-interactive IDE formatting setup (if missing) + pre-commit hook"
 
 # Clean build directories for preset
 [tasks.clean]
@@ -148,7 +148,7 @@ spdlog = "1.15.*"
 catch2 = "3.8.*"
 toml11 = "4.4.*"
 libvulkan-headers = "1.4.328.*"
-xorg-libxcb = "*"
+libxcb = "*"
 xorg-libx11 = "*"
 xorg-xproto = "*"
 wayland = "*"
