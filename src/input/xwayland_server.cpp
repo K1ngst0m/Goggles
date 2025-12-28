@@ -60,7 +60,15 @@ auto XWaylandServer::start() -> Result<int> {
     }
 
     // XWayland crashes (segfault in wl_proxy_get_version) without protocol init
-    wlr_renderer_init_wl_display(m_renderer, m_display);
+    if (!wlr_renderer_init_wl_display(m_renderer, m_display)) {
+        wlr_renderer_destroy(m_renderer);
+        wlr_backend_destroy(m_backend);
+        wl_display_destroy(m_display);
+        m_renderer = nullptr;
+        m_backend = nullptr;
+        m_display = nullptr;
+        return make_error<int>(ErrorCode::input_init_failed, "Failed to initialize renderer protocols");
+    }
 
     m_allocator = wlr_allocator_autocreate(m_backend, m_renderer);
     if (!m_allocator) {
@@ -102,11 +110,13 @@ auto XWaylandServer::start() -> Result<int> {
 
     m_seat = wlr_seat_create(m_display, "seat0");
     if (!m_seat) {
+        wlr_xdg_shell_destroy(m_xdg_shell);
         // Note: compositor is destroyed automatically when display is destroyed
         wlr_allocator_destroy(m_allocator);
         wlr_renderer_destroy(m_renderer);
         wlr_backend_destroy(m_backend);
         wl_display_destroy(m_display);
+        m_xdg_shell = nullptr;
         m_compositor = nullptr;
         m_allocator = nullptr;
         m_renderer = nullptr;
@@ -131,11 +141,14 @@ auto XWaylandServer::start() -> Result<int> {
     }
 
     if (!socket_bound) {
+        wlr_seat_destroy(m_seat);
+        wlr_xdg_shell_destroy(m_xdg_shell);
         wlr_allocator_destroy(m_allocator);
         wlr_renderer_destroy(m_renderer);
         wlr_backend_destroy(m_backend);
         wl_display_destroy(m_display);
         m_seat = nullptr;
+        m_xdg_shell = nullptr;
         m_compositor = nullptr;
         m_allocator = nullptr;
         m_renderer = nullptr;
@@ -147,12 +160,15 @@ auto XWaylandServer::start() -> Result<int> {
 
     m_xwayland = wlr_xwayland_create(m_display, m_compositor, false);
     if (!m_xwayland) {
+        wlr_seat_destroy(m_seat);
+        wlr_xdg_shell_destroy(m_xdg_shell);
         wlr_allocator_destroy(m_allocator);
         wlr_renderer_destroy(m_renderer);
         wlr_backend_destroy(m_backend);
         wl_display_destroy(m_display);
         m_xwayland = nullptr;
         m_seat = nullptr;
+        m_xdg_shell = nullptr;
         m_compositor = nullptr;
         m_allocator = nullptr;
         m_renderer = nullptr;
@@ -164,12 +180,15 @@ auto XWaylandServer::start() -> Result<int> {
 
     if (!wlr_backend_start(m_backend)) {
         wlr_xwayland_destroy(m_xwayland);
+        wlr_seat_destroy(m_seat);
+        wlr_xdg_shell_destroy(m_xdg_shell);
         wlr_allocator_destroy(m_allocator);
         wlr_renderer_destroy(m_renderer);
         wlr_backend_destroy(m_backend);
         wl_display_destroy(m_display);
         m_xwayland = nullptr;
         m_seat = nullptr;
+        m_xdg_shell = nullptr;
         m_compositor = nullptr;
         m_allocator = nullptr;
         m_renderer = nullptr;
