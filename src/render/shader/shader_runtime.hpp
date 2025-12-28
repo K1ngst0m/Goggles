@@ -50,6 +50,7 @@ public:
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 
     [[nodiscard]] auto get_cache_dir() const -> std::filesystem::path;
+
 private:
     [[nodiscard]] auto get_cache_path(const std::filesystem::path& source_path,
                                       const std::string& entry_point) const
