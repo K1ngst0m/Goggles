@@ -64,8 +64,8 @@ find_package(Vulkan REQUIRED)
 
 # Input forwarding dependencies (X11/XWayland for input injection)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(wlroots REQUIRED IMPORTED_TARGET wlroots)
-pkg_check_modules(wayland_server REQUIRED IMPORTED_TARGET wayland-server)
+pkg_check_modules(wlroots REQUIRED IMPORTED_TARGET wlroots-0.19)
+pkg_check_modules(wayland-server REQUIRED IMPORTED_TARGET wayland-server)
 pkg_check_modules(xkbcommon REQUIRED IMPORTED_TARGET xkbcommon)
 find_package(X11 REQUIRED)
 
