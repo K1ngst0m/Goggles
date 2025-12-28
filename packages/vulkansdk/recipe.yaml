@@ -26,16 +26,27 @@ build:
       cat <<'EOF' > $PREFIX/etc/conda/activate.d/vulkansdk.sh
       # Vulkan SDK environment setup
       export VULKAN_SDK="$CONDA_PREFIX"
+      # Save old values for restoration on deactivate
+      [ -n "$VK_LAYER_PATH" ] && export _GOGGLES_OLD_VK_LAYER_PATH="$VK_LAYER_PATH"
+      [ -n "$VK_ADD_LAYER_PATH" ] && export _GOGGLES_OLD_VK_ADD_LAYER_PATH="$VK_ADD_LAYER_PATH"
       # Prepend Pixi SDK layers, preserve any user-set layers
-      VK_ADD_LAYER_PATH="$CONDA_PREFIX/share/vulkan/explicit_layer.d${VK_ADD_LAYER_PATH:+:$VK_ADD_LAYER_PATH}"
-      export VK_ADD_LAYER_PATH
+      export VK_ADD_LAYER_PATH="$CONDA_PREFIX/share/vulkan/explicit_layer.d${VK_ADD_LAYER_PATH:+:$VK_ADD_LAYER_PATH}"
       # Unset VK_LAYER_PATH as it overrides VK_ADD_LAYER_PATH
       unset VK_LAYER_PATH
       EOF
     - |
       cat <<'EOF' > $PREFIX/etc/conda/deactivate.d/vulkansdk.sh
       unset VULKAN_SDK
-      unset VK_LAYER_PATH
+      unset VK_ADD_LAYER_PATH
+      # Restore old values
+      if [ -n "$_GOGGLES_OLD_VK_LAYER_PATH" ]; then
+          export VK_LAYER_PATH="$_GOGGLES_OLD_VK_LAYER_PATH"
+          unset _GOGGLES_OLD_VK_LAYER_PATH
+      fi
+      if [ -n "$_GOGGLES_OLD_VK_ADD_LAYER_PATH" ]; then
+          export VK_ADD_LAYER_PATH="$_GOGGLES_OLD_VK_ADD_LAYER_PATH"
+          unset _GOGGLES_OLD_VK_ADD_LAYER_PATH
+      fi
       EOF
 
 about:

@@ -1,218 +1,75 @@
 package:
   name: sysroot-i686
-  version: "2.39"
+  version: "2.31"
+
+source:
+  url: https://github.com/K1ngst0m/Goggles/releases/download/sysroot-i686-2.31.0/sysroot-i686-2.31.tar.xz
+  sha256: d2dfb5277ada92040ae16fa14acf659a48f7e0032dbf17464d727ef27b6adf5f
 
 build:
-  number: 11
+  number: 0
   script: |
     set -e
 
-    # Define paths
-    SYSROOT_DIR=$PREFIX/i686-sysroot
-    mkdir -p $SYSROOT_DIR
+    # --- 1. Install prebuilt sysroot ---
+    # rattler-build auto-enters the tarball's top-level directory (i686-sysroot)
+    # so we have usr/, lib, include directly in the work directory
+    rm -rf $PREFIX/i686-sysroot
+    mkdir -p $PREFIX/i686-sysroot
+    cp -a usr lib include $PREFIX/i686-sysroot/
 
-    # Temporary directory for debs
+    # --- 2. Download and install vkcube32 ---
+    echo "Downloading vkcube32..."
     mkdir -p temp_debs
     cd temp_debs
 
-    # Function to download, verify SHA256, and extract .deb
-    # Usage: download_extract <url> <expected_sha256>
-    download_extract() {
-      url=$1
-      expected_sha256=$2
-      filename=$(basename "$url")
+    VKCUBE_URL="http://ftp.debian.org/debian/pool/main/v/vulkan-tools/vulkan-tools_1.3.239.0+dfsg1-1_i386.deb"
+    VKCUBE_SHA256="0f76b8efe091f9c47616e65f8168159c57c65956dc959c6eec22d58516227f94"
 
-      echo "Downloading $filename..."
-      if ! curl -L -f -o "$filename" "$url"; then
-        echo "ERROR: Failed to download $url"
-        exit 1
-      fi
+    curl -L -f -o vulkan-tools.deb "$VKCUBE_URL"
 
-      # Verify SHA256 checksum
-      actual_sha256=$(sha256sum "$filename" | cut -d' ' -f1)
-      if [ "$actual_sha256" != "$expected_sha256" ]; then
-        echo "ERROR: SHA256 checksum mismatch for $filename"
-        echo "  Expected: $expected_sha256"
-        echo "  Actual:   $actual_sha256"
-        exit 1
-      fi
-      echo "  SHA256 verified: $actual_sha256"
+    # Verify SHA256
+    actual_sha256=$(sha256sum vulkan-tools.deb | cut -d' ' -f1)
+    if [ "$actual_sha256" != "$VKCUBE_SHA256" ]; then
+      echo "ERROR: SHA256 checksum mismatch for vulkan-tools.deb"
+      echo "  Expected: $VKCUBE_SHA256"
+      echo "  Actual:   $actual_sha256"
+      exit 1
+    fi
+    echo "  SHA256 verified: $actual_sha256"
 
-      # Extract .deb
-      ar x "$filename"
-      if [ -f data.tar.zst ]; then
-        tar --use-compress-program=unzstd -xf data.tar.zst
-      elif [ -f data.tar.xz ]; then
-        tar -xf data.tar.xz
-      elif [ -f data.tar.gz ]; then
-        tar -xf data.tar.gz
-      else
-        echo "ERROR: No recognized data archive in $filename"
-        exit 1
-      fi
-      rm -f "$filename" control.tar.* data.tar.* debian-binary
-    }
-
-    # --- 1. Download Core System (Ubuntu Noble 24.04) ---
-    # glibc 2.39
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.39-0ubuntu8.6_i386.deb" \
-      "c7979314653433520e601f6a6bee1666a61a3c901995299b98c04fe92e918e46"
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8.6_i386.deb" \
-      "b362135784202d67e953eda67217a1a50c5c31c7230f5d3724232419e536efeb"
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-libc-dev_6.8.0-31.31_i386.deb" \
-      "449598c569c2625d319479a21b38b77c8de0f838b5846f5417339f549ddd6a91"
-
-    # GCC 14 runtime and development
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04_i386.deb" \
-      "dffca31468bc798780ccef6fe6e0098e9688dc90cf147be26733c3f6bba55706"
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libgcc-14-dev_14.2.0-4ubuntu2~24.04_i386.deb" \
-      "73bb62814976a3d6698cc541910d51bd388f6d6ffcc86d6cf854fd869955d114"
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libstdc++-14-dev_14.2.0-19ubuntu2_i386.deb" \
-      "ea98fc93818c5022d620a43bbc3a0ffbd2eb2155aab15bbea79f15160e70deab"
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04_i386.deb" \
-      "7ac361029ab5d46b0e10785902d354e890d5a62bd3027434e661470f1fcdc521"
-
-    # Vulkan Loader & Headers
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/v/vulkan-loader/libvulkan1_1.4.335.0-1_i386.deb" \
-      "bc10a5779ac846b3625a59e8808cbff3de12060ed0cf950c5c0c5a75a082d788"
-    download_extract "http://archive.ubuntu.com/ubuntu/pool/main/v/vulkan-loader/libvulkan-dev_1.4.335.0-1_i386.deb" \
-      "4e8dc93a7bbbbcc384702ccdd6df92fdabcd5015ed54160db8ee70b3b0a5530a"
-
-    # Vulkan Tools (vkcube) - Debian stable
-    download_extract "http://ftp.debian.org/debian/pool/main/v/vulkan-tools/vulkan-tools_1.3.239.0+dfsg1-1_i386.deb" \
-      "0f76b8efe091f9c47616e65f8168159c57c65956dc959c6eec22d58516227f94"
-
-    # --- 2. Merge into Sysroot ---
-    mkdir -p $SYSROOT_DIR/usr/lib
-    mkdir -p $SYSROOT_DIR/usr/include
-    mkdir -p $PREFIX/bin
-
-    # Merge library paths
-    for d in lib/i386-linux-gnu usr/lib/i386-linux-gnu usr/lib/gcc/i686-linux-gnu/14; do
-      if [ -d "$d" ]; then
-        echo "Syncing $d to usr/lib..."
-        rsync -ak "$d/" $SYSROOT_DIR/usr/lib/
-      fi
-    done
-
-    # Merge include paths
-    if [ -d "usr/include" ]; then
-      echo "Syncing usr/include..."
-      rsync -ak --exclude="i386-linux-gnu" usr/include/ $SYSROOT_DIR/usr/include/
-      if [ -d "usr/include/i386-linux-gnu" ]; then
-        rsync -ak "usr/include/i386-linux-gnu/" $SYSROOT_DIR/usr/include/
-      fi
+    # Extract vkcube from .deb
+    ar x vulkan-tools.deb
+    if [ -f data.tar.zst ]; then
+      tar --use-compress-program=unzstd -xf data.tar.zst
+    elif [ -f data.tar.xz ]; then
+      tar -xf data.tar.xz
+    elif [ -f data.tar.gz ]; then
+      tar -xf data.tar.gz
+    else
+      echo "ERROR: No recognized data archive in vulkan-tools.deb"
+      exit 1
     fi
 
     # Install vkcube32
     if [ -f "usr/bin/vkcube" ]; then
-        echo "Installing vkcube32..."
-        cp usr/bin/vkcube $PREFIX/bin/vkcube32
-        chmod +x $PREFIX/bin/vkcube32
+      echo "Installing vkcube32..."
+      mkdir -p $PREFIX/bin
+      cp usr/bin/vkcube $PREFIX/bin/vkcube32
+      chmod +x $PREFIX/bin/vkcube32
+    else
+      echo "ERROR: vkcube not found in vulkan-tools.deb"
+      exit 1
     fi
 
-    # Cleanup temp debs
+    # Cleanup
     cd ..
     rm -rf temp_debs
 
-    # --- 3. Fix Linker Scripts ---
-    cd $SYSROOT_DIR
-    echo "OUTPUT_FORMAT(elf32-i386) GROUP ( libc.so.6 libc_nonshared.a AS_NEEDED ( ld-linux.so.2 ) )" > usr/lib/libc.so
-    echo "OUTPUT_FORMAT(elf32-i386) GROUP ( libpthread.so.0 libpthread_nonshared.a )" > usr/lib/libpthread.so
-
-    # Symlinks
-    ln -sfn usr/lib lib
-    ln -sfn usr/include include
-
-    # --- 3b. Fix Broken GCC Dev Symlinks ---
-    # These symlinks from libgcc-14-dev/libstdc++-14-dev point to multiarch paths
-    # but we merged everything into usr/lib, so fix them to point to local files
-    echo "Fixing broken GCC development symlinks..."
-    cd $SYSROOT_DIR/usr/lib
-    for broken_link in libstdc++.so libgomp.so libatomic.so libasan.so libitm.so libubsan.so libquadmath.so; do
-      if [ -L "$broken_link" ]; then
-        # Get the target filename (e.g., libstdc++.so.6)
-        target=$(readlink "$broken_link" | xargs basename)
-        if [ -f "$target" ]; then
-          echo "  Fixing $broken_link -> $target"
-          ln -sfn "$target" "$broken_link"
-        else
-          # These are optional runtime libs (sanitizers, OpenMP, etc.)
-          # not needed for basic 32-bit layer compilation - remove broken symlinks
-          echo "  Removing broken symlink $broken_link (optional library not present)"
-          rm -f "$broken_link"
-        fi
-      fi
-    done
-    cd $SYSROOT_DIR
-
-    # --- 4. Build & Install Tracy (32-bit) ---
-    echo "Building Tracy 32-bit..."
-
-    # Debug: Check include structure
-    echo "--- Sysroot Include Structure ---"
-    find $SYSROOT_DIR/usr/include -maxdepth 3 -name "c++"
-    find $SYSROOT_DIR/usr/include -maxdepth 4 -name "atomic"
-    echo "-------------------------------"
-
-    # Download Tracy Source with commit verification
-    TRACY_VERSION="v0.13.1"
-    TRACY_EXPECTED_COMMIT="05cceee0df3b8d7c6fa87e9638af311dbabc63cb"
-
-    rm -rf tracy
-    git clone https://github.com/wolfpld/tracy.git
-    cd tracy
-    git checkout "$TRACY_VERSION"
-
-    # Verify commit hash
-    TRACY_ACTUAL_COMMIT=$(git rev-parse HEAD)
-    if [ "$TRACY_ACTUAL_COMMIT" != "$TRACY_EXPECTED_COMMIT" ]; then
-      echo "ERROR: Tracy commit hash mismatch for $TRACY_VERSION"
-      echo "  Expected: $TRACY_EXPECTED_COMMIT"
-      echo "  Actual:   $TRACY_ACTUAL_COMMIT"
-      exit 1
-    fi
-    echo "Tracy $TRACY_VERSION commit verified: $TRACY_ACTUAL_COMMIT"
-
-    # Configure Build using our freshly built sysroot
-    export SYSROOT=$SYSROOT_DIR
-    export FLAGS="-m32 --sysroot=$SYSROOT -B$SYSROOT/usr/lib -L$SYSROOT/usr/lib"
-    export LDFLAGS="-B$SYSROOT/usr/lib -L$SYSROOT/usr/lib"
-
-    cmake -B build -G Ninja \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=$SYSROOT/usr \
-      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-      -DCMAKE_C_COMPILER=gcc \
-      -DCMAKE_CXX_COMPILER=g++ \
-      -DCMAKE_C_FLAGS="$FLAGS" \
-      -DCMAKE_CXX_FLAGS="$FLAGS" \
-      -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" \
-      -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
-      -DCMAKE_SYSTEM_NAME=Linux \
-      -DCMAKE_SYSTEM_PROCESSOR=i686 \
-      -DTRACY_ENABLE=ON \
-      -DTRACY_ON_DEMAND=ON \
-      -DTRACY_NO_SYSTEM_TRACING=ON \
-      -DBUILD_SHARED_LIBS=OFF
-      
-    cmake --build build
-    cmake --install build
-
-    # Cleanup Tracy
-    cd ..
-    rm -rf tracy
-
 requirements:
   build:
+    - tar
+    - xz
     - curl
     - binutils
-    - tar
     - zstd
-    - rsync
-    - git
-    - cmake
-    - ninja
-    - gcc
-    - gxx
-    - patchelf

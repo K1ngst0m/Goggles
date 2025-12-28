@@ -42,21 +42,21 @@ LD_LIBRARY_PATH = "$CONDA_PREFIX/lib"
 
 # Build 64-bit app + layer
 [tasks.build]
-cmd = "cmake --preset {{ preset }} && cmake --build --preset {{ preset }}"
+cmd = "bash scripts/pixi-env-clean.sh bash -lc \"cmake --preset {{ preset }} && cmake --build --preset {{ preset }}\""
 args = [{ "arg" = "preset", "default" = "debug" }]
 inputs = ["src/**/*.cpp", "src/**/*.hpp", "CMakeLists.txt"]
 outputs = ["build/{{ preset }}/bin/goggles"]
 
 # Build 32-bit layer
 [tasks.build-i686]
-cmd = "export LDFLAGS='' && export LIBRARY_PATH='' && cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686"
+cmd = "bash scripts/pixi-env-clean.sh bash -lc \"export LDFLAGS='' && export LIBRARY_PATH='' && cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686\""
 args = [{ "arg" = "preset", "default" = "debug" }]
 inputs = ["src/capture/**/*.cpp", "src/capture/**/*.hpp"]
 outputs = ["build/{{ preset }}-i686/lib/i386/libgoggles_vklayer.so"]
 
 # Install Vulkan layer manifests (depends on both 64-bit and 32-bit builds)
 [tasks.install-manifests]
-cmd = "mkdir -p $HOME/.local/share/vulkan/implicit_layer.d && cp build/{{ preset }}/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && cp build/{{ preset }}-i686/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && echo 'Manifests installed'"
+cmd = "bash scripts/pixi-env-clean.sh bash -lc \"mkdir -p $HOME/.local/share/vulkan/implicit_layer.d && cp build/{{ preset }}/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && cp build/{{ preset }}-i686/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && echo 'Manifests installed'\""
 args = [{ "arg" = "preset", "default" = "debug" }]
 depends-on = [
   { task = "build", args = [
@@ -69,7 +69,7 @@ depends-on = [
 
 # Run tests for preset
 [tasks.test]
-cmd = "ctest --test-dir build/{{ preset }} --output-on-failure"
+cmd = "bash scripts/pixi-env-clean.sh ctest --test-dir build/{{ preset }} --output-on-failure"
 args = [{ "arg" = "preset", "default" = "debug" }]
 depends-on = [{ task = "build", args = ["{{ preset }}"] }]
 
@@ -80,13 +80,13 @@ args = [{ "arg" = "preset", "default" = "debug" }]
 
 # Start Vulkan app with capture + goggles viewer
 [tasks.start]
-cmd = "./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && GOGGLES_CAPTURE=1 {{ app }}; kill $viewer 2>/dev/null || true"
+cmd = "bash scripts/pixi-env-clean.sh bash -lc \"./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && GOGGLES_CAPTURE=1 {{ app }}; kill $viewer 2>/dev/null || true\""
 args = ["app", { "arg" = "preset", "default" = "debug" }]
 depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
 
 # Start 32-bit vkcube with capture + goggles viewer
 [tasks.start-i686]
-cmd = "./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && VK_LAYER_PATH=build/{{ preset }}-i686/share/vulkan/implicit_layer.d LD_LIBRARY_PATH=build/{{ preset }}-i686/lib/i386:$LD_LIBRARY_PATH GOGGLES_CAPTURE=1 vkcube32; kill $viewer 2>/dev/null || true"
+cmd = "bash scripts/pixi-env-clean.sh bash -lc \"./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && VK_LAYER_PATH=build/{{ preset }}-i686/share/vulkan/implicit_layer.d LD_LIBRARY_PATH=build/{{ preset }}-i686/lib/i386:$LD_LIBRARY_PATH GOGGLES_CAPTURE=1 vkcube32; kill $viewer 2>/dev/null || true\""
 args = [{ "arg" = "preset", "default" = "debug" }]
 depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
 
@@ -94,54 +94,50 @@ depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
 cmd = "printf '%s\\n' \\\n  'Goggles Pixi Tasks' \\\n  '===================' \\\n  '- pixi run dev [preset]              : Build app + both 32/64-bit layers + install manifests' \\\n  '- pixi run build [preset]            : Build 64-bit app + layer only' \\\n  '- pixi run build-i686 [preset]       : Build 32-bit layer only' \\\n  '- pixi run install-manifests [preset]: Install Vulkan layer manifests' \\\n  '- pixi run test [preset]             : Run tests for preset' \\\n  '- pixi run start <app> [preset]      : Build, then launch app with capture + goggles viewer' \\\n  '- pixi run clean [preset]            : Remove build directories for preset' \\\n  '- pixi run distclean                 : Remove all build directories' \\\n  '- pixi run format                    : Format C/C++ and TOML files' \\\n  '- pixi run goggles-help [preset]     : Build (if needed) and show `goggles --help`' \\\n  '- pixi run shader-refresh            : Download/refresh RetroArch slang shaders' \\\n  '- pixi run shader-list [pattern]     : List shader presets (optional filter)' \\\n  '- pixi run setup-ide [ide]           : Configure IDE clang-format (vscode/emacs/vim/neovim/clion)' \\\n  '- pixi run init                      : First-time project setup'"
 
 [tasks.goggles-help]
-cmd = "./build/{{ preset }}/bin/goggles --help"
+cmd = "bash scripts/pixi-env-clean.sh ./build/{{ preset }}/bin/goggles --help"
 args = [{ "arg" = "preset", "default" = "debug" }]
 depends-on = [{ task = "build", args = ["{{ preset }}"] }]
 
 [tasks.shader-refresh]
-cmd = "bash scripts/download_retroarch_shaders.sh"
+cmd = "bash scripts/pixi-env-clean.sh bash scripts/download_retroarch_shaders.sh"
 
 [tasks.shader-list]
 cmd = [
   "bash",
   "-lc",
-  "pattern=\"{{ pattern }}\"; set -e; if [ -z \"$pattern\" ]; then find shaders/retroarch -name '*.slangp' | sort | head -n 50; else find shaders/retroarch -name '*.slangp' | grep -i -- \"$pattern\" | sort | head -n 50; fi",
+  "unset VK_ADD_LAYER_PATH; pattern=\"{{ pattern }}\"; set -e; if [ -z \"$pattern\" ]; then find shaders/retroarch -name '*.slangp' | sort | head -n 50; else find shaders/retroarch -name '*.slangp' | grep -i -- \"$pattern\" | sort | head -n 50; fi",
 ]
 args = [{ "arg" = "pattern", "default" = "" }]
 
 # Setup IDE to use pixi-managed clang-format
 [tasks.setup-ide]
-cmd = "bash scripts/setup-ide.sh {{ ide }}"
+cmd = "bash scripts/pixi-env-clean.sh bash scripts/setup-ide.sh {{ ide }}"
 args = [{ "arg" = "ide", "default" = "" }]
 description = "Configure IDE to use pixi clang-format (vscode|emacs|vim|neovim|clion|all)"
 
 # First-time project initialization
 [tasks.init]
-cmd = "bash scripts/init-format-setup.sh"
+cmd = "bash scripts/pixi-env-clean.sh bash scripts/init-format-setup.sh"
 description = "First-time setup: non-interactive IDE formatting setup (if missing) + pre-commit hook"
 
 # Clean build directories for preset
 [tasks.clean]
-cmd = "rm -rf build/{{ preset }} build/{{ preset }}-i686"
+cmd = "bash scripts/pixi-env-clean.sh rm -rf build/{{ preset }} build/{{ preset }}-i686"
 args = [{ "arg" = "preset", "default" = "debug" }]
 
 # Clean all build directories
 [tasks.distclean]
-cmd = "rm -rf build"
+cmd = "bash scripts/pixi-env-clean.sh rm -rf build"
 
 # Format C/C++ and TOML files
 [tasks.format]
-cmd = """
-echo 'Formatting C/C++...' && git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 clang-format -i && \
-echo 'Formatting TOML...' && git ls-files -z '*.toml' | grep -zv 'test_data/' | xargs -0 taplo fmt && \
-echo 'Done!'
-"""
+cmd = "bash scripts/pixi-env-clean.sh bash -lc \"echo 'Formatting C/C++...' && git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 clang-format -i && echo 'Formatting TOML...' && git ls-files -z '*.toml' | grep -zv 'test_data/' | xargs -0 taplo fmt && echo 'Done!'\""
 
 [dependencies]
 cmake = "*"
 ninja = "*"
-gcc_linux-64 = "*"
-gxx_linux-64 = "*"
+clang_linux-64 = "*"
+clangxx_linux-64 = "*"
 sysroot_linux-64 = "2.28.*"
 clang-format = "*"
 spdlog = "1.15.*"

@@ -32,11 +32,14 @@ set(CMAKE_SYSROOT "${SYSROOT_PATH}")
 # -B: Directory to search for startup files and libraries
 set(ARCH_FLAGS "-m32 --sysroot=${SYSROOT_PATH} -B${SYSROOT_PATH}/usr/lib")
 
+# C++ include paths for cross-compilation with external sysroot
+set(CXX_INCLUDE_FLAGS "-isystem ${SYSROOT_PATH}/usr/include/c++/14 -isystem ${SYSROOT_PATH}/usr/include/c++/14/i686-linux-gnu")
+
 # Library search path for 32-bit libraries
-set(LIB_FLAGS "-L${SYSROOT_PATH}/usr/lib")
+set(LIB_FLAGS "-L${SYSROOT_PATH}/usr/lib -static-libstdc++ -static-libgcc")
 
 set(CMAKE_C_FLAGS_INIT "${ARCH_FLAGS}")
-set(CMAKE_CXX_FLAGS_INIT "${ARCH_FLAGS}")
+set(CMAKE_CXX_FLAGS_INIT "${ARCH_FLAGS} ${CXX_INCLUDE_FLAGS}")
 set(CMAKE_ASM_FLAGS_INIT "${ARCH_FLAGS}")
 
 # Linker flags
