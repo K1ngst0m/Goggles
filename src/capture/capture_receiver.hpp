@@ -34,6 +34,8 @@ public:
     [[nodiscard]] bool is_connected() const { return m_client_fd >= 0; }
     [[nodiscard]] bool has_frame() const { return m_frame.dmabuf_fd.valid(); }
 
+    // Set input display number for config handshake
+    void set_input_display(int display_num) { m_input_display_number = display_num; }
     [[nodiscard]] int get_frame_ready_fd() const { return m_frame_ready_fd; }
     [[nodiscard]] int get_frame_consumed_fd() const { return m_frame_consumed_fd; }
     [[nodiscard]] bool has_sync_semaphores() const {
@@ -47,11 +49,13 @@ private:
     bool accept_client();
     bool receive_message();
     void cleanup_frame();
+    void handle_config_request(int fd);
 
     bool process_message(const char* data, size_t len, const std::vector<int>& fds, size_t& fd_index);
 
     int m_listen_fd = -1;
     int m_client_fd = -1;
+    int m_input_display_number = -1; // DISPLAY number from InputForwarder
     CaptureFrame m_frame{};
     capture::CaptureTextureData m_last_texture{};
     int m_frame_ready_fd = -1;

@@ -3,6 +3,9 @@
 #include "capture/capture_protocol.hpp"
 
 #include <mutex>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 namespace goggles::capture {
 
