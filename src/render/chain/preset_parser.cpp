@@ -34,6 +34,15 @@ auto trim(const std::string& str) -> std::string {
     return str.substr(start, end - start + 1);
 }
 
+auto trim_whitespace(const std::string& str) -> std::string {
+    auto start = str.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return "";
+    }
+    auto end = str.find_last_not_of(" \t\r\n");
+    return str.substr(start, end - start + 1);
+}
+
 auto parse_bool(const std::string& value) -> bool {
     std::string lower = value;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
@@ -186,7 +195,7 @@ auto PresetParser::parse_reference(const std::string& content) -> std::optional<
     std::string line;
 
     while (std::getline(stream, line)) {
-        auto trimmed = trim(line);
+        auto trimmed = trim_whitespace(line);
         if (trimmed.empty() || trimmed[0] == '#') {
             if (trimmed.starts_with("#reference")) {
                 auto quote_start = trimmed.find('"');

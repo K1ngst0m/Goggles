@@ -110,7 +110,8 @@ auto Framebuffer::create_image() -> Result<void> {
     image_info.arrayLayers = 1;
     image_info.samples = vk::SampleCountFlagBits::e1;
     image_info.tiling = vk::ImageTiling::eOptimal;
-    image_info.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
+    image_info.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled |
+                       vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
     image_info.sharingMode = vk::SharingMode::eExclusive;
     image_info.initialLayout = vk::ImageLayout::eUndefined;
 

@@ -214,7 +214,8 @@ void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
             }
 
             // RetroArch shaders always use: Position (vec4, loc 0), TexCoord (vec2, loc 1)
-            if (data.vertex_inputs.empty() && data.push_constants.has_value()) {
+            if (data.vertex_inputs.empty() &&
+                (data.push_constants.has_value() || data.ubo.has_value())) {
                 GOGGLES_LOG_TRACE(
                     "No vertex inputs from reflection, using RetroArch standard layout");
                 data.vertex_inputs.push_back({"Position", 0, vk::Format::eR32G32B32A32Sfloat, 0});

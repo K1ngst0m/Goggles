@@ -952,7 +952,7 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
                             vk::PipelineStageFlagBits::eColorAttachmentOutput,
                         {}, {}, {}, barriers);
 
-    m_filter_chain.record(cmd, m_import.view, m_import_extent,
+    m_filter_chain.record(cmd, m_import.image, m_import.view, m_import_extent,
                           *m_swapchain_image_views[image_index], m_swapchain_extent,
                           m_current_frame, m_scale_mode, m_integer_scale);
 

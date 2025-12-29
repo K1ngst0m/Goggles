@@ -165,6 +165,8 @@ void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
             if (it->second.sampler) {
                 sampler = it->second.sampler;
             }
+        } else if (tex.name != "Source") {
+            GOGGLES_LOG_WARN("Texture '{}' at binding {} not found, fallback to Source", tex.name, tex.binding);
         }
 
         vk::DescriptorImageInfo image_info{};
@@ -214,6 +216,9 @@ void FilterPass::build_push_constants() {
         } else if (member.name == "FrameCount") {
             auto frame_count = m_binder.frame_count();
             std::memcpy(dest, &frame_count, sizeof(uint32_t));
+        } else if (member.name == "Rotation") {
+            auto rotation = m_binder.rotation();
+            std::memcpy(dest, &rotation, sizeof(uint32_t));
         } else if (member.name == "FinalViewportSize") {
             std::memcpy(dest, m_binder.final_viewport_size().data(), sizeof(SizeVec4));
         } else if (member.name.size() > 4 && member.name.ends_with("Size")) {
@@ -240,6 +245,7 @@ void FilterPass::build_push_constants() {
 void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     GOGGLES_PROFILE_FUNCTION();
 
+    update_ubo_semantics();
     update_descriptor(ctx.frame_index, ctx.source_texture);
 
     vk::RenderingAttachmentInfo color_attachment{};
@@ -720,6 +726,54 @@ auto FilterPass::update_ubo_parameters() -> Result<void> {
 
     m_device.unmapMemory(*m_ubo_memory);
     return {};
+}
+
+void FilterPass::update_ubo_semantics() {
+    if (!m_has_ubo || !m_ubo_memory || m_ubo_size == 0) {
+        return;
+    }
+
+    auto [map_result, data] = m_device.mapMemory(*m_ubo_memory, 0, m_ubo_size);
+    if (map_result != vk::Result::eSuccess) {
+        return;
+    }
+
+    auto* ubo_data = static_cast<char*>(data);
+
+    if (auto it = m_ubo_member_offsets.find("MVP"); it != m_ubo_member_offsets.end()) {
+        std::memcpy(ubo_data + it->second, IDENTITY_MVP.data(), sizeof(IDENTITY_MVP));
+    }
+    if (auto it = m_ubo_member_offsets.find("SourceSize"); it != m_ubo_member_offsets.end()) {
+        std::memcpy(ubo_data + it->second, m_binder.source_size().data(), sizeof(SizeVec4));
+    }
+    if (auto it = m_ubo_member_offsets.find("OutputSize"); it != m_ubo_member_offsets.end()) {
+        std::memcpy(ubo_data + it->second, m_binder.output_size().data(), sizeof(SizeVec4));
+    }
+    if (auto it = m_ubo_member_offsets.find("OriginalSize"); it != m_ubo_member_offsets.end()) {
+        std::memcpy(ubo_data + it->second, m_binder.original_size().data(), sizeof(SizeVec4));
+    }
+    if (auto it = m_ubo_member_offsets.find("FinalViewportSize"); it != m_ubo_member_offsets.end()) {
+        std::memcpy(ubo_data + it->second, m_binder.final_viewport_size().data(), sizeof(SizeVec4));
+    }
+    if (auto it = m_ubo_member_offsets.find("FrameCount"); it != m_ubo_member_offsets.end()) {
+        auto fc = m_binder.frame_count();
+        std::memcpy(ubo_data + it->second, &fc, sizeof(uint32_t));
+    }
+
+    for (const auto& [name, offset] : m_ubo_member_offsets) {
+        if (name.size() > 4 && name.ends_with("Size") && name != "SourceSize" &&
+            name != "OutputSize" && name != "OriginalSize" && name != "FinalViewportSize") {
+            auto alias_name = name.substr(0, name.size() - 4);
+            if (auto alias_size = m_binder.get_alias_size(alias_name)) {
+                std::memcpy(ubo_data + offset, alias_size->data(), sizeof(SizeVec4));
+                GOGGLES_LOG_DEBUG("UBO set '{}' = {}x{}", name, alias_size->width, alias_size->height);
+            } else {
+                GOGGLES_LOG_DEBUG("UBO missing alias for '{}'", name);
+            }
+        }
+    }
+
+    m_device.unmapMemory(*m_ubo_memory);
 }
 
 } // namespace goggles::render

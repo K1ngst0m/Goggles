@@ -10,27 +10,44 @@
 
 - [x] 2.1 Add FrameHistory struct with circular buffer (MAX_HISTORY = 7)
 - [x] 2.2 Integrate FrameHistory into FilterChain
-- [ ] 2.3 Push Original texture to history each frame after processing
-- [ ] 2.4 Auto-detect required history depth from shader sampler names
-- [ ] 2.5 Lazy allocate history textures based on detected depth
+- [x] 2.3 Push Original texture to history each frame after processing
+- [x] 2.4 Auto-detect required history depth from shader sampler names
+- [x] 2.5 Lazy allocate history textures based on detected depth
 
 ## 3. Semantic Binding Extensions
 
 - [x] 3.1 Bind OriginalHistory[0-6] textures by sampler name pattern
 - [x] 3.2 Add OriginalHistorySize[0-6] via alias_size binding
 - [x] 3.3 Apply frame_count_mod to FrameCount in FilterPass
-- [ ] 3.4 Add Rotation push constant (0-3 for 0/90/180/270 degrees)
+- [x] 3.4 Add Rotation push constant (0-3 for 0/90/180/270 degrees)
 
 ## 4. Unit Tests
 
-- [ ] 4.1 Test #reference parsing with nested references
-- [ ] 4.2 Test #reference depth limit enforcement
-- [ ] 4.3 Test frame_count_mod parsing
-- [ ] 4.4 Test OriginalHistory sampler name pattern matching
+- [x] 4.1 Test #reference parsing with nested references
+- [x] 4.2 Test #reference depth limit enforcement
+- [x] 4.3 Test frame_count_mod parsing
+- [x] 4.4 Test OriginalHistory sampler name pattern matching
 
-## 5. Integration Tests
+## 5. Feedback Texture Support
 
-- [ ] 5.1 Load and parse MBZ__5__POTATO preset (12 passes)
-- [ ] 5.2 Load and parse MBZ__3__STD preset (30 passes)
-- [ ] 5.3 Run ntsc-adaptive with frame_count_mod = 2
-- [ ] 5.4 Visual verification of hsm-afterglow phosphor effect
+- [x] 5.1 Detect *Feedback texture patterns from shader bindings
+- [x] 5.2 Create feedback framebuffers for passes with aliases referenced as feedback
+- [x] 5.3 Bind AliasFeedback textures during pass rendering
+- [x] 5.4 Copy current framebuffer to feedback at end of frame
+- [x] 5.5 Add AliasFeedbackSize semantics
+
+## 6. Integration Tests
+
+- [x] 6.1 Load and parse MBZ__5__POTATO preset (14 passes)
+- [x] 6.2 Load and parse MBZ__3__STD preset (30 passes)
+- [x] 6.3 Run ntsc-adaptive with frame_count_mod = 2
+- [ ] 6.4 Visual verification of hsm-afterglow phosphor effect
+
+## 7. Pending Issues (Mega Bezel)
+
+- [ ] 7.1 Mega Bezel shows decorative bezel textures but no screen content
+  - crt-guest-advanced works correctly
+  - Issue specific to Mega Bezel's InfoCachePass screen placement calculation
+  - DerezedPassSize and other alias sizes may not be correctly bound to UBO
+- [ ] 7.2 Debug alias size binding to verify DerezedPassSize is populated
+- [ ] 7.3 Verify PassN alias sizes are correctly written to UBO members

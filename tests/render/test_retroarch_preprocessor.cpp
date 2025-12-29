@@ -116,6 +116,37 @@ void main() { FragColor = vec4(1.0); }
     }
 }
 
+TEST_CASE("RetroArch Preprocessor Slang compatibility fix", "[preprocessor][glsl]") {
+    RetroArchPreprocessor preprocessor;
+
+    SECTION("Convert vec *= mat to vec = vec * mat") {
+        std::string source = R"(
+#version 450
+
+#pragma stage vertex
+void main() { gl_Position = vec4(0.0); }
+
+#pragma stage fragment
+layout(location = 0) out vec4 FragColor;
+
+#define mix_mat mat3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+
+void main() {
+    vec3 yiq = vec3(1.0);
+    yiq *= mix_mat;
+    FragColor = vec4(yiq, 1.0);
+}
+)";
+
+        auto result = preprocessor.preprocess_source(source, "");
+        REQUIRE(result.has_value());
+
+        // Should convert "yiq *= mix_mat" to "yiq = yiq * (mix_mat)"
+        REQUIRE(result->fragment_source.find("yiq = yiq * (mix_mat)") != std::string::npos);
+        REQUIRE(result->fragment_source.find("yiq *= mix_mat") == std::string::npos);
+    }
+}
+
 TEST_CASE("RetroArch Preprocessor compiles with ShaderRuntime", "[preprocessor][integration]") {
     RetroArchPreprocessor preprocessor;
 
