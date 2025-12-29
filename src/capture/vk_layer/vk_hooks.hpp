@@ -34,19 +34,18 @@ void VKAPI_CALL Goggles_DestroyDevice(VkDevice device, const VkAllocationCallbac
 // =============================================================================
 
 VkResult VKAPI_CALL Goggles_CreateXlibSurfaceKHR(VkInstance instance,
-                                                  const VkXlibSurfaceCreateInfoKHR* pCreateInfo,
-                                                  const VkAllocationCallbacks* pAllocator,
-                                                  VkSurfaceKHR* pSurface);
-
-VkResult VKAPI_CALL Goggles_CreateXcbSurfaceKHR(VkInstance instance,
-                                                 const VkXcbSurfaceCreateInfoKHR* pCreateInfo,
+                                                 const VkXlibSurfaceCreateInfoKHR* pCreateInfo,
                                                  const VkAllocationCallbacks* pAllocator,
                                                  VkSurfaceKHR* pSurface);
 
-VkResult VKAPI_CALL Goggles_CreateWaylandSurfaceKHR(VkInstance instance,
-                                                     const VkWaylandSurfaceCreateInfoKHR* pCreateInfo,
-                                                     const VkAllocationCallbacks* pAllocator,
-                                                     VkSurfaceKHR* pSurface);
+VkResult VKAPI_CALL Goggles_CreateXcbSurfaceKHR(VkInstance instance,
+                                                const VkXcbSurfaceCreateInfoKHR* pCreateInfo,
+                                                const VkAllocationCallbacks* pAllocator,
+                                                VkSurfaceKHR* pSurface);
+
+VkResult VKAPI_CALL Goggles_CreateWaylandSurfaceKHR(
+    VkInstance instance, const VkWaylandSurfaceCreateInfoKHR* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 
 void VKAPI_CALL Goggles_DestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface,
                                           const VkAllocationCallbacks* pAllocator);
@@ -55,18 +54,18 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceCapabilitiesKHR(
     VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pCapabilities);
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice physicalDevice,
-                                                                VkSurfaceKHR surface,
-                                                                uint32_t* pSurfaceFormatCount,
-                                                                VkSurfaceFormatKHR* pSurfaceFormats);
+                                                               VkSurfaceKHR surface,
+                                                               uint32_t* pSurfaceFormatCount,
+                                                               VkSurfaceFormatKHR* pSurfaceFormats);
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfacePresentModesKHR(
     VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t* pPresentModeCount,
     VkPresentModeKHR* pPresentModes);
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice physicalDevice,
-                                                                uint32_t queueFamilyIndex,
-                                                                VkSurfaceKHR surface,
-                                                                VkBool32* pSupported);
+                                                               uint32_t queueFamilyIndex,
+                                                               VkSurfaceKHR surface,
+                                                               VkBool32* pSupported);
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceCapabilities2KHR(
     VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo,
@@ -89,12 +88,12 @@ void VKAPI_CALL Goggles_DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swap
                                             const VkAllocationCallbacks* pAllocator);
 
 VkResult VKAPI_CALL Goggles_GetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain,
-                                                   uint32_t* pSwapchainImageCount,
-                                                   VkImage* pSwapchainImages);
+                                                  uint32_t* pSwapchainImageCount,
+                                                  VkImage* pSwapchainImages);
 
 VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain,
-                                                 uint64_t timeout, VkSemaphore semaphore,
-                                                 VkFence fence, uint32_t* pImageIndex);
+                                                uint64_t timeout, VkSemaphore semaphore,
+                                                VkFence fence, uint32_t* pImageIndex);
 
 // =============================================================================
 // Present Hook

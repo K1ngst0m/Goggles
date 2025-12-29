@@ -1,0 +1,19 @@
+package:
+  name: bs-thread-pool
+  version: "3.5.0"
+
+source:
+  git: https://github.com/bshoshany/thread-pool.git
+  rev: cabb3df5876c9a6824b07fcb0ff73d4a0e506ca0
+
+build:
+  number: 0
+  script:
+    # Header-only library - just copy the headers
+    - mkdir -p $PREFIX/include
+    - cp include/*.hpp $PREFIX/include/
+
+about:
+  homepage: https://github.com/bshoshany/thread-pool
+  license: MIT
+  summary: BS::thread_pool - a fast, lightweight C++17 thread pool library

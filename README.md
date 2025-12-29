@@ -87,10 +87,11 @@ The filter chain transforms captured DMA-BUF images through a series of shader p
 
 ## Build
 
+This project uses [Pixi](https://pixi.sh) for dependency management and build tasks.
+
 ```bash
-cmake --list-presets    # List available presets
-make app                # Build (debug by default)
-make help               # See all targets
+pixi run help # view all available tasks and their descriptions
+pixi run <task-name> [args]... # run a task
 ```
 
 Build output:
@@ -104,14 +105,13 @@ build/<preset>/
 ## Usage
 
 ```bash
-# 1. Build and install layer manifests
-make dev
+# Quick smoke test (build + manifests as needed)
+pixi run start vkcube
 
-# 2. Run goggles app (receiver)
-./build/debug/bin/goggles
-
-# 3. Run target app with capture enabled
-GOGGLES_CAPTURE=1 vkcube
+# Standard flow
+pixi run build                   # 1. Build the project
+./build/debug/bin/goggles        # 2. Run goggles app (receiver)
+GOGGLES_CAPTURE=1 vkcube         # 3. Run target app with capture enabled
 ```
 
 For Steam games, set launch options:
@@ -121,10 +121,8 @@ GOGGLES_CAPTURE=1 %command%
 
 ### RetroArch Shaders
 
-The repository tracks minimal zfast-crt shaders. For the full shader collection:
-
 ```bash
-./scripts/download_retroarch_shaders.sh
+pixi run shader-fetch            # Download/refresh full RetroArch shaders into shaders/retroarch
 ```
 
 This downloads from [libretro/slang-shaders](https://github.com/libretro/slang-shaders). All shaders except zfast-crt are gitignored.

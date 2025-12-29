@@ -1,0 +1,161 @@
+[workspace]
+channels = ["conda-forge"]
+name = "Goggles"
+platforms = ["linux-64"]
+version = "0.1.0"
+requires-pixi = ">=0.45.0"
+preview = ["pixi-build"]
+
+[activation.env]
+CC = "$CONDA_PREFIX/bin/clang-21"
+CXX = "$CONDA_PREFIX/bin/clang++-21"
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib"
+PKG_CONFIG_PATH = "$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
+
+[tasks]
+# Run `pixi task list` or `pixi run help` to see available tasks.
+
+[tasks._check-init]
+cmd = "bash scripts/ensure-init.sh"
+
+[tasks.build]
+description = "Build 64-bit app + layer"
+cmd = "bash -c \"cmake --preset {{ preset }} && cmake --build --preset {{ preset }}\""
+args = [{ "arg" = "preset", "default" = "debug" }]
+inputs = ["src/**/*.cpp", "src/**/*.hpp", "CMakeLists.txt"]
+outputs = ["build/{{ preset }}/bin/goggles"]
+depends-on = ["_check-init"]
+
+[tasks.build-i686]
+description = "Build 32-bit layer only"
+cmd = "bash -c \"cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686\""
+args = [{ "arg" = "preset", "default" = "debug" }]
+inputs = ["src/capture/**/*.cpp", "src/capture/**/*.hpp"]
+outputs = ["build/{{ preset }}-i686/lib/i386/libgoggles_vklayer.so"]
+
+[tasks.install-manifests]
+description = "Install Vulkan layer manifests"
+cmd = "bash -c \"mkdir -p $HOME/.local/share/vulkan/implicit_layer.d && cp build/{{ preset }}/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && cp build/{{ preset }}-i686/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && echo 'Manifests installed'\""
+args = [{ "arg" = "preset", "default" = "debug" }]
+depends-on = [
+  { task = "build", args = [
+    "{{ preset }}",
+  ] },
+  { task = "build-i686", args = [
+    "{{ preset }}",
+  ] },
+]
+
+[tasks.test]
+description = "Run tests"
+cmd = "ctest --test-dir build/{{ preset }} --output-on-failure"
+args = [{ "arg" = "preset", "default" = "debug" }]
+depends-on = [{ task = "build", args = ["{{ preset }}"] }]
+
+[tasks.dev]
+description = "Build full dev environment"
+depends-on = [{ task = "install-manifests", args = ["{{ preset }}"] }]
+args = [{ "arg" = "preset", "default" = "debug" }]
+
+[tasks.start]
+description = "Launch app with capture + viewer"
+cmd = "bash -c \"./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && GOGGLES_CAPTURE=1 {{ app }}; kill $viewer 2>/dev/null || true\""
+args = ["app", { "arg" = "preset", "default" = "debug" }]
+depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
+
+[tasks.shader-fetch]
+description = "Download RetroArch slang shaders"
+cmd = "bash scripts/download_retroarch_shaders.sh"
+
+[tasks.setup-ide]
+description = "Configure IDE clang-format"
+cmd = "bash scripts/setup-ide.sh {{ ide }}"
+args = [{ "arg" = "ide", "default" = "" }]
+
+[tasks.init]
+description = "First-time project setup"
+cmd = "bash scripts/init-format-setup.sh"
+
+[tasks.clean]
+description = "Remove build directories"
+cmd = "rm -rf build/{{ preset }} build/{{ preset }}-i686"
+args = [{ "arg" = "preset", "default" = "debug" }]
+
+[tasks.distclean]
+description = "Remove all build directories"
+cmd = "rm -rf build"
+
+[tasks.format]
+description = "Format C/C++ and TOML files"
+cmd = "bash -c \"echo 'Formatting C/C++...' && git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 clang-format -i && echo 'Formatting TOML...' && git ls-files -z '*.toml' | grep -zv 'test_data/' | xargs -0 taplo fmt && echo 'Done!'\""
+
+[tasks.help]
+description = "Show task usage"
+cmd = "bash scripts/help.sh"
+
+[dependencies]
+cmake = "*"
+ninja = "*"
+clang_linux-64 = "*"
+clangxx_linux-64 = "*"
+c-compiler = "*"
+cxx-compiler = "*"
+sysroot_linux-64 = "2.28.*"
+pkg-config = ">=0.29.2,<0.30"
+clang-format = "==21.1.6"
+spdlog = "1.15.*"
+catch2 = "3.8.*"
+toml11 = "4.4.*"
+libvulkan-headers = "1.4.328.*"
+libxcb = "*"
+xorg-libx11 = "*"
+xorg-xproto = "*"
+wayland = "*"
+wayland-protocols = "*"
+libxkbcommon = "*"
+alsa-lib = "*"
+jack = "*"
+xorg-libxext = "*"
+xorg-libxcursor = "*"
+xorg-libxrandr = "*"
+xorg-libxi = "*"
+xorg-libxscrnsaver = "*"
+xorg-libxinerama = "*"
+xorg-libxfixes = "*"
+xorg-libxrender = "*"
+xorg-libxau = "*"
+xorg-libxdmcp = "*"
+xorg-xextproto = "*"
+xorg-renderproto = "*"
+xorg-randrproto = "*"
+xorg-inputproto = "*"
+xorg-fixesproto = "*"
+xorg-scrnsaverproto = "*"
+xorg-xineramaproto = "*"
+pulseaudio = "*"
+xorg-kbproto = "*"
+xorg-glproto = "*"
+libdrm = "*"
+cli11 = "2.6.*"
+ccache = "*"
+lld = "*"
+taplo = "*"
+sdl3 = "*"
+
+# Local packages
+vulkansdk = { path = "packages/vulkansdk" }
+tracy = { path = "packages/tracy" }
+sysroot-i686 = { path = "packages/sysroot-i686" }
+expected-lite = { path = "packages/expected-lite" }
+stb = { path = "packages/stb" }
+bs-thread-pool = { path = "packages/bs-thread-pool" }
+slang-shaders = { path = "packages/slang-shaders" }
+
+# CI-only: Lightweight lint environment
+[feature.lint.dependencies]
+clang-format = "21.*"
+taplo = "==0.9.3"
+
+[environments]
+default = { solve-group = "default" }
+lint = { features = ["lint"], no-default-feature = true, solve-group = "lint" }

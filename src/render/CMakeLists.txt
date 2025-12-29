@@ -22,7 +22,7 @@ target_include_directories(goggles_render PUBLIC
 target_link_libraries(goggles_render PUBLIC
     goggles_util
     Vulkan::Vulkan
-    SDL3::SDL3-static
+    SDL3::SDL3
     slang::slang
     stb_image
 )

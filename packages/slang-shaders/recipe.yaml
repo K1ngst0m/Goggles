@@ -1,0 +1,30 @@
+package:
+  name: slang-shaders
+  version: "2025.23.2"
+
+source:
+  url: https://github.com/shader-slang/slang/releases/download/v2025.23.2/slang-2025.23.2-linux-x86_64.tar.gz
+
+build:
+  number: 0
+  # Skip binary relocation for pre-built binaries
+  dynamic_linking:
+    binary_relocation: false
+  script:
+    # Copy binaries
+    - mkdir -p $PREFIX/bin
+    - cp -r bin/* $PREFIX/bin/ || true
+    # Copy libraries
+    - mkdir -p $PREFIX/lib
+    - cp -r lib/* $PREFIX/lib/
+    # Copy cmake config
+    - mkdir -p $PREFIX/lib/cmake
+    - cp -r lib/cmake/* $PREFIX/lib/cmake/
+    # Copy headers
+    - mkdir -p $PREFIX/include
+    - cp -r include/* $PREFIX/include/ || true
+
+about:
+  homepage: https://shader-slang.com/
+  license: Apache-2.0
+  summary: Slang is a shading language that extends HLSL with new capabilities

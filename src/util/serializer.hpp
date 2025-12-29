@@ -109,8 +109,7 @@ public:
     }
 };
 
-inline auto
-read_file_binary(const std::filesystem::path& path) -> Result<std::vector<char>> {
+inline auto read_file_binary(const std::filesystem::path& path) -> Result<std::vector<char>> {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
         return make_error<std::vector<char>>(ErrorCode::file_not_found,
