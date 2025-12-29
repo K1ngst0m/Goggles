@@ -180,6 +180,123 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
     return {};
 }
 
+void FilterChain::bind_pass_textures(FilterPass& pass, size_t pass_index,
+                                     vk::ImageView original_view, vk::Extent2D original_extent,
+                                     vk::ImageView source_view) {
+    pass.clear_alias_sizes();
+    pass.clear_texture_bindings();
+
+    pass.set_texture_binding("Source", source_view, nullptr);
+    pass.set_texture_binding("Original", original_view, nullptr);
+
+    pass.set_texture_binding("OriginalHistory0", original_view, nullptr);
+    pass.set_alias_size("OriginalHistory0", original_extent.width, original_extent.height);
+
+    for (uint32_t h = 0; h < m_frame_history.depth(); ++h) {
+        if (auto hist_view = m_frame_history.get(h)) {
+            auto name = std::format("OriginalHistory{}", h + 1);
+            pass.set_texture_binding(name, hist_view, nullptr);
+            auto ext = m_frame_history.get_extent(h);
+            pass.set_alias_size(name, ext.width, ext.height);
+        }
+    }
+
+    for (size_t p = 0; p < pass_index; ++p) {
+        if (m_framebuffers[p].is_initialized()) {
+            auto pass_name = std::format("PassOutput{}", p);
+            auto pass_extent = m_framebuffers[p].extent();
+            pass.set_texture_binding(pass_name, m_framebuffers[p].view(), nullptr);
+            pass.set_alias_size(pass_name, pass_extent.width, pass_extent.height);
+        }
+    }
+
+    for (const auto& [fb_idx, feedback_fb] : m_feedback_framebuffers) {
+        if (feedback_fb.is_initialized()) {
+            auto feedback_name = std::format("PassFeedback{}", fb_idx);
+            auto fb_extent = feedback_fb.extent();
+            pass.set_texture_binding(feedback_name, feedback_fb.view(), nullptr);
+            pass.set_alias_size(feedback_name, fb_extent.width, fb_extent.height);
+        }
+    }
+
+    for (const auto& [alias, idx] : m_alias_to_pass_index) {
+        if (idx < pass_index && m_framebuffers[idx].is_initialized()) {
+            pass.set_texture_binding(alias, m_framebuffers[idx].view(), nullptr);
+            auto alias_extent = m_framebuffers[idx].extent();
+            pass.set_alias_size(alias, alias_extent.width, alias_extent.height);
+        }
+        if (auto fb_it = m_feedback_framebuffers.find(idx);
+            fb_it != m_feedback_framebuffers.end() && fb_it->second.is_initialized()) {
+            auto feedback_name = alias + std::string(FEEDBACK_SUFFIX);
+            pass.set_texture_binding(feedback_name, fb_it->second.view(), nullptr);
+            auto fb_extent = fb_it->second.extent();
+            pass.set_alias_size(feedback_name, fb_extent.width, fb_extent.height);
+        }
+    }
+
+    for (const auto& [name, tex] : m_texture_registry) {
+        pass.set_texture_binding(name, *tex.data.view, *tex.sampler);
+    }
+}
+
+void FilterChain::copy_feedback_framebuffers(vk::CommandBuffer cmd) {
+    for (auto& [pass_idx, feedback_fb] : m_feedback_framebuffers) {
+        if (!feedback_fb.is_initialized() || !m_framebuffers[pass_idx].is_initialized()) {
+            continue;
+        }
+        auto extent = m_framebuffers[pass_idx].extent();
+        vk::ImageSubresourceLayers layers{vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+        vk::ImageCopy region{layers, {0, 0, 0}, layers, {0, 0, 0}, {extent.width, extent.height, 1}};
+
+        std::array<vk::ImageMemoryBarrier, 2> pre{};
+        pre[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;
+        pre[0].dstAccessMask = vk::AccessFlagBits::eTransferRead;
+        pre[0].oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        pre[0].newLayout = vk::ImageLayout::eTransferSrcOptimal;
+        pre[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[0].image = m_framebuffers[pass_idx].image();
+        pre[0].subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+        pre[1].srcAccessMask = vk::AccessFlagBits::eShaderRead;
+        pre[1].dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+        pre[1].oldLayout = vk::ImageLayout::eUndefined;
+        pre[1].newLayout = vk::ImageLayout::eTransferDstOptimal;
+        pre[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[1].image = feedback_fb.image();
+        pre[1].subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                            vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, pre);
+
+        cmd.copyImage(m_framebuffers[pass_idx].image(), vk::ImageLayout::eTransferSrcOptimal,
+                      feedback_fb.image(), vk::ImageLayout::eTransferDstOptimal, region);
+
+        std::array<vk::ImageMemoryBarrier, 2> post{};
+        post[0].srcAccessMask = vk::AccessFlagBits::eTransferRead;
+        post[0].dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        post[0].oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+        post[0].newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        post[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post[0].image = m_framebuffers[pass_idx].image();
+        post[0].subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+        post[1].srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        post[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        post[1].oldLayout = vk::ImageLayout::eTransferDstOptimal;
+        post[1].newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        post[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post[1].image = feedback_fb.image();
+        post[1].subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, post);
+    }
+}
+
 void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
                          vk::ImageView original_view, vk::Extent2D original_extent,
                          vk::ImageView swapchain_view, vk::Extent2D viewport_extent,
@@ -266,68 +383,7 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         pass->set_final_viewport_size(vp.width, vp.height);
         pass->set_rotation(0);
 
-        pass->clear_alias_sizes();
-        pass->clear_texture_bindings();
-
-        // Builtin textures
-        pass->set_texture_binding("Source", source_view, nullptr);
-        pass->set_texture_binding("Original", original_view, nullptr);
-
-        // OriginalHistory0 = Original (spec requirement)
-        pass->set_texture_binding("OriginalHistory0", original_view, nullptr);
-        pass->set_alias_size("OriginalHistory0", original_extent.width, original_extent.height);
-
-        // OriginalHistory1+ from frame history
-        for (uint32_t h = 0; h < m_frame_history.depth(); ++h) {
-            if (auto hist_view = m_frame_history.get(h)) {
-                auto name = std::format("OriginalHistory{}", h + 1);
-                pass->set_texture_binding(name, hist_view, nullptr);
-                auto ext = m_frame_history.get_extent(h);
-                pass->set_alias_size(name, ext.width, ext.height);
-            }
-        }
-
-        // PassOutput# by pass number (spec requirement)
-        for (size_t p = 0; p < i; ++p) {
-            if (m_framebuffers[p].is_initialized()) {
-                auto pass_name = std::format("PassOutput{}", p);
-                auto pass_extent = m_framebuffers[p].extent();
-                pass->set_texture_binding(pass_name, m_framebuffers[p].view(), nullptr);
-                pass->set_alias_size(pass_name, pass_extent.width, pass_extent.height);
-            }
-        }
-
-        // PassFeedback# by pass number (previous frame's PassOutput#)
-        for (const auto& [fb_idx, feedback_fb] : m_feedback_framebuffers) {
-            if (feedback_fb.is_initialized()) {
-                auto feedback_name = std::format("PassFeedback{}", fb_idx);
-                auto fb_extent = feedback_fb.extent();
-                pass->set_texture_binding(feedback_name, feedback_fb.view(), nullptr);
-                pass->set_alias_size(feedback_name, fb_extent.width, fb_extent.height);
-            }
-        }
-
-        // Alias-based textures (e.g., DerezedPass, InfoCachePass)
-        for (const auto& [alias, pass_idx] : m_alias_to_pass_index) {
-            if (pass_idx < i && m_framebuffers[pass_idx].is_initialized()) {
-                pass->set_texture_binding(alias, m_framebuffers[pass_idx].view(), nullptr);
-                auto alias_extent = m_framebuffers[pass_idx].extent();
-                pass->set_alias_size(alias, alias_extent.width, alias_extent.height);
-            }
-            // AliasFeedback (e.g., DerezedPassFeedback)
-            if (auto fb_it = m_feedback_framebuffers.find(pass_idx);
-                fb_it != m_feedback_framebuffers.end() && fb_it->second.is_initialized()) {
-                auto feedback_name = alias + std::string(FEEDBACK_SUFFIX);
-                pass->set_texture_binding(feedback_name, fb_it->second.view(), nullptr);
-                auto fb_extent = fb_it->second.extent();
-                pass->set_alias_size(feedback_name, fb_extent.width, fb_extent.height);
-            }
-        }
-
-        // User textures from preset
-        for (const auto& [name, tex] : m_texture_registry) {
-            pass->set_texture_binding(name, *tex.data.view, *tex.sampler);
-        }
+        bind_pass_textures(*pass, i, original_view, original_extent, source_view);
 
         PassContext ctx{};
         ctx.frame_index = frame_index;
@@ -380,62 +436,7 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         m_frame_history.push(cmd, original_image, original_extent);
     }
 
-    for (auto& [pass_idx, feedback_fb] : m_feedback_framebuffers) {
-        if (!feedback_fb.is_initialized() || !m_framebuffers[pass_idx].is_initialized()) {
-            continue;
-        }
-        auto extent = m_framebuffers[pass_idx].extent();
-        vk::ImageSubresourceLayers layers{vk::ImageAspectFlagBits::eColor, 0, 0, 1};
-        vk::ImageCopy copy_region{layers, {0, 0, 0}, layers, {0, 0, 0}, {extent.width, extent.height, 1}};
-
-        std::array<vk::ImageMemoryBarrier, 2> pre_copy_barriers;
-        pre_copy_barriers[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;
-        pre_copy_barriers[0].dstAccessMask = vk::AccessFlagBits::eTransferRead;
-        pre_copy_barriers[0].oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        pre_copy_barriers[0].newLayout = vk::ImageLayout::eTransferSrcOptimal;
-        pre_copy_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre_copy_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre_copy_barriers[0].image = m_framebuffers[pass_idx].image();
-        pre_copy_barriers[0].subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-
-        pre_copy_barriers[1].srcAccessMask = vk::AccessFlagBits::eShaderRead;
-        pre_copy_barriers[1].dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-        pre_copy_barriers[1].oldLayout = vk::ImageLayout::eUndefined;
-        pre_copy_barriers[1].newLayout = vk::ImageLayout::eTransferDstOptimal;
-        pre_copy_barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre_copy_barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre_copy_barriers[1].image = feedback_fb.image();
-        pre_copy_barriers[1].subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                            vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, pre_copy_barriers);
-
-        cmd.copyImage(m_framebuffers[pass_idx].image(), vk::ImageLayout::eTransferSrcOptimal,
-                      feedback_fb.image(), vk::ImageLayout::eTransferDstOptimal, copy_region);
-
-        std::array<vk::ImageMemoryBarrier, 2> post_copy_barriers;
-        post_copy_barriers[0].srcAccessMask = vk::AccessFlagBits::eTransferRead;
-        post_copy_barriers[0].dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        post_copy_barriers[0].oldLayout = vk::ImageLayout::eTransferSrcOptimal;
-        post_copy_barriers[0].newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        post_copy_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post_copy_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post_copy_barriers[0].image = m_framebuffers[pass_idx].image();
-        post_copy_barriers[0].subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-
-        post_copy_barriers[1].srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        post_copy_barriers[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        post_copy_barriers[1].oldLayout = vk::ImageLayout::eTransferDstOptimal;
-        post_copy_barriers[1].newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        post_copy_barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post_copy_barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post_copy_barriers[1].image = feedback_fb.image();
-        post_copy_barriers[1].subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, post_copy_barriers);
-    }
-
+    copy_feedback_framebuffers(cmd);
     m_frame_count++;
 }
 

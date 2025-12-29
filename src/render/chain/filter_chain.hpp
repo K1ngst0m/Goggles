@@ -65,6 +65,10 @@ private:
     [[nodiscard]] auto create_texture_sampler(const TextureConfig& config) const
         -> Result<vk::UniqueSampler>;
 
+    void bind_pass_textures(FilterPass& pass, size_t pass_index, vk::ImageView original_view,
+                            vk::Extent2D original_extent, vk::ImageView source_view);
+    void copy_feedback_framebuffers(vk::CommandBuffer cmd);
+
     VulkanContext m_vk_ctx;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     uint32_t m_num_sync_indices = 0;
