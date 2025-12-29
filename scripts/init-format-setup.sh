@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Non-interactive init: configure IDE formatting if missing, then install pre-commit hook.
+# Initialize formatting setup: interactively configure IDE formatting if missing, then install pre-commit hook.
 
 set -euo pipefail
 
