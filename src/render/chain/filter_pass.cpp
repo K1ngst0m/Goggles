@@ -766,9 +766,6 @@ void FilterPass::update_ubo_semantics() {
             auto alias_name = name.substr(0, name.size() - 4);
             if (auto alias_size = m_binder.get_alias_size(alias_name)) {
                 std::memcpy(ubo_data + offset, alias_size->data(), sizeof(SizeVec4));
-                GOGGLES_LOG_DEBUG("UBO set '{}' = {}x{}", name, alias_size->width, alias_size->height);
-            } else {
-                GOGGLES_LOG_DEBUG("UBO missing alias for '{}'", name);
             }
         }
     }
