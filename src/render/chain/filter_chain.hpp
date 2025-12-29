@@ -62,7 +62,7 @@ private:
     [[nodiscard]] auto ensure_frame_history(vk::Extent2D extent) -> Result<void>;
 
     [[nodiscard]] auto load_preset_textures() -> Result<void>;
-    [[nodiscard]] auto create_texture_sampler(const TextureConfig& config)
+    [[nodiscard]] auto create_texture_sampler(const TextureConfig& config) const
         -> Result<vk::UniqueSampler>;
 
     VulkanContext m_vk_ctx;

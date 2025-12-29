@@ -22,8 +22,9 @@ auto parse_original_history_index(std::string_view name) -> std::optional<uint32
         return std::nullopt;
     }
     uint32_t index = 0;
-    auto [ptr, ec] = std::from_chars(suffix.data(), suffix.data() + suffix.size(), index);
-    if (ec != std::errc{} || ptr != suffix.data() + suffix.size()) {
+    const auto* end = suffix.data() + suffix.size();
+    auto [ptr, ec] = std::from_chars(suffix.data(), end, index);
+    if (ptr != end) {
         return std::nullopt;
     }
     return index;
@@ -595,7 +596,7 @@ auto FilterChain::load_preset_textures() -> Result<void> {
     return {};
 }
 
-auto FilterChain::create_texture_sampler(const TextureConfig& config) -> Result<vk::UniqueSampler> {
+auto FilterChain::create_texture_sampler(const TextureConfig& config) const -> Result<vk::UniqueSampler> {
     vk::Filter filter =
         (config.filter_mode == FilterMode::linear) ? vk::Filter::eLinear : vk::Filter::eNearest;
 
