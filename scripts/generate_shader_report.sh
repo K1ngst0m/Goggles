@@ -42,7 +42,13 @@ RetroArch shader preset compatibility with Goggles filter chain.
 
 EOF
 
-echo "**Last Updated:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$OUTPUT"
+GOGGLES_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+if [[ -d "$SHADER_DIR/.git" ]]; then
+    SHADERS_COMMIT=$(git -C "$SHADER_DIR" rev-parse --short HEAD 2>/dev/null)
+    echo "**Tested versions:** Goggles \`$GOGGLES_COMMIT\` / slang-shaders \`$SHADERS_COMMIT\`" >> "$OUTPUT"
+else
+    echo "**Tested version:** Goggles \`$GOGGLES_COMMIT\`" >> "$OUTPUT"
+fi
 echo "" >> "$OUTPUT"
 
 # Parse all results first

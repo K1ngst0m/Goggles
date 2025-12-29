@@ -5,11 +5,11 @@ RetroArch shader preset compatibility with Goggles filter chain.
 > **Note:** This report only covers **compilation status** (parse + preprocess).
 > Passing compilation does not guarantee visual correctness.
 
-**Last Updated:** 2025-12-29 10:02 UTC
+**Tested versions:** Goggles `d7475a9` / slang-shaders `e24402e`
 
 ## Overview
 
-**Total:** 1153/1862 presets compile (61%)
+**Total:** 1153/1906 presets compile (60%)
 
 ## By Category
 
@@ -17,7 +17,7 @@ RetroArch shader preset compatibility with Goggles filter chain.
 |----------|-----------|--------|
 | anamorphic | 1/1 | ✅ |
 | anti-aliasing | 9/9 | ✅ |
-| bezel | 239/914 | ⚠️ |
+| bezel | 239/958 | ⚠️ |
 | blurs | 17/17 | ✅ |
 | border | 43/43 | ✅ |
 | cel | 3/3 | ✅ |
@@ -79,7 +79,7 @@ RetroArch shader preset compatibility with Goggles filter chain.
 </details>
 
 <details>
-<summary><strong>bezel</strong> (239/914)</summary>
+<summary><strong>bezel</strong> (239/958)</summary>
 
 | Preset | Status |
 |--------|--------|
@@ -918,10 +918,32 @@ RetroArch shader preset compatibility with Goggles filter chain.
 | `Mega_Bezel/resource/wildcard-examples/referenced-presets/Ref-14_slang_.slangp` | ❌ |
 | `Mega_Bezel/resource/wildcard-examples/referenced-presets/Ref-Base.slangp` | ❌ |
 | `Mega_Bezel/shaders/hyllian/crt-super-xbr/crt-super-xbr.slangp` | ✅ |
+| `scanline-classic/presets/uhd-4k-sdr/arcade/neogeo.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/consumer/aaa-generic-ntsc-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/consumer/aaa-generic-ntscj-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/consumer/aaa-generic-pal-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/consumer/gen.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/consumer/md-eu.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/consumer/md.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/consumer/neogeo.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/consumer/sfc_sfcjr.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/consumer/snes-br.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/consumer/snes-eu.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/consumer/snes_snesmini.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-ntsc-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-ntscj-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-ntscj-rf.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-ntscj-rgb.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-ntscj-svideo.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-ntsc-rf.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-ntsc-rgb.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-ntsc-svideo.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-pal-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/aaa-generic-pal-rgb.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/gen.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/md-eu.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/md.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-sdr/professional/neogeo.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/professional/sfc-composite_sfcjr.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/professional/sfc-rf_sfcjr-rf.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/professional/sfc.slangp` | ❌ |
@@ -933,10 +955,32 @@ RetroArch shader preset compatibility with Goggles filter chain.
 | `scanline-classic/presets/uhd-4k-sdr/professional/snes-gb-rf.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/professional/snes-rf_snesmini-rf.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-sdr/professional/snes.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/arcade/neogeo.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/consumer/aaa-generic-ntsc-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/consumer/aaa-generic-ntscj-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/consumer/aaa-generic-pal-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/consumer/gen.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/consumer/md-eu.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/consumer/md.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/consumer/neogeo.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-wcg/consumer/sfc_sfcjr.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-wcg/consumer/snes-br.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-wcg/consumer/snes-eu.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-wcg/consumer/snes_snesmini.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-ntsc-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-ntscj-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-ntscj-rf.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-ntscj-rgb.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-ntscj-svideo.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-ntsc-rf.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-ntsc-rgb.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-ntsc-svideo.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-pal-composite.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/aaa-generic-pal-rgb.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/gen.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/md-eu.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/md.slangp` | ❌ |
+| `scanline-classic/presets/uhd-4k-wcg/professional/neogeo.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-wcg/professional/sfc-composite_sfcjr.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-wcg/professional/sfc-rf_sfcjr-rf.slangp` | ❌ |
 | `scanline-classic/presets/uhd-4k-wcg/professional/sfc.slangp` | ❌ |
