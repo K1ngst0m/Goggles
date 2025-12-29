@@ -3,7 +3,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
-#include <fstream>
 #include <vector>
 
 using namespace goggles::render;
@@ -15,7 +14,6 @@ auto get_shader_dir() -> std::filesystem::path { return "shaders/retroarch"; }
 auto discover_presets(const std::filesystem::path& dir) -> std::vector<std::filesystem::path> {
     std::vector<std::filesystem::path> presets;
     if (!std::filesystem::exists(dir)) return presets;
-
     for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
         if (entry.path().extension() == ".slangp") {
             presets.push_back(entry.path());
@@ -23,6 +21,21 @@ auto discover_presets(const std::filesystem::path& dir) -> std::vector<std::file
     }
     std::sort(presets.begin(), presets.end());
     return presets;
+}
+
+auto discover_categories(const std::filesystem::path& shader_dir) -> std::vector<std::string> {
+    std::vector<std::string> cats;
+    if (!std::filesystem::exists(shader_dir)) return cats;
+    for (const auto& entry : std::filesystem::directory_iterator(shader_dir)) {
+        if (entry.is_directory()) {
+            auto name = entry.path().filename().string();
+            if (name != "include" && name != "spec" && name != "test") {
+                cats.push_back(name);
+            }
+        }
+    }
+    std::sort(cats.begin(), cats.end());
+    return cats;
 }
 
 struct TestResult {
@@ -47,8 +60,7 @@ auto test_preset(const std::filesystem::path& preset_path) -> TestResult {
     for (const auto& pass : preset->passes) {
         auto compiled = preprocessor.preprocess(pass.shader_path);
         if (!compiled) {
-            result.error = "Compile " + pass.shader_path.filename().string() + ": " +
-                           compiled.error().message;
+            result.error = pass.shader_path.filename().string() + ": " + compiled.error().message;
             return result;
         }
     }
@@ -58,78 +70,32 @@ auto test_preset(const std::filesystem::path& preset_path) -> TestResult {
 
 }  // namespace
 
-TEST_CASE("Batch shader validation", "[shader][validation][batch]") {
+TEST_CASE("Shader validation - all categories", "[shader][validation][batch]") {
     auto shader_dir = get_shader_dir();
+    auto categories = discover_categories(shader_dir);
 
-    SECTION("CRT category") {
-        auto presets = discover_presets(shader_dir / "crt");
-        if (presets.empty()) SKIP("No CRT presets found");
+    if (categories.empty()) {
+        SKIP("No shader categories found");
+    }
 
-        size_t passed = 0, failed = 0;
-        for (const auto& p : presets) {
-            auto r = test_preset(p);
-            if (r.compile_ok) {
-                passed++;
-            } else {
-                failed++;
-                WARN(p.filename().string() << ": " << r.error);
+    for (const auto& cat : categories) {
+        DYNAMIC_SECTION(cat) {
+            auto presets = discover_presets(shader_dir / cat);
+            if (presets.empty()) {
+                SKIP("No presets in " + cat);
             }
-        }
-        INFO("CRT: " << passed << "/" << presets.size() << " passed");
-        CHECK(passed > 0);
-    }
 
-    SECTION("Handheld category") {
-        auto presets = discover_presets(shader_dir / "handheld");
-        if (presets.empty()) SKIP("No handheld presets found");
-
-        size_t passed = 0;
-        for (const auto& p : presets) {
-            if (test_preset(p).compile_ok) passed++;
-        }
-        INFO("Handheld: " << passed << "/" << presets.size() << " passed");
-        CHECK(passed > 0);
-    }
-
-    SECTION("Anti-aliasing category") {
-        auto presets = discover_presets(shader_dir / "anti-aliasing");
-        if (presets.empty()) SKIP("No anti-aliasing presets found");
-
-        size_t passed = 0;
-        for (const auto& p : presets) {
-            if (test_preset(p).compile_ok) passed++;
-        }
-        INFO("Anti-aliasing: " << passed << "/" << presets.size() << " passed");
-        CHECK(passed > 0);
-    }
-}
-
-TEST_CASE("Full shader scan", "[shader][validation][full][!mayfail]") {
-    auto shader_dir = get_shader_dir();
-    auto all_presets = discover_presets(shader_dir);
-
-    if (all_presets.empty()) SKIP("No presets found");
-
-    size_t parse_ok = 0, compile_ok = 0;
-    std::vector<TestResult> failures;
-
-    for (const auto& p : all_presets) {
-        auto r = test_preset(p);
-        if (r.parse_ok) parse_ok++;
-        if (r.compile_ok) {
-            compile_ok++;
-        } else {
-            failures.push_back(r);
-        }
-    }
-
-    INFO("Total: " << all_presets.size());
-    INFO("Parse OK: " << parse_ok);
-    INFO("Compile OK: " << compile_ok);
-
-    if (!failures.empty() && failures.size() <= 20) {
-        for (const auto& f : failures) {
-            WARN(f.path.string() << ": " << f.error);
+            size_t passed = 0;
+            for (const auto& p : presets) {
+                auto r = test_preset(p);
+                if (r.compile_ok) {
+                    passed++;
+                } else {
+                    UNSCOPED_INFO(p.filename().string() << ": " << r.error);
+                }
+            }
+            INFO(cat << ": " << passed << "/" << presets.size() << " passed");
+            CHECK(passed > 0);
         }
     }
 }

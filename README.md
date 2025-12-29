@@ -138,5 +138,6 @@ Topic-specific docs:
 - [DMA-BUF Sharing](docs/dmabuf_sharing.md) - Cross-process GPU buffer sharing
 - [Filter Chain](docs/filter_chain_workflow.md) - RetroArch shader pipeline
 - [RetroArch](docs/retroarch.md) - Shader preset compatibility
+- [Shader Compatibility Report](docs/shader_compatibility.md) - Full compilation status for all RetroArch presets
 - [Project Policies](docs/project_policies.md) - Development rules and conventions
 - [Roadmap](ROADMAP.md) - Development pending work
