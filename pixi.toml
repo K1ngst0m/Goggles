@@ -154,7 +154,7 @@ slang-shaders = { path = "packages/slang-shaders" }
 # CI-only: Lightweight lint environment
 [feature.lint.dependencies]
 clang-format = "21.*"
-taplo = "*"
+taplo = "==0.9.3"
 
 [environments]
 default = { solve-group = "default" }

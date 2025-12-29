@@ -1,5 +1,5 @@
 #!/bin/bash
-# Quick check - warns if project not initialized (pre-commit hook missing)
+# Fail if project not initialized (pre-commit hook missing)
 # Used as dependency for main tasks (dev, build)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,5 +15,6 @@ fi
 HOOK="$GIT_DIR/hooks/pre-commit"
 
 if [[ ! -f "$HOOK" ]]; then
-  echo -e "\033[33m[WARN] Pre-commit hook not installed. Run: pixi run init\033[0m" >&2
+  echo -e "\033[31m[ERROR] Pre-commit hook not installed. Run: pixi run init\033[0m" >&2
+  exit 1
 fi
