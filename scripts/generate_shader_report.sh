@@ -1,15 +1,26 @@
 #!/bin/bash
-# Generate shader compatibility report - all presets
+set -euo pipefail
 
 SHADER_DIR="shaders/retroarch"
 BUILD_DIR="build/debug"
 OUTPUT="docs/shader_compatibility.md"
 TEST_BIN="$BUILD_DIR/tests/goggles_tests"
 
+if [[ ! -x "$TEST_BIN" ]]; then
+    echo "Error: Test binary not found: $TEST_BIN" >&2
+    echo "Run: cmake --build --preset debug" >&2
+    exit 1
+fi
+
 mkdir -p docs
 
 echo "Running full shader validation..."
-RESULT=$("$TEST_BIN" "[shader][validation][batch]" -s 2>&1)
+RESULT=$("$TEST_BIN" "[shader][validation][batch]" -s 2>&1) || true
+
+if [[ -z "$RESULT" ]]; then
+    echo "Error: Test produced no output" >&2
+    exit 1
+fi
 
 # Discover all shader categories from filesystem (same as test does)
 CATEGORIES=()
@@ -54,7 +65,11 @@ done
 # Overall summary
 echo "## Overview" >> "$OUTPUT"
 echo "" >> "$OUTPUT"
-PERCENT=$((TOTAL_PASS * 100 / TOTAL_COUNT))
+if [[ $TOTAL_COUNT -gt 0 ]]; then
+    PERCENT=$((TOTAL_PASS * 100 / TOTAL_COUNT))
+else
+    PERCENT=0
+fi
 echo "**Total:** ${TOTAL_PASS}/${TOTAL_COUNT} presets compile (${PERCENT}%)" >> "$OUTPUT"
 echo "" >> "$OUTPUT"
 
@@ -92,7 +107,7 @@ for cat in "${CATEGORIES[@]}"; do
     # Skip categories with no test results
     [[ -z "$TOTAL" || "$TOTAL" == "0" ]] && continue
 
-    PRESETS=$(find "$DIR" -name "*.slangp" 2>/dev/null | sort)
+    PRESETS=$(find "$DIR" -type f -name "*.slangp" 2>/dev/null | sort)
 
     echo "<details>" >> "$OUTPUT"
     echo "<summary><strong>$cat</strong> ($PASS/$TOTAL)</summary>" >> "$OUTPUT"
@@ -103,10 +118,12 @@ for cat in "${CATEGORIES[@]}"; do
     while IFS= read -r preset; do
         [[ -z "$preset" ]] && continue
         name=$(basename "$preset")
+        # Show relative path from category dir for nested presets
+        rel_path="${preset#$DIR/}"
         if echo "$FAILED" | grep -qx "$name"; then
-            echo "| \`$name\` | ❌ |" >> "$OUTPUT"
+            echo "| \`$rel_path\` | ❌ |" >> "$OUTPUT"
         else
-            echo "| \`$name\` | ✅ |" >> "$OUTPUT"
+            echo "| \`$rel_path\` | ✅ |" >> "$OUTPUT"
         fi
     done <<< "$PRESETS"
 
