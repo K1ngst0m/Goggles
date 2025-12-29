@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 
 SHADER_DIR="shaders/retroarch"
 BUILD_DIR="build/debug"
