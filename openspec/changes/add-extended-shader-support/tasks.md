@@ -43,11 +43,16 @@
 - [x] 6.3 Run ntsc-adaptive with frame_count_mod = 2
 - [ ] 6.4 Visual verification of hsm-afterglow phosphor effect
 
-## 7. Pending Issues (Mega Bezel)
+## 7. Spec Compliance (SHADER_SPEC.md)
 
-- [ ] 7.1 Mega Bezel shows decorative bezel textures but no screen content
-  - crt-guest-advanced works correctly
-  - Issue specific to Mega Bezel's InfoCachePass screen placement calculation
-  - DerezedPassSize and other alias sizes may not be correctly bound to UBO
-- [ ] 7.2 Debug alias size binding to verify DerezedPassSize is populated
-- [ ] 7.3 Verify PassN alias sizes are correctly written to UBO members
+- [x] 7.1 Add PassOutput# texture bindings by pass number
+- [x] 7.2 Add PassOutput#Size UBO members
+- [x] 7.3 Add PassFeedback# bindings by pass number
+- [x] 7.4 Add PassFeedback#Size UBO members
+- [x] 7.5 Bind OriginalHistory0 = Original (spec requirement)
+- [x] 7.6 Fix binding order (clear before set)
+
+## 8. Pending Issues (Mega Bezel)
+
+- [ ] 8.1 Visual verification of Mega Bezel screen content
+- [ ] 8.2 Verify InfoCachePass receives correct DerezedPassSize

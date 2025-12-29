@@ -266,34 +266,54 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         pass->set_rotation(0);
 
         pass->clear_alias_sizes();
-        for (const auto& [alias, pass_idx] : m_alias_to_pass_index) {
-            if (pass_idx < i && m_framebuffers[pass_idx].is_initialized()) {
-                auto alias_extent = m_framebuffers[pass_idx].extent();
-                pass->set_alias_size(alias, alias_extent.width, alias_extent.height);
-                GOGGLES_LOG_DEBUG("Pass {}: set alias size '{}' = {}x{}", i, alias,
-                                  alias_extent.width, alias_extent.height);
-            }
-        }
-
         pass->clear_texture_bindings();
+
+        // Builtin textures
         pass->set_texture_binding("Source", source_view, nullptr);
         pass->set_texture_binding("Original", original_view, nullptr);
 
-        // Bind OriginalHistory textures
+        // OriginalHistory0 = Original (spec requirement)
+        pass->set_texture_binding("OriginalHistory0", original_view, nullptr);
+        pass->set_alias_size("OriginalHistory0", original_extent.width, original_extent.height);
+
+        // OriginalHistory1+ from frame history
         for (uint32_t h = 0; h < m_frame_history.depth(); ++h) {
-            auto hist_view = m_frame_history.get(h);
-            if (hist_view) {
-                auto name = std::format("OriginalHistory{}", h);
+            if (auto hist_view = m_frame_history.get(h)) {
+                auto name = std::format("OriginalHistory{}", h + 1);
                 pass->set_texture_binding(name, hist_view, nullptr);
                 auto ext = m_frame_history.get_extent(h);
                 pass->set_alias_size(name, ext.width, ext.height);
             }
         }
 
+        // PassOutput# by pass number (spec requirement)
+        for (size_t p = 0; p < i; ++p) {
+            if (m_framebuffers[p].is_initialized()) {
+                auto pass_name = std::format("PassOutput{}", p);
+                auto pass_extent = m_framebuffers[p].extent();
+                pass->set_texture_binding(pass_name, m_framebuffers[p].view(), nullptr);
+                pass->set_alias_size(pass_name, pass_extent.width, pass_extent.height);
+            }
+        }
+
+        // PassFeedback# by pass number (previous frame's PassOutput#)
+        for (const auto& [fb_idx, feedback_fb] : m_feedback_framebuffers) {
+            if (feedback_fb.is_initialized()) {
+                auto feedback_name = std::format("PassFeedback{}", fb_idx);
+                auto fb_extent = feedback_fb.extent();
+                pass->set_texture_binding(feedback_name, feedback_fb.view(), nullptr);
+                pass->set_alias_size(feedback_name, fb_extent.width, fb_extent.height);
+            }
+        }
+
+        // Alias-based textures (e.g., DerezedPass, InfoCachePass)
         for (const auto& [alias, pass_idx] : m_alias_to_pass_index) {
             if (pass_idx < i && m_framebuffers[pass_idx].is_initialized()) {
                 pass->set_texture_binding(alias, m_framebuffers[pass_idx].view(), nullptr);
+                auto alias_extent = m_framebuffers[pass_idx].extent();
+                pass->set_alias_size(alias, alias_extent.width, alias_extent.height);
             }
+            // AliasFeedback (e.g., DerezedPassFeedback)
             if (auto fb_it = m_feedback_framebuffers.find(pass_idx);
                 fb_it != m_feedback_framebuffers.end() && fb_it->second.is_initialized()) {
                 auto feedback_name = alias + std::string(FEEDBACK_SUFFIX);
@@ -302,6 +322,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
                 pass->set_alias_size(feedback_name, fb_extent.width, fb_extent.height);
             }
         }
+
+        // User textures from preset
         for (const auto& [name, tex] : m_texture_registry) {
             pass->set_texture_binding(name, *tex.data.view, *tex.sampler);
         }
