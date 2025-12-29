@@ -34,7 +34,7 @@ auto trim(const std::string& str) -> std::string {
 
 // Slang doesn't support vec *= mat compound assignment
 auto fix_compound_assign(const std::string& source) -> std::string {
-    static const std::regex compound_assign(R"((\b\w+(?:\.\w+)?)\s*\*=\s*([^;]+);)");
+    static const std::regex COMPOUND_ASSIGN(R"((\b\w+(?:\.\w+)?)\s*\*=\s*([^;]+);)");
     std::smatch match;
     std::string::const_iterator search_start = source.cbegin();
     std::string output;
@@ -53,14 +53,14 @@ auto fix_compound_assign(const std::string& source) -> std::string {
                expr.find("color") != std::string::npos;
     };
 
-    while (std::regex_search(search_start, source.cend(), match, compound_assign)) {
+    while (std::regex_search(search_start, source.cend(), match, COMPOUND_ASSIGN)) {
         std::string var = match[1].str();
         std::string expr = match[2].str();
         if (is_matrix_expr(expr)) {
             auto match_pos = static_cast<size_t>(match.position() + (search_start - source.cbegin()));
             output += source.substr(last_pos, match_pos - last_pos);
             output.append(var).append(" = ").append(var).append(" * (").append(expr).append(");");
-            last_pos = match_pos + match.length();
+            last_pos = match_pos + static_cast<size_t>(match.length());
         }
         search_start = match.suffix().first;
     }
@@ -71,34 +71,32 @@ auto fix_compound_assign(const std::string& source) -> std::string {
 // Slang doesn't support mat3==mat3 in ternary (returns bmat3 instead of bool)
 auto fix_matrix_compare(const std::string& source) -> std::string {
     // Replace (m_in==m_ou) with (m_in[0]==m_ou[0] && m_in[1]==m_ou[1] && m_in[2]==m_ou[2])
-    static const std::regex mat_compare(R"(\((\w+)\s*==\s*(\w+)\))");
-    std::string result = source;
+    static const std::regex MAT_COMPARE(R"(\((\w+)\s*==\s*(\w+)\))");
     std::smatch match;
 
-    // Known matrix variable prefixes in Mega Bezel shaders
     auto is_matrix_var = [](const std::string& name) {
         return name.starts_with("m_") || name.find("_mat") != std::string::npos ||
                name.find("prims") != std::string::npos;
     };
 
-    std::string::const_iterator search_start = result.cbegin();
+    std::string::const_iterator search_start = source.cbegin();
     std::string output;
     size_t last_pos = 0;
 
-    while (std::regex_search(search_start, result.cend(), match, mat_compare)) {
+    while (std::regex_search(search_start, source.cend(), match, MAT_COMPARE)) {
         std::string lhs = match[1].str();
         std::string rhs = match[2].str();
         if (is_matrix_var(lhs) && is_matrix_var(rhs)) {
-            auto match_pos = static_cast<size_t>(match.position() + (search_start - result.cbegin()));
-            output += result.substr(last_pos, match_pos - last_pos);
+            auto match_pos = static_cast<size_t>(match.position() + (search_start - source.cbegin()));
+            output += source.substr(last_pos, match_pos - last_pos);
             output.append("(").append(lhs).append("[0]==").append(rhs).append("[0] && ");
             output.append(lhs).append("[1]==").append(rhs).append("[1] && ");
             output.append(lhs).append("[2]==").append(rhs).append("[2])");
-            last_pos = match_pos + match.length();
+            last_pos = match_pos + static_cast<size_t>(match.length());
         }
         search_start = match.suffix().first;
     }
-    output += result.substr(last_pos);
+    output += source.substr(last_pos);
     return output;
 }
 
