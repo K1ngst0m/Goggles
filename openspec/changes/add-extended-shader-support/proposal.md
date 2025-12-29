@@ -7,7 +7,7 @@ Current shader support covers CRT-royale features (LUT textures, aliases, parame
 ## Target Shaders
 
 ### Mega-Bezel (660 presets)
-- **MBZ__5__POTATO** - 12 passes, minimal effects
+- **MBZ__5__POTATO** - 14 passes, minimal effects
 - **MBZ__3__STD** - 30 passes, standard bezel + CRT
 - **MBZ__0__SMOOTH-ADV** - 46 passes, full effects + NTSC
 

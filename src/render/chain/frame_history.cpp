@@ -111,7 +111,7 @@ auto FrameHistory::get(uint32_t age) const -> vk::ImageView {
 }
 
 auto FrameHistory::get_extent(uint32_t age) const -> vk::Extent2D {
-    if (!m_initialized || m_depth == 0 || age >= m_depth) {
+    if (!m_initialized || m_depth == 0 || m_frame_count <= age || age >= m_depth) {
         return {0, 0};
     }
     uint32_t idx = (m_write_index + m_depth - 1 - age) % m_depth;
