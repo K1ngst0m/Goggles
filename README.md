@@ -71,6 +71,19 @@ The filter chain transforms captured DMA-BUF images through a series of shader p
                     └─────────────┘      └─────────────┘
 ```
 
+## Shader Preset Compatibility Database
+
+### Status Key
+* **Verified**: Manually inspected; visual output is perfect.
+* **Partial**: Compiles and runs; full feature set or parameters pending review.
+* **Untested**: Compiles successfully; requires human eyes for visual artifacts.
+
+| Name | Build | Status | Platform | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **crt/crt-royale.slangp** | Pass | Partial | `Mesa: RDNA3` | Full verification pending after the shader parameter controlling support. |
+| **crt/zfast-crt.slangp** | Pass | Verified | `Mesa: RDNA3` | Verified; visual output matches expected quality on RDNA3. |
+
+*More reports pending validation...*
 
 ## Build
 
