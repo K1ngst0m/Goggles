@@ -15,10 +15,20 @@ echo ""
 
 if [[ -d "${SHADERS_DIR}/.git" ]]; then
     echo "Updating existing clone..."
-    git -C "${SHADERS_DIR}" pull --ff-only
+    if ! git -C "${SHADERS_DIR}" pull --ff-only; then
+        echo "Error: Failed to update existing repository" >&2
+        exit 1
+    fi
 else
+    if [[ -z "${SHADERS_DIR}" ]] || [[ ! "${SHADERS_DIR}" =~ shaders/retroarch$ ]]; then
+        echo "Error: SHADERS_DIR is not set correctly: '${SHADERS_DIR}'" >&2
+        exit 1
+    fi
     rm -rf "${SHADERS_DIR}"
-    git clone --depth 1 "${REPO_URL}" "${SHADERS_DIR}"
+    if ! git clone --depth 1 "${REPO_URL}" "${SHADERS_DIR}"; then
+        echo "Error: Failed to clone repository" >&2
+        exit 1
+    fi
 fi
 
 echo ""

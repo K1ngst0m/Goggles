@@ -98,7 +98,7 @@ done
 echo "" >> "$OUTPUT"
 
 # Extract failed presets
-FAILED=$(echo "$RESULT" | grep -oP "[\w-]+\.slangp(?=:)" | sort -u)
+FAILED=$(echo "$RESULT" | grep -oP "[^\s:]+\.slangp(?=:)" | sort -u)
 
 # Detailed sections
 echo "## Details" >> "$OUTPUT"
