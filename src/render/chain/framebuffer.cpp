@@ -93,6 +93,9 @@ auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
 }
 
 void Framebuffer::shutdown() {
+    if (m_device && m_initialized) {
+        static_cast<void>(m_device.waitIdle());
+    }
     m_view.reset();
     m_memory.reset();
     m_image.reset();

@@ -33,19 +33,22 @@ void FrameHistory::push(vk::CommandBuffer cmd, vk::Image source, vk::Extent2D ex
 
     auto& target = m_buffers[m_write_index];
 
+    auto target_extent = target.extent();
+    if (extent.width != target_extent.width || extent.height != target_extent.height) {
+        GOGGLES_LOG_WARN("FrameHistory::push extent mismatch: {}x{} vs {}x{}", extent.width,
+                         extent.height, target_extent.width, target_extent.height);
+        return;
+    }
+
     vk::ImageMemoryBarrier src_barrier{};
-    src_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    src_barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
     src_barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
     src_barrier.oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     src_barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
     src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     src_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     src_barrier.image = source;
-    src_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    src_barrier.subresourceRange.baseMipLevel = 0;
-    src_barrier.subresourceRange.levelCount = 1;
-    src_barrier.subresourceRange.baseArrayLayer = 0;
-    src_barrier.subresourceRange.layerCount = 1;
+    src_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
 
     vk::ImageMemoryBarrier dst_barrier{};
     dst_barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
@@ -57,15 +60,13 @@ void FrameHistory::push(vk::CommandBuffer cmd, vk::Image source, vk::Extent2D ex
     dst_barrier.image = target.image();
     dst_barrier.subresourceRange = src_barrier.subresourceRange;
 
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
                         vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
                         {src_barrier, dst_barrier});
 
     vk::ImageCopy region{};
-    region.srcSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-    region.srcSubresource.layerCount = 1;
-    region.dstSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-    region.dstSubresource.layerCount = 1;
+    region.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+    region.dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
     region.extent = vk::Extent3D{extent.width, extent.height, 1};
 
     cmd.copyImage(source, vk::ImageLayout::eTransferSrcOptimal, target.image(),
