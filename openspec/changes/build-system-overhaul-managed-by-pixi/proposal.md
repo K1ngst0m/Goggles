@@ -45,3 +45,21 @@
 *   **Security**: Supply chain attacks via compromised download mirrors are mitigated by checksum verification.
 *   **Stability**: The 32-bit cross-compilation layer is robust against upstream packaging errors (broken symlinks).
 *   **Developer Experience**: "It works on my machine" issues are eliminated by enforcing the Pixi environment.
+
+## Refinement: Environment Isolation (Post-Implementation)
+
+### Why
+During verification, we discovered that `bash -lc` (login shell) commands in `pixi.toml` caused Pixi's environment variables (PATH) to be shadowed by system initialization scripts (e.g., Nix profiles), leading to binary version mismatches and Vulkan Loader errors (`libvulkan.so` version conflict). Additionally, the wrapper script `scripts/pixi-env-clean.sh` was aggressively unsetting variables, preventing mixed-environment testing.
+
+### What
+1.  **Strict Pixi Priority**: Ensure Pixi binaries and libraries always take precedence over system/Nix paths.
+2.  **Robust 32-bit Execution**: Ensure `vkcube32` runs within the Pixi environment without manual `LD_LIBRARY_PATH` hacks that cause glibc conflicts.
+3.  **Simplified Configuration**: Remove redundant wrapper scripts.
+
+### How
+1.  **`pixi.toml`**:
+    *   Replaced all `bash -lc` with `bash -c` to prevent loading user shell profiles.
+    *   Defined global `PKG_CONFIG_PATH` in `[activation.env]` to prioritize Pixi libraries during build.
+    *   Removed `scripts/pixi-env-clean.sh` usage and deleted the file.
+    *   Simplified `start-i686` command to rely on Pixi's RPATH/environment for dependencies, only setting `VK_LAYER_PATH` for the layer manifest.
+2.  **Dependencies**: Added `pkg-config` to Pixi dependencies to ensure isolated build configuration discovery.

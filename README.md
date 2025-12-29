@@ -142,6 +142,15 @@ For Steam games, set launch options:
 GOGGLES_CAPTURE=1 %command%
 ```
 
+### System-wide Usage
+
+Once the layer manifests are installed (via `pixi run install-manifests` or `pixi run dev`), the Goggles capture layer becomes available to all Vulkan applications on your system, even outside the Pixi environment.
+
+```bash
+# Enable capture for any system application
+GOGGLES_CAPTURE=1 /usr/bin/vkcube
+```
+
 ### RetroArch Shaders
 
 The repository tracks minimal zfast-crt shaders. For the full shader collection:

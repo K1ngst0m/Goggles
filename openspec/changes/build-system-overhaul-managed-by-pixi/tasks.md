@@ -24,3 +24,11 @@
 
 - [x] Verify complete dependency resolution (`pixi install`) with new constraints
 - [x] Verify successful compilation and linkage of unit tests (`pixi run test`)
+
+## 5. Environment Isolation & Robustness (Refinement)
+
+- [x] Remove conflicting `bash -lc` login shell usage from `pixi.toml` to fix PATH priority
+- [x] Add `pkg-config` to dependencies and set `PKG_CONFIG_PATH` for isolated build configuration
+- [x] Remove redundant `scripts/pixi-env-clean.sh` wrapper script
+- [x] Verify `vkcube` and `vkcube32` binary resolution (Pixi vs System)
+- [x] Verify Vulkan Layer loading isolation (Pixi Manifest vs System Manifest)
