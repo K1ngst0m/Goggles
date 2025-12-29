@@ -30,6 +30,7 @@ target_sources(goggles_tests PRIVATE
     render/test_semantic_binder.cpp
     render/test_zfast_integration.cpp
     render/test_filter_chain.cpp
+    render/test_shader_validation.cpp
 
     # Capture module tests
     capture/test_capture_protocol.cpp
