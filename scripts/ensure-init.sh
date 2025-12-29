@@ -1,6 +1,12 @@
 #!/bin/bash
 # Fail if project not initialized (pre-commit hook missing)
 # Used as dependency for main tasks (dev, build)
+# Skipped in CI environments (CI=true)
+
+# Skip in CI - no pre-commit hook needed
+if [[ "${CI:-}" == "true" ]]; then
+  exit 0
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

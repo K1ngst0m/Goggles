@@ -33,7 +33,7 @@ jobs:
           cache: true
           manifest-path: pixi.toml
           environments: ${{ env.PIXI_ENV }}
-          locked-environments: ${{ env.PIXI_ENV }}
+          locked: true
 
       - name: Run clang-format
         run: git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 pixi run -e ${{ env.PIXI_ENV }} clang-format -i
