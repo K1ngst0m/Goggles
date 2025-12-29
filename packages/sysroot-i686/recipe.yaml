@@ -73,3 +73,4 @@ requirements:
     - curl
     - binutils
     - zstd
+    - patchelf
