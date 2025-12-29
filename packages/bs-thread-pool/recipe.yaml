@@ -4,7 +4,7 @@ package:
 
 source:
   git: https://github.com/bshoshany/thread-pool.git
-  tag: v3.5.0
+  rev: cabb3df5876c9a6824b07fcb0ff73d4a0e506ca0
 
 build:
   number: 0

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Initialize formatting setup: interactively configure IDE formatting if missing, then install pre-commit hook.
+# Init: configure IDE formatting if missing; may prompt interactively to create IDE config, then install pre-commit hook.
 
 set -euo pipefail
 
@@ -18,8 +18,12 @@ has_ide_config=false
 bash "${PROJECT_ROOT}/scripts/check-ide-setup.sh"
 
 if [[ "$has_ide_config" == "false" ]]; then
-    echo "[init] No IDE formatting config detected; launching interactive setup-ide (choose your IDE)."
-    bash "${PROJECT_ROOT}/scripts/setup-ide.sh"
+    if [[ -t 0 ]]; then
+        echo "[init] No IDE formatting config detected; launching interactive setup-ide (choose your IDE)."
+        bash "${PROJECT_ROOT}/scripts/setup-ide.sh"
+    else
+        echo "[init] No IDE formatting config detected, but no interactive terminal available. Skipping IDE setup."
+    fi
 else
     echo "[init] IDE formatting config already present; skipping setup-ide."
 fi
