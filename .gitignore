@@ -70,6 +70,7 @@ perf.data*
 docs/_build/
 docs/html/
 docs/latex/
+.serena
 
 # Temporary and backup files
 *.bak
@@ -115,6 +116,6 @@ shaders/retroarch/crt/shaders/*
 shaders/retroarch/crt/shaders/zfast_crt/*
 !shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_finemask.slang
 !shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_impl.inc
+
 # pixi environments and build artifacts
-.pixi/*
-*.conda
+.pixi
