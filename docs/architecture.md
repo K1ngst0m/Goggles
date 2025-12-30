@@ -8,32 +8,33 @@ High-level overview of the Goggles codebase for maintainers. Start here to under
 
 Goggles captures frames from Vulkan applications and applies real-time shader effects before display.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Target Application                           │
-│  (Game/App using Vulkan)                                            │
-│         │                                                           │
-│         │ vkQueuePresentKHR                                         │
-│         ▼                                                          │
-│  ┌─────────────────┐                                                │
-│  │  Capture Layer  │  (libgoggles_vklayer.so - injected)            │
-│  │  Intercepts     │                                                │
-│  │  swapchain      │                                                │
-│  └────────┬────────┘                                                │
-└───────────┼─────────────────────────────────────────────────────────┘
-            │
-            │ Unix socket (DMA-BUF fd + metadata + semaphore fds)
-            │ + Shared timeline semaphores for GPU sync
-            ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Goggles Application                          │
-│                                                                     │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐           │
-│  │   Capture    │───▶│    Render    │───▶│   Display    │          │
-│  │   Receiver   │    │  Filter Chain│    │  (Swapchain) │           │
-│  └──────────────┘    └──────────────┘    └──────────────┘           │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+```text
+┌───────────────────────────────────────┐
+│         Target Application            │
+│  ┌─────────────┐                      │
+│  │  Swapchain  │                      │
+│  └──────┬──────┘                      │
+│         │ vkQueuePresentKHR           │
+│         ▼                             │
+│  ┌─────────────────────────────────┐  │
+│  │  Capture Layer                  │  │
+│  │  Export DMA-BUF                 │  │
+│  └──────────────┬──────────────────┘  │
+└─────────────────┼─────────────────────┘
+                  │
+                  │ Unix Socket + Semaphore Sync
+                  ▼
+┌─────────────────┼─────────────────────┐
+│  Goggles Viewer │                     │
+│  ┌──────────────┴──────────────────┐  │
+│  │  CaptureReceiver                │  │
+│  └──────────────┬──────────────────┘  │
+│                 ▼                     │
+│  ┌─────────────────────────────────┐  │
+│  │  VulkanBackend                  │  │
+│  │  Import DMA-BUF ──► FilterChain │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
 ```
 
 ## Module Overview

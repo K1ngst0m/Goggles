@@ -14,7 +14,7 @@ A hooking-based frame streaming tool with support for RetroArch shader processin
 
 Goggles captures Vulkan application frames and shares them across processes using Linux DMA-BUF with DRM format modifiers and cross-process timeline semaphore synchronization. 
 
-```
+```text
 ┌───────────────────────────────────────┐
 │         Target Application            │
 │  ┌─────────────┐                      │
@@ -45,23 +45,23 @@ Goggles captures Vulkan application frames and shares them across processes usin
 
 The filter chain transforms captured DMA-BUF images through a series of shader passes before presenting to the display. It supports RetroArch `.slangp` preset files which define multi-pass post-processing effects (CRT simulation, scanlines, etc.).
 
-```
+```text
                         Shader Preset (.slangp)
                                  │
-  ┌──────────────────────────────┼──────────────────────────────┐
-  │                              ▼                              │
+  ┌──────────────────────────────┼─────────────────────────────┐
+  │                              ▼                             │
   │  ┌────────┐     ┌────────┐     ┌────────┐     ┌────────┐   │
   │  │Original│────▶│ Pass 0 │────▶│ Pass 1 │────▶│ Pass N │   │
   │  └────────┘  ┌─▶└────────┘  ┌─▶└────────┘  ┌─▶└────────┘   │
   │       │      │       │      │       │      │       │       │
   │       └──────┴───────┴──────┴───────┴──────┘       ▼       │
-  │            (Original available to all passes)    Output    │
-  └─────────────────────────────────────────────────────────────┘
+  │                                                  Output    │
+  └────────────────────────────────────────────────────────────┘
                                                        │
                                                        ▼
-                                                 ┌───────────┐
-                                                 │ Swapchain │
-                                                 └───────────┘
+                                             ┌───────────────────┐
+                                             │ Goggles Swapchain │
+                                             └───────────────────┘
 ```
 
 ## Shader Preset Compatibility Database
@@ -74,16 +74,17 @@ The filter chain transforms captured DMA-BUF images through a series of shader p
 | Name | Build | Status | Platform | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **crt/crt-royale.slangp** | Pass | Partial | `Mesa: RDNA3` | Full verification pending after the shader parameter controlling support. |
-| **crt/zfast-crt.slangp** | Pass | Verified | `Mesa: RDNA3`, `Proprietary: Ada` | Verified; visual output matches expected quality on RDNA3. |
+| **crt/zfast-crt.slangp** | Pass | Verified | `Mesa: RDNA3`, `Proprietary: Ada` |  |
 
 *More reports pending validation...*
 
 ## Build
 
+This project uses [Pixi](https://pixi.sh) for dependency management and build tasks.
+
 ```bash
-cmake --list-presets    # List available presets
-make app                # Build (debug by default)
-make help               # See all targets
+pixi run help # view all available tasks and their descriptions
+pixi run <task-name> [args]... # run a task
 ```
 
 Build output:
@@ -97,14 +98,13 @@ build/<preset>/
 ## Usage
 
 ```bash
-# 1. Build and install layer manifests
-make dev
+# Quick smoke test (build + manifests as needed)
+pixi run start vkcube
 
-# 2. Run goggles app (receiver)
-./build/debug/bin/goggles
-
-# 3. Run target app with capture enabled
-GOGGLES_CAPTURE=1 vkcube
+# Standard flow
+pixi run build                   # 1. Build the project
+./build/debug/bin/goggles        # 2. Run goggles app (receiver)
+GOGGLES_CAPTURE=1 vkcube         # 3. Run target app with capture enabled
 ```
 
 For Steam games, set launch options:
@@ -127,10 +127,8 @@ Optional environment variables:
 
 ### RetroArch Shaders
 
-The repository tracks minimal zfast-crt shaders. For the full shader collection:
-
 ```bash
-./scripts/download_retroarch_shaders.sh
+pixi run shader-fetch            # Download/refresh full RetroArch shaders into shaders/retroarch
 ```
 
 This downloads from [libretro/slang-shaders](https://github.com/libretro/slang-shaders). All shaders except zfast-crt are gitignored.
