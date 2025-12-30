@@ -8,13 +8,12 @@ namespace goggles::render {
 
 class FrameHistory {
 public:
-    static constexpr uint32_t MAX_HISTORY = 7;  // OriginalHistory0-6
+    static constexpr uint32_t MAX_HISTORY = 7; // OriginalHistory0-6
 
     FrameHistory() = default;
 
     [[nodiscard]] auto init(vk::Device device, vk::PhysicalDevice physical_device,
-                            vk::Format format, vk::Extent2D extent, uint32_t depth)
-        -> Result<void>;
+                            vk::Format format, vk::Extent2D extent, uint32_t depth) -> Result<void>;
 
     void push(vk::CommandBuffer cmd, vk::Image source, vk::Extent2D extent);
 
@@ -34,4 +33,4 @@ private:
     bool m_initialized = false;
 };
 
-}  // namespace goggles::render
+} // namespace goggles::render

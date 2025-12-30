@@ -43,7 +43,7 @@ auto parse_feedback_alias(std::string_view name) -> std::optional<std::string> {
     return std::string(alias);
 }
 
-}  // namespace
+} // namespace
 
 FilterChain::~FilterChain() {
     shutdown();
@@ -152,7 +152,8 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
                 m_required_history_depth = std::max(m_required_history_depth, *idx + 1);
             }
             if (auto alias = parse_feedback_alias(tex.name)) {
-                if (auto it = m_alias_to_pass_index.find(*alias); it != m_alias_to_pass_index.end()) {
+                if (auto it = m_alias_to_pass_index.find(*alias);
+                    it != m_alias_to_pass_index.end()) {
                     feedback_pass_indices.insert(it->second);
                     GOGGLES_LOG_DEBUG("Detected feedback texture '{}' -> pass {} (alias '{}')",
                                       tex.name, it->second, *alias);
@@ -246,7 +247,8 @@ void FilterChain::copy_feedback_framebuffers(vk::CommandBuffer cmd) {
         }
         auto extent = m_framebuffers[pass_idx].extent();
         vk::ImageSubresourceLayers layers{vk::ImageAspectFlagBits::eColor, 0, 0, 1};
-        vk::ImageCopy region{layers, {0, 0, 0}, layers, {0, 0, 0}, {extent.width, extent.height, 1}};
+        vk::ImageCopy region{
+            layers, {0, 0, 0}, layers, {0, 0, 0}, {extent.width, extent.height, 1}};
 
         std::array<vk::ImageMemoryBarrier, 2> pre{};
         pre[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;
@@ -326,9 +328,9 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         return;
     }
 
-    auto vp = calculate_viewport(original_extent.width, original_extent.height,
-                                  viewport_extent.width, viewport_extent.height,
-                                  scale_mode, integer_scale);
+    auto vp =
+        calculate_viewport(original_extent.width, original_extent.height, viewport_extent.width,
+                           viewport_extent.height, scale_mode, integer_scale);
     GOGGLES_MUST(ensure_framebuffers({.viewport = viewport_extent, .source = original_extent},
                                      {vp.width, vp.height}));
 
@@ -344,7 +346,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
             init_barrier.image = feedback_fb.image();
             init_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
             cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, init_barrier);
+                                vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
+                                init_barrier);
         }
     }
 
@@ -597,7 +600,8 @@ auto FilterChain::load_preset_textures() -> Result<void> {
     return {};
 }
 
-auto FilterChain::create_texture_sampler(const TextureConfig& config) const -> Result<vk::UniqueSampler> {
+auto FilterChain::create_texture_sampler(const TextureConfig& config) const
+    -> Result<vk::UniqueSampler> {
     vk::Filter filter =
         (config.filter_mode == FilterMode::linear) ? vk::Filter::eLinear : vk::Filter::eNearest;
 

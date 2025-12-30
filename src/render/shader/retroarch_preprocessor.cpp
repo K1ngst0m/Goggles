@@ -43,21 +43,18 @@ auto fix_compound_assign(const std::string& source) -> std::string {
     auto is_matrix_expr = [](const std::string& expr) {
         return expr.find("mat") != std::string::npos ||
                expr.find("transpose") != std::string::npos ||
-               expr.find("inverse") != std::string::npos ||
-               expr.find("IPT") != std::string::npos ||
-               expr.find("LMS") != std::string::npos ||
-               expr.find("CAT") != std::string::npos ||
-               expr.find("RGB") != std::string::npos ||
-               expr.find("XYZ") != std::string::npos ||
-               expr.find("YUV") != std::string::npos ||
-               expr.find("color") != std::string::npos;
+               expr.find("inverse") != std::string::npos || expr.find("IPT") != std::string::npos ||
+               expr.find("LMS") != std::string::npos || expr.find("CAT") != std::string::npos ||
+               expr.find("RGB") != std::string::npos || expr.find("XYZ") != std::string::npos ||
+               expr.find("YUV") != std::string::npos || expr.find("color") != std::string::npos;
     };
 
     while (std::regex_search(search_start, source.cend(), match, COMPOUND_ASSIGN)) {
         std::string var = match[1].str();
         std::string expr = match[2].str();
         if (is_matrix_expr(expr)) {
-            auto match_pos = static_cast<size_t>(match.position() + (search_start - source.cbegin()));
+            auto match_pos =
+                static_cast<size_t>(match.position() + (search_start - source.cbegin()));
             output += source.substr(last_pos, match_pos - last_pos);
             output.append(var).append(" = ").append(var).append(" * (").append(expr).append(");");
             last_pos = match_pos + static_cast<size_t>(match.length());
@@ -87,7 +84,8 @@ auto fix_matrix_compare(const std::string& source) -> std::string {
         std::string lhs = match[1].str();
         std::string rhs = match[2].str();
         if (is_matrix_var(lhs) && is_matrix_var(rhs)) {
-            auto match_pos = static_cast<size_t>(match.position() + (search_start - source.cbegin()));
+            auto match_pos =
+                static_cast<size_t>(match.position() + (search_start - source.cbegin()));
             output += source.substr(last_pos, match_pos - last_pos);
             output.append("(").append(lhs).append("[0]==").append(rhs).append("[0] && ");
             output.append(lhs).append("[1]==").append(rhs).append("[1] && ");

@@ -166,7 +166,8 @@ void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
                 sampler = it->second.sampler;
             }
         } else if (tex.name != "Source") {
-            GOGGLES_LOG_WARN("Texture '{}' at binding {} not found, fallback to Source", tex.name, tex.binding);
+            GOGGLES_LOG_WARN("Texture '{}' at binding {} not found, fallback to Source", tex.name,
+                             tex.binding);
         }
 
         vk::DescriptorImageInfo image_info{};
@@ -752,7 +753,8 @@ void FilterPass::update_ubo_semantics() {
     if (auto it = m_ubo_member_offsets.find("OriginalSize"); it != m_ubo_member_offsets.end()) {
         std::memcpy(ubo_data + it->second, m_binder.original_size().data(), sizeof(SizeVec4));
     }
-    if (auto it = m_ubo_member_offsets.find("FinalViewportSize"); it != m_ubo_member_offsets.end()) {
+    if (auto it = m_ubo_member_offsets.find("FinalViewportSize");
+        it != m_ubo_member_offsets.end()) {
         std::memcpy(ubo_data + it->second, m_binder.final_viewport_size().data(), sizeof(SizeVec4));
     }
     if (auto it = m_ubo_member_offsets.find("FrameCount"); it != m_ubo_member_offsets.end()) {

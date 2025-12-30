@@ -105,7 +105,7 @@ auto FrameHistory::get(uint32_t age) const -> vk::ImageView {
         return nullptr;
     }
     if (m_frame_count <= age) {
-        return nullptr;  // Not enough frames yet
+        return nullptr; // Not enough frames yet
     }
     uint32_t idx = (m_write_index + m_depth - 1 - age) % m_depth;
     return m_buffers[idx].view();
@@ -129,4 +129,4 @@ void FrameHistory::shutdown() {
     m_initialized = false;
 }
 
-}  // namespace goggles::render
+} // namespace goggles::render

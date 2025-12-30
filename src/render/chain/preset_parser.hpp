@@ -29,7 +29,7 @@ struct ShaderPassConfig {
     bool mipmap = false;
     WrapMode wrap_mode = WrapMode::clamp_to_edge;
     std::optional<std::string> alias;
-    uint32_t frame_count_mod = 0;  // 0 = disabled
+    uint32_t frame_count_mod = 0; // 0 = disabled
 };
 
 struct TextureConfig {

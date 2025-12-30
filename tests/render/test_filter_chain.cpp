@@ -60,7 +60,7 @@ auto parse_pass_feedback_index(std::string_view name) -> std::optional<uint32_t>
     }
     return index;
 }
-}  // namespace
+} // namespace
 
 TEST_CASE("OriginalHistory sampler name parsing", "[filter_chain][history]") {
     SECTION("Valid OriginalHistory names") {
