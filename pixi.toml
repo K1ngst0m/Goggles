@@ -11,6 +11,8 @@ CC = "$CONDA_PREFIX/bin/clang-21"
 CXX = "$CONDA_PREFIX/bin/clang++-21"
 LD_LIBRARY_PATH = "$CONDA_PREFIX/lib"
 PKG_CONFIG_PATH = "$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
+VULKAN_SDK = "$CONDA_PREFIX"
+VK_ADD_LAYER_PATH = "$CONDA_PREFIX/share/vulkan/explicit_layer.d"
 
 [tasks]
 # Run `pixi task list` or `pixi run help` to see available tasks.
@@ -102,6 +104,7 @@ spdlog = "1.15.*"
 catch2 = "3.8.*"
 toml11 = "4.4.*"
 libvulkan-headers = "1.4.328.*"
+vulkan-validation-layers = "1.4.328.*"
 libxcb = "*"
 xorg-libx11 = "*"
 xorg-xproto = "*"
@@ -138,7 +141,6 @@ taplo = "*"
 sdl3 = "*"
 
 # Local packages
-vulkansdk = { path = "packages/vulkansdk" }
 tracy = { path = "packages/tracy" }
 sysroot-i686 = { path = "packages/sysroot-i686" }
 expected-lite = { path = "packages/expected-lite" }

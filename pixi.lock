@@ -3,6 +3,8 @@ environments:
   default:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -122,6 +124,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/taplo-0.10.0-h2d22210_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/toml11-4.4.0-h7aa8ee6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-h8577fbf_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/vulkan-validation-layers-1.4.328-h95c1ebc_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/wayland-1.24.0-hd6090a7_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/wayland-protocols-1.47-hd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/xkeyboard-config-2.46-hb03c661_0.conda
@@ -156,10 +159,11 @@ environments:
       - conda: packages/stb
       - conda: packages/sysroot-i686
       - conda: packages/tracy
-      - conda: packages/vulkansdk
   lint:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -252,12 +256,9 @@ packages:
   version: 3.5.0
   build: hb0f4dca_0
   subdir: linux-64
+  variants:
+    target_platform: linux-64
   license: MIT
-  input:
-    hash: b823460ddddb7d176977a8b479a0c7564a5debddf9e4822ad467f4179c775d4d
-    globs:
-    - recipe.yaml
-    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_8.conda
   sha256: c30daba32ddebbb7ded490f0e371eae90f51e72db620554089103b4a6934b0d5
   md5: 51a19bba1b8ebfb60df25cde030b7ebc
@@ -545,16 +546,13 @@ packages:
   version: 0.8.0
   build: hb0f4dca_0
   subdir: linux-64
+  variants:
+    target_platform: linux-64
   depends:
   - libgcc >=15
   - libgcc >=15
   - libstdcxx >=15
   license: BSL-1.0
-  input:
-    hash: 60f346d4663d75e142d3e157b10ee67e1c63037f2f1652bee4ce0873ced3f230
-    globs:
-    - recipe.yaml
-    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/linux-64/fftw-3.3.10-nompi_h3b011a4_111.conda
   sha256: c29a9196c344620267287d6cd931f6defda13874a25f9547fc153a12f3377ade
   md5: f6612d7b30fdd5b5db1c8c39313f9787
@@ -1533,12 +1531,9 @@ packages:
   version: 2025.23.2
   build: hb0f4dca_0
   subdir: linux-64
+  variants:
+    target_platform: linux-64
   license: Apache-2.0
-  input:
-    hash: 9f57e2735b7bfeb4aa1311b989e1ec42e7172b17dde49e43e828ce15775d71dc
-    globs:
-    - recipe.yaml
-    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/linux-64/soxr-0.1.3-h0b41bf4_3.conda
   sha256: 141e3364d26f162bfeae8491787c0d8796ada6c29a8cd567c1cd17c3c6b418f9
   md5: e8d261785be19b1575d23ccbbeae4ddd
@@ -1565,22 +1560,16 @@ packages:
   version: 0.0.1
   build: hb0f4dca_0
   subdir: linux-64
+  variants:
+    target_platform: linux-64
   license: MIT
-  input:
-    hash: 637c13270f44f6d2c26dc13faf536baa29ee960335cb98ac13c7107e1ee3392c
-    globs:
-    - recipe.yaml
-    - variants.yaml
 - conda: packages/sysroot-i686
   name: sysroot-i686
   version: '2.31'
   build: hb0f4dca_0
   subdir: linux-64
-  input:
-    hash: 52e275b69844b1beb557177267a4cc7bff211cb123525c655ab20c6e310f1942
-    globs:
-    - recipe.yaml
-    - variants.yaml
+  variants:
+    target_platform: linux-64
 - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
   sha256: c47299fe37aebb0fcf674b3be588e67e4afb86225be4b0d452c7eb75c086b851
   md5: 13dc3adbc692664cd3beabd216434749
@@ -1634,34 +1623,35 @@ packages:
   version: 0.13.1
   build: hb0f4dca_0
   subdir: linux-64
+  variants:
+    target_platform: linux-64
   depends:
   - libgcc >=15
   - libgcc >=15
   - libstdcxx >=15
   - __glibc >=2.28,<3.0.a0
   license: BSD-3-Clause
-  input:
-    hash: f4837f167e2c3b704980e058b9775cc3e15b435e4de20923a231f8df4a7067b1
-    globs:
-    - recipe.yaml
-    - variants.yaml
 - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-h8577fbf_0.conda
   sha256: 50fad5db6734d1bb73df1cf5db73215e326413d4b2137933f70708aa1840e25b
   md5: 338201218b54cadff2e774ac27733990
   license: LicenseRef-Public-Domain
   size: 119204
   timestamp: 1765745742795
-- conda: packages/vulkansdk
-  name: vulkansdk
-  version: 1.4.328.1
-  build: hb0f4dca_0
-  subdir: linux-64
-  license: LicenseRef-VulkanSDK-Bundle
-  input:
-    hash: e20d7fffe09e2a047545de123cec48ccf20b1225e18703e03b4a77792b59a652
-    globs:
-    - recipe.yaml
-    - variants.yaml
+- conda: https://conda.anaconda.org/conda-forge/linux-64/vulkan-validation-layers-1.4.328-h95c1ebc_0.conda
+  sha256: f216897c0777488ccd1f98174b5f2d0333d33d9fa7a5fa5480ff5a563ae01451
+  md5: 6572f36a1e8bf121ba94d5f264896b44
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=14
+  - libstdcxx >=14
+  - libxcb >=1.17.0,<2.0a0
+  - wayland >=1.24.0,<2.0a0
+  - xorg-libx11 >=1.8.12,<2.0a0
+  - xorg-libxrandr >=1.5.4,<2.0a0
+  license: Apache-2.0
+  license_family: Apache
+  size: 6339593
+  timestamp: 1759804086510
 - conda: https://conda.anaconda.org/conda-forge/linux-64/wayland-1.24.0-hd6090a7_1.conda
   sha256: 3aa04ae8e9521d9b56b562376d944c3e52b69f9d2a0667f77b8953464822e125
   md5: 035da2e4f5770f036ff704fa17aace24
