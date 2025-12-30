@@ -22,7 +22,8 @@ Goggles captures frames from Vulkan applications and applies real-time shader ef
 │  └────────┬────────┘                                                │
 └───────────┼─────────────────────────────────────────────────────────┘
             │
-            │ Unix socket (DMA-BUF fd + metadata)
+            │ Unix socket (DMA-BUF fd + metadata + semaphore fds)
+            │ + Shared timeline semaphores for GPU sync
             ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Goggles Application                          │
@@ -92,15 +93,21 @@ See: [threading.md](threading.md)
 
 2. Capture layer exports swapchain image as DMA-BUF
    └─▶ Sends fd + metadata over Unix socket
+   └─▶ Signals frame_ready timeline semaphore
 
 3. Goggles app receives DMA-BUF
+   └─▶ Waits on frame_ready semaphore (GPU sync)
    └─▶ CaptureReceiver imports into VulkanBackend
 
 4. Filter chain processes frame
    └─▶ Pass 0 → Pass 1 → ... → Pass N (shader effects)
 
 5. Final pass renders to swapchain
+   └─▶ Signals frame_consumed semaphore (back-pressure)
    └─▶ Displayed on screen
+
+6. Capture layer waits on frame_consumed before next frame
+   └─▶ Prevents overwriting frame still in use
 ```
 
 ## Key Design Decisions
@@ -109,6 +116,7 @@ See: [threading.md](threading.md)
 |----------|-----------|
 | Vulkan layer injection | Zero-copy frame access, works with any Vulkan app |
 | DMA-BUF sharing | GPU-to-GPU transfer without CPU copies |
+| Timeline semaphore sync | Cross-process GPU synchronization without CPU polling |
 | RetroArch shader format | Leverage existing shader ecosystem |
 | Single-threaded render loop | Simplicity; threading added only when profiling justifies |
 | C API in layer, C++ in app | Layer must be minimal; app benefits from type safety |

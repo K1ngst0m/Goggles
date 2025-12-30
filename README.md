@@ -12,63 +12,56 @@ A hooking-based frame streaming tool with support for RetroArch shader processin
 | :---: |
 | ![showcase_crt_royale](showcase-crt-royale.png)|
 
-Goggles captures Vulkan application frames and shares them across processes using Linux DMA-BUF with DRM format modifiers. 
+Goggles captures Vulkan application frames and shares them across processes using Linux DMA-BUF with DRM format modifiers and cross-process timeline semaphore synchronization. 
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                         Target Application                             │
-│  ┌─────────────┐                                                       │
-│  │  Swapchain  │ ◄── Application renders frames here                   │
-│  │   Images    │                                                       │
-│  └──────┬──────┘                                                       │
-│         │ vkQueuePresentKHR (intercepted)                              │
-│         ▼                                                              │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Capture Layer (vk_capture)                   │   │
-│  │  ┌────────────┐    ┌────────────┐    ┌────────────────────────┐ │   │
-│  │  │  Export    │    │  Copy to   │    │  Send via Unix Socket  │ │   │
-│  │  │  Image     │◄───│  Export    │───►│  (SCM_RIGHTS)          │ │   │
-│  │  │  (DMA-BUF) │    │  Image     │    │  fd + metadata         │ │   │
-│  │  └────────────┘    └────────────┘    └────────────────────────┘ │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ Unix Domain Socket
-                                    │ (DMA-BUF fd via SCM_RIGHTS)
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Goggles Viewer                                  │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                    CaptureReceiver                               │   │
-│  │  Receives fd + format + stride + modifier                        │   │
-│  └──────────────────────────┬───────────────────────────────────────┘   │
-│                             │                                           │
-│                             ▼                                           │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                    VulkanBackend (import_dmabuf)                 │   │
-│  │  ┌────────────┐    ┌────────────┐    ┌────────────────────────┐  │   │
-│  │  │  Import    │    │  Create    │    │  Sample in             │  │   │
-│  │  │  Memory    │───►│  VkImage   │───►│  Fragment Shader       │  │   │
-│  │  │  (DMA-BUF) │    │            │    │                        │  │   │
-│  │  └────────────┘    └────────────┘    └────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────┐
+│         Target Application            │
+│  ┌─────────────┐                      │
+│  │  Swapchain  │                      │
+│  └──────┬──────┘                      │
+│         │ vkQueuePresentKHR           │
+│         ▼                             │
+│  ┌─────────────────────────────────┐  │
+│  │  Capture Layer                  │  │
+│  │  Export DMA-BUF                 │  │
+│  └──────────────┬──────────────────┘  │
+└─────────────────┼─────────────────────┘
+                  │
+                  │ Unix Socket + Semaphore Sync
+                  ▼
+┌─────────────────┼─────────────────────┐
+│  Goggles Viewer │                     │
+│  ┌──────────────┴──────────────────┐  │
+│  │  CaptureReceiver                │  │
+│  └──────────────┬──────────────────┘  │
+│                 ▼                     │
+│  ┌─────────────────────────────────┐  │
+│  │  VulkanBackend                  │  │
+│  │  Import DMA-BUF ──► FilterChain │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
 ```
-
 
 The filter chain transforms captured DMA-BUF images through a series of shader passes before presenting to the display. It supports RetroArch `.slangp` preset files which define multi-pass post-processing effects (CRT simulation, scanlines, etc.).
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌───────────┐
-│  Captured   │────▶│  FilterPass  │────▶│  FilterPass  │────▶│ Swapchain │
-│  DMA-BUF    │     │   (Pass 0)   │     │   (Pass N)   │     │  Output   │
-└─────────────┘     └──────────────┘     └──────────────┘     └───────────┘
-                           │                    │
-                           ▼                    ▼
-                    ┌─────────────┐      ┌─────────────┐
-                    │ Framebuffer │      │   (final)   │
-                    │    (0)      │      │  no buffer  │
-                    └─────────────┘      └─────────────┘
+                        Shader Preset (.slangp)
+                                 │
+  ┌──────────────────────────────┼──────────────────────────────┐
+  │                              ▼                              │
+  │  ┌────────┐     ┌────────┐     ┌────────┐     ┌────────┐   │
+  │  │Original│────▶│ Pass 0 │────▶│ Pass 1 │────▶│ Pass N │   │
+  │  └────────┘  ┌─▶└────────┘  ┌─▶└────────┘  ┌─▶└────────┘   │
+  │       │      │       │      │       │      │       │       │
+  │       └──────┴───────┴──────┴───────┴──────┘       ▼       │
+  │            (Original available to all passes)    Output    │
+  └─────────────────────────────────────────────────────────────┘
+                                                       │
+                                                       ▼
+                                                 ┌───────────┐
+                                                 │ Swapchain │
+                                                 └───────────┘
 ```
 
 ## Shader Preset Compatibility Database
@@ -118,6 +111,19 @@ For Steam games, set launch options:
 ```
 GOGGLES_CAPTURE=1 %command%
 ```
+
+### WSI Proxy Mode (Headless)
+
+For headless capture without displaying the target application window:
+
+```bash
+GOGGLES_CAPTURE=1 GOGGLES_WSI_PROXY=1 vkcube
+```
+
+Optional environment variables:
+- `GOGGLES_WIDTH` - Virtual surface width (default: 1920)
+- `GOGGLES_HEIGHT` - Virtual surface height (default: 1080)
+- `GOGGLES_FPS_LIMIT` - Frame rate limit (default: 60)
 
 ### RetroArch Shaders
 
