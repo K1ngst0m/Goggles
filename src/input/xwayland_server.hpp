@@ -7,13 +7,13 @@
 extern "C" {
 struct wl_display;
 struct wl_event_loop;
-struct wlr_backend;        // NOLINT(readability-identifier-naming)
-struct wlr_compositor;     // NOLINT(readability-identifier-naming)
-struct wlr_seat;           // NOLINT(readability-identifier-naming)
-struct wlr_xwayland;       // NOLINT(readability-identifier-naming)
-struct wlr_renderer;       // NOLINT(readability-identifier-naming)
-struct wlr_allocator;      // NOLINT(readability-identifier-naming)
-struct wlr_xdg_shell;      // NOLINT(readability-identifier-naming)
+struct wlr_backend;    // NOLINT(readability-identifier-naming)
+struct wlr_compositor; // NOLINT(readability-identifier-naming)
+struct wlr_seat;       // NOLINT(readability-identifier-naming)
+struct wlr_xwayland;   // NOLINT(readability-identifier-naming)
+struct wlr_renderer;   // NOLINT(readability-identifier-naming)
+struct wlr_allocator;  // NOLINT(readability-identifier-naming)
+struct wlr_xdg_shell;  // NOLINT(readability-identifier-naming)
 }
 
 namespace goggles::input {

@@ -94,7 +94,7 @@ add_executable(goggles_input_test
 )
 
 target_link_libraries(goggles_input_test PRIVATE
-    SDL3::SDL3-static
+    SDL3::SDL3
     Vulkan::Vulkan
     goggles_util
 )

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <memory>
 #include <SDL3/SDL_events.h>
+#include <memory>
 #include <util/error.hpp>
 
 namespace goggles::input {

@@ -66,7 +66,8 @@ auto XWaylandServer::start() -> Result<int> {
         m_renderer = nullptr;
         m_backend = nullptr;
         m_display = nullptr;
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to initialize renderer protocols");
+        return make_error<int>(ErrorCode::input_init_failed,
+                               "Failed to initialize renderer protocols");
     }
 
     m_allocator = wlr_allocator_autocreate(m_backend, m_renderer);
@@ -192,9 +193,7 @@ auto XWaylandServer::start() -> Result<int> {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to start wlroots backend");
     }
 
-    m_compositor_thread = std::jthread([this] {
-        wl_display_run(m_display);
-    });
+    m_compositor_thread = std::jthread([this] { wl_display_run(m_display); });
 
     return m_display_number;
 }

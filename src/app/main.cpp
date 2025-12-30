@@ -37,7 +37,8 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                     if (input_forwarder) {
                         auto forward_result = input_forwarder->forward_key(event.key);
                         if (!forward_result) {
-                            GOGGLES_LOG_ERROR("Failed to forward key: {}", forward_result.error().message);
+                            GOGGLES_LOG_ERROR("Failed to forward key: {}",
+                                              forward_result.error().message);
                         }
                     }
                 } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
@@ -46,7 +47,7 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                         auto forward_result = input_forwarder->forward_mouse_button(event.button);
                         if (!forward_result) {
                             GOGGLES_LOG_ERROR("Failed to forward mouse button: {}",
-                                            forward_result.error().message);
+                                              forward_result.error().message);
                         }
                     }
                 } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
@@ -54,7 +55,7 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                         auto forward_result = input_forwarder->forward_mouse_motion(event.motion);
                         if (!forward_result) {
                             GOGGLES_LOG_ERROR("Failed to forward mouse motion: {}",
-                                            forward_result.error().message);
+                                              forward_result.error().message);
                         }
                     }
                 } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
@@ -62,7 +63,7 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                         auto forward_result = input_forwarder->forward_mouse_wheel(event.wheel);
                         if (!forward_result) {
                             GOGGLES_LOG_ERROR("Failed to forward mouse wheel: {}",
-                                            forward_result.error().message);
+                                              forward_result.error().message);
                         }
                     }
                 }

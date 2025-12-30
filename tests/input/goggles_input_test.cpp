@@ -58,10 +58,7 @@ struct SDLContext {
     SDLContext& operator=(const SDLContext&) = delete;
 
     SDLContext(SDLContext&& other) noexcept
-        : window(other.window)
-        , renderer(other.renderer)
-        , initialized(other.initialized)
-    {
+        : window(other.window), renderer(other.renderer), initialized(other.initialized) {
         other.window = nullptr;
         other.renderer = nullptr;
         other.initialized = false;
@@ -135,8 +132,7 @@ static auto init_sdl() -> SDLContext {
 
     sdl.renderer = SDL_CreateRenderer(sdl.window, nullptr);
     if (!sdl.renderer) {
-        fprintf(stderr, "[goggles_input_test] SDL_CreateRenderer failed: %s\n",
-                SDL_GetError());
+        fprintf(stderr, "[goggles_input_test] SDL_CreateRenderer failed: %s\n", SDL_GetError());
         std::exit(1);
     }
 
