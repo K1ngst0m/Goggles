@@ -2,43 +2,46 @@
 
 ## Why
 
-Current shader support covers CRT-royale features (LUT textures, aliases, parameters). To support Mega-Bezel and other complex presets, we need additional RetroArch semantics.
+Current shader support covers basic CRT features (LUT textures, aliases, parameters). To support Mega-Bezel, NTSC compositing, and motion effects, we need additional RetroArch semantics.
 
-## Target Shaders
+## What's Added
 
-### Mega-Bezel (660 presets)
-- **MBZ__5__POTATO** - 14 passes, minimal effects
-- **MBZ__3__STD** - 30 passes, standard bezel + CRT
-- **MBZ__0__SMOOTH-ADV** - 46 passes, full effects + NTSC
+### New Semantics
+- **OriginalHistory[0-6]**: Previous frame textures for afterglow/motion effects
+- **PassOutput#/PassFeedback#**: Inter-pass texture references by index
+- **frame_count_mod**: Per-pass periodic frame counting (for NTSC alternating)
+- **Rotation**: Display rotation push constant (0-3 for 0/90/180/270°)
 
-Requirements: 20+ LUT textures, frame_count_mod, mipmap_input, 30+ aliases
+### Parser Extensions
+- **#reference directive**: Preset inclusion for modular preset structure
+- Recursive reference loading with depth limit (max 8)
+- Path cycle detection to prevent infinite loops
 
-### NTSC Compositing
-- **ntsc-adaptive** - 4 passes, composite video simulation
-- **ntsc-svideo** - 3 passes, S-Video simulation
+### Frame History
+- Ring buffer for previous frames (MAX_HISTORY = 7)
+- Lazy allocation based on shader requirements
+- Auto-detect required depth from sampler names
 
-Requirements: frame_count_mod = 2
+## Compatibility Results
 
-### Motion Effects
-- **motion-interpolation** - frame interpolation
-- **hsm-afterglow** - CRT phosphor afterglow
+**Total: 1702/1906 presets compile (89%)**
 
-Requirements: OriginalHistory[0-1]
+| Status | Categories |
+|--------|------------|
+| ✅ 100% | anti-aliasing, blurs, border, cel, deblur, deinterlacing, denoisers, dithering, downsample, edge-smoothing, film, gpu, handheld, hdr, interpolation, misc, motionblur, ntsc, pal, reshade, scanlines, sharpen, vhs, warp |
+| ⚠️ Partial | bezel (757/958), crt (115/117), pixel-art-scaling (22/23) |
 
-## What Changes
-
-- **OriginalHistory[0-6]**: Previous frame textures for afterglow/motion
-- **frame_count_mod**: Periodic frame counting for NTSC alternating
-- **#reference directive**: Preset inclusion for Mega-Bezel modular structure
-- **Rotation semantic**: Display rotation for bezels
+### Known Limitations
+- Mega Bezel GLASS/ADV presets: Missing `shaders` count due to complex #reference chains
+- Some bezel presets require parameters not yet exposed via GUI
 
 ## Impact
 
-- Affected specs: `render-pipeline`
 - Affected code:
-  - `src/render/chain/filter_chain.*` - frame history ring buffer
+  - `src/render/chain/filter_chain.*` - frame history, feedback textures
   - `src/render/chain/filter_pass.*` - new semantic bindings
-  - `src/render/chain/semantic_binder.hpp` - OriginalHistory, Rotation
+  - `src/render/chain/semantic_binder.*` - OriginalHistory, PassOutput, PassFeedback
   - `src/render/chain/preset_parser.*` - frame_count_mod, #reference
-- Dependencies: none
+  - `src/render/chain/frame_history.*` - new ring buffer implementation
+  - `src/render/chain/framebuffer.*` - waitIdle on shutdown
 - Breaking changes: none
