@@ -344,7 +344,7 @@ auto PresetParser::parse_ini(const std::string& content, const std::filesystem::
         // Frame count modulo
         auto fcm_it = values.find(std::format("frame_count_mod{}", i));
         if (fcm_it != values.end()) {
-            if (auto mod_val = parse_int_safe(fcm_it->second)) {
+            if (auto mod_val = parse_int_safe(fcm_it->second); mod_val && *mod_val >= 0) {
                 pass.frame_count_mod = static_cast<uint32_t>(*mod_val);
             }
         }
