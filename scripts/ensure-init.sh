@@ -11,14 +11,21 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Handle git worktrees
-if [[ -f "$PROJECT_ROOT/.git" ]]; then
-  GIT_DIR=$(cat "$PROJECT_ROOT/.git" | sed 's/gitdir: //')
-else
-  GIT_DIR="$PROJECT_ROOT/.git"
+if ! git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo -e "\033[31m[ERROR] Not a git checkout.\033[0m" >&2
+  exit 1
 fi
 
-HOOK="$GIT_DIR/hooks/pre-commit"
+HOOKS_PATH="$(git -C "$PROJECT_ROOT" config --get core.hooksPath || true)"
+if [[ -n "$HOOKS_PATH" ]]; then
+  if [[ "$HOOKS_PATH" = /* ]]; then
+    HOOK="$HOOKS_PATH/pre-commit"
+  else
+    HOOK="$PROJECT_ROOT/$HOOKS_PATH/pre-commit"
+  fi
+else
+  HOOK="$(git -C "$PROJECT_ROOT" rev-parse --git-path hooks)/pre-commit"
+fi
 
 if [[ ! -f "$HOOK" ]]; then
   echo -e "\033[31m[ERROR] Pre-commit hook not installed. Run: pixi run init\033[0m" >&2

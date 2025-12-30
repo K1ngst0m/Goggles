@@ -6,17 +6,23 @@ This document describes the filter chain architecture for applying RetroArch sha
 
 The filter chain transforms captured DMA-BUF images through a series of shader passes before presenting to the display. It supports RetroArch `.slangp` preset files which define multi-pass post-processing effects (CRT simulation, scanlines, etc.).
 
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌───────────┐
-│  Captured   │────▶│  FilterPass  │────▶│  FilterPass  │────▶│ Swapchain │
-│  DMA-BUF    │     │   (Pass 0)   │     │   (Pass N)   │     │  Output   │
-└─────────────┘     └──────────────┘     └──────────────┘     └───────────┘
-                           │                    │
-                           ▼                    ▼
-                    ┌─────────────┐      ┌─────────────┐
-                    │ Framebuffer │      │   (final)   │
-                    │    (0)      │      │  no buffer  │
-                    └─────────────┘      └─────────────┘
+```text
+                        Shader Preset (.slangp)
+                                 │
+  ┌──────────────────────────────┼──────────────────────────────┐
+  │                              ▼                              │
+  │  ┌────────┐     ┌────────┐     ┌────────┐     ┌────────┐   │
+  │  │Original│────▶│ Pass 0 │────▶│ Pass 1 │────▶│ Pass N │   │
+  │  └────────┘  ┌─▶└────────┘  ┌─▶└────────┘  ┌─▶└────────┘   │
+  │       │      │       │      │       │      │       │       │
+  │       └──────┴───────┴──────┴───────┴──────┘       ▼       │
+  │            (Original available to all passes)    Output    │
+  └─────────────────────────────────────────────────────────────┘
+                                                       │
+                                                       ▼
+                                             ┌───────────────────┐
+                                             │ Goggles Swapchain │
+                                             └───────────────────┘
 ```
 
 ## Data Flow
