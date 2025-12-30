@@ -19,7 +19,6 @@
 #ifdef TRACY_ENABLE
 
 #include <cstring>
-
 #include <tracy/Tracy.hpp>
 
 #define GOGGLES_PROFILE_FRAME(name) FrameMarkNamed(name)

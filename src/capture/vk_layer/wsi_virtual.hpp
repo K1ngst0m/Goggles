@@ -54,25 +54,24 @@ public:
     VirtualSurface* get_surface(VkSurfaceKHR surface);
 
     VkResult get_surface_capabilities(VkPhysicalDevice phys_dev, VkSurfaceKHR surface,
-                                       VkSurfaceCapabilitiesKHR* caps);
-    VkResult get_surface_formats(VkPhysicalDevice phys_dev, VkSurfaceKHR surface,
-                                  uint32_t* count, VkSurfaceFormatKHR* formats);
+                                      VkSurfaceCapabilitiesKHR* caps);
+    VkResult get_surface_formats(VkPhysicalDevice phys_dev, VkSurfaceKHR surface, uint32_t* count,
+                                 VkSurfaceFormatKHR* formats);
     VkResult get_surface_present_modes(VkPhysicalDevice phys_dev, VkSurfaceKHR surface,
-                                        uint32_t* count, VkPresentModeKHR* modes);
+                                       uint32_t* count, VkPresentModeKHR* modes);
     VkResult get_surface_support(VkPhysicalDevice phys_dev, uint32_t queue_family,
-                                  VkSurfaceKHR surface, VkBool32* supported,
-                                  VkInstData* inst_data);
+                                 VkSurfaceKHR surface, VkBool32* supported, VkInstData* inst_data);
 
     VkResult create_swapchain(VkDevice device, const VkSwapchainCreateInfoKHR* info,
-                               VkSwapchainKHR* swapchain, VkDeviceData* dev_data);
+                              VkSwapchainKHR* swapchain, VkDeviceData* dev_data);
     void destroy_swapchain(VkDevice device, VkSwapchainKHR swapchain, VkDeviceData* dev_data);
     bool is_virtual_swapchain(VkSwapchainKHR swapchain);
     VirtualSwapchain* get_swapchain(VkSwapchainKHR swapchain);
 
     VkResult get_swapchain_images(VkSwapchainKHR swapchain, uint32_t* count, VkImage* images);
     VkResult acquire_next_image(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
-                                 VkSemaphore semaphore, VkFence fence, uint32_t* index,
-                                 VkDeviceData* dev_data);
+                                VkSemaphore semaphore, VkFence fence, uint32_t* index,
+                                VkDeviceData* dev_data);
     SwapchainFrameData get_frame_data(VkSwapchainKHR swapchain, uint32_t image_index);
 
 private:
@@ -82,7 +81,8 @@ private:
     VkSurfaceKHR generate_surface_handle();
     VkSwapchainKHR generate_swapchain_handle();
     bool create_exportable_images(VirtualSwapchain& swap, VkDevice device, VkDeviceData* dev_data);
-    void destroy_swapchain_resources(VirtualSwapchain& swap, VkDevice device, VkDeviceData* dev_data);
+    void destroy_swapchain_resources(VirtualSwapchain& swap, VkDevice device,
+                                     VkDeviceData* dev_data);
 
     bool enabled_ = false;
     std::mutex mutex_;

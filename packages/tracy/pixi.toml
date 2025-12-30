@@ -1,0 +1,6 @@
+[package]
+name = "tracy"
+version = "0.13.1"
+
+[package.build]
+backend = { name = "pixi-build-rattler-build", version = "==0.3.5" }

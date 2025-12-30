@@ -1,0 +1,9 @@
+[package]
+name = "sysroot-i686"
+version = "2.31"
+description = "Minimal 32-bit sysroot for i686 cross-compilation"
+authors = ["Goggles Team"]
+license = "MIT"
+
+[package.build]
+backend = { name = "pixi-build-rattler-build", version = "==0.3.5" }

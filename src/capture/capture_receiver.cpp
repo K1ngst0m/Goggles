@@ -176,31 +176,31 @@ bool CaptureReceiver::receive_message() {
         size_t msg_size = 0;
 
         switch (msg_type) {
-            case CaptureMessageType::client_hello:
-                msg_size = sizeof(CaptureClientHello);
-                break;
-            case CaptureMessageType::texture_data:
-                msg_size = sizeof(CaptureTextureData);
-                break;
-            case CaptureMessageType::control:
-                msg_size = sizeof(CaptureControl);
-                break;
-            case CaptureMessageType::semaphore_init:
-                msg_size = sizeof(CaptureSemaphoreInit);
-                break;
-            case CaptureMessageType::frame_metadata:
-                msg_size = sizeof(CaptureFrameMetadata);
-                break;
-            default:
-                GOGGLES_LOG_ERROR("Unknown message type {}, disconnecting client",
-                                  static_cast<uint32_t>(msg_type));
-                for (size_t i = fd_index; i < received_fds.size(); ++i) {
-                    close(received_fds[i]);
-                }
-                close(m_client_fd);
-                m_client_fd = -1;
-                cleanup_frame();
-                return false;
+        case CaptureMessageType::client_hello:
+            msg_size = sizeof(CaptureClientHello);
+            break;
+        case CaptureMessageType::texture_data:
+            msg_size = sizeof(CaptureTextureData);
+            break;
+        case CaptureMessageType::control:
+            msg_size = sizeof(CaptureControl);
+            break;
+        case CaptureMessageType::semaphore_init:
+            msg_size = sizeof(CaptureSemaphoreInit);
+            break;
+        case CaptureMessageType::frame_metadata:
+            msg_size = sizeof(CaptureFrameMetadata);
+            break;
+        default:
+            GOGGLES_LOG_ERROR("Unknown message type {}, disconnecting client",
+                              static_cast<uint32_t>(msg_type));
+            for (size_t i = fd_index; i < received_fds.size(); ++i) {
+                close(received_fds[i]);
+            }
+            close(m_client_fd);
+            m_client_fd = -1;
+            cleanup_frame();
+            return false;
         }
 
         if (m_recv_buf.size() < msg_size) {
@@ -222,8 +222,8 @@ bool CaptureReceiver::receive_message() {
     return got_frame;
 }
 
-bool CaptureReceiver::process_message(const char* data, size_t len,
-                                       const std::vector<int>& fds, size_t& fd_index) {
+bool CaptureReceiver::process_message(const char* data, size_t len, const std::vector<int>& fds,
+                                      size_t& fd_index) {
     auto msg_type = *reinterpret_cast<const CaptureMessageType*>(data);
 
     if (msg_type == CaptureMessageType::client_hello) {
@@ -288,8 +288,8 @@ bool CaptureReceiver::process_message(const char* data, size_t len,
         m_frame_ready_fd = ready_fd;
         m_frame_consumed_fd = consumed_fd;
         m_semaphores_updated = true;
-        GOGGLES_LOG_INFO("Received sync semaphores: ready_fd={}, consumed_fd={}",
-                         m_frame_ready_fd, m_frame_consumed_fd);
+        GOGGLES_LOG_INFO("Received sync semaphores: ready_fd={}, consumed_fd={}", m_frame_ready_fd,
+                         m_frame_consumed_fd);
         return false;
     }
 

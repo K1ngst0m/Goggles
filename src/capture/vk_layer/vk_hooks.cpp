@@ -5,10 +5,9 @@
 #include "vk_dispatch.hpp"
 #include "wsi_virtual.hpp"
 
-#include <util/profiling.hpp>
-
 #include <cstdio>
 #include <cstring>
+#include <util/profiling.hpp>
 #include <vector>
 #include <vulkan/vk_layer.h>
 
@@ -305,23 +304,7 @@ void VKAPI_CALL Goggles_DestroyDevice(VkDevice device, const VkAllocationCallbac
 // =============================================================================
 
 VkResult VKAPI_CALL Goggles_CreateXlibSurfaceKHR(VkInstance instance,
-                                                  const VkXlibSurfaceCreateInfoKHR* /*pCreateInfo*/,
-                                                  const VkAllocationCallbacks* /*pAllocator*/,
-                                                  VkSurfaceKHR* pSurface) {
-    auto& virt = WsiVirtualizer::instance();
-    if (virt.is_enabled()) {
-        return virt.create_surface(instance, pSurface);
-    }
-
-    auto* data = get_object_tracker().get_instance(instance);
-    if (!data) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    return VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-VkResult VKAPI_CALL Goggles_CreateXcbSurfaceKHR(VkInstance instance,
-                                                 const VkXcbSurfaceCreateInfoKHR* /*pCreateInfo*/,
+                                                 const VkXlibSurfaceCreateInfoKHR* /*pCreateInfo*/,
                                                  const VkAllocationCallbacks* /*pAllocator*/,
                                                  VkSurfaceKHR* pSurface) {
     auto& virt = WsiVirtualizer::instance();
@@ -336,10 +319,25 @@ VkResult VKAPI_CALL Goggles_CreateXcbSurfaceKHR(VkInstance instance,
     return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
-VkResult VKAPI_CALL Goggles_CreateWaylandSurfaceKHR(VkInstance instance,
-                                                     const VkWaylandSurfaceCreateInfoKHR* /*pCreateInfo*/,
-                                                     const VkAllocationCallbacks* /*pAllocator*/,
-                                                     VkSurfaceKHR* pSurface) {
+VkResult VKAPI_CALL Goggles_CreateXcbSurfaceKHR(VkInstance instance,
+                                                const VkXcbSurfaceCreateInfoKHR* /*pCreateInfo*/,
+                                                const VkAllocationCallbacks* /*pAllocator*/,
+                                                VkSurfaceKHR* pSurface) {
+    auto& virt = WsiVirtualizer::instance();
+    if (virt.is_enabled()) {
+        return virt.create_surface(instance, pSurface);
+    }
+
+    auto* data = get_object_tracker().get_instance(instance);
+    if (!data) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
+VkResult VKAPI_CALL Goggles_CreateWaylandSurfaceKHR(
+    VkInstance instance, const VkWaylandSurfaceCreateInfoKHR* /*pCreateInfo*/,
+    const VkAllocationCallbacks* /*pAllocator*/, VkSurfaceKHR* pSurface) {
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_enabled()) {
         return virt.create_surface(instance, pSurface);
@@ -367,7 +365,8 @@ void VKAPI_CALL Goggles_DestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surf
 }
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceCapabilitiesKHR(
-    VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pCapabilities) {
+    VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+    VkSurfaceCapabilitiesKHR* pCapabilities) {
 
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_surface(surface)) {
@@ -379,17 +378,16 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceCapabilitiesKHR(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     return data->funcs.GetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
-                                                                pCapabilities);
+                                                               pCapabilities);
 }
 
-VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice physicalDevice,
-                                                                VkSurfaceKHR surface,
-                                                                uint32_t* pSurfaceFormatCount,
-                                                                VkSurfaceFormatKHR* pSurfaceFormats) {
+VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceFormatsKHR(
+    VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t* pSurfaceFormatCount,
+    VkSurfaceFormatKHR* pSurfaceFormats) {
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_surface(surface)) {
         return virt.get_surface_formats(physicalDevice, surface, pSurfaceFormatCount,
-                                         pSurfaceFormats);
+                                        pSurfaceFormats);
     }
 
     auto* data = get_object_tracker().get_instance_by_physical_device(physicalDevice);
@@ -397,7 +395,7 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice 
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     return data->funcs.GetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface,
-                                                           pSurfaceFormatCount, pSurfaceFormats);
+                                                          pSurfaceFormatCount, pSurfaceFormats);
 }
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfacePresentModesKHR(
@@ -407,7 +405,7 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfacePresentModesKHR(
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_surface(surface)) {
         return virt.get_surface_present_modes(physicalDevice, surface, pPresentModeCount,
-                                               pPresentModes);
+                                              pPresentModes);
     }
 
     auto* data = get_object_tracker().get_instance_by_physical_device(physicalDevice);
@@ -415,13 +413,13 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfacePresentModesKHR(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     return data->funcs.GetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface,
-                                                                pPresentModeCount, pPresentModes);
+                                                               pPresentModeCount, pPresentModes);
 }
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice physicalDevice,
-                                                                uint32_t queueFamilyIndex,
-                                                                VkSurfaceKHR surface,
-                                                                VkBool32* pSupported) {
+                                                               uint32_t queueFamilyIndex,
+                                                               VkSurfaceKHR surface,
+                                                               VkBool32* pSupported) {
     auto* data = get_object_tracker().get_instance_by_physical_device(physicalDevice);
     if (!data) {
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -429,14 +427,15 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice 
 
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_surface(surface)) {
-        return virt.get_surface_support(physicalDevice, queueFamilyIndex, surface, pSupported, data);
+        return virt.get_surface_support(physicalDevice, queueFamilyIndex, surface, pSupported,
+                                        data);
     }
 
     if (!data->funcs.GetPhysicalDeviceSurfaceSupportKHR) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     return data->funcs.GetPhysicalDeviceSurfaceSupportKHR(physicalDevice, queueFamilyIndex, surface,
-                                                           pSupported);
+                                                          pSupported);
 }
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceCapabilities2KHR(
@@ -446,7 +445,7 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceCapabilities2KHR(
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_surface(pSurfaceInfo->surface)) {
         return virt.get_surface_capabilities(physicalDevice, pSurfaceInfo->surface,
-                                              &pSurfaceCapabilities->surfaceCapabilities);
+                                             &pSurfaceCapabilities->surfaceCapabilities);
     }
 
     auto* data = get_object_tracker().get_instance_by_physical_device(physicalDevice);
@@ -454,7 +453,7 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceCapabilities2KHR(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     return data->funcs.GetPhysicalDeviceSurfaceCapabilities2KHR(physicalDevice, pSurfaceInfo,
-                                                                 pSurfaceCapabilities);
+                                                                pSurfaceCapabilities);
 }
 
 VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceFormats2KHR(
@@ -465,11 +464,12 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceFormats2KHR(
     if (virt.is_virtual_surface(pSurfaceInfo->surface)) {
         if (!pSurfaceFormats) {
             return virt.get_surface_formats(physicalDevice, pSurfaceInfo->surface,
-                                             pSurfaceFormatCount, nullptr);
+                                            pSurfaceFormatCount, nullptr);
         }
         VkSurfaceFormatKHR formats[2];
         uint32_t count = *pSurfaceFormatCount < 2 ? *pSurfaceFormatCount : 2;
-        VkResult res = virt.get_surface_formats(physicalDevice, pSurfaceInfo->surface, &count, formats);
+        VkResult res =
+            virt.get_surface_formats(physicalDevice, pSurfaceInfo->surface, &count, formats);
         for (uint32_t i = 0; i < count; ++i) {
             pSurfaceFormats[i].surfaceFormat = formats[i];
         }
@@ -482,7 +482,7 @@ VkResult VKAPI_CALL Goggles_GetPhysicalDeviceSurfaceFormats2KHR(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     return data->funcs.GetPhysicalDeviceSurfaceFormats2KHR(physicalDevice, pSurfaceInfo,
-                                                            pSurfaceFormatCount, pSurfaceFormats);
+                                                           pSurfaceFormatCount, pSurfaceFormats);
 }
 
 // =============================================================================
@@ -543,8 +543,8 @@ void VKAPI_CALL Goggles_DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swap
 }
 
 VkResult VKAPI_CALL Goggles_GetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain,
-                                                   uint32_t* pSwapchainImageCount,
-                                                   VkImage* pSwapchainImages) {
+                                                  uint32_t* pSwapchainImageCount,
+                                                  VkImage* pSwapchainImages) {
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_swapchain(swapchain)) {
         return virt.get_swapchain_images(swapchain, pSwapchainImageCount, pSwapchainImages);
@@ -555,12 +555,12 @@ VkResult VKAPI_CALL Goggles_GetSwapchainImagesKHR(VkDevice device, VkSwapchainKH
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     return data->funcs.GetSwapchainImagesKHR(device, swapchain, pSwapchainImageCount,
-                                              pSwapchainImages);
+                                             pSwapchainImages);
 }
 
 VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain,
-                                                 uint64_t timeout, VkSemaphore semaphore,
-                                                 VkFence fence, uint32_t* pImageIndex) {
+                                                uint64_t timeout, VkSemaphore semaphore,
+                                                VkFence fence, uint32_t* pImageIndex) {
     auto* data = get_object_tracker().get_device(device);
     if (!data) {
         return VK_ERROR_DEVICE_LOST;
@@ -569,14 +569,15 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
     auto& virt = WsiVirtualizer::instance();
     if (virt.is_virtual_swapchain(swapchain)) {
         return virt.acquire_next_image(device, swapchain, timeout, semaphore, fence, pImageIndex,
-                                        data);
+                                       data);
     }
 
     if (!data->funcs.AcquireNextImageKHR) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    return data->funcs.AcquireNextImageKHR(device, swapchain, timeout, semaphore, fence, pImageIndex);
+    return data->funcs.AcquireNextImageKHR(device, swapchain, timeout, semaphore, fence,
+                                           pImageIndex);
 }
 
 // =============================================================================

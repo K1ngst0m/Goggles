@@ -3,11 +3,11 @@
 #include "ipc_socket.hpp"
 
 #include <cinttypes>
-#include <util/profiling.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
+#include <util/profiling.hpp>
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
@@ -134,7 +134,7 @@ CaptureManager::~CaptureManager() {
 void CaptureManager::shutdown() {
     bool expected = false;
     if (!shutdown_.compare_exchange_strong(expected, true, std::memory_order_release)) {
-        return;  // Already shutdown
+        return; // Already shutdown
     }
 
     cv_.notify_one();
@@ -636,7 +636,7 @@ bool CaptureManager::init_copy_cmds(SwapData* swap, VkDeviceData* dev_data) {
 
         VkCommandBufferBeginInfo begin_info{};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = 0;  // Reusable
+        begin_info.flags = 0; // Reusable
         funcs.BeginCommandBuffer(cmd.cmd, &begin_info);
 
         VkImageMemoryBarrier src_barrier{};

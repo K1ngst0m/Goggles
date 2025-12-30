@@ -33,14 +33,14 @@ This roadmap covers core infrastructure work focused on establishing robust fram
 ### 1. Shader Validation & Testing
 Prevent regressions in filter chain when adding new features
 
-- [x] Validate shader compilation for all implemented presets
-- [x] Catch SPIR-V compilation errors early
-- [x] Report shader compilation failures with diagnostics
+- [ ] Validate shader compilation for all implemented presets
+- [ ] Catch SPIR-V compilation errors early
+- [ ] Report shader compilation failures with diagnostics
 - [ ] Golden image generation for reference outputs
 - [ ] Comparison against golden images (pixel-by-pixel or perceptual)
 - [ ] Automated regression detection for various shader presets
-- [x] Automated test runner for shader validation
-- [x] Integration with existing test infrastructure (Catch2)
+- [ ] Automated test runner for shader validation
+- [ ] Integration with existing test infrastructure (Catch2)
 
 ### 2. Tracy Profiling Improvements
 

@@ -162,9 +162,11 @@ auto VulkanBackend::create_instance(bool enable_validation) -> Result<void> {
 
     vk::ApplicationInfo app_info{};
     app_info.pApplicationName = "Goggles";
-    app_info.applicationVersion = VK_MAKE_VERSION(GOGGLES_VERSION_MAJOR, GOGGLES_VERSION_MINOR, GOGGLES_VERSION_PATCH);
+    app_info.applicationVersion =
+        VK_MAKE_VERSION(GOGGLES_VERSION_MAJOR, GOGGLES_VERSION_MINOR, GOGGLES_VERSION_PATCH);
     app_info.pEngineName = "Goggles";
-    app_info.engineVersion = VK_MAKE_VERSION(GOGGLES_VERSION_MAJOR, GOGGLES_VERSION_MINOR, GOGGLES_VERSION_PATCH);
+    app_info.engineVersion =
+        VK_MAKE_VERSION(GOGGLES_VERSION_MAJOR, GOGGLES_VERSION_MINOR, GOGGLES_VERSION_PATCH);
     app_info.apiVersion = VK_API_VERSION_1_3;
 
     vk::InstanceCreateInfo create_info{};
@@ -694,12 +696,13 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
 
     VkMemoryFdPropertiesKHR fd_props_raw{};
     fd_props_raw.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR;
-    auto fd_props_result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkGetMemoryFdPropertiesKHR(
-        *m_device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, frame.dmabuf_fd.get(), &fd_props_raw));
+    auto fd_props_result =
+        static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkGetMemoryFdPropertiesKHR(
+            *m_device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, frame.dmabuf_fd.get(),
+            &fd_props_raw));
     if (fd_props_result != vk::Result::eSuccess) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Stale DMA-BUF fd, skipping frame");
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Stale DMA-BUF fd, skipping frame");
     }
     vk::MemoryFdPropertiesKHR fd_props = fd_props_raw;
 

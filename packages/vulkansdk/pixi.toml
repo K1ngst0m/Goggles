@@ -1,0 +1,6 @@
+[package]
+name = "vulkansdk"
+version = "1.4.328.1"
+
+[package.build]
+backend = { name = "pixi-build-rattler-build", version = "==0.3.5" }

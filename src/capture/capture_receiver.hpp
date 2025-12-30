@@ -48,10 +48,12 @@ private:
     bool receive_message();
     void cleanup_frame();
 
-    bool process_message(const char* data, size_t len, const std::vector<int>& fds, size_t& fd_index);
+    bool process_message(const char* data, size_t len, const std::vector<int>& fds,
+                         size_t& fd_index);
 
     int m_listen_fd = -1;
     int m_client_fd = -1;
+
     CaptureFrame m_frame{};
     capture::CaptureTextureData m_last_texture{};
     int m_frame_ready_fd = -1;

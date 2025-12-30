@@ -9,11 +9,14 @@ using namespace goggles::render;
 
 namespace {
 
-auto get_shader_dir() -> std::filesystem::path { return "shaders/retroarch"; }
+auto get_shader_dir() -> std::filesystem::path {
+    return "shaders/retroarch";
+}
 
 auto discover_presets(const std::filesystem::path& dir) -> std::vector<std::filesystem::path> {
     std::vector<std::filesystem::path> presets;
-    if (!std::filesystem::exists(dir)) return presets;
+    if (!std::filesystem::exists(dir))
+        return presets;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
         if (entry.path().extension() == ".slangp") {
             presets.push_back(entry.path());
@@ -25,7 +28,8 @@ auto discover_presets(const std::filesystem::path& dir) -> std::vector<std::file
 
 auto discover_categories(const std::filesystem::path& shader_dir) -> std::vector<std::string> {
     std::vector<std::string> cats;
-    if (!std::filesystem::exists(shader_dir)) return cats;
+    if (!std::filesystem::exists(shader_dir))
+        return cats;
     for (const auto& entry : std::filesystem::directory_iterator(shader_dir)) {
         if (entry.is_directory()) {
             auto name = entry.path().filename().string();
@@ -68,7 +72,7 @@ auto test_preset(const std::filesystem::path& preset_path) -> TestResult {
     return result;
 }
 
-}  // namespace
+} // namespace
 
 TEST_CASE("Shader validation - all categories", "[shader][validation][batch]") {
     auto shader_dir = get_shader_dir();
