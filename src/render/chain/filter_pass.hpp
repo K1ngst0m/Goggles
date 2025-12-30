@@ -59,7 +59,11 @@ public:
     void set_original_size(uint32_t width, uint32_t height) {
         m_binder.set_original_size(width, height);
     }
-    void set_frame_count(uint32_t count) { m_binder.set_frame_count(count); }
+    void set_frame_count(uint32_t count, uint32_t mod = 0) {
+        uint32_t effective = (mod > 0) ? (count % mod) : count;
+        m_binder.set_frame_count(effective);
+    }
+    void set_rotation(uint32_t rotation) { m_binder.set_rotation(rotation); }
     void set_final_viewport_size(uint32_t width, uint32_t height) {
         m_binder.set_final_viewport_size(width, height);
     }
@@ -79,8 +83,12 @@ public:
     void clear_parameter_overrides() { m_parameter_overrides.clear(); }
 
     [[nodiscard]] auto update_ubo_parameters() -> Result<void>;
+    void update_ubo_semantics();
 
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
+    [[nodiscard]] auto texture_bindings() const -> const std::vector<TextureBinding>& {
+        return m_merged_reflection.textures;
+    }
 
 private:
     [[nodiscard]] auto create_descriptor_resources() -> Result<void>;

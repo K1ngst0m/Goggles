@@ -1,6 +1,7 @@
 #include "render/chain/preset_parser.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <format>
 #include <fstream>
 
 using namespace goggles::render;
@@ -320,5 +321,158 @@ TEST_CASE("Preset Parser error handling", "[preset][error]") {
         REQUIRE(result.error().code == goggles::ErrorCode::parse_error);
 
         std::filesystem::remove_all(temp_dir);
+    }
+}
+
+TEST_CASE("Preset Parser #reference directive", "[preset][reference]") {
+    PresetParser parser;
+
+    SECTION("Parse nested #reference directives") {
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test_ref";
+        std::filesystem::remove_all(temp_dir);
+        std::filesystem::create_directories(temp_dir);
+        std::filesystem::create_directories(temp_dir / "sub");
+
+        // Level 2: actual preset
+        auto actual_preset = temp_dir / "sub" / "actual.slangp";
+        {
+            std::ofstream file(actual_preset);
+            file << "shaders = 1\n"
+                    "shader0 = test.slang\n"
+                    "filter_linear0 = true\n";
+        }
+
+        // Level 1: reference to actual
+        auto ref_preset = temp_dir / "ref.slangp";
+        {
+            std::ofstream file(ref_preset);
+            file << "#reference \"sub/actual.slangp\"\n";
+        }
+
+        // Level 0: reference to ref
+        auto root_preset = temp_dir / "root.slangp";
+        {
+            std::ofstream file(root_preset);
+            file << "#reference \"ref.slangp\"\n";
+        }
+
+        // Verify the files exist
+        REQUIRE(std::filesystem::exists(actual_preset));
+        REQUIRE(std::filesystem::exists(ref_preset));
+        REQUIRE(std::filesystem::exists(root_preset));
+
+        auto result = parser.load(root_preset);
+        if (!result.has_value()) {
+            FAIL("Parser error: " << result.error().message);
+        }
+        REQUIRE(result.has_value());
+        REQUIRE(result->passes.size() == 1);
+        REQUIRE(result->passes[0].shader_path.filename() == "test.slang");
+        REQUIRE(result->passes[0].filter_mode == FilterMode::linear);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+
+    SECTION("Reference depth limit enforcement") {
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test_ref";
+        std::filesystem::create_directories(temp_dir);
+
+        // Create chain of 10 references (exceeds limit of 8)
+        for (int i = 0; i < 10; ++i) {
+            auto path = temp_dir / std::format("ref{}.slangp", i);
+            std::ofstream file(path);
+            if (i < 9) {
+                file << std::format("#reference \"ref{}.slangp\"\n", i + 1);
+            } else {
+                file << "shaders = 1\nshader0 = test.slang\n";
+            }
+        }
+
+        auto result = parser.load(temp_dir / "ref0.slangp");
+        REQUIRE(!result.has_value());
+        REQUIRE(result.error().code == goggles::ErrorCode::parse_error);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+}
+
+TEST_CASE("Preset Parser frame_count_mod", "[preset][frame_count_mod]") {
+    PresetParser parser;
+
+    SECTION("Parse frame_count_mod per pass") {
+        std::string preset_content = R"(
+shaders = 2
+shader0 = ntsc_pass1.slang
+frame_count_mod0 = 2
+shader1 = ntsc_pass2.slang
+frame_count_mod1 = 4
+)";
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test";
+        std::filesystem::create_directories(temp_dir);
+        auto preset_path = temp_dir / "ntsc.slangp";
+
+        {
+            std::ofstream file(preset_path);
+            file << preset_content;
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->passes.size() == 2);
+        REQUIRE(result->passes[0].frame_count_mod == 2);
+        REQUIRE(result->passes[1].frame_count_mod == 4);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+
+    SECTION("frame_count_mod defaults to 0") {
+        std::string preset_content = R"(
+shaders = 1
+shader0 = test.slang
+)";
+        auto temp_dir = std::filesystem::temp_directory_path() / "goggles_test";
+        std::filesystem::create_directories(temp_dir);
+        auto preset_path = temp_dir / "no_mod.slangp";
+
+        {
+            std::ofstream file(preset_path);
+            file << preset_content;
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->passes[0].frame_count_mod == 0);
+
+        std::filesystem::remove_all(temp_dir);
+    }
+}
+
+TEST_CASE("Preset Parser MBZ integration", "[preset][integration][mbz]") {
+    PresetParser parser;
+    auto shader_dir = std::filesystem::path("shaders/retroarch");
+
+    SECTION("Load MBZ__5__POTATO__GDV via #reference chain") {
+        auto preset_path =
+            shader_dir / "bezel/Mega_Bezel/Presets/Base_CRT_Presets/MBZ__5__POTATO__GDV.slangp";
+        if (!std::filesystem::exists(preset_path)) {
+            SKIP("MBZ preset not found: " + preset_path.string());
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->passes.size() == 14);
+        REQUIRE(result->textures.size() == 7);
+    }
+
+    SECTION("Load MBZ__3__STD__GDV via #reference chain") {
+        auto preset_path =
+            shader_dir / "bezel/Mega_Bezel/Presets/Base_CRT_Presets/MBZ__3__STD__GDV.slangp";
+        if (!std::filesystem::exists(preset_path)) {
+            SKIP("MBZ preset not found: " + preset_path.string());
+        }
+
+        auto result = parser.load(preset_path);
+        REQUIRE(result.has_value());
+        REQUIRE(result->passes.size() >= 20);
     }
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "filter_pass.hpp"
+#include "frame_history.hpp"
 #include "framebuffer.hpp"
 #include "output_pass.hpp"
 #include "preset_parser.hpp"
@@ -38,8 +39,9 @@ public:
 
     [[nodiscard]] auto load_preset(const std::filesystem::path& preset_path) -> Result<void>;
 
-    void record(vk::CommandBuffer cmd, vk::ImageView original_view, vk::Extent2D original_extent,
-                vk::ImageView swapchain_view, vk::Extent2D viewport_extent, uint32_t frame_index,
+    void record(vk::CommandBuffer cmd, vk::Image original_image, vk::ImageView original_view,
+                vk::Extent2D original_extent, vk::ImageView swapchain_view,
+                vk::Extent2D viewport_extent, uint32_t frame_index,
                 ScaleMode scale_mode = ScaleMode::stretch, uint32_t integer_scale = 0);
 
     [[nodiscard]] auto handle_resize(vk::Extent2D new_viewport_extent) -> Result<void>;
@@ -57,10 +59,15 @@ public:
 private:
     [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents,
                                            vk::Extent2D viewport_extent) -> Result<void>;
+    [[nodiscard]] auto ensure_frame_history(vk::Extent2D extent) -> Result<void>;
 
     [[nodiscard]] auto load_preset_textures() -> Result<void>;
-    [[nodiscard]] auto create_texture_sampler(const TextureConfig& config)
+    [[nodiscard]] auto create_texture_sampler(const TextureConfig& config) const
         -> Result<vk::UniqueSampler>;
+
+    void bind_pass_textures(FilterPass& pass, size_t pass_index, vk::ImageView original_view,
+                            vk::Extent2D original_extent, vk::ImageView source_view);
+    void copy_feedback_framebuffers(vk::CommandBuffer cmd);
 
     VulkanContext m_vk_ctx;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
@@ -78,10 +85,14 @@ private:
     std::unique_ptr<TextureLoader> m_texture_loader;
     std::unordered_map<std::string, LoadedTexture> m_texture_registry;
     std::unordered_map<std::string, size_t> m_alias_to_pass_index;
+    std::unordered_map<size_t, Framebuffer> m_feedback_framebuffers;
 
     ScaleMode m_last_scale_mode = ScaleMode::stretch;
     uint32_t m_last_integer_scale = 0;
     vk::Extent2D m_last_source_extent;
+
+    FrameHistory m_frame_history;
+    uint32_t m_required_history_depth = 0;
 
     bool m_initialized = false;
 };

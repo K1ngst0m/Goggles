@@ -93,6 +93,8 @@ public:
     // Set the frame counter
     void set_frame_count(uint32_t count) { m_frame_count = count; }
 
+    void set_rotation(uint32_t rotation) { m_rotation = rotation % 4; }
+
     void set_final_viewport_size(uint32_t width, uint32_t height) {
         m_final_viewport_size = make_size_vec4(width, height);
     }
@@ -124,6 +126,8 @@ public:
     // Convenience: get frame count
     [[nodiscard]] auto frame_count() const -> uint32_t { return m_frame_count; }
 
+    [[nodiscard]] auto rotation() const -> uint32_t { return m_rotation; }
+
     [[nodiscard]] auto final_viewport_size() const -> const SizeVec4& {
         return m_final_viewport_size;
     }
@@ -151,6 +155,7 @@ private:
     SizeVec4 m_final_viewport_size = {
         .width = 1.0F, .height = 1.0F, .inv_width = 1.0F, .inv_height = 1.0F};
     uint32_t m_frame_count = 0;
+    uint32_t m_rotation = 0;
     std::unordered_map<std::string, SizeVec4> m_alias_sizes;
 };
 
