@@ -1,8 +1,5 @@
-# dependency-management Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines the dual-layer dependency management strategy using Pixi for system dependencies, toolchains, and source-built/prebuilt packages. CPM is not used in the current configuration.
-## Requirements
 ### Requirement: Pixi as Primary Dependency Manager
 
 The project SHALL use [Pixi](https://pixi.sh) as the primary dependency manager for system libraries, toolchains, and build tools.
@@ -50,34 +47,7 @@ The build system SHALL consume C++ libraries from Pixi packages (including sourc
 - **NOTE**: Slang shader compiler is intentionally managed as a local pixi-build package for independent version control
 - **RATIONALE**: This allows the project to control Slang updates independently from conda-forge package updates
 
-### Requirement: Pixi-CPM Integration
-
-System libraries provided by Pixi SHALL be discovered by CMake using `find_package()` with `CPM_USE_LOCAL_PACKAGES=ON`.
-
-#### Scenario: SDL3 discovery
-- **GIVEN** SDL3 is installed via Pixi
-- **WHEN** CMake processes `cmake/Dependencies.cmake`
-- **THEN** `find_package(SDL3 REQUIRED)` SHALL locate the Pixi-provided SDL3
-- **AND** CPM SHALL NOT attempt to download SDL3
-
-#### Scenario: CLI11 discovery
-- **GIVEN** CLI11 is installed via Pixi
-- **WHEN** CMake processes `cmake/Dependencies.cmake`
-- **THEN** `find_package(CLI11 REQUIRED)` SHALL locate the Pixi-provided CLI11
-
-### Requirement: Dependency Version Pinning
-
-All dependencies SHALL be pinned to specific versions to ensure reproducible builds.
-
-#### Scenario: Pixi version constraints
-- **GIVEN** the `pixi.toml` file
-- **THEN** each dependency SHALL specify a version constraint (e.g., `>=3.2.28,<4`)
-- **AND** exact versions SHALL be locked in `pixi.lock`
-
-#### Scenario: CPM version pinning
-- **GIVEN** the `cmake/Dependencies.cmake` file
-- **WHEN** a library is added via CPM
-- **THEN** a specific VERSION or GIT_TAG SHALL be specified
+## ADDED Requirements
 
 ### Requirement: Worktree-Compatible Hook Installation
 
@@ -114,4 +84,3 @@ Vulkan headers and validation layers SHALL be sourced from conda-forge packages 
 - The project uses Slang for shader compilation (via `slang-shaders` local package)
 - glslang, shaderc, and spirv-cross are not required dependencies
 - Only validation layers are needed for development and debugging
-
