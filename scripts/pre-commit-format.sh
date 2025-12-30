@@ -8,17 +8,9 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 cd "$ROOT_DIR"
 
-PIXI_ENV="${ROOT_DIR}/.pixi/envs/default"
-CLANG_FORMAT="${PIXI_ENV}/bin/clang-format"
-TAPLO="${PIXI_ENV}/bin/taplo"
-
-[[ -x "$CLANG_FORMAT" ]] || CLANG_FORMAT="$(command -v clang-format || true)"
-[[ -x "$TAPLO" ]] || TAPLO="$(command -v taplo || true)"
-
-if [[ -z "$CLANG_FORMAT" ]]; then
-    echo "[pre-commit] clang-format not found (expected at $PIXI_ENV/bin/clang-format or in PATH)." >&2
-    exit 1
-fi
+# Use pixi run for formatting tools
+run_clang_format() { pixi run -q clang-format "$@"; }
+run_taplo() { pixi run -q taplo "$@"; }
 
 format_cpp() {
     mapfile -d '' -t staged_cpp < <(git diff --cached --name-only -z --diff-filter=d | grep -zE '\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$' || true)
@@ -27,7 +19,7 @@ format_cpp() {
     fi
 
     echo "[pre-commit] Formatting C/C++ staged files (${#staged_cpp[@]})"
-    "$CLANG_FORMAT" -i "${staged_cpp[@]}"
+    run_clang_format -i "${staged_cpp[@]}"
 
     if ! git diff --quiet --exit-code -- "${staged_cpp[@]}"; then
         git add -- "${staged_cpp[@]}"
@@ -40,13 +32,9 @@ format_toml() {
     if ((${#staged_toml[@]} == 0)); then
         return
     fi
-    if [[ -z "$TAPLO" ]]; then
-        echo "[pre-commit] taplo not found (expected at $PIXI_ENV/bin/taplo or in PATH)." >&2
-        exit 1
-    fi
 
     echo "[pre-commit] Formatting TOML staged files (${#staged_toml[@]})"
-    "$TAPLO" fmt "${staged_toml[@]}"
+    run_taplo fmt "${staged_toml[@]}"
 
     if ! git diff --quiet --exit-code -- "${staged_toml[@]}"; then
         git add -- "${staged_toml[@]}"

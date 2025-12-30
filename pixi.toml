@@ -67,11 +67,6 @@ depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
 description = "Download RetroArch slang shaders"
 cmd = "bash scripts/download_retroarch_shaders.sh"
 
-[tasks.setup-ide]
-description = "Configure IDE clang-format"
-cmd = "bash scripts/setup-ide.sh {{ ide }}"
-args = [{ "arg" = "ide", "default" = "" }]
-
 [tasks.init]
 description = "First-time project setup"
 cmd = "bash scripts/init-format-setup.sh"
