@@ -127,7 +127,7 @@ All dependencies are system packages (not managed by CPM):
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| wlroots | 0.19 | Wayland compositor library (headless backend) |
+| wlroots | 0.18 | Wayland compositor library (headless backend) |
 | wayland-server | Latest | Wayland protocol server implementation |
 | xkbcommon | Latest | Keyboard keymap handling for Wayland |
 | libX11 | Latest | X11 client library (connect to :1) |
