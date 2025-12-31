@@ -94,7 +94,7 @@ All system packages (no CPM changes required):
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| wlroots | 0.19 | Headless Wayland compositor |
+| wlroots | 0.18 | Headless Wayland compositor |
 | wayland-server | Latest | Wayland protocol server |
 | xkbcommon | Latest | Keyboard keymap handling |
 | libX11 | Latest | X11 client (connect to nested XWayland) |

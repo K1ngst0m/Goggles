@@ -1,0 +1,73 @@
+package:
+  name: wlroots-0-18
+  version: "0.18.3"
+
+source:
+  url: https://github.com/K1ngst0m/Goggles/releases/download/wlroots-0.18.3/wlroots-0.18.3.tar.xz
+  sha256: d5bfc6ef714205803901d26607de3a890db07a44d9cc1df8cd517fa78c2b5cc7
+
+build:
+  number: 0
+  script: |
+    set -e
+
+    # rattler-build extracts tarball to subdirectory named after tarball
+    # Structure: wlroots-0.18.3/{include,lib/x86_64-linux-gnu,share}
+    SRC=wlroots-0.18.3
+
+    # Install to $PREFIX
+    mkdir -p $PREFIX/include $PREFIX/lib $PREFIX/share
+
+    # Copy includes (already in wlroots-0.18 subdirectory)
+    cp -a $SRC/include/* $PREFIX/include/
+
+    # Copy libs (flatten x86_64-linux-gnu directory)
+    cp -a $SRC/lib/x86_64-linux-gnu/* $PREFIX/lib/
+
+    # Copy share (pkgconfig, etc)
+    if [ -d "$SRC/share" ]; then
+        cp -a $SRC/share/* $PREFIX/share/
+    fi
+
+    # Fix pkg-config for conda environment
+    if [ -f "$PREFIX/lib/pkgconfig/wlroots-0.18.pc" ]; then
+        sed -i "s|prefix=.*|prefix=$PREFIX|g" $PREFIX/lib/pkgconfig/wlroots-0.18.pc
+        sed -i '/^Requires\.private/d' $PREFIX/lib/pkgconfig/wlroots-0.18.pc
+        sed -i '/^Version:/a Requires: pixman-1' $PREFIX/lib/pkgconfig/wlroots-0.18.pc
+    else
+        # Create pkg-config file if not present
+        mkdir -p $PREFIX/lib/pkgconfig
+        cat > $PREFIX/lib/pkgconfig/wlroots-0.18.pc <<EOF
+    prefix=$PREFIX
+    exec_prefix=\${prefix}
+    libdir=\${prefix}/lib
+    includedir=\${prefix}/include
+
+    Name: wlroots
+    Description: Modular wayland compositor library
+    Version: 0.18.3
+    Requires: wayland-server xkbcommon pixman-1
+    Libs: -L\${libdir} -lwlroots-0.18
+    Cflags: -I\${includedir}/wlroots-0.18
+    EOF
+    fi
+
+    echo "wlroots-0.18 installed successfully"
+
+requirements:
+  build:
+    - tar
+    - xz
+  host:
+    - wayland
+    - libxkbcommon
+    - pixman
+  run:
+    - wayland
+    - libxkbcommon
+    - pixman
+
+about:
+  homepage: https://gitlab.freedesktop.org/wlroots/wlroots
+  license: MIT
+  summary: wlroots 0.18.x compositor library (prebuilt for headless + XWayland)

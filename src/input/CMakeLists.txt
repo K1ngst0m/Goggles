@@ -7,10 +7,7 @@ add_library(goggles_input STATIC
 
 target_include_directories(goggles_input
     PUBLIC ${CMAKE_SOURCE_DIR}/src
-    PRIVATE ${wlroots_INCLUDE_DIRS}
-            ${wayland-server_INCLUDE_DIRS}
-            ${xkbcommon_INCLUDE_DIRS}
-            ${X11_INCLUDE_DIR}
+    PRIVATE ${X11_INCLUDE_DIR}
 )
 
 target_link_libraries(goggles_input
