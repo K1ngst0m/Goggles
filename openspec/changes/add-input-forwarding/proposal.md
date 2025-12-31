@@ -17,7 +17,7 @@ Introduce an input forwarding module (`src/input/`) that creates a nested XWayla
 
 ### Architecture
 
-```
+```text
 ┌─────────────────────────────────────────┐
 │  Goggles (DISPLAY=:0)                   │
 │                                         │
@@ -87,6 +87,40 @@ Introduce an input forwarding module (`src/input/`) that creates a nested XWayla
 
 ### Direct SDL Input Forwarding
 **Rejected**: No way to inject into different DISPLAY without XTest
+
+## What Changes
+
+### Protocol / IPC
+- New `CaptureMessageType` enum: `config_request`, `input_display_ready`
+- New message struct: `CaptureConfigRequest` (layer → viewer)
+- New message struct: `CaptureInputDisplayReady` (viewer → layer, contains display number)
+- New IPC handshake phase: config negotiation before frame streaming
+
+### Public API
+- New class `goggles::input::InputForwarder` (PIMPL pattern)
+  - `init() -> Result<void>`
+  - `forward_key(uint32_t scancode, bool pressed) -> void`
+  - `forward_mouse_button(uint8_t button, bool pressed) -> void`
+  - `forward_mouse_motion(int32_t x, int32_t y) -> void`
+  - `forward_mouse_wheel(int32_t x, int32_t y) -> void`
+  - `display_number() -> int`
+- New class `goggles::input::XWaylandServer` (internal)
+  - `start() -> Result<int>`
+  - `stop() -> void`
+
+### Error Codes
+- `ErrorCode::input_init_failed` - XWayland/compositor startup failure
+- `ErrorCode::input_socket_send_failed` - IPC message send failure
+
+### Files Added
+- `src/input/input_forwarder.cpp/hpp`
+- `src/input/xwayland_server.cpp/hpp`
+
+### Files Modified
+- `src/capture/capture_protocol.hpp` - new message types
+- `src/capture/capture_receiver.cpp` - config handshake handling
+- `src/capture/vk_layer/vk_capture.cpp` - layer-side handshake + DISPLAY env
+- `src/app/main.cpp` - InputForwarder instantiation
 
 ## Dependencies
 
