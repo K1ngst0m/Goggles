@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <sys/un.h>
 #include <unistd.h>
 #include <util/profiling.hpp>
 
@@ -17,81 +16,22 @@ __attribute__((constructor(101))) static void layer_early_init() {
     const char* old_display = getenv("DISPLAY");
     LAYER_DEBUG("layer_early_init: DISPLAY was '%s'", old_display ? old_display : "NULL");
 
-    // Connect with blocking socket (temporary for config)
-    int config_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (config_fd < 0) {
-        LAYER_DEBUG("layer_early_init: Failed to create config socket, using default DISPLAY");
-        return;
-    }
-
-    struct sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    std::memcpy(addr.sun_path, goggles::capture::CAPTURE_SOCKET_PATH,
-                goggles::capture::CAPTURE_SOCKET_PATH_LEN);
-
-    socklen_t addr_len = static_cast<socklen_t>(offsetof(struct sockaddr_un, sun_path) +
-                                                goggles::capture::CAPTURE_SOCKET_PATH_LEN);
-
-    if (::connect(config_fd, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
-        LAYER_DEBUG("layer_early_init: Failed to connect for config, using default DISPLAY");
-        close(config_fd);
-        return;
-    }
-
-    // Send config request
-    goggles::capture::CaptureConfigRequest request{};
-    request.type = goggles::capture::CaptureMessageType::config_request;
-    request.version = 1;
-
-    ssize_t sent = send(config_fd, &request, sizeof(request), MSG_NOSIGNAL);
-    if (sent != sizeof(request)) {
-        LAYER_DEBUG("layer_early_init: Failed to send config request");
-        close(config_fd);
-        return;
-    }
-
-    // Wait for response with 100ms timeout
-    pollfd pfd{};
-    pfd.fd = config_fd;
-    pfd.events = POLLIN;
-
-    int poll_result = poll(&pfd, 1, 100);
-    if (poll_result <= 0) {
-        LAYER_DEBUG("layer_early_init: Timeout waiting for config response");
-        close(config_fd);
-        return;
-    }
-
-    // Receive response
     goggles::capture::CaptureInputDisplayReady response{};
-    ssize_t received = recv(config_fd, &response, sizeof(response), 0);
-    close(config_fd);
-
-    if (received != sizeof(response)) {
-        LAYER_DEBUG("layer_early_init: Failed to receive config response");
+    if (!goggles::capture::get_layer_socket().request_display_config(response)) {
+        LAYER_DEBUG("layer_early_init: Config request failed, keeping original DISPLAY");
         return;
     }
 
-    if (response.type != goggles::capture::CaptureMessageType::input_display_ready) {
-        LAYER_DEBUG("layer_early_init: Unexpected message type %u",
-                    static_cast<uint32_t>(response.type));
-        return;
-    }
-
-    // Validate display_number before setting DISPLAY
     if (response.display_number < 0) {
-        LAYER_DEBUG("layer_early_init: Invalid display_number %d, keeping original DISPLAY",
-                    response.display_number);
+        LAYER_DEBUG("layer_early_init: Input forwarding disabled by server");
         return;
     }
 
-    // Set DISPLAY environment variable
     char display_str[32];
     snprintf(display_str, sizeof(display_str), ":%d", response.display_number);
     setenv("DISPLAY", display_str, 1);
 
-    const char* new_display = getenv("DISPLAY");
-    LAYER_DEBUG("layer_early_init: DISPLAY now '%s'", new_display ? new_display : "NULL");
+    LAYER_DEBUG("layer_early_init: DISPLAY now '%s'", getenv("DISPLAY"));
 }
 
 namespace goggles::capture {

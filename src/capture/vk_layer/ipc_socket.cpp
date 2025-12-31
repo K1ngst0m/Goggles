@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -268,6 +269,58 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
     }
 
     return false;
+}
+
+bool LayerSocketClient::request_display_config(CaptureInputDisplayReady& response) {
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        return false;
+    }
+
+    sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    std::memcpy(addr.sun_path, CAPTURE_SOCKET_PATH, CAPTURE_SOCKET_PATH_LEN);
+
+    socklen_t addr_len =
+        static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + CAPTURE_SOCKET_PATH_LEN);
+
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
+        close(fd);
+        return false;
+    }
+
+    CaptureConfigRequest request{};
+    request.type = CaptureMessageType::config_request;
+    request.version = 1;
+
+    ssize_t sent = send(fd, &request, sizeof(request), MSG_NOSIGNAL);
+    if (sent != sizeof(request)) {
+        close(fd);
+        return false;
+    }
+
+    pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+
+    int poll_result = poll(&pfd, 1, 100);
+    if (poll_result <= 0) {
+        close(fd);
+        return false;
+    }
+
+    ssize_t received = recv(fd, &response, sizeof(response), 0);
+    close(fd);
+
+    if (received != sizeof(response)) {
+        return false;
+    }
+
+    if (response.type != CaptureMessageType::input_display_ready) {
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace goggles::capture

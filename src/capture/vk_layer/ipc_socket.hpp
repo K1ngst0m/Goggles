@@ -3,9 +3,6 @@
 #include "capture/capture_protocol.hpp"
 
 #include <mutex>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 namespace goggles::capture {
 
@@ -25,6 +22,7 @@ public:
     bool send_texture_with_fd(const CaptureFrameMetadata& metadata, int dmabuf_fd);
     bool send_frame_metadata(const CaptureFrameMetadata& metadata);
     bool poll_control(CaptureControl& control);
+    bool request_display_config(CaptureInputDisplayReady& response);
     bool is_capturing() const;
 
 private:
