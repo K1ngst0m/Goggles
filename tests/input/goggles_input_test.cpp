@@ -209,11 +209,9 @@ static void run_input_loop([[maybe_unused]] SDL_Window* window,
 auto main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) -> int {
     fprintf(stderr, "[goggles_input_test] Starting\n");
 
-    // Initialize Vulkan FIRST to trigger layer loading
     auto vk = init_vulkan();
     fprintf(stderr, "[goggles_input_test] Vulkan instance created (layer loaded)\n");
 
-    // NOW init SDL - layer has already set DISPLAY=:1
     auto sdl = init_sdl();
     fprintf(stderr, "[goggles_input_test] SDL initialized\n");
 
