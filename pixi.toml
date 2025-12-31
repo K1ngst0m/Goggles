@@ -61,9 +61,7 @@ args = [{ "arg" = "preset", "default" = "debug" }]
 
 [tasks.start]
 description = "Launch app with capture + viewer"
-cmd = "bash -c \"./build/{{ preset }}/bin/goggles & viewer=$!; sleep 1 && GOGGLES_CAPTURE=1 {{ app }}; kill $viewer 2>/dev/null || true\""
-args = ["app", { "arg" = "preset", "default" = "debug" }]
-depends-on = [{ task = "dev", args = ["{{ preset }}"] }]
+cmd = "bash scripts/start.sh"
 
 [tasks.shader-fetch]
 description = "Download RetroArch slang shaders"
