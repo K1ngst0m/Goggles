@@ -11,7 +11,7 @@ Build Commands
   pixi run install-manifests [PRESET]  Install Vulkan layer manifests
 
 Run Commands
-  pixi run start <APP> [PRESET]        Launch app with capture + viewer
+  pixi run start [PRESET] <APP> [ARGS...]  Launch app with capture + viewer
 
 Utilities
   pixi run format                      Format C/C++ and TOML files
@@ -22,7 +22,8 @@ Utilities
   pixi run init                        First-time project setup
 
 Arguments
-  [PRESET]  Build preset: debug (default), release, asan, tsan
-  <APP>     Application to launch (required)
-  [IDE]     IDE to configure: vscode, emacs, vim, neovim, clion, all
+  [PRESET]      Build preset (default: debug)
+  <APP>         Application to launch (required)
+  [ARGS...]     Additional application arguments
+  [IDE]         IDE to configure: vscode, emacs, vim, neovim, clion, all
 EOF
