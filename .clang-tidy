@@ -27,7 +27,8 @@ Checks: >
   -modernize-use-trailing-return-type,
   -modernize-use-ranges,
   -readability-identifier-length,
-  -readability-implicit-bool-conversion
+  -readability-implicit-bool-conversion,
+  -bugprone-suspicious-stringview-data-usage
 
 WarningsAsErrors: "*"
 # Filter out third-party library warnings from CPM cache

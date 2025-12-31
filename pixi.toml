@@ -91,15 +91,15 @@ description = "Show task usage"
 cmd = "bash scripts/help.sh"
 
 [dependencies]
-cmake = "*"
-ninja = "*"
-clang_linux-64 = "*"
-clangxx_linux-64 = "*"
+cmake = "3.31.*"
+ninja = "1.12.*"
+clang_linux-64 = "21.*"
+clangxx_linux-64 = "21.*"
 c-compiler = "*"
 cxx-compiler = "*"
 sysroot_linux-64 = "2.28.*"
 pkg-config = ">=0.29.2,<0.30"
-clang-format = "==21.1.6"
+clang-tools = "==21.1.6"
 spdlog = "1.15.*"
 catch2 = "3.8.*"
 toml11 = "4.4.*"
@@ -135,10 +135,10 @@ xorg-kbproto = "*"
 xorg-glproto = "*"
 libdrm = "*"
 cli11 = "2.6.*"
-ccache = "*"
-lld = "*"
-taplo = "*"
-sdl3 = "*"
+ccache = "4.*"
+lld = "21.*"
+taplo = "==0.9.3"
+sdl3 = "3.2.*"
 
 # Local packages
 tracy = { path = "packages/tracy" }
@@ -150,7 +150,7 @@ slang-shaders = { path = "packages/slang-shaders" }
 
 # CI-only: Lightweight lint environment
 [feature.lint.dependencies]
-clang-format = "21.*"
+clang-tools = "21.*"
 taplo = "==0.9.3"
 
 [environments]
