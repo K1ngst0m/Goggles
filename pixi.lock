@@ -23,12 +23,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-21-21.1.7-default_h99862b1_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21-21.1.6-default_h99862b1_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21.1.6-default_h99862b1_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-tools-21.1.6-default_h99862b1_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/clang_impl_linux-64-21.1.7-default_cfg_h0a60c25_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/clang_linux-64-21.1-hc6b1054_17.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/clangxx_impl_linux-64-21.1.7-default_cfg_h0a60c25_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/clangxx_linux-64-21.1-hf7320c5_17.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cli11-2.6.0-h54a6638_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/cmake-4.2.1-hc85cc9f_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/cmake-3.31.8-hc85cc9f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/compiler-rt-21.1.7-ha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/compiler-rt21-21.1.7-hb700be7_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/compiler-rt21_linux-64-21.1.7-hffcefe0_0.conda
@@ -54,6 +55,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.45-default_hbd61a6d_105.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libcap-2.77-h3ff7636_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libclang-cpp21.1-21.1.7-default_h99862b1_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/libclang13-21.1.7-default_h746c552_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libcurl-8.17.0-h4e3cde8_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libdrm-2.4.125-hb03c661_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libedit-3.1.20250104-pl5321h7949ede_0.conda
@@ -108,7 +110,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/llvm-openmp-21.1.8-h4922eb0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/mpg123-1.32.9-hc50e24c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.5-h2d0b736_3.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/ninja-1.13.2-h171cf75_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/ninja-1.12.1-hff21bea_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.0-h26f9b46_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pcre2-10.47-haa7fec5_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pkg-config-0.29.2-h4bc722e_1009.conda
@@ -121,7 +123,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/soxr-0.1.3-h0b41bf4_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/spdlog-1.15.3-h6dc744f_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/taplo-0.10.0-h2d22210_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/taplo-0.9.3-h53e704d_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/toml11-4.4.0-h7aa8ee6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-h8577fbf_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/vulkan-validation-layers-1.4.328-h95c1ebc_0.conda
@@ -169,10 +171,12 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-2_gnu.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2025.11.12-hbd8a1cb_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21-21.1.7-default_h99862b1_2.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21.1.7-default_h99862b1_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21-21.1.7-default_h99862b1_3.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21.1.7-default_h99862b1_3.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-tools-21.1.7-default_h99862b1_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.1-h33c6efd_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libclang-cpp21.1-21.1.7-default_h99862b1_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/libclang13-21.1.7-default_h746c552_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libgcc-15.2.0-he0feb66_16.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libgomp-15.2.0-he0feb66_16.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libiconv-1.18-h3b78370_2.conda
@@ -348,20 +352,20 @@ packages:
   license_family: Apache
   size: 25272
   timestamp: 1763564348347
-- conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21.1.7-default_h99862b1_2.conda
-  sha256: 8a9c2e0df0fd55da3ea9352fc356d1ca9d9312bbf275e1a5e22552bfb63affb9
-  md5: 8e0b6ced8948217e4748ad0c26f8df4d
+- conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21.1.7-default_h99862b1_3.conda
+  sha256: 17d1595ad265a646a35c5613ff6f0e8cb80040a68c897368bbbc362fafda4ece
+  md5: f4a59af5bfcce01c5d07d3ef2ccf6dc0
   depends:
   - __glibc >=2.17,<3.0.a0
-  - clang-format-21 21.1.7 default_h99862b1_2
+  - clang-format-21 21.1.7 default_h99862b1_3
   - libclang-cpp21.1 >=21.1.7,<21.2.0a0
   - libgcc >=14
   - libllvm21 >=21.1.7,<21.2.0a0
   - libstdcxx >=14
   license: Apache-2.0 WITH LLVM-exception
   license_family: Apache
-  size: 27733
-  timestamp: 1766016586518
+  size: 28284
+  timestamp: 1767059926565
 - conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21-21.1.6-default_h99862b1_0.conda
   sha256: c891fda8bbb9c6899a0e244fe6c7e24660d00a325a5697f6343cb0b688a87f9f
   md5: 5da117f98dd33c6c7fa292c6b521f123
@@ -375,9 +379,9 @@ packages:
   license_family: Apache
   size: 68081
   timestamp: 1763564304825
-- conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21-21.1.7-default_h99862b1_2.conda
-  sha256: 4d360c464ddab6c47c8fceca87b625b58d6a3b3cd523958a314e8db7d5f4eb94
-  md5: 5589c06b39ae5be8aca4d16e28a43518
+- conda: https://conda.anaconda.org/conda-forge/linux-64/clang-format-21-21.1.7-default_h99862b1_3.conda
+  sha256: f18468851e82f97bcb7191541d38b337c418f7f7a3bb344a70d2fe99b37bea87
+  md5: ba4d4eba253a0755844b6424b0f39648
   depends:
   - __glibc >=2.17,<3.0.a0
   - libclang-cpp21.1 >=21.1.7,<21.2.0a0
@@ -386,8 +390,46 @@ packages:
   - libstdcxx >=14
   license: Apache-2.0 WITH LLVM-exception
   license_family: Apache
-  size: 70516
-  timestamp: 1766016504444
+  size: 71106
+  timestamp: 1767059861860
+- conda: https://conda.anaconda.org/conda-forge/linux-64/clang-tools-21.1.6-default_h99862b1_0.conda
+  sha256: 21d70583910306b477c3d10c79a106e81b5cd68d6a49985e5615476ca88f5211
+  md5: 61890cc391e23b50c28c716c2499afe4
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - clang-format 21.1.6 default_h99862b1_0
+  - libclang-cpp21.1 >=21.1.6,<21.2.0a0
+  - libclang13 >=21.1.6
+  - libgcc >=14
+  - libllvm21 >=21.1.6,<21.2.0a0
+  - libstdcxx >=14
+  - libxml2
+  - libxml2-16 >=2.14.6
+  constrains:
+  - clangdev 21.1.6
+  license: Apache-2.0 WITH LLVM-exception
+  license_family: Apache
+  size: 21996232
+  timestamp: 1763564388530
+- conda: https://conda.anaconda.org/conda-forge/linux-64/clang-tools-21.1.7-default_h99862b1_3.conda
+  sha256: 23cff8d1b93125c51815f2c76a91123e0f21b73296dfa6f5c6f81cfa3d94d30b
+  md5: ec57b301394fd5c32069d8420389ff54
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - clang-format 21.1.7 default_h99862b1_3
+  - libclang-cpp21.1 >=21.1.7,<21.2.0a0
+  - libclang13 >=21.1.7
+  - libgcc >=14
+  - libllvm21 >=21.1.7,<21.2.0a0
+  - libstdcxx >=14
+  - libxml2
+  - libxml2-16 >=2.14.6
+  constrains:
+  - clangdev 21.1.7
+  license: Apache-2.0 WITH LLVM-exception
+  license_family: Apache
+  size: 21935518
+  timestamp: 1767059979232
 - conda: https://conda.anaconda.org/conda-forge/linux-64/clang_impl_linux-64-21.1.7-default_cfg_h0a60c25_2.conda
   sha256: e714cd1eb4db492ee24d200b1d1921811eea3bbc634d3f073c65ea483a1b5136
   md5: c1bde6493f4d1418a63d63f06d34865d
@@ -445,14 +487,14 @@ packages:
   license_family: BSD
   size: 98102
   timestamp: 1760975548381
-- conda: https://conda.anaconda.org/conda-forge/linux-64/cmake-4.2.1-hc85cc9f_0.conda
-  sha256: 655db6eddb370306d6d0ed3ac1d679ca044e45e03a43fc98cccfc5cafc341c5f
-  md5: e4afa0cb7943cc9810546f70f02223d5
+- conda: https://conda.anaconda.org/conda-forge/linux-64/cmake-3.31.8-hc85cc9f_0.conda
+  sha256: 10660ed21b9d591f8306028bd36212467b94f23bc2f78faec76524f6ee592613
+  md5: 057e16a12847eea846ecf99710d3591b
   depends:
   - __glibc >=2.17,<3.0.a0
   - bzip2 >=1.0.8,<2.0a0
-  - libcurl >=8.17.0,<9.0a0
-  - libexpat >=2.7.3,<3.0a0
+  - libcurl >=8.14.1,<9.0a0
+  - libexpat >=2.7.1,<3.0a0
   - libgcc >=14
   - liblzma >=5.8.1,<6.0a0
   - libstdcxx >=14
@@ -463,8 +505,8 @@ packages:
   - zstd >=1.5.7,<1.6.0a0
   license: BSD-3-Clause
   license_family: BSD
-  size: 22303088
-  timestamp: 1765229009574
+  size: 20991288
+  timestamp: 1757877168657
 - conda: https://conda.anaconda.org/conda-forge/linux-64/compiler-rt-21.1.7-ha770c72_0.conda
   sha256: 4d477bea17fa04686c5bf4a948b23c9e47ca2861a23191219741fa83a6b523e5
   md5: 7c2459ae03d1d87890f7743bcd6583ac
@@ -753,6 +795,18 @@ packages:
   license_family: Apache
   size: 21055117
   timestamp: 1766016009924
+- conda: https://conda.anaconda.org/conda-forge/linux-64/libclang13-21.1.7-default_h746c552_3.conda
+  sha256: bdb778b01a7d60aa8cd1c56c613ac8123b0c646793017fda11f27b71c7bd94bf
+  md5: ee42c44c3676cdbb6e63190077ca57d3
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=14
+  - libllvm21 >=21.1.7,<21.2.0a0
+  - libstdcxx >=14
+  license: Apache-2.0 WITH LLVM-exception
+  license_family: Apache
+  size: 12347163
+  timestamp: 1767059745824
 - conda: https://conda.anaconda.org/conda-forge/linux-64/libcurl-8.17.0-h4e3cde8_1.conda
   sha256: 2d7be2fe0f58a0945692abee7bb909f8b19284b518d958747e5ff51d0655c303
   md5: 117499f93e892ea1e57fdca16c2e8351
@@ -1374,17 +1428,17 @@ packages:
   license: X11 AND BSD-3-Clause
   size: 891641
   timestamp: 1738195959188
-- conda: https://conda.anaconda.org/conda-forge/linux-64/ninja-1.13.2-h171cf75_0.conda
-  sha256: 6f7d59dbec0a7b00bf5d103a4306e8886678b796ff2151b62452d4582b2a53fb
-  md5: b518e9e92493721281a60fa975bddc65
+- conda: https://conda.anaconda.org/conda-forge/linux-64/ninja-1.12.1-hff21bea_1.conda
+  sha256: 1f2f7e26084971e87bfbb733f17d824ff3323ee9618fb713ae9932386da76aed
+  md5: 2322531904f27501ee19847b87ba7c64
   depends:
-  - libstdcxx >=14
-  - libgcc >=14
   - __glibc >=2.17,<3.0.a0
+  - libstdcxx >=13
+  - libgcc >=13
   license: Apache-2.0
   license_family: APACHE
-  size: 186323
-  timestamp: 1763688260928
+  size: 161883
+  timestamp: 1745526264371
 - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.0-h26f9b46_0.conda
   sha256: a47271202f4518a484956968335b2521409c8173e123ab381e775c358c67fe6d
   md5: 9ee58d5c534af06558933af3c845a780
@@ -1581,19 +1635,6 @@ packages:
   license_family: GPL
   size: 24008591
   timestamp: 1765578833462
-- conda: https://conda.anaconda.org/conda-forge/linux-64/taplo-0.10.0-h2d22210_1.conda
-  sha256: 7d313578d79ece2b328084d906958888b5a474326a24833317d95a71e264b219
-  md5: a4935b2eea119342f6a9d666e821984d
-  depends:
-  - __glibc >=2.17,<3.0.a0
-  - libgcc >=13
-  - openssl >=3.5.0,<4.0a0
-  constrains:
-  - __glibc >=2.17
-  license: MIT
-  license_family: MIT
-  size: 4319647
-  timestamp: 1748302828104
 - conda: https://conda.anaconda.org/conda-forge/linux-64/taplo-0.9.3-h53e704d_1.conda
   sha256: c6043d0e7df9bf3a4752cf965c04586e268040a563aaa97e60279e87b1da4b7b
   md5: b8a6d8df78c43e3ffd4459313c9bcf84
