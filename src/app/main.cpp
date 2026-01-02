@@ -225,25 +225,23 @@ static auto run_app(int argc, char** argv) -> int {
     }
 
     GOGGLES_LOG_INFO("Initializing input forwarding...");
-    goggles::input::InputForwarder input_forwarder;
-    goggles::input::InputForwarder* input_forwarder_ptr = nullptr;
+    auto input_forwarder_result = goggles::input::InputForwarder::create();
+    std::unique_ptr<goggles::input::InputForwarder> input_forwarder;
 
-    auto input_init_result = input_forwarder.init();
-    if (!input_init_result) {
-        GOGGLES_LOG_WARN("Input forwarding disabled: {}", input_init_result.error().message);
+    if (!input_forwarder_result) {
+        GOGGLES_LOG_WARN("Input forwarding disabled: {}", input_forwarder_result.error().message);
     } else {
-        int display_num = input_forwarder.display_number();
+        input_forwarder = std::move(*input_forwarder_result);
+        int display_num = input_forwarder->display_number();
         GOGGLES_LOG_INFO("Input forwarding initialized on DISPLAY :{}", display_num);
 
         // Pass display number to capture receiver for config handshake
         if (capture_receiver) {
             capture_receiver->set_input_display(display_num);
         }
-
-        input_forwarder_ptr = &input_forwarder;
     }
 
-    run_main_loop(*vulkan_backend, capture_receiver.get(), input_forwarder_ptr);
+    run_main_loop(*vulkan_backend, capture_receiver.get(), input_forwarder.get());
 
     GOGGLES_LOG_INFO("Shutting down...");
     if (capture_receiver) {

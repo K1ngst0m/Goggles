@@ -8,7 +8,6 @@ namespace goggles::input {
 
 class InputForwarder {
 public:
-    InputForwarder();
     ~InputForwarder();
 
     InputForwarder(const InputForwarder&) = delete;
@@ -16,7 +15,7 @@ public:
     InputForwarder(InputForwarder&&) = delete;
     InputForwarder& operator=(InputForwarder&&) = delete;
 
-    [[nodiscard]] auto init() -> Result<void>;
+    [[nodiscard]] static auto create() -> ResultPtr<InputForwarder>;
     [[nodiscard]] auto forward_key(const SDL_KeyboardEvent& event) -> Result<void>;
     [[nodiscard]] auto forward_mouse_button(const SDL_MouseButtonEvent& event) -> Result<void>;
     [[nodiscard]] auto forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void>;
@@ -24,6 +23,8 @@ public:
     [[nodiscard]] auto display_number() const -> int;
 
 private:
+    InputForwarder();
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

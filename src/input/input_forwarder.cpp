@@ -143,27 +143,28 @@ InputForwarder::InputForwarder() : m_impl(std::make_unique<Impl>()) {}
 
 InputForwarder::~InputForwarder() = default;
 
-auto InputForwarder::init() -> Result<void> {
-    auto start_result = m_impl->server.start();
+auto InputForwarder::create() -> ResultPtr<InputForwarder> {
+    auto forwarder = std::unique_ptr<InputForwarder>(new InputForwarder());
+
+    auto start_result = forwarder->m_impl->server.start();
     if (!start_result) {
-        return make_error<void>(start_result.error().code, start_result.error().message);
+        return make_result_ptr_error<InputForwarder>(start_result.error().code,
+                                                     start_result.error().message);
     }
     int display_num = *start_result;
 
     std::array<char, 32> display_str{};
     std::snprintf(display_str.data(), display_str.size(), ":%d", display_num);
 
-    m_impl->x11_display = XOpenDisplay(display_str.data());
-    if (!m_impl->x11_display) {
-        m_impl->server.stop();
-        return make_error<void>(ErrorCode::input_init_failed,
-                                "Failed to connect to XWayland server on DISPLAY " +
-                                    std::string(display_str.data()));
+    forwarder->m_impl->x11_display = XOpenDisplay(display_str.data());
+    if (!forwarder->m_impl->x11_display) {
+        forwarder->m_impl->server.stop();
+        return make_result_ptr_error<InputForwarder>(
+            ErrorCode::input_init_failed,
+            "Failed to connect to XWayland server on DISPLAY " + std::string(display_str.data()));
     }
 
-    // TODO: Send DISPLAY number to layer via IPC (Task 16)
-
-    return {};
+    return make_result_ptr(std::move(forwarder));
 }
 
 auto InputForwarder::forward_key(const SDL_KeyboardEvent& event) -> Result<void> {
