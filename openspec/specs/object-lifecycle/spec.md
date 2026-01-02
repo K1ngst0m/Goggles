@@ -1,5 +1,8 @@
-## ADDED Requirements
+# object-lifecycle Specification
 
+## Purpose
+TBD - created by archiving change refactor-factory-pattern. Update Purpose after archive.
+## Requirements
 ### Requirement: Factory Pattern for Complex Initialization
 Major subsystem classes with fallible initialization SHALL use static factory methods returning `ResultPtr<T>` instead of two-phase initialization (constructor + `init()`).
 
@@ -50,11 +53,13 @@ The following classes SHALL use factory pattern instead of two-phase initializat
 - **AND** it SHALL accept all necessary initialization parameters
 - **AND** it SHALL use `GOGGLES_TRY()` for nested factory calls where applicable
 
-## REMOVED Requirements
+### Requirement: Two-Phase Initialization SHALL NOT Be Used for Major Subsystems
+Major subsystem classes (backends, chains, passes, runtimes, receivers) SHALL NOT use two-phase initialization (constructor + `init()`) pattern, as it allows objects to exist in uninitialized states, violating RAII principles.
 
-### Requirement: Two-Phase Initialization Pattern (for Major Subsystems)
-**Reason**: Two-phase initialization (constructor + `init()`) allows objects to exist in uninitialized states, violating RAII principles and project error handling policies for classes that must be fully initialized before use.
+**Exception**: Two-phase initialization MAY be used for optional/lazy-initialized components where an "inactive" or "uninitialized" state is a valid operational mode (e.g., components that can be disabled or have zero-state configurations).
 
-**Migration**: Replace with static factory methods that return `ResultPtr<T>` for affected classes. Update all call sites to use `ClassName::create()` instead of `ClassName obj; obj.init()`.
+#### Scenario: Prohibited two-phase initialization
+- **WHEN** implementing a major subsystem class
+- **THEN** the class SHALL NOT expose a public `init()` method
+- **AND** the class SHALL use factory pattern instead
 
-**Exception**: Two-phase initialization remains acceptable for optional/lazy-initialized components where an "inactive" or "uninitialized" state is a valid operational mode (e.g., FrameHistory with depth=0).
