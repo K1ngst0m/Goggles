@@ -25,17 +25,17 @@ struct FramebufferExtents {
 
 class FilterChain {
 public:
-    FilterChain() = default;
+    [[nodiscard]] static auto create(const VulkanContext& vk_ctx, vk::Format swapchain_format,
+                                     uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
+                                     const std::filesystem::path& shader_dir)
+        -> ResultPtr<FilterChain>;
+
     ~FilterChain();
 
     FilterChain(const FilterChain&) = delete;
     FilterChain& operator=(const FilterChain&) = delete;
     FilterChain(FilterChain&&) = delete;
     FilterChain& operator=(FilterChain&&) = delete;
-
-    [[nodiscard]] auto init(const VulkanContext& vk_ctx, vk::Format swapchain_format,
-                            uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
-                            const std::filesystem::path& shader_dir) -> Result<void>;
 
     [[nodiscard]] auto load_preset(const std::filesystem::path& preset_path) -> Result<void>;
 
@@ -48,7 +48,6 @@ public:
 
     void shutdown();
 
-    [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
     [[nodiscard]] auto pass_count() const -> size_t { return m_passes.size(); }
 
     [[nodiscard]] static auto calculate_pass_output_size(const ShaderPassConfig& pass_config,
@@ -57,6 +56,7 @@ public:
         -> vk::Extent2D;
 
 private:
+    FilterChain() = default;
     [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents,
                                            vk::Extent2D viewport_extent) -> Result<void>;
     [[nodiscard]] auto ensure_frame_history(vk::Extent2D extent) -> Result<void>;
@@ -76,8 +76,8 @@ private:
     std::filesystem::path m_shader_dir;
 
     std::vector<std::unique_ptr<FilterPass>> m_passes;
-    std::vector<Framebuffer> m_framebuffers;
-    OutputPass m_output_pass;
+    std::vector<std::unique_ptr<Framebuffer>> m_framebuffers;
+    std::unique_ptr<OutputPass> m_output_pass;
 
     PresetConfig m_preset;
     uint32_t m_frame_count = 0;
@@ -85,7 +85,7 @@ private:
     std::unique_ptr<TextureLoader> m_texture_loader;
     std::unordered_map<std::string, LoadedTexture> m_texture_registry;
     std::unordered_map<std::string, size_t> m_alias_to_pass_index;
-    std::unordered_map<size_t, Framebuffer> m_feedback_framebuffers;
+    std::unordered_map<size_t, std::unique_ptr<Framebuffer>> m_feedback_framebuffers;
 
     ScaleMode m_last_scale_mode = ScaleMode::stretch;
     uint32_t m_last_integer_scale = 0;
@@ -93,8 +93,6 @@ private:
 
     FrameHistory m_frame_history;
     uint32_t m_required_history_depth = 0;
-
-    bool m_initialized = false;
 };
 
 } // namespace goggles::render

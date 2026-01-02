@@ -18,7 +18,11 @@ namespace goggles::render {
 
 class VulkanBackend {
 public:
-    VulkanBackend() = default;
+    [[nodiscard]] static auto create(SDL_Window* window, bool enable_validation = false,
+                                     const std::filesystem::path& shader_dir = "shaders",
+                                     ScaleMode scale_mode = ScaleMode::stretch,
+                                     uint32_t integer_scale = 0) -> ResultPtr<VulkanBackend>;
+
     ~VulkanBackend();
 
     VulkanBackend(const VulkanBackend&) = delete;
@@ -26,16 +30,11 @@ public:
     VulkanBackend(VulkanBackend&&) = delete;
     VulkanBackend& operator=(VulkanBackend&&) = delete;
 
-    [[nodiscard]] auto init(SDL_Window* window, bool enable_validation = false,
-                            const std::filesystem::path& shader_dir = "shaders",
-                            ScaleMode scale_mode = ScaleMode::stretch, uint32_t integer_scale = 0)
-        -> Result<void>;
     void shutdown();
 
     [[nodiscard]] auto render_frame(const CaptureFrame& frame) -> Result<bool>;
     [[nodiscard]] auto render_clear() -> Result<bool>;
     [[nodiscard]] auto handle_resize() -> Result<void>;
-    [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
 
     void load_shader_preset(const std::filesystem::path& preset_path);
 
@@ -45,6 +44,8 @@ public:
     void cleanup_sync_semaphores();
 
 private:
+    VulkanBackend() = default;
+
     [[nodiscard]] auto create_instance(bool enable_validation) -> Result<void>;
     [[nodiscard]] auto create_debug_messenger() -> Result<void>;
     [[nodiscard]] auto create_surface(SDL_Window* window) -> Result<void>;
@@ -72,21 +73,36 @@ private:
     [[nodiscard]] static auto get_matching_swapchain_format(vk::Format source_format) -> vk::Format;
     [[nodiscard]] static auto is_srgb_format(vk::Format format) -> bool;
 
-    vk::UniqueInstance m_instance;
-    std::optional<VulkanDebugMessenger> m_debug_messenger;
-    vk::UniqueSurfaceKHR m_surface;
-    vk::UniqueDevice m_device;
-    vk::UniqueSwapchainKHR m_swapchain;
-    vk::UniqueCommandPool m_command_pool;
-
     vk::PhysicalDevice m_physical_device;
-    uint32_t m_graphics_queue_family = UINT32_MAX;
     vk::Queue m_graphics_queue;
+    std::unique_ptr<ShaderRuntime> m_shader_runtime;
+    std::unique_ptr<FilterChain> m_filter_chain;
+    SDL_Window* m_window = nullptr;
+    vk::Semaphore m_frame_ready_sem;
+    vk::Semaphore m_frame_consumed_sem;
+    uint64_t m_last_frame_number = 0;
+    uint64_t m_last_signaled_frame = 0;
 
+    vk::UniqueInstance m_instance;
+    vk::UniqueDevice m_device;
     std::vector<vk::Image> m_swapchain_images;
     std::vector<vk::UniqueImageView> m_swapchain_image_views;
-    vk::Format m_swapchain_format = vk::Format::eUndefined;
-    vk::Extent2D m_swapchain_extent;
+    std::vector<vk::Semaphore> m_render_finished_sems;
+
+    struct ImportedImage {
+        vk::Image image;
+        vk::DeviceMemory memory;
+        vk::ImageView view;
+    };
+    ImportedImage m_import;
+
+    vk::UniqueSurfaceKHR m_surface;
+    vk::UniqueSwapchainKHR m_swapchain;
+    vk::UniqueCommandPool m_command_pool;
+    std::optional<VulkanDebugMessenger> m_debug_messenger;
+
+    std::filesystem::path m_shader_dir;
+    std::filesystem::path m_preset_path;
 
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -96,35 +112,18 @@ private:
         vk::Semaphore image_available_sem;
     };
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> m_frames{};
-    std::vector<vk::Semaphore> m_render_finished_sems;
+
+    uint32_t m_graphics_queue_family = UINT32_MAX;
+    vk::Format m_swapchain_format = vk::Format::eUndefined;
     uint32_t m_current_frame = 0;
-
-    struct ImportedImage {
-        vk::Image image;
-        vk::DeviceMemory memory;
-        vk::ImageView view;
-    };
-    ImportedImage m_import;
-
-    ShaderRuntime m_shader_runtime;
-    FilterChain m_filter_chain;
-    std::filesystem::path m_shader_dir;
-    std::filesystem::path m_preset_path;
     vk::Format m_source_format = vk::Format::eUndefined;
+    uint32_t m_integer_scale = 0;
+    vk::Extent2D m_swapchain_extent;
     vk::Extent2D m_import_extent;
-
-    SDL_Window* m_window = nullptr;
     bool m_enable_validation = false;
     ScaleMode m_scale_mode = ScaleMode::stretch;
-    uint32_t m_integer_scale = 0;
-    bool m_initialized = false;
     bool m_needs_resize = false;
-
-    vk::Semaphore m_frame_ready_sem;
-    vk::Semaphore m_frame_consumed_sem;
     bool m_sync_semaphores_imported = false;
-    uint64_t m_last_frame_number = 0;
-    uint64_t m_last_signaled_frame = 0;
 };
 
 } // namespace goggles::render

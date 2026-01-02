@@ -39,73 +39,70 @@ FilterPass::~FilterPass() {
     FilterPass::shutdown();
 }
 
-auto FilterPass::init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
-                      const FilterPassConfig& config) -> Result<void> {
+auto FilterPass::create(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
+                        const FilterPassConfig& config) -> ResultPtr<FilterPass> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (m_initialized) {
-        return {};
-    }
+    auto pass = std::unique_ptr<FilterPass>(new FilterPass());
 
-    m_device = vk_ctx.device;
-    m_physical_device = vk_ctx.physical_device;
-    m_target_format = config.target_format;
-    m_num_sync_indices = config.num_sync_indices;
-    m_parameters = config.parameters;
+    pass->m_device = vk_ctx.device;
+    pass->m_physical_device = vk_ctx.physical_device;
+    pass->m_target_format = config.target_format;
+    pass->m_num_sync_indices = config.num_sync_indices;
+    pass->m_parameters = config.parameters;
 
     auto compile_result = shader_runtime.compile_retroarch_shader(
         config.vertex_source, config.fragment_source, config.shader_name);
     if (!compile_result) {
-        return make_error<void>(ErrorCode::shader_compile_failed, compile_result.error().message);
+        return make_result_ptr_error<FilterPass>(ErrorCode::shader_compile_failed,
+                                                 compile_result.error().message);
     }
 
-    m_vertex_reflection = std::move(compile_result->vertex_reflection);
-    m_fragment_reflection = std::move(compile_result->fragment_reflection);
-    m_merged_reflection = merge_reflection(m_vertex_reflection, m_fragment_reflection);
+    pass->m_vertex_reflection = std::move(compile_result->vertex_reflection);
+    pass->m_fragment_reflection = std::move(compile_result->fragment_reflection);
+    pass->m_merged_reflection =
+        merge_reflection(pass->m_vertex_reflection, pass->m_fragment_reflection);
 
-    m_has_push_constants = m_merged_reflection.push_constants.has_value();
-    m_has_vertex_inputs = !m_merged_reflection.vertex_inputs.empty();
+    pass->m_has_push_constants = pass->m_merged_reflection.push_constants.has_value();
+    pass->m_has_vertex_inputs = !pass->m_merged_reflection.vertex_inputs.empty();
 
-    if (m_has_push_constants) {
-        m_push_constant_size =
-            static_cast<uint32_t>(m_merged_reflection.push_constants->total_size);
-        m_push_data.resize(m_push_constant_size, 0);
-        GOGGLES_LOG_DEBUG("Push constant size from reflection: {} bytes", m_push_constant_size);
+    if (pass->m_has_push_constants) {
+        pass->m_push_constant_size =
+            static_cast<uint32_t>(pass->m_merged_reflection.push_constants->total_size);
+        pass->m_push_data.resize(pass->m_push_constant_size, 0);
+        GOGGLES_LOG_DEBUG("Push constant size from reflection: {} bytes",
+                          pass->m_push_constant_size);
 
-        for (const auto& member : m_merged_reflection.push_constants->members) {
+        for (const auto& member : pass->m_merged_reflection.push_constants->members) {
             GOGGLES_LOG_DEBUG("  Push constant member: '{}' offset={} size={}", member.name,
                               member.offset, member.size);
         }
     }
 
-    GOGGLES_LOG_DEBUG("FilterPass parameters count: {}", m_parameters.size());
-    for (const auto& param : m_parameters) {
+    GOGGLES_LOG_DEBUG("FilterPass parameters count: {}", pass->m_parameters.size());
+    for (const auto& param : pass->m_parameters) {
         GOGGLES_LOG_DEBUG("  Param: '{}' default={}", param.name, param.default_value);
     }
 
-    GOGGLES_TRY(create_sampler(config.filter_mode, config.mipmap, config.wrap_mode));
+    GOGGLES_TRY(pass->create_sampler(config.filter_mode, config.mipmap, config.wrap_mode));
 
-    if (m_has_vertex_inputs) {
-        GOGGLES_TRY(create_vertex_buffer());
+    if (pass->m_has_vertex_inputs) {
+        GOGGLES_TRY(pass->create_vertex_buffer());
     }
 
-    GOGGLES_TRY(create_ubo_buffer());
-    GOGGLES_TRY(create_descriptor_resources());
-    GOGGLES_TRY(create_pipeline_layout());
-    GOGGLES_TRY(create_pipeline(compile_result->vertex_spirv, compile_result->fragment_spirv));
+    GOGGLES_TRY(pass->create_ubo_buffer());
+    GOGGLES_TRY(pass->create_descriptor_resources());
+    GOGGLES_TRY(pass->create_pipeline_layout());
+    GOGGLES_TRY(
+        pass->create_pipeline(compile_result->vertex_spirv, compile_result->fragment_spirv));
 
-    m_initialized = true;
     GOGGLES_LOG_DEBUG("FilterPass '{}' initialized (push_constants={}, size={}, vertex_inputs={})",
-                      config.shader_name, m_has_push_constants, m_push_constant_size,
-                      m_has_vertex_inputs);
-    return {};
+                      config.shader_name, pass->m_has_push_constants, pass->m_push_constant_size,
+                      pass->m_has_vertex_inputs);
+    return make_result_ptr(std::move(pass));
 }
 
 void FilterPass::shutdown() {
-    if (!m_initialized) {
-        return;
-    }
-
     m_pipeline.reset();
     m_pipeline_layout.reset();
     m_descriptor_pool.reset();
@@ -127,7 +124,6 @@ void FilterPass::shutdown() {
     m_has_ubo = false;
     m_push_constant_size = 0;
 
-    m_initialized = false;
     GOGGLES_LOG_DEBUG("FilterPass shutdown");
 }
 

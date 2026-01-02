@@ -42,9 +42,24 @@ template <typename T>
 using Result = nonstd::expected<T, Error>;
 
 template <typename T>
+using ResultPtr = Result<std::unique_ptr<T>>;
+
+template <typename T>
 [[nodiscard]] inline auto make_error(ErrorCode code, std::string message,
                                      std::source_location loc = std::source_location::current())
     -> Result<T> {
+    return nonstd::make_unexpected(Error{code, std::move(message), loc});
+}
+
+template <typename T>
+[[nodiscard]] inline auto make_result_ptr(std::unique_ptr<T> ptr) -> ResultPtr<T> {
+    return ResultPtr<T>{std::move(ptr)};
+}
+
+template <typename T>
+[[nodiscard]] inline auto
+make_result_ptr_error(ErrorCode code, std::string message,
+                      std::source_location loc = std::source_location::current()) -> ResultPtr<T> {
     return nonstd::make_unexpected(Error{code, std::move(message), loc});
 }
 

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <render/chain/framebuffer.hpp>
 
 namespace goggles::render {
@@ -26,7 +27,7 @@ public:
     void shutdown();
 
 private:
-    std::array<Framebuffer, MAX_HISTORY> m_buffers;
+    std::array<std::unique_ptr<Framebuffer>, MAX_HISTORY> m_buffers;
     uint32_t m_write_index = 0;
     uint32_t m_depth = 0;
     uint32_t m_frame_count = 0;

@@ -470,6 +470,99 @@ if (result != vk::Result::eSuccess) {
 - `static_cast<void>` provides zero information for post-mortem debugging
 - Macros reduce boilerplate while maintaining consistent error handling
 
+### D.7 Object Initialization Policy
+
+**Goal:** Eliminate two-phase initialization (constructor + `init()`) to prevent usage of uninitialized objects.
+
+#### D.7.1 Factory Pattern Required For
+
+Use `static auto create(...) -> ResultPtr<T>` pattern for:
+
+1. **Manager/singleton objects** - Created once, live for program lifetime
+   - Examples: `VulkanBackend`, `FilterChain`, `ShaderRuntime`
+
+2. **Objects owning multiple interdependent resources**
+   - Complex initialization with multiple failure points
+   - Examples: `FilterPass`, `OutputPass`
+
+3. **Objects where uninitialized state causes undefined behavior**
+   - Must be fully initialized or not exist at all
+
+**Pattern:**
+```cpp
+class VulkanBackend {
+public:
+    [[nodiscard]] static auto create(...) -> ResultPtr<VulkanBackend>;
+    ~VulkanBackend();
+
+    VulkanBackend(const VulkanBackend&) = delete;
+
+private:
+    VulkanBackend() = default;
+};
+```
+
+**Helper Types:**
+```cpp
+template <typename T>
+using ResultPtr = Result<std::unique_ptr<T>>;
+
+template <typename T>
+auto make_result_ptr(std::unique_ptr<T> ptr) -> ResultPtr<T>;
+
+template <typename T>
+auto make_result_ptr_error(ErrorCode code, std::string msg) -> ResultPtr<T>;
+```
+
+#### D.7.2 Factory Pattern Optional For
+
+Consider cost/benefit for:
+- Simple RAII wrappers (single resource, constructor can handle)
+- Objects created infrequently in non-critical paths
+- If two-phase init is truly needed, document why
+
+#### D.7.3 Factory Pattern Discouraged For
+
+- **Value types** - Parsed data structures, configs (return `Result<T>` instead)
+- **Performance-critical frequently-created objects** - Heap allocation overhead
+- **Simple single-resource wrappers** - Constructor-based RAII sufficient
+
+#### D.7.4 Banned Patterns
+
+**No two-phase initialization:**
+```cpp
+// BAD
+VulkanBackend backend;
+auto result = backend.init(...);
+
+// GOOD
+auto backend = GOGGLES_TRY(VulkanBackend::create(...));
+```
+
+**No public default constructors for manager objects:**
+```cpp
+// BAD
+class VulkanBackend {
+public:
+    VulkanBackend() = default;
+    auto init(...) -> Result<void>;
+};
+
+// GOOD
+class VulkanBackend {
+public:
+    static auto create(...) -> ResultPtr<VulkanBackend>;
+private:
+    VulkanBackend() = default;
+};
+```
+
+#### D.7.5 Enforcement
+
+- **Code review:** Check for two-phase initialization in new manager classes
+- **Convention:** No mandatory CI checks (judgement-based application)
+- **Existing code:** Update incrementally when modified
+
 ---
 
 ## E) Threading Model Policy

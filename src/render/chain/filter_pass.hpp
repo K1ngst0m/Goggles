@@ -36,16 +36,15 @@ struct PassTextureBinding {
 
 class FilterPass : public Pass {
 public:
-    FilterPass() = default;
+    [[nodiscard]] static auto create(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
+                                     const FilterPassConfig& config) -> ResultPtr<FilterPass>;
+
     ~FilterPass() override;
 
     FilterPass(const FilterPass&) = delete;
     FilterPass& operator=(const FilterPass&) = delete;
     FilterPass(FilterPass&&) = delete;
     FilterPass& operator=(FilterPass&&) = delete;
-
-    [[nodiscard]] auto init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
-                            const FilterPassConfig& config) -> Result<void>;
 
     void shutdown() override;
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
@@ -85,12 +84,12 @@ public:
     [[nodiscard]] auto update_ubo_parameters() -> Result<void>;
     void update_ubo_semantics();
 
-    [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
     [[nodiscard]] auto texture_bindings() const -> const std::vector<TextureBinding>& {
         return m_merged_reflection.textures;
     }
 
 private:
+    FilterPass() = default;
     [[nodiscard]] auto create_descriptor_resources() -> Result<void>;
     [[nodiscard]] auto create_pipeline_layout() -> Result<void>;
     [[nodiscard]] auto create_pipeline(const std::vector<uint32_t>& vertex_spirv,
@@ -133,7 +132,6 @@ private:
     uint32_t m_push_constant_size = 0;
     bool m_has_push_constants = false;
     bool m_has_vertex_inputs = false;
-    bool m_initialized = false;
 
     std::vector<uint8_t> m_push_data;
     std::vector<ShaderParameter> m_parameters;
