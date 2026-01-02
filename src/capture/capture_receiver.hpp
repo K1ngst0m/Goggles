@@ -3,6 +3,7 @@
 #include "capture_protocol.hpp"
 
 #include <cstdint>
+#include <util/error.hpp>
 #include <util/unique_fd.hpp>
 #include <vector>
 
@@ -20,13 +21,13 @@ struct CaptureFrame {
 
 class CaptureReceiver {
 public:
-    CaptureReceiver();
+    [[nodiscard]] static auto create() -> ResultPtr<CaptureReceiver>;
+
     ~CaptureReceiver();
 
     CaptureReceiver(const CaptureReceiver&) = delete;
     CaptureReceiver& operator=(const CaptureReceiver&) = delete;
 
-    bool init();
     void shutdown();
     bool poll_frame();
 
@@ -44,6 +45,8 @@ public:
     void clear_sync_semaphores();
 
 private:
+    CaptureReceiver() = default;
+
     bool accept_client();
     bool receive_message();
     void cleanup_frame();

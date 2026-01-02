@@ -46,54 +46,47 @@ VulkanBackend::~VulkanBackend() {
     shutdown();
 }
 
-auto VulkanBackend::init(SDL_Window* window, bool enable_validation,
-                         const std::filesystem::path& shader_dir, ScaleMode scale_mode,
-                         uint32_t integer_scale) -> Result<void> {
+auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
+                           const std::filesystem::path& shader_dir, ScaleMode scale_mode,
+                           uint32_t integer_scale) -> ResultPtr<VulkanBackend> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (m_initialized) {
-        return {};
-    }
+    auto backend = std::unique_ptr<VulkanBackend>(new VulkanBackend());
 
     auto vk_get_instance_proc_addr =
         reinterpret_cast<PFN_vkGetInstanceProcAddr>(SDL_Vulkan_GetVkGetInstanceProcAddr());
     if (vk_get_instance_proc_addr == nullptr) {
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to get vkGetInstanceProcAddr from SDL");
+        return make_result_ptr_error<VulkanBackend>(ErrorCode::vulkan_init_failed,
+                                                    "Failed to get vkGetInstanceProcAddr from SDL");
     }
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vk_get_instance_proc_addr);
 
-    m_window = window;
-    m_enable_validation = enable_validation;
-    m_shader_dir = shader_dir;
-    m_scale_mode = scale_mode;
-    m_integer_scale = integer_scale;
+    backend->m_window = window;
+    backend->m_enable_validation = enable_validation;
+    backend->m_shader_dir = shader_dir;
+    backend->m_scale_mode = scale_mode;
+    backend->m_integer_scale = integer_scale;
 
     int width = 0;
     int height = 0;
     SDL_GetWindowSize(window, &width, &height);
 
-    GOGGLES_TRY(create_instance(enable_validation));
-    GOGGLES_TRY(create_debug_messenger());
-    GOGGLES_TRY(create_surface(window));
-    GOGGLES_TRY(select_physical_device());
-    GOGGLES_TRY(create_device());
-    GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                 vk::Format::eB8G8R8A8Srgb));
-    GOGGLES_TRY(create_command_resources());
-    GOGGLES_TRY(create_sync_objects());
-    GOGGLES_TRY(init_filter_chain());
+    GOGGLES_TRY(backend->create_instance(enable_validation));
+    GOGGLES_TRY(backend->create_debug_messenger());
+    GOGGLES_TRY(backend->create_surface(window));
+    GOGGLES_TRY(backend->select_physical_device());
+    GOGGLES_TRY(backend->create_device());
+    GOGGLES_TRY(backend->create_swapchain(
+        static_cast<uint32_t>(width), static_cast<uint32_t>(height), vk::Format::eB8G8R8A8Srgb));
+    GOGGLES_TRY(backend->create_command_resources());
+    GOGGLES_TRY(backend->create_sync_objects());
+    GOGGLES_TRY(backend->init_filter_chain());
 
-    m_initialized = true;
     GOGGLES_LOG_INFO("Vulkan backend initialized: {}x{}", width, height);
-    return {};
+    return make_result_ptr(std::move(backend));
 }
 
 void VulkanBackend::shutdown() {
-    if (!m_initialized) {
-        return;
-    }
-
     if (m_device) {
         auto wait_result = m_device->waitIdle();
         if (wait_result != vk::Result::eSuccess) {
@@ -101,8 +94,12 @@ void VulkanBackend::shutdown() {
         }
     }
 
-    m_filter_chain.shutdown();
-    m_shader_runtime.shutdown();
+    if (m_filter_chain) {
+        m_filter_chain->shutdown();
+    }
+    if (m_shader_runtime) {
+        m_shader_runtime->shutdown();
+    }
     cleanup_imported_image();
     cleanup_sync_semaphores();
 
@@ -127,7 +124,6 @@ void VulkanBackend::shutdown() {
     m_debug_messenger.reset();
     m_instance.reset();
 
-    m_initialized = false;
     GOGGLES_LOG_INFO("Vulkan backend shutdown");
 }
 
@@ -464,7 +460,7 @@ auto VulkanBackend::recreate_swapchain() -> Result<void> {
 
     GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                  m_swapchain_format));
-    GOGGLES_TRY(m_filter_chain.handle_resize(m_swapchain_extent));
+    GOGGLES_TRY(m_filter_chain->handle_resize(m_swapchain_extent));
 
     m_needs_resize = false;
     GOGGLES_LOG_DEBUG("Swapchain recreated: {}x{}", width, height);
@@ -486,7 +482,9 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
 
     VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost,
            "waitIdle failed before swapchain format change");
-    m_filter_chain.shutdown();
+    if (m_filter_chain) {
+        m_filter_chain->shutdown();
+    }
     cleanup_swapchain();
 
     GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
@@ -495,7 +493,7 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
     GOGGLES_TRY(init_filter_chain());
 
     if (!m_preset_path.empty()) {
-        auto result = m_filter_chain.load_preset(m_preset_path);
+        auto result = m_filter_chain->load_preset(m_preset_path);
         if (!result) {
             GOGGLES_LOG_WARN("Failed to reload shader preset after format change: {}",
                              result.error().message);
@@ -597,20 +595,21 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
 auto VulkanBackend::init_filter_chain() -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    GOGGLES_TRY(m_shader_runtime.init());
+    m_shader_runtime = GOGGLES_TRY(ShaderRuntime::create());
 
     VulkanContext vk_ctx{.device = *m_device,
                          .physical_device = m_physical_device,
                          .command_pool = *m_command_pool,
                          .graphics_queue = m_graphics_queue};
-    return m_filter_chain.init(vk_ctx, m_swapchain_format, MAX_FRAMES_IN_FLIGHT, m_shader_runtime,
-                               m_shader_dir);
+    m_filter_chain = GOGGLES_TRY(FilterChain::create(
+        vk_ctx, m_swapchain_format, MAX_FRAMES_IN_FLIGHT, *m_shader_runtime, m_shader_dir));
+    return {};
 }
 
 void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path) {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (!m_initialized) {
+    if (!m_filter_chain) {
         GOGGLES_LOG_WARN("Cannot load shader preset: VulkanBackend not initialized");
         return;
     }
@@ -622,7 +621,7 @@ void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path)
         return;
     }
 
-    auto result = m_filter_chain.load_preset(preset_path);
+    auto result = m_filter_chain->load_preset(preset_path);
     if (!result) {
         GOGGLES_LOG_WARN("Failed to load shader preset '{}': {} - falling back to passthrough",
                          preset_path.string(), result.error().message);
@@ -952,9 +951,9 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
                             vk::PipelineStageFlagBits::eColorAttachmentOutput,
                         {}, {}, {}, barriers);
 
-    m_filter_chain.record(cmd, m_import.image, m_import.view, m_import_extent,
-                          *m_swapchain_image_views[image_index], m_swapchain_extent,
-                          m_current_frame, m_scale_mode, m_integer_scale);
+    m_filter_chain->record(cmd, m_import.image, m_import.view, m_import_extent,
+                           *m_swapchain_image_views[image_index], m_swapchain_extent,
+                           m_current_frame, m_scale_mode, m_integer_scale);
 
     dst_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     dst_barrier.dstAccessMask = vk::AccessFlagBits::eNone;
@@ -1113,7 +1112,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (!m_initialized) {
+    if (!m_device) {
         return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
@@ -1137,7 +1136,7 @@ auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
 auto VulkanBackend::render_clear() -> Result<bool> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (!m_initialized) {
+    if (!m_device) {
         return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
@@ -1149,7 +1148,7 @@ auto VulkanBackend::render_clear() -> Result<bool> {
 }
 
 auto VulkanBackend::handle_resize() -> Result<void> {
-    if (!m_initialized) {
+    if (!m_device) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 

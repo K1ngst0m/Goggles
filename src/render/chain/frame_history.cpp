@@ -18,7 +18,7 @@ auto FrameHistory::init(vk::Device device, vk::PhysicalDevice physical_device, v
     }
 
     for (uint32_t i = 0; i < m_depth; ++i) {
-        GOGGLES_TRY(m_buffers[i].init(device, physical_device, format, extent));
+        m_buffers[i] = GOGGLES_TRY(Framebuffer::create(device, physical_device, format, extent));
     }
 
     m_initialized = true;
@@ -33,7 +33,7 @@ void FrameHistory::push(vk::CommandBuffer cmd, vk::Image source, vk::Extent2D ex
 
     auto& target = m_buffers[m_write_index];
 
-    auto target_extent = target.extent();
+    auto target_extent = target->extent();
     if (extent.width != target_extent.width || extent.height != target_extent.height) {
         GOGGLES_LOG_WARN("FrameHistory::push extent mismatch: {}x{} vs {}x{}", extent.width,
                          extent.height, target_extent.width, target_extent.height);
@@ -57,7 +57,7 @@ void FrameHistory::push(vk::CommandBuffer cmd, vk::Image source, vk::Extent2D ex
     dst_barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
     dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    dst_barrier.image = target.image();
+    dst_barrier.image = target->image();
     dst_barrier.subresourceRange = src_barrier.subresourceRange;
 
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
@@ -69,7 +69,7 @@ void FrameHistory::push(vk::CommandBuffer cmd, vk::Image source, vk::Extent2D ex
     region.dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
     region.extent = vk::Extent3D{extent.width, extent.height, 1};
 
-    cmd.copyImage(source, vk::ImageLayout::eTransferSrcOptimal, target.image(),
+    cmd.copyImage(source, vk::ImageLayout::eTransferSrcOptimal, target->image(),
                   vk::ImageLayout::eTransferDstOptimal, region);
 
     vk::ImageMemoryBarrier post_src{};
@@ -89,7 +89,7 @@ void FrameHistory::push(vk::CommandBuffer cmd, vk::Image source, vk::Extent2D ex
     post_dst.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     post_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     post_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    post_dst.image = target.image();
+    post_dst.image = target->image();
     post_dst.subresourceRange = src_barrier.subresourceRange;
 
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
@@ -108,7 +108,7 @@ auto FrameHistory::get(uint32_t age) const -> vk::ImageView {
         return nullptr; // Not enough frames yet
     }
     uint32_t idx = (m_write_index + m_depth - 1 - age) % m_depth;
-    return m_buffers[idx].view();
+    return m_buffers[idx]->view();
 }
 
 auto FrameHistory::get_extent(uint32_t age) const -> vk::Extent2D {
@@ -116,12 +116,12 @@ auto FrameHistory::get_extent(uint32_t age) const -> vk::Extent2D {
         return {0, 0};
     }
     uint32_t idx = (m_write_index + m_depth - 1 - age) % m_depth;
-    return m_buffers[idx].extent();
+    return m_buffers[idx]->extent();
 }
 
 void FrameHistory::shutdown() {
     for (auto& buf : m_buffers) {
-        buf.shutdown();
+        buf.reset();
     }
     m_write_index = 0;
     m_depth = 0;

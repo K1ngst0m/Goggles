@@ -6,8 +6,8 @@
 using namespace goggles::render;
 
 TEST_CASE("Slang reflection - texture binding", "[reflection]") {
-    ShaderRuntime runtime;
-    REQUIRE(runtime.init().has_value());
+    auto runtime = ShaderRuntime::create();
+    REQUIRE(runtime.has_value());
 
     // Simple GLSL shader with texture sampler
     std::string vertex_source = R"(#version 450
@@ -31,7 +31,8 @@ void main() {
 }
 )";
 
-    auto result = runtime.compile_retroarch_shader(vertex_source, fragment_source, "test_reflect");
+    auto result =
+        runtime.value()->compile_retroarch_shader(vertex_source, fragment_source, "test_reflect");
     REQUIRE(result.has_value());
 
     // Check fragment shader reflection has Source texture
@@ -42,8 +43,8 @@ void main() {
 }
 
 TEST_CASE("Slang reflection - push constants", "[reflection]") {
-    ShaderRuntime runtime;
-    REQUIRE(runtime.init().has_value());
+    auto runtime = ShaderRuntime::create();
+    REQUIRE(runtime.has_value());
 
     // GLSL shader with push constants
     std::string vertex_source = R"(#version 450
@@ -77,7 +78,8 @@ void main() {
 }
 )";
 
-    auto result = runtime.compile_retroarch_shader(vertex_source, fragment_source, "test_push");
+    auto result =
+        runtime.value()->compile_retroarch_shader(vertex_source, fragment_source, "test_push");
     REQUIRE(result.has_value());
 
     // Both stages should have push constants
@@ -86,8 +88,8 @@ void main() {
 }
 
 TEST_CASE("Slang reflection - uniform buffer", "[reflection]") {
-    ShaderRuntime runtime;
-    REQUIRE(runtime.init().has_value());
+    auto runtime = ShaderRuntime::create();
+    REQUIRE(runtime.has_value());
 
     // GLSL shader with UBO
     std::string vertex_source = R"(#version 450
@@ -114,7 +116,8 @@ void main() {
 }
 )";
 
-    auto result = runtime.compile_retroarch_shader(vertex_source, fragment_source, "test_ubo");
+    auto result =
+        runtime.value()->compile_retroarch_shader(vertex_source, fragment_source, "test_ubo");
     REQUIRE(result.has_value());
 
     // Vertex shader should have UBO

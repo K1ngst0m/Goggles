@@ -14,7 +14,9 @@ struct OutputPassConfig {
 
 class OutputPass : public Pass {
 public:
-    OutputPass() = default;
+    [[nodiscard]] static auto create(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
+                                     const OutputPassConfig& config) -> ResultPtr<OutputPass>;
+
     ~OutputPass() override;
 
     OutputPass(const OutputPass&) = delete;
@@ -22,14 +24,11 @@ public:
     OutputPass(OutputPass&&) = delete;
     OutputPass& operator=(OutputPass&&) = delete;
 
-    [[nodiscard]] auto init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
-                            const OutputPassConfig& config) -> Result<void>;
     void shutdown() override;
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
 
-    [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
-
 private:
+    OutputPass() = default;
     [[nodiscard]] auto create_descriptor_resources() -> Result<void>;
     [[nodiscard]] auto create_pipeline_layout() -> Result<void>;
     [[nodiscard]] auto create_pipeline(ShaderRuntime& shader_runtime,
@@ -50,7 +49,6 @@ private:
     std::vector<vk::DescriptorSet> m_descriptor_sets;
 
     vk::UniqueSampler m_sampler;
-    bool m_initialized = false;
 };
 
 } // namespace goggles::render

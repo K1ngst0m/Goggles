@@ -27,7 +27,8 @@ struct RetroArchCompiledShader {
 
 class ShaderRuntime {
 public:
-    ShaderRuntime();
+    [[nodiscard]] static auto create() -> ResultPtr<ShaderRuntime>;
+
     ~ShaderRuntime();
 
     ShaderRuntime(const ShaderRuntime&) = delete;
@@ -35,7 +36,6 @@ public:
     ShaderRuntime(ShaderRuntime&&) noexcept;
     ShaderRuntime& operator=(ShaderRuntime&&) noexcept;
 
-    [[nodiscard]] auto init() -> Result<void>;
     void shutdown();
 
     [[nodiscard]] auto compile_shader(const std::filesystem::path& source_path,
@@ -47,11 +47,10 @@ public:
                                                 const std::string& module_name)
         -> Result<RetroArchCompiledShader>;
 
-    [[nodiscard]] auto is_initialized() const -> bool { return m_initialized; }
-
     [[nodiscard]] auto get_cache_dir() const -> std::filesystem::path;
 
 private:
+    ShaderRuntime();
     [[nodiscard]] auto get_cache_path(const std::filesystem::path& source_path,
                                       const std::string& entry_point) const
         -> std::filesystem::path;
@@ -78,7 +77,6 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
-    bool m_initialized = false;
 };
 
 } // namespace goggles::render

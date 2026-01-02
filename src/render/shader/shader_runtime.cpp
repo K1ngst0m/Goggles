@@ -187,24 +187,23 @@ ShaderRuntime::~ShaderRuntime() {
 ShaderRuntime::ShaderRuntime(ShaderRuntime&&) noexcept = default;
 ShaderRuntime& ShaderRuntime::operator=(ShaderRuntime&&) noexcept = default;
 
-auto ShaderRuntime::init() -> Result<void> {
+auto ShaderRuntime::create() -> ResultPtr<ShaderRuntime> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (m_initialized) {
-        return {};
-    }
+    auto runtime = std::unique_ptr<ShaderRuntime>(new ShaderRuntime());
 
     SlangGlobalSessionDesc global_desc = {};
     global_desc.enableGLSL = true;
 
-    if (SLANG_FAILED(slang::createGlobalSession(&global_desc, m_impl->global_session.writeRef()))) {
-        return make_error<void>(ErrorCode::shader_compile_failed,
-                                "Failed to create Slang global session");
+    if (SLANG_FAILED(
+            slang::createGlobalSession(&global_desc, runtime->m_impl->global_session.writeRef()))) {
+        return make_result_ptr_error<ShaderRuntime>(ErrorCode::shader_compile_failed,
+                                                    "Failed to create Slang global session");
     }
 
     slang::TargetDesc target_desc = {};
     target_desc.format = SLANG_SPIRV;
-    target_desc.profile = m_impl->global_session->findProfile("spirv_1_3");
+    target_desc.profile = runtime->m_impl->global_session->findProfile("spirv_1_3");
 
     std::array<slang::CompilerOptionEntry, 2> options = {
         {{.name = slang::CompilerOptionName::EmitSpirvDirectly,
@@ -220,20 +219,18 @@ auto ShaderRuntime::init() -> Result<void> {
                     .stringValue0 = nullptr,
                     .stringValue1 = nullptr}}}};
 
-    // HLSL session (existing behavior)
     slang::SessionDesc hlsl_session_desc = {};
     hlsl_session_desc.targets = &target_desc;
     hlsl_session_desc.targetCount = 1;
     hlsl_session_desc.compilerOptionEntries = options.data();
     hlsl_session_desc.compilerOptionEntryCount = options.size();
 
-    if (SLANG_FAILED(m_impl->global_session->createSession(hlsl_session_desc,
-                                                           m_impl->hlsl_session.writeRef()))) {
-        return make_error<void>(ErrorCode::shader_compile_failed,
-                                "Failed to create Slang HLSL session");
+    if (SLANG_FAILED(runtime->m_impl->global_session->createSession(
+            hlsl_session_desc, runtime->m_impl->hlsl_session.writeRef()))) {
+        return make_result_ptr_error<ShaderRuntime>(ErrorCode::shader_compile_failed,
+                                                    "Failed to create Slang HLSL session");
     }
 
-    // GLSL session for RetroArch shaders
     slang::SessionDesc glsl_session_desc = {};
     glsl_session_desc.targets = &target_desc;
     glsl_session_desc.targetCount = 1;
@@ -241,46 +238,35 @@ auto ShaderRuntime::init() -> Result<void> {
     glsl_session_desc.compilerOptionEntryCount = options.size();
     glsl_session_desc.allowGLSLSyntax = true;
 
-    if (SLANG_FAILED(m_impl->global_session->createSession(glsl_session_desc,
-                                                           m_impl->glsl_session.writeRef()))) {
-        return make_error<void>(ErrorCode::shader_compile_failed,
-                                "Failed to create Slang GLSL session");
+    if (SLANG_FAILED(runtime->m_impl->global_session->createSession(
+            glsl_session_desc, runtime->m_impl->glsl_session.writeRef()))) {
+        return make_result_ptr_error<ShaderRuntime>(ErrorCode::shader_compile_failed,
+                                                    "Failed to create Slang GLSL session");
     }
 
-    auto cache_dir = get_cache_dir();
+    auto cache_dir = runtime->get_cache_dir();
     std::error_code ec;
     std::filesystem::create_directories(cache_dir, ec);
     if (ec) {
         GOGGLES_LOG_WARN("Failed to create shader cache directory: {}", ec.message());
     }
 
-    m_initialized = true;
     GOGGLES_LOG_INFO("ShaderRuntime initialized (dual session: HLSL + GLSL), cache: {}",
                      cache_dir.string());
-    return {};
+    return make_result_ptr(std::move(runtime));
 }
 
 void ShaderRuntime::shutdown() {
-    if (!m_initialized) {
-        return;
-    }
-
     m_impl->glsl_session = nullptr;
     m_impl->hlsl_session = nullptr;
     m_impl->global_session = nullptr;
 
-    m_initialized = false;
     GOGGLES_LOG_DEBUG("ShaderRuntime shutdown");
 }
 
 auto ShaderRuntime::compile_shader(const std::filesystem::path& source_path,
                                    const std::string& entry_point) -> Result<CompiledShader> {
     GOGGLES_PROFILE_FUNCTION();
-
-    if (!m_initialized) {
-        return make_error<CompiledShader>(ErrorCode::shader_compile_failed,
-                                          "ShaderRuntime not initialized");
-    }
 
     std::ifstream file(source_path);
     if (!file) {
@@ -655,12 +641,6 @@ auto ShaderRuntime::compile_retroarch_shader(const std::string& vertex_source,
     -> Result<RetroArchCompiledShader> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (!m_initialized) {
-        return make_error<RetroArchCompiledShader>(ErrorCode::shader_compile_failed,
-                                                   "ShaderRuntime not initialized");
-    }
-
-    // Check cache
     auto source_hash = compute_source_hash(vertex_source + fragment_source);
     auto cache_path = get_cache_dir() / (module_name + "_ra.cache");
 

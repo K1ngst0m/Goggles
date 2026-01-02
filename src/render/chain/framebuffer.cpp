@@ -27,10 +27,7 @@ Framebuffer::~Framebuffer() {
 Framebuffer::Framebuffer(Framebuffer&& other) noexcept
     : m_device(other.m_device), m_physical_device(other.m_physical_device),
       m_format(other.m_format), m_extent(other.m_extent), m_image(std::move(other.m_image)),
-      m_memory(std::move(other.m_memory)), m_view(std::move(other.m_view)),
-      m_initialized(other.m_initialized) {
-    other.m_initialized = false;
-}
+      m_memory(std::move(other.m_memory)), m_view(std::move(other.m_view)) {}
 
 Framebuffer& Framebuffer::operator=(Framebuffer&& other) noexcept {
     if (this != &other) {
@@ -42,38 +39,29 @@ Framebuffer& Framebuffer::operator=(Framebuffer&& other) noexcept {
         m_image = std::move(other.m_image);
         m_memory = std::move(other.m_memory);
         m_view = std::move(other.m_view);
-        m_initialized = other.m_initialized;
-        other.m_initialized = false;
     }
     return *this;
 }
 
-auto Framebuffer::init(vk::Device device, vk::PhysicalDevice physical_device, vk::Format format,
-                       vk::Extent2D extent) -> Result<void> {
-    if (m_initialized) {
-        return {};
-    }
+auto Framebuffer::create(vk::Device device, vk::PhysicalDevice physical_device, vk::Format format,
+                         vk::Extent2D extent) -> ResultPtr<Framebuffer> {
+    auto framebuffer = std::unique_ptr<Framebuffer>(new Framebuffer());
 
-    m_device = device;
-    m_physical_device = physical_device;
-    m_format = format;
-    m_extent = extent;
+    framebuffer->m_device = device;
+    framebuffer->m_physical_device = physical_device;
+    framebuffer->m_format = format;
+    framebuffer->m_extent = extent;
 
-    GOGGLES_TRY(create_image());
-    GOGGLES_TRY(allocate_memory());
-    GOGGLES_TRY(create_image_view());
+    GOGGLES_TRY(framebuffer->create_image());
+    GOGGLES_TRY(framebuffer->allocate_memory());
+    GOGGLES_TRY(framebuffer->create_image_view());
 
-    m_initialized = true;
     GOGGLES_LOG_DEBUG("Framebuffer created: {}x{}, format={}", extent.width, extent.height,
                       vk::to_string(format));
-    return {};
+    return make_result_ptr(std::move(framebuffer));
 }
 
 auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
-    if (!m_initialized) {
-        return make_error<void>(ErrorCode::vulkan_init_failed, "Framebuffer not initialized");
-    }
-
     if (m_extent == new_extent) {
         return {};
     }
@@ -93,7 +81,7 @@ auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
 }
 
 void Framebuffer::shutdown() {
-    if (m_device && m_initialized) {
+    if (m_device) {
         static_cast<void>(m_device.waitIdle());
     }
     m_view.reset();
@@ -101,7 +89,6 @@ void Framebuffer::shutdown() {
     m_image.reset();
     m_format = vk::Format::eUndefined;
     m_extent = vk::Extent2D{0, 0};
-    m_initialized = false;
 }
 
 auto Framebuffer::create_image() -> Result<void> {

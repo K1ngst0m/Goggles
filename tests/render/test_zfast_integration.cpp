@@ -94,10 +94,10 @@ TEST_CASE("zfast-crt integration - compilation", "[integration][zfast]") {
     REQUIRE(preprocess_result.has_value());
 
     // Compile
-    ShaderRuntime runtime;
-    REQUIRE(runtime.init().has_value());
+    auto runtime = ShaderRuntime::create();
+    REQUIRE(runtime.has_value());
 
-    auto compile_result = runtime.compile_retroarch_shader(
+    auto compile_result = runtime.value()->compile_retroarch_shader(
         preprocess_result->vertex_source, preprocess_result->fragment_source, "zfast_crt");
 
     REQUIRE(compile_result.has_value());
@@ -142,10 +142,10 @@ TEST_CASE("zfast-crt integration - full pipeline", "[integration][zfast]") {
     auto preprocess_result = preprocessor.preprocess(preset_result->passes[0].shader_path);
     REQUIRE(preprocess_result.has_value());
 
-    ShaderRuntime runtime;
-    REQUIRE(runtime.init().has_value());
+    auto runtime = ShaderRuntime::create();
+    REQUIRE(runtime.has_value());
 
-    auto compile_result = runtime.compile_retroarch_shader(
+    auto compile_result = runtime.value()->compile_retroarch_shader(
         preprocess_result->vertex_source, preprocess_result->fragment_source, "zfast_crt");
     REQUIRE(compile_result.has_value());
 

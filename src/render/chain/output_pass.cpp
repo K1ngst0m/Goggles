@@ -11,33 +11,26 @@ OutputPass::~OutputPass() {
     OutputPass::shutdown();
 }
 
-auto OutputPass::init(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
-                      const OutputPassConfig& config) -> Result<void> {
+auto OutputPass::create(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
+                        const OutputPassConfig& config) -> ResultPtr<OutputPass> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (m_initialized) {
-        return {};
-    }
+    auto pass = std::unique_ptr<OutputPass>(new OutputPass());
 
-    m_device = vk_ctx.device;
-    m_target_format = config.target_format;
-    m_num_sync_indices = config.num_sync_indices;
+    pass->m_device = vk_ctx.device;
+    pass->m_target_format = config.target_format;
+    pass->m_num_sync_indices = config.num_sync_indices;
 
-    GOGGLES_TRY(create_sampler());
-    GOGGLES_TRY(create_descriptor_resources());
-    GOGGLES_TRY(create_pipeline_layout());
-    GOGGLES_TRY(create_pipeline(shader_runtime, config.shader_dir));
+    GOGGLES_TRY(pass->create_sampler());
+    GOGGLES_TRY(pass->create_descriptor_resources());
+    GOGGLES_TRY(pass->create_pipeline_layout());
+    GOGGLES_TRY(pass->create_pipeline(shader_runtime, config.shader_dir));
 
-    m_initialized = true;
     GOGGLES_LOG_DEBUG("OutputPass initialized");
-    return {};
+    return make_result_ptr(std::move(pass));
 }
 
 void OutputPass::shutdown() {
-    if (!m_initialized) {
-        return;
-    }
-
     m_pipeline.reset();
     m_pipeline_layout.reset();
     m_descriptor_pool.reset();
@@ -48,7 +41,6 @@ void OutputPass::shutdown() {
     m_device = nullptr;
     m_num_sync_indices = 0;
 
-    m_initialized = false;
     GOGGLES_LOG_DEBUG("OutputPass shutdown");
 }
 

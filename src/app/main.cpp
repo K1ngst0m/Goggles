@@ -14,7 +14,7 @@
 #include <util/unique_fd.hpp>
 
 static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
-                          goggles::CaptureReceiver& capture_receiver) {
+                          goggles::CaptureReceiver* capture_receiver) {
     bool running = true;
     while (running) {
         GOGGLES_PROFILE_FRAME("Main");
@@ -41,38 +41,38 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
             }
         }
 
-        {
+        if (capture_receiver) {
             GOGGLES_PROFILE_SCOPE("CaptureReceive");
-            capture_receiver.poll_frame();
+            capture_receiver->poll_frame();
         }
 
-        if (capture_receiver.semaphores_updated()) {
+        if (capture_receiver && capture_receiver->semaphores_updated()) {
             vulkan_backend.cleanup_sync_semaphores();
             auto ready_fd =
-                goggles::util::UniqueFd::dup_from(capture_receiver.get_frame_ready_fd());
+                goggles::util::UniqueFd::dup_from(capture_receiver->get_frame_ready_fd());
             auto consumed_fd =
-                goggles::util::UniqueFd::dup_from(capture_receiver.get_frame_consumed_fd());
+                goggles::util::UniqueFd::dup_from(capture_receiver->get_frame_consumed_fd());
             if (!ready_fd || !consumed_fd) {
                 GOGGLES_LOG_ERROR("Failed to dup semaphore fds");
-                capture_receiver.clear_sync_semaphores();
+                capture_receiver->clear_sync_semaphores();
             } else {
                 auto import_result = vulkan_backend.import_sync_semaphores(std::move(ready_fd),
                                                                            std::move(consumed_fd));
                 if (!import_result) {
                     GOGGLES_LOG_ERROR("Failed to import sync semaphores: {}",
                                       import_result.error().message);
-                    capture_receiver.clear_sync_semaphores();
+                    capture_receiver->clear_sync_semaphores();
                 } else {
                     GOGGLES_LOG_INFO("Sync semaphores imported successfully");
                 }
             }
-            capture_receiver.clear_semaphores_updated();
+            capture_receiver->clear_semaphores_updated();
         }
 
         bool needs_resize = false;
-        if (capture_receiver.has_frame()) {
+        if (capture_receiver && capture_receiver->has_frame()) {
             GOGGLES_PROFILE_SCOPE("RenderFrame");
-            auto render_result = vulkan_backend.render_frame(capture_receiver.get_frame());
+            auto render_result = vulkan_backend.render_frame(capture_receiver->get_frame());
             if (!render_result) {
                 GOGGLES_LOG_ERROR("Render failed: {}", render_result.error().message);
             } else {
@@ -164,29 +164,36 @@ static auto run_app(int argc, char** argv) -> int {
         return EXIT_FAILURE;
     }
 
-    goggles::render::VulkanBackend vulkan_backend;
-    auto init_result = vulkan_backend.init(window, config.render.enable_validation, "shaders",
-                                           config.render.scale_mode, config.render.integer_scale);
-    if (!init_result) {
-        GOGGLES_LOG_CRITICAL("Failed to initialize Vulkan: {} ({})", init_result.error().message,
-                             goggles::error_code_name(init_result.error().code));
+    auto backend_result = goggles::render::VulkanBackend::create(
+        window, config.render.enable_validation, "shaders", config.render.scale_mode,
+        config.render.integer_scale);
+    if (!backend_result) {
+        GOGGLES_LOG_CRITICAL("Failed to initialize Vulkan: {} ({})", backend_result.error().message,
+                             goggles::error_code_name(backend_result.error().code));
         SDL_DestroyWindow(window);
         SDL_Quit();
         return EXIT_FAILURE;
     }
+    auto vulkan_backend = std::move(backend_result.value());
 
-    vulkan_backend.load_shader_preset(config.shader.preset);
+    vulkan_backend->load_shader_preset(config.shader.preset);
 
-    goggles::CaptureReceiver capture_receiver;
-    if (!capture_receiver.init()) {
-        GOGGLES_LOG_WARN("Capture disabled - running in viewer-only mode");
+    auto receiver_result = goggles::CaptureReceiver::create();
+    std::unique_ptr<goggles::CaptureReceiver> capture_receiver;
+    if (!receiver_result) {
+        GOGGLES_LOG_WARN("Capture disabled - running in viewer-only mode ({})",
+                         receiver_result.error().message);
+    } else {
+        capture_receiver = std::move(receiver_result.value());
     }
 
-    run_main_loop(vulkan_backend, capture_receiver);
+    run_main_loop(*vulkan_backend, capture_receiver.get());
 
     GOGGLES_LOG_INFO("Shutting down...");
-    capture_receiver.shutdown();
-    vulkan_backend.shutdown();
+    if (capture_receiver) {
+        capture_receiver->shutdown();
+    }
+    vulkan_backend->shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();
     GOGGLES_LOG_INFO("Goggles terminated successfully");

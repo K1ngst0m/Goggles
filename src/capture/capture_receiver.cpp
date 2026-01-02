@@ -13,21 +13,18 @@ namespace goggles {
 
 using namespace capture;
 
-CaptureReceiver::CaptureReceiver() = default;
-
 CaptureReceiver::~CaptureReceiver() {
     shutdown();
 }
 
-bool CaptureReceiver::init() {
-    if (m_listen_fd >= 0) {
-        return true;
-    }
+auto CaptureReceiver::create() -> ResultPtr<CaptureReceiver> {
+    auto receiver = std::unique_ptr<CaptureReceiver>(new CaptureReceiver());
 
-    m_listen_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
-    if (m_listen_fd < 0) {
-        GOGGLES_LOG_ERROR("Failed to create socket: {}", strerror(errno));
-        return false;
+    receiver->m_listen_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (receiver->m_listen_fd < 0) {
+        return make_result_ptr_error<CaptureReceiver>(ErrorCode::capture_init_failed,
+                                                      std::string("Failed to create socket: ") +
+                                                          strerror(errno));
     }
 
     sockaddr_un addr{};
@@ -37,26 +34,27 @@ bool CaptureReceiver::init() {
     auto addr_len =
         static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + CAPTURE_SOCKET_PATH_LEN);
 
-    if (bind(m_listen_fd, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
+    if (bind(receiver->m_listen_fd, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
+        std::string error_msg;
         if (errno == EADDRINUSE) {
-            GOGGLES_LOG_ERROR("Capture socket already in use (another instance running?)");
+            error_msg = "Capture socket already in use (another instance running?)";
         } else {
-            GOGGLES_LOG_ERROR("Failed to bind socket: {}", strerror(errno));
+            error_msg = std::string("Failed to bind socket: ") + strerror(errno);
         }
-        close(m_listen_fd);
-        m_listen_fd = -1;
-        return false;
+        close(receiver->m_listen_fd);
+        receiver->m_listen_fd = -1;
+        return make_result_ptr_error<CaptureReceiver>(ErrorCode::capture_init_failed, error_msg);
     }
 
-    if (listen(m_listen_fd, 1) < 0) {
-        GOGGLES_LOG_ERROR("Failed to listen: {}", strerror(errno));
-        close(m_listen_fd);
-        m_listen_fd = -1;
-        return false;
+    if (listen(receiver->m_listen_fd, 1) < 0) {
+        close(receiver->m_listen_fd);
+        receiver->m_listen_fd = -1;
+        return make_result_ptr_error<CaptureReceiver>(
+            ErrorCode::capture_init_failed, std::string("Failed to listen: ") + strerror(errno));
     }
 
     GOGGLES_LOG_INFO("Capture socket listening");
-    return true;
+    return make_result_ptr(std::move(receiver));
 }
 
 void CaptureReceiver::shutdown() {
