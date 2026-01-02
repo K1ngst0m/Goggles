@@ -5,8 +5,8 @@ set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR i686)
 
 # Use gcc from the Pixi environment
-set(CMAKE_C_COMPILER gcc)
-set(CMAKE_CXX_COMPILER g++)
+set(CMAKE_C_COMPILER ${GCC})
+set(CMAKE_CXX_COMPILER ${GXX})
 
 # Target triple for 32-bit Linux
 set(TRIPLE "i686-linux-gnu")
