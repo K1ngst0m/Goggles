@@ -36,13 +36,20 @@ fi
 usage() {
   cat <<'EOF'
 Usage:
-  pixi run start [preset] <app> [app_args...]
-  pixi run start --preset <preset> <app> [app_args...]
+  pixi run start [preset] [goggles_args...] [options] -- <app> [app_args...]
+  pixi run start --preset <preset> [goggles_args...] [options] -- <app> [app_args...]
+
+Options:
+  --goggles-env VAR=val   Set environment variable for goggles only (can repeat)
+  --app-env VAR=val       Set environment variable for app only (can repeat)
+
+Note: Use '--' to separate viewer args from the app when the app is in PATH.
 
 Examples:
   pixi run start vkcube --wsi xcb
   pixi run start release vkcube --wsi xcb
-  pixi run start -- preset_named_like_app ./my_app --flag value
+  pixi run start --input-forwarding --app-env DISPLAY=:1 -- vkcube
+  pixi run start debug --goggles-env DISPLAY=:0 --app-env DISPLAY=:1 -- vkcube
 EOF
 }
 
@@ -72,7 +79,9 @@ validate_preset() {
 
 PRESET="$DEFAULT_PRESET"
 preset_explicit=false
-positional_preset_allowed=true
+GOGGLES_ARGS=()
+GOGGLES_ENV=()
+APP_ENV=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -91,8 +100,29 @@ while [[ $# -gt 0 ]]; do
       preset_explicit=true
       shift
       ;;
+    --app-env)
+      [[ $# -ge 2 ]] || die "--app-env requires VAR=value"
+      [[ "$2" == *=* && "${2%%=*}" != "" ]] || die "--app-env: invalid format '$2', expected VAR=value"
+      APP_ENV+=("$2")
+      shift 2
+      ;;
+    --app-env=*)
+      [[ "${1#*=}" == *=* && "${1#*=}" != =* ]] || die "--app-env: invalid format '${1#*=}', expected VAR=value"
+      APP_ENV+=("${1#*=}")
+      shift
+      ;;
+    --goggles-env)
+      [[ $# -ge 2 ]] || die "--goggles-env requires VAR=value"
+      [[ "$2" == *=* && "${2%%=*}" != "" ]] || die "--goggles-env: invalid format '$2', expected VAR=value"
+      GOGGLES_ENV+=("$2")
+      shift 2
+      ;;
+    --goggles-env=*)
+      [[ "${1#*=}" == *=* && "${1#*=}" != =* ]] || die "--goggles-env: invalid format '${1#*=}', expected VAR=value"
+      GOGGLES_ENV+=("${1#*=}")
+      shift
+      ;;
     --)
-      positional_preset_allowed=false
       shift
       break
       ;;
@@ -102,11 +132,29 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! $preset_explicit && $positional_preset_allowed && [[ $# -gt 0 ]] && is_valid_preset "$1"; then
+if ! $preset_explicit && [[ $# -gt 0 ]] && is_valid_preset "$1"; then
   PRESET="$1"
   preset_explicit=true
   shift
 fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --)
+      shift
+      break
+      ;;
+    *)
+      # If it looks like an app path (contains /), stop collecting viewer args.
+      # For apps in PATH, use '--' to separate from viewer args.
+      if [[ "$1" == */* ]]; then
+        break
+      fi
+      GOGGLES_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
 
 if [[ $# -eq 0 ]]; then
   usage
@@ -136,14 +184,17 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-"$VIEWER_BIN" &
+if [[ ${#GOGGLES_ARGS[@]} -gt 0 ]]; then
+  env "${GOGGLES_ENV[@]}" "$VIEWER_BIN" "${GOGGLES_ARGS[@]}" &
+else
+  env "${GOGGLES_ENV[@]}" "$VIEWER_BIN" &
+fi
 VIEWER_PID=$!
 
-# Give the viewer a moment to initialize before attaching.
 sleep 1
 
 set +e
-GOGGLES_CAPTURE=1 "$APP" "${APP_ARGS[@]}"
+env GOGGLES_CAPTURE=1 "${APP_ENV[@]}" "$APP" "${APP_ARGS[@]}"
 APP_STATUS=$?
 set -e
 
