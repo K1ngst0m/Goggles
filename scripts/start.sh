@@ -102,19 +102,23 @@ while [[ $# -gt 0 ]]; do
       ;;
     --app-env)
       [[ $# -ge 2 ]] || die "--app-env requires VAR=value"
+      [[ "$2" == *=* && "${2%%=*}" != "" ]] || die "--app-env: invalid format '$2', expected VAR=value"
       APP_ENV+=("$2")
       shift 2
       ;;
     --app-env=*)
+      [[ "${1#*=}" == *=* && "${1#*=}" != =* ]] || die "--app-env: invalid format '${1#*=}', expected VAR=value"
       APP_ENV+=("${1#*=}")
       shift
       ;;
     --goggles-env)
       [[ $# -ge 2 ]] || die "--goggles-env requires VAR=value"
+      [[ "$2" == *=* && "${2%%=*}" != "" ]] || die "--goggles-env: invalid format '$2', expected VAR=value"
       GOGGLES_ENV+=("$2")
       shift 2
       ;;
     --goggles-env=*)
+      [[ "${1#*=}" == *=* && "${1#*=}" != =* ]] || die "--goggles-env: invalid format '${1#*=}', expected VAR=value"
       GOGGLES_ENV+=("${1#*=}")
       shift
       ;;
