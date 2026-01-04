@@ -35,6 +35,10 @@ struct Config {
         std::string backend = "vulkan_layer";
     } capture;
 
+    struct Input {
+        bool forwarding = false;
+    } input;
+
     struct Shader {
         std::string preset;
     } shader;

@@ -11,7 +11,7 @@ Defines the input forwarding module that enables users to control captured Vulka
 The input forwarding module SHALL create a headless Wayland compositor with nested XWayland server for captured applications to connect to.
 
 #### Scenario: Automatic DISPLAY selection
-- **WHEN** `InputForwarder::init()` is called
+- **WHEN** `InputForwarder::create()` is called
 - **THEN** the system SHALL attempt to create Wayland sockets on wayland-1, wayland-2, etc. in sequence
 - **AND** start XWayland on the first available DISPLAY (:1, :2, ...)
 - **AND** expose the selected DISPLAY number via `InputForwarder::display_number()`
@@ -63,7 +63,7 @@ The input forwarding module SHALL maintain an X11 client connection to the neste
 #### Scenario: X11 connection establishment
 - **WHEN** XWayland server has started on :N
 - **THEN** `XOpenDisplay(":N")` SHALL be called to establish X11 client connection
-- **AND** if connection fails, `InputForwarder::init()` SHALL return `Result<void>` error
+- **AND** if connection fails, `InputForwarder::create()` SHALL return an error result
 - **AND** XWaylandServer SHALL be stopped and cleaned up on connection failure
 
 #### Scenario: X11 connection cleanup
@@ -73,12 +73,12 @@ The input forwarding module SHALL maintain an X11 client connection to the neste
 
 ### Requirement: Expose Selected DISPLAY Number
 
-The input forwarding module SHALL expose the selected nested DISPLAY number so other subsystems can use it for configuration handshakes.
+The input forwarding module SHALL expose the selected nested DISPLAY number so the target application can be launched inside the nested XWayland session.
 
 #### Scenario: Query DISPLAY after init
-- **WHEN** `InputForwarder::init()` succeeds
+- **WHEN** `InputForwarder::create()` succeeds
 - **THEN** `InputForwarder::display_number()` SHALL return a positive integer N
-- **AND** callers MAY pass N to other subsystems (e.g. capture config handshakes)
+- **AND** the application SHALL be able to report N to the user (e.g. via logs)
 
 ### Requirement: Mouse Event Forwarding (Basic)
 
@@ -106,17 +106,17 @@ The input forwarding module SHALL handle initialization failures gracefully and 
 #### Scenario: XWayland start failure
 - **WHEN** all DISPLAY numbers 1-9 are already bound
 - **THEN** `XWaylandServer::start()` SHALL return `Result<int>` error with `ErrorCode::input_init_failed`
-- **AND** `InputForwarder::init()` SHALL propagate the error to the caller
+- **AND** `InputForwarder::create()` SHALL propagate the error to the caller
 - **AND** the application SHALL log the error and continue without input forwarding
 
 #### Scenario: X11 connection failure
 - **WHEN** `XOpenDisplay(":N")` returns NULL
-- **THEN** `InputForwarder::init()` SHALL stop the XWaylandServer
-- **AND** return `Result<void>` error with `ErrorCode::input_init_failed`
+- **THEN** `InputForwarder::create()` SHALL stop the XWaylandServer
+- **AND** return an error result with `ErrorCode::input_init_failed`
 - **AND** clean up all allocated resources via RAII
 
 #### Scenario: Forward key when not initialized
-- **WHEN** `InputForwarder::forward_key()` is called but init() failed or was not called
+- **WHEN** `InputForwarder::forward_key()` is called but `InputForwarder::create()` failed or was not called
 - **THEN** the function SHALL return immediately without error (no-op)
 - **AND** no logging SHALL occur (avoid log spam)
 
@@ -142,9 +142,9 @@ The input forwarding module SHALL integrate with the existing main application e
 
 #### Scenario: Initialization in main
 - **WHEN** `run_app()` initializes subsystems
-- **THEN** `InputForwarder` SHALL be instantiated as stack-allocated object
-- **AND** `InputForwarder::init()` SHALL be called after SDL initialization
-- **AND** the result SHALL be checked with `GOGGLES_TRY()` or error logging
+- **THEN** the application SHALL only initialize input forwarding when explicitly enabled by user configuration or CLI
+- **AND** `InputForwarder::create()` SHALL be called after SDL initialization
+- **AND** failures SHALL be logged and the application SHALL continue without input forwarding
 
 #### Scenario: Event forwarding in main loop
 - **WHEN** the main event loop receives `SDL_EVENT_KEY_DOWN` or `SDL_EVENT_KEY_UP`
@@ -156,6 +156,15 @@ The input forwarding module SHALL integrate with the existing main application e
 - **THEN** `InputForwarder` SHALL be destroyed after capture receiver stops
 - **AND** the X11 connection SHALL be closed before XWaylandServer stops
 - **AND** the compositor thread SHALL join before main thread exits
+
+### Requirement: Wayland Input Forwarding Not Supported (Temporary)
+
+The input forwarding module SHALL NOT claim to support input injection into Wayland-native clients.
+
+#### Scenario: Wayland-native target
+- **GIVEN** a target application uses a Wayland backend
+- **WHEN** the user attempts to use input forwarding
+- **THEN** input forwarding is not supported for that target (X11-only)
 
 ### Requirement: Keycode Translation Map
 

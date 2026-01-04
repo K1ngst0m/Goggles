@@ -39,10 +39,6 @@ When capturing frames from a Vulkan application via the layer, the app typically
 ┌────────────────────────────────────────────────────────────┐
 │  Captured Application (DISPLAY=:1)                         │
 │                                                             │
-│  ┌────────────────┐                                         │
-│  │ Vulkan Layer   │  (sets DISPLAY=:1 before app main)     │
-│  └────────────────┘                                         │
-│                                                             │
 │  App receives genuine X11 KeyPress/KeyRelease events       │
 │  (indistinguishable from physical keyboard)                │
 └────────────────────────────────────────────────────────────┘
@@ -70,7 +66,7 @@ The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 
 ### Initialization
 
-1. **Goggles starts** → `goggles::input::start_xwayland_host()`
+1. **Goggles starts** (with input forwarding enabled) → `goggles::input::InputForwarder::create()`
 2. **Create headless Wayland compositor** on wayland-1 socket
 3. **Start XWayland** on DISPLAY=:1 (connects to wayland-1)
 4. **Open X11 connection** from Goggles to :1 for XTest
@@ -100,7 +96,7 @@ The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 | XTest injection | Generates real X11 protocol events, not filtered by apps |
 | XWayland without composition | Only need X11 server, not display output |
 | Headless wlroots backend | No GPU/display conflict with host compositor |
-| Layer sets DISPLAY=:1 | Captured app connects to nested XWayland automatically |
+| Target launched with `DISPLAY=:N` | Ensures the app connects to nested XWayland before any windowing happens |
 | SDL event forwarding | Integrates with existing Goggles SDL window |
 
 ## Limitations
@@ -135,21 +131,11 @@ All dependencies are system packages (not managed by CPM):
 
 SDL3 is already in the project via CPM.
 
-## Integration with Capture Layer
+## Launching the Target in the Nested Session
 
-The Vulkan layer (`src/capture/vk_layer/vk_capture.cpp`) has a constructor that runs before the application's `main()`:
+Input forwarding does not modify the target application's environment. For input forwarding to work, the target must be launched with `DISPLAY=:N` (where `N` is the display number printed by Goggles when input forwarding is initialized).
 
-```cpp
-__attribute__((constructor)) static void
-layer_early_init()
-{
-    const char* old_display = getenv("DISPLAY");
-    setenv("DISPLAY", ":1", 1);
-    // App now connects to XWayland on :1 instead of host X server on :0
-}
-```
-
-This ensures captured applications automatically connect to the nested XWayland without requiring environment variable passing or launch wrapper scripts.
+Wayland-native targets are not supported yet. If your environment prefers Wayland, ensure the target uses X11 (for example by unsetting `WAYLAND_DISPLAY` for the target process).
 
 ## Comparison with Alternative Approaches
 
@@ -183,14 +169,20 @@ User input → Goggles → XTest → XWayland :1 → App
 
 ```bash
 # Terminal 1: Start Goggles
-./build/debug/bin/goggles
+./build/debug/bin/goggles --input-forwarding
 
-# Terminal 2: Start test app
-GOGGLES_CAPTURE=1 GOGGLES_WSI_PROXY=1 ./test_app
+# Terminal 2: Start test app inside the nested XWayland session
+# Replace :1 with the DISPLAY printed by Goggles (e.g. "Input forwarding initialized on DISPLAY :1")
+WAYLAND_DISPLAY= DISPLAY=:1 GOGGLES_CAPTURE=1 GOGGLES_WSI_PROXY=1 ./test_app
 
 # Focus Goggles window, press W/A/S/D keys
 # test_app terminal should show: [Input] KEY DOWN: scancode=26 name='W'
 ```
+
+Notes:
+- Input forwarding is disabled by default; enable via `--input-forwarding` or `config/goggles.toml` (`[input].forwarding=true`).
+- Input forwarding only affects X11 clients connected to the nested XWayland (`DISPLAY=:N`).
+- Wayland input forwarding is not supported yet.
 
 ### Verify XWayland Running
 

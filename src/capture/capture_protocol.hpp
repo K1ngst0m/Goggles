@@ -17,8 +17,6 @@ enum class CaptureMessageType : uint32_t {
     control = 3,
     semaphore_init = 4,
     frame_metadata = 5,
-    config_request = 6,
-    input_display_ready = 7,
 };
 
 struct CaptureClientHello {
@@ -68,21 +66,5 @@ struct CaptureFrameMetadata {
     uint64_t modifier = 0;
     uint64_t frame_number = 0;
 };
-
-struct CaptureConfigRequest {
-    CaptureMessageType type = CaptureMessageType::config_request;
-    uint32_t version = 1;
-    std::array<uint32_t, 2> reserved{};
-};
-
-static_assert(sizeof(CaptureConfigRequest) == 16);
-
-struct CaptureInputDisplayReady {
-    CaptureMessageType type = CaptureMessageType::input_display_ready;
-    int32_t display_number = 0;
-    std::array<uint32_t, 2> reserved{};
-};
-
-static_assert(sizeof(CaptureInputDisplayReady) == 16);
 
 } // namespace goggles::capture

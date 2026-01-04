@@ -22,7 +22,6 @@ public:
     bool send_texture_with_fd(const CaptureFrameMetadata& metadata, int dmabuf_fd);
     bool send_frame_metadata(const CaptureFrameMetadata& metadata);
     bool poll_control(CaptureControl& control);
-    bool request_display_config(CaptureInputDisplayReady& response);
     bool is_capturing() const;
 
 private:

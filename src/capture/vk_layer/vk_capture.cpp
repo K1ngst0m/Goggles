@@ -11,29 +11,6 @@
 
 #define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
-// GOGGLES: Receive DISPLAY config from Goggles before app main()
-__attribute__((constructor(101))) static void layer_early_init() {
-    const char* old_display = getenv("DISPLAY");
-    LAYER_DEBUG("layer_early_init: DISPLAY was '%s'", old_display ? old_display : "NULL");
-
-    goggles::capture::CaptureInputDisplayReady response{};
-    if (!goggles::capture::get_layer_socket().request_display_config(response)) {
-        LAYER_DEBUG("layer_early_init: Config request failed, keeping original DISPLAY");
-        return;
-    }
-
-    if (response.display_number < 0) {
-        LAYER_DEBUG("layer_early_init: Input forwarding disabled by server");
-        return;
-    }
-
-    char display_str[32];
-    snprintf(display_str, sizeof(display_str), ":%d", response.display_number);
-    setenv("DISPLAY", display_str, 1);
-
-    LAYER_DEBUG("layer_early_init: DISPLAY now '%s'", getenv("DISPLAY"));
-}
-
 namespace goggles::capture {
 
 struct Time {

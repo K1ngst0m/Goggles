@@ -40,6 +40,13 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         }
     }
 
+    if (data.contains("input")) {
+        const auto input = toml::find(data, "input");
+        if (input.contains("forwarding")) {
+            config.input.forwarding = toml::find<bool>(input, "forwarding");
+        }
+    }
+
     if (data.contains("shader")) {
         const auto shader = toml::find(data, "shader");
         if (shader.contains("preset")) {

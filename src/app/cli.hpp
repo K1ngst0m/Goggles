@@ -11,6 +11,7 @@ namespace goggles::app {
 struct CliOptions {
     std::filesystem::path config_path = "config/goggles.toml";
     std::string shader_preset;
+    bool enable_input_forwarding = false;
 };
 
 using CliResult = Result<CliOptions>;
@@ -26,6 +27,9 @@ using CliResult = Result<CliOptions>;
 
     app.add_option("-s,--shader", options.shader_preset, "Override shader preset (path to .slangp)")
         ->check(CLI::ExistingFile);
+
+    app.add_flag("--input-forwarding", options.enable_input_forwarding,
+                 "Enable input forwarding (nested XWayland + XTest injection)");
 
     try {
         app.parse(argc, argv);

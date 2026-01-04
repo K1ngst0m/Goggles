@@ -10,6 +10,15 @@
 backend = "vulkan_layer"
 
 # =============================================================================
+# Input Settings
+# =============================================================================
+[input]
+# Enable input forwarding into the captured app.
+# When enabled, Goggles starts a nested XWayland server and forwards SDL events via XTest.
+# Default is false to match pre-input-forwarding behavior.
+forwarding = false
+
+# =============================================================================
 # Shader Settings
 # =============================================================================
 [shader]

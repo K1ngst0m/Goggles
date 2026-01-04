@@ -1,6 +1,6 @@
 # Proposal: Add Input Forwarding
 
-## Problem Statement
+## Why
 
 When Goggles captures frames from a Vulkan application via the layer, users cannot control the captured application by pressing keys in the Goggles viewer window. Input events go to the Goggles window instead of the captured application.
 
@@ -52,20 +52,18 @@ Introduce an input forwarding module (`src/input/`) that creates a nested XWayla
 
 1. **`src/input/xwayland_server.cpp/hpp`**: Manages headless Wayland compositor (wlroots) and spawns XWayland process
 2. **`src/input/input_forwarder.cpp/hpp`**: Public API class (PIMPL pattern), forwards SDL key + mouse events via XTest
-3. **Extended IPC protocol**: Add a small config handshake (`config_request` → `input_display_ready`) on the existing Unix socket for DISPLAY configuration
-4. **`src/capture/capture_receiver.cpp`**: Responds to layer config requests with the DISPLAY selected by `InputForwarder`
+3. **Configuration/CLI**: Input forwarding is opt-in in the viewer; the target app must be launched inside the nested XWayland session (`DISPLAY=:N`)
 
 ### Integration Points
 
-- **`src/app/main.cpp`**: Instantiate `InputForwarder`, call `init()`, and pass `display_number()` to `CaptureReceiver` for the layer handshake
-- **`src/capture/vk_layer/vk_capture.cpp`**: Layer constructor performs a config handshake and sets `DISPLAY=:N` before app main
-- **`src/capture/capture_protocol.hpp`**: Add `CaptureConfigRequest` + `CaptureInputDisplayReady` message types
+- **`src/app/main.cpp`**: Optionally initialize `InputForwarder` (via `create()`) and forward SDL input events via XTest
+- **`docs/input_forwarding.md`**: Document how to launch the target inside the nested XWayland session (`DISPLAY=:N`)
 
 ## Benefits
 
 - **Seamless UX**: Users control captured apps by pressing keys in viewer window
 - **Wine/DXVK compatible**: XTest → XWayland generates real X11 events, not filtered
-- **Zero config**: Automatic DISPLAY selection (:1, :2, ...) and handshake via existing socket
+- **Opt-in**: Disabled by default; enable via config or `--input-forwarding`
 - **Minimal deps**: System packages only (wlroots, wayland-server, xkbcommon, libX11, libXtst)
 - **Basic mouse support**: Button/motion/wheel events are forwarded (coordinate mapping is currently 1:1 with the viewer window)
 
@@ -90,19 +88,19 @@ Introduce an input forwarding module (`src/input/`) that creates a nested XWayla
 
 ## What Changes
 
-### Protocol / IPC
-- New `CaptureMessageType` enum: `config_request`, `input_display_ready`
-- New message struct: `CaptureConfigRequest` (layer → viewer)
-- New message struct: `CaptureInputDisplayReady` (viewer → layer, contains display number)
-- New IPC handshake phase: config negotiation before frame streaming
+### Configuration / CLI
+- New config option: `input.forwarding` (default: false)
+- New CLI flag: `--input-forwarding` (overrides config to enable)
+- Input forwarding only works for targets launched with `DISPLAY=:N` (nested XWayland)
+- Wayland input forwarding is not supported yet
 
 ### Public API
 - New class `goggles::input::InputForwarder` (PIMPL pattern)
-  - `init() -> Result<void>`
-  - `forward_key(uint32_t scancode, bool pressed) -> void`
-  - `forward_mouse_button(uint8_t button, bool pressed) -> void`
-  - `forward_mouse_motion(int32_t x, int32_t y) -> void`
-  - `forward_mouse_wheel(int32_t x, int32_t y) -> void`
+  - `create() -> ResultPtr<InputForwarder>`
+  - `forward_key(const SDL_KeyboardEvent&) -> Result<void>`
+  - `forward_mouse_button(const SDL_MouseButtonEvent&) -> Result<void>`
+  - `forward_mouse_motion(const SDL_MouseMotionEvent&) -> Result<void>`
+  - `forward_mouse_wheel(const SDL_MouseWheelEvent&) -> Result<void>`
   - `display_number() -> int`
 - New class `goggles::input::XWaylandServer` (internal)
   - `start() -> Result<int>`
@@ -117,10 +115,10 @@ Introduce an input forwarding module (`src/input/`) that creates a nested XWayla
 - `src/input/xwayland_server.cpp/hpp`
 
 ### Files Modified
-- `src/capture/capture_protocol.hpp` - new message types
-- `src/capture/capture_receiver.cpp` - config handshake handling
-- `src/capture/vk_layer/vk_capture.cpp` - layer-side handshake + DISPLAY env
 - `src/app/main.cpp` - InputForwarder instantiation
+- `src/app/cli.hpp` - `--input-forwarding` flag
+- `src/util/config.*` - `input.forwarding` config option
+- `docs/input_forwarding.md` - usage instructions
 
 ## Dependencies
 
@@ -143,12 +141,12 @@ SDL3 already in project.
 | DISPLAY conflict (socket already bound) | Auto-select :1, :2, :3... until successful |
 | XWayland startup failure | Propagate error via `Result<void>`, log failure, disable input forwarding |
 | Memory leak in compositor thread | RAII wrappers for all wlroots objects, explicit cleanup |
-| Layer timing (config requested before DISPLAY is ready) | Best-effort handshake with timeout; start Goggles (and `InputForwarder`) before launching the captured app |
+| Target launched outside nested XWayland | Document requirement: target must be launched with `DISPLAY=:N` |
 
 ## Success Criteria
 
 - User presses W/A/S/D in Goggles window → captured app receives KeyPress events
 - Works with Wine/DXVK applications (tested with RE4)
-- No configuration required (automatic DISPLAY handshake)
+- Enabled explicitly (config/CLI); default behavior remains unchanged when disabled
 - Clean shutdown (no segfaults, proper resource cleanup)
 - Passes `openspec validate add-input-forwarding --strict`

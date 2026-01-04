@@ -25,7 +25,7 @@ namespace goggles::input {
 
 class InputForwarder {
 public:
-    [[nodiscard]] auto init() -> Result<void>;
+    [[nodiscard]] static auto create() -> ResultPtr<InputForwarder>;
     [[nodiscard]] auto forward_key(const SDL_KeyboardEvent& event) -> Result<void>;
     [[nodiscard]] auto display_number() const -> int;
 
@@ -48,7 +48,7 @@ private:
 - Open X11 client connection to :N
 - Translate SDL scancodes to X11 keycodes
 - Call `XTestFakeKeyEvent()` / `XTestFakeButtonEvent()` / `XTestFakeMotionEvent()` to inject input
-- Expose the selected DISPLAY number to `CaptureReceiver` for the layer config handshake
+- Expose the selected DISPLAY number so the target can be launched with `DISPLAY=:N`
 
 ### Layer 3: XWayland Server (New)
 
@@ -85,93 +85,11 @@ private:
 - No actual frame composition (XWayland only needs Wayland socket)
 - Lightweight: ~1 MB memory, <1% CPU
 
-### Layer 4: IPC Protocol Extension (Modified)
+### Layer 4: Target Launch Environment
 
-**Existing**: DMA-BUF fd + metadata over Unix socket `\0goggles/vkcapture`
+Input forwarding relies on the target application connecting to the nested XWayland server. This requires launching the target with `DISPLAY=:N` set before any windowing happens (where `N` is the display chosen by the viewer).
 
-**New message types**:
-```cpp
-enum class CaptureMessageType : uint32_t {
-    client_hello = 1,
-    texture_data = 2,
-    control = 3,
-    // Note: values 4-5 are reserved by other capture features
-    config_request = 6,      // NEW
-    input_display_ready = 7, // NEW
-};
-
-struct CaptureConfigRequest {
-    CaptureMessageType type = CaptureMessageType::config_request;
-    uint32_t version = 1;
-    uint32_t reserved[2]{};
-};
-static_assert(sizeof(CaptureConfigRequest) == 16);
-
-struct CaptureInputDisplayReady {
-    CaptureMessageType type = CaptureMessageType::input_display_ready;
-    int32_t display_number;
-    uint32_t reserved[2]{};
-};
-static_assert(sizeof(CaptureInputDisplayReady) == 16);
-```
-
-**Two-Phase Protocol Flow**:
-
-**Phase 1: Config Handshake (Layer Constructor)**
-1. Layer constructor connects to socket
-2. Sends `config_request` message
-3. Goggles responds with `input_display_ready` containing DISPLAY number
-4. Layer sets `DISPLAY=:N` environment variable
-5. Layer closes config connection
-
-**Phase 2: Frame Capture (on_present)**
-6. Layer reconnects on first `vkQueuePresentKHR`
-7. Sends `client_hello` message
-8. Normal frame capture proceeds
-
-**Why two connections?**
-- Layer constructor runs before app main (need DISPLAY early)
-- Socket connection for frame capture happens on first present (after app main)
-- Separate config connection solves timing issue
-- Clean separation of concerns (config vs frame data)
-
-### Layer 5: Vulkan Layer Integration (Modified)
-
-**Current**: Layer loads, intercepts `vkQueuePresentKHR`, sends frames
-
-**New**: Layer performs config handshake in constructor before app initializes
-
-```cpp
-__attribute__((constructor(101))) static void
-layer_early_init()
-{
-    // Connect to `\0goggles/vkcapture` (best-effort; if unavailable, keep existing DISPLAY)
-    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) return;
-    // connect(fd, CAPTURE_SOCKET_PATH, CAPTURE_SOCKET_PATH_LEN)
-
-    CaptureConfigRequest request{};
-    request.type = CaptureMessageType::config_request;
-    request.version = 1;
-
-    if (send(fd, &request, sizeof(request), MSG_NOSIGNAL) != sizeof(request)) return;
-
-    CaptureInputDisplayReady response{};
-    // poll(fd, 1, 100) then recv(fd, &response, sizeof(response), 0)
-
-    char display_str[32];
-    snprintf(display_str, sizeof(display_str), ":%d", response.display_number);
-    setenv("DISPLAY", display_str, 1);
-
-    close(fd);
-}
-```
-
-**Constructor priority**: `101` (before default `100` for other constructors, ensures DISPLAY set first)
-
-**Connection lifecycle**:
-- Config connection: Created and destroyed in constructor
-- Frame capture connection: Created later in `on_present()` (existing code unchanged)
+The capture layer does not participate in selecting or retargeting `DISPLAY`.
 
 ## Data Flow: Keyboard Event Path
 
@@ -214,21 +132,27 @@ layer_early_init()
 
 ## Error Handling Strategy
 
-### InputForwarder::init()
+### InputForwarder::create()
 
 ```cpp
-auto InputForwarder::init() -> Result<void> {
-    GOGGLES_TRY(m_impl->server.start());  // Returns Result<int> with DISPLAY number
+auto InputForwarder::create() -> ResultPtr<InputForwarder> {
+    auto forwarder = std::unique_ptr<InputForwarder>(new InputForwarder());
 
-    auto x11_result = open_x11_connection(m_impl->server.display_number());
-    if (!x11_result) {
-        m_impl->server.stop();  // Cleanup on failure
-        return make_error(ErrorCode::input_init_failed,
-                         "Failed to connect to nested XWayland");
+    auto start_result = forwarder->m_impl->server.start();
+    if (!start_result) {
+        return make_result_ptr_error<InputForwarder>(start_result.error().code,
+                                                     start_result.error().message);
     }
-    m_impl->x11_display = *x11_result;
 
-    return ok();
+    auto x11_display = XOpenDisplay(":N"); // N = selected display number
+    if (!x11_display) {
+        forwarder->m_impl->server.stop();
+        return make_result_ptr_error<InputForwarder>(
+            ErrorCode::input_init_failed, "Failed to connect to nested XWayland");
+    }
+    forwarder->m_impl->x11_display = x11_display;
+
+    return make_result_ptr(std::move(forwarder));
 }
 ```
 
@@ -264,7 +188,7 @@ auto XWaylandServer::start() -> Result<int> {
 
 ### Graceful Degradation
 
-If `InputForwarder::init()` fails:
+If `InputForwarder::create()` fails:
 1. Log error with `GOGGLES_LOG_ERROR`
 2. Continue app startup without input forwarding
 3. User can still view captured frames, just can't control app

@@ -180,6 +180,7 @@ static auto run_app(int argc, char** argv) -> int {
 
     GOGGLES_LOG_DEBUG("Configuration loaded:");
     GOGGLES_LOG_DEBUG("  Capture backend: {}", config.capture.backend);
+    GOGGLES_LOG_DEBUG("  Input forwarding: {}", config.input.forwarding);
     GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
     GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
     GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
@@ -224,21 +225,27 @@ static auto run_app(int argc, char** argv) -> int {
         capture_receiver = std::move(receiver_result.value());
     }
 
-    GOGGLES_LOG_INFO("Initializing input forwarding...");
-    auto input_forwarder_result = goggles::input::InputForwarder::create();
+    bool enable_input_forwarding = config.input.forwarding;
+    if (cli_opts.enable_input_forwarding) {
+        enable_input_forwarding = true;
+    }
+
     std::unique_ptr<goggles::input::InputForwarder> input_forwarder;
 
-    if (!input_forwarder_result) {
-        GOGGLES_LOG_WARN("Input forwarding disabled: {}", input_forwarder_result.error().message);
-    } else {
-        input_forwarder = std::move(*input_forwarder_result);
-        int display_num = input_forwarder->display_number();
-        GOGGLES_LOG_INFO("Input forwarding initialized on DISPLAY :{}", display_num);
+    if (enable_input_forwarding) {
+        GOGGLES_LOG_INFO("Initializing input forwarding...");
+        auto input_forwarder_result = goggles::input::InputForwarder::create();
 
-        // Pass display number to capture receiver for config handshake
-        if (capture_receiver) {
-            capture_receiver->set_input_display(display_num);
+        if (!input_forwarder_result) {
+            GOGGLES_LOG_WARN("Input forwarding disabled: {}",
+                             input_forwarder_result.error().message);
+        } else {
+            input_forwarder = std::move(input_forwarder_result.value());
+            int display_num = input_forwarder->display_number();
+            GOGGLES_LOG_INFO("Input forwarding initialized on DISPLAY :{}", display_num);
         }
+    } else {
+        GOGGLES_LOG_INFO("Input forwarding disabled");
     }
 
     run_main_loop(*vulkan_backend, capture_receiver.get(), input_forwarder.get());
