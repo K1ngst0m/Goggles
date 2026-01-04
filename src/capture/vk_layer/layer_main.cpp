@@ -18,7 +18,7 @@
 namespace goggles::capture {
 
 // Must match manifest JSON
-static constexpr const char* LAYER_NAME = "VK_LAYER_goggles_capture";
+[[maybe_unused]] static constexpr const char* LAYER_NAME = "VK_LAYER_goggles_capture";
 
 #define GETPROCADDR(func)                                                                          \
     if (strcmp(pName, "vk" #func) == 0) {                                                          \

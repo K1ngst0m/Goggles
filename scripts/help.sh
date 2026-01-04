@@ -7,6 +7,7 @@ Build Commands
   pixi run dev [PRESET]                Build full dev environment
   pixi run build [PRESET]              Build 64-bit app + layer
   pixi run build-i686 [PRESET]         Build 32-bit layer only
+  pixi run build-all-presets           Build all CMake presets (incl. i686)
   pixi run test [PRESET]               Run tests
   pixi run install-manifests [PRESET]  Install Vulkan layer manifests
 

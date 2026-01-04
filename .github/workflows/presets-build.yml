@@ -1,0 +1,56 @@
+name: Full Preset Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  PIXI_VERSION: v0.59.0
+  CCACHE_MAX_SIZE: 500M
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-all-presets:
+    name: Build All CMake Presets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          cache: true
+          manifest-path: pixi.toml
+          locked: true
+
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-pixi-ccache-full-presets-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pixi-ccache-full-presets-
+            ${{ runner.os }}-pixi-ccache-
+
+      - name: Configure ccache
+        run: |
+          pixi run ccache --set-config=max_size=${{ env.CCACHE_MAX_SIZE }}
+          pixi run ccache --set-config=compression=true
+          pixi run ccache --zero-stats
+
+      - name: Build all presets (incl. i686)
+        run: pixi run build-all-presets --clean
+
+      - name: Show ccache statistics
+        if: always()
+        run: pixi run ccache --show-stats
