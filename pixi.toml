@@ -146,6 +146,9 @@ ccache = "4.*"
 lld = "21.*"
 taplo = "==0.9.3"
 sdl3 = "3.2.*"
+xorg-libxtst = "*"
+pixman = "*"
+xcb-util-wm = "*"
 
 # Local packages
 tracy = { path = "packages/tracy" }
@@ -154,6 +157,7 @@ expected-lite = { path = "packages/expected-lite" }
 stb = { path = "packages/stb" }
 bs-thread-pool = { path = "packages/bs-thread-pool" }
 slang-shaders = { path = "packages/slang-shaders" }
+wlroots-0-18 = { path = "packages/wlroots_0_18" }
 
 # CI-only: Lightweight lint environment
 [feature.lint.dependencies]

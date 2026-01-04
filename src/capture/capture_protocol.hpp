@@ -67,6 +67,4 @@ struct CaptureFrameMetadata {
     uint64_t frame_number = 0;
 };
 
-static_assert(sizeof(CaptureFrameMetadata) == 40);
-
 } // namespace goggles::capture

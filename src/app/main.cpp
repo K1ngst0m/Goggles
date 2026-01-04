@@ -1,11 +1,14 @@
 #include "capture/capture_receiver.hpp"
 #include "cli.hpp"
+#include "input/input_forwarder.hpp"
 
 #include <SDL3/SDL.h>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <memory>
 #include <render/backend/vulkan_backend.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
@@ -14,7 +17,8 @@
 #include <util/unique_fd.hpp>
 
 static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
-                          goggles::CaptureReceiver* capture_receiver) {
+                          goggles::CaptureReceiver* capture_receiver,
+                          goggles::input::InputForwarder* input_forwarder) {
     bool running = true;
     while (running) {
         GOGGLES_PROFILE_FRAME("Main");
@@ -29,6 +33,39 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                     running = false;
                 } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
                     window_resized = true;
+                } else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+                    if (input_forwarder) {
+                        auto forward_result = input_forwarder->forward_key(event.key);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward key: {}",
+                                              forward_result.error().message);
+                        }
+                    }
+                } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                           event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    if (input_forwarder) {
+                        auto forward_result = input_forwarder->forward_mouse_button(event.button);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward mouse button: {}",
+                                              forward_result.error().message);
+                        }
+                    }
+                } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                    if (input_forwarder) {
+                        auto forward_result = input_forwarder->forward_mouse_motion(event.motion);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward mouse motion: {}",
+                                              forward_result.error().message);
+                        }
+                    }
+                } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                    if (input_forwarder) {
+                        auto forward_result = input_forwarder->forward_mouse_wheel(event.wheel);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward mouse wheel: {}",
+                                              forward_result.error().message);
+                        }
+                    }
                 }
             }
         }
@@ -143,6 +180,7 @@ static auto run_app(int argc, char** argv) -> int {
 
     GOGGLES_LOG_DEBUG("Configuration loaded:");
     GOGGLES_LOG_DEBUG("  Capture backend: {}", config.capture.backend);
+    GOGGLES_LOG_DEBUG("  Input forwarding: {}", config.input.forwarding);
     GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
     GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
     GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
@@ -187,7 +225,30 @@ static auto run_app(int argc, char** argv) -> int {
         capture_receiver = std::move(receiver_result.value());
     }
 
-    run_main_loop(*vulkan_backend, capture_receiver.get());
+    bool enable_input_forwarding = config.input.forwarding;
+    if (cli_opts.enable_input_forwarding) {
+        enable_input_forwarding = true;
+    }
+
+    std::unique_ptr<goggles::input::InputForwarder> input_forwarder;
+
+    if (enable_input_forwarding) {
+        GOGGLES_LOG_INFO("Initializing input forwarding...");
+        auto input_forwarder_result = goggles::input::InputForwarder::create();
+
+        if (!input_forwarder_result) {
+            GOGGLES_LOG_WARN("Input forwarding disabled: {}",
+                             input_forwarder_result.error().message);
+        } else {
+            input_forwarder = std::move(input_forwarder_result.value());
+            int display_num = input_forwarder->display_number();
+            GOGGLES_LOG_INFO("Input forwarding initialized on DISPLAY :{}", display_num);
+        }
+    } else {
+        GOGGLES_LOG_INFO("Input forwarding disabled");
+    }
+
+    run_main_loop(*vulkan_backend, capture_receiver.get(), input_forwarder.get());
 
     GOGGLES_LOG_INFO("Shutting down...");
     if (capture_receiver) {

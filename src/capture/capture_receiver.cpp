@@ -98,6 +98,7 @@ bool CaptureReceiver::accept_client() {
         return false;
     }
 
+    // Normal frame capture connection
     if (m_client_fd >= 0) {
         GOGGLES_LOG_WARN("Rejecting new client: already connected");
         close(new_fd);

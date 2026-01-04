@@ -12,7 +12,7 @@ A hooking-based frame streaming tool with support for RetroArch shader processin
 | :---: |
 | ![showcase_crt_royale](showcase-crt-royale.png)|
 
-Goggles captures Vulkan application frames and shares them across processes using Linux DMA-BUF with DRM format modifiers and cross-process GPU synchronization.
+Goggles captures Vulkan application frames and shares them across processes using Linux DMA-BUF with DRM format modifiers and cross-process GPU synchronization. 
 
 ```text
 ┌───────────────────────────────────────┐
@@ -51,10 +51,10 @@ The filter chain transforms captured DMA-BUF images through a series of shader p
   ┌──────────────────────────────┼─────────────────────────────┐
   │                              ▼                             │
   │  ┌────────┐     ┌────────┐     ┌────────┐     ┌────────┐   │
-  │  │Original│───▶│ Pass 0 │───▶│ Pass 1 │───▶│ Pass N │   │
-  │  └────────┘ ┌─▶└────────┘ ┌─▶└────────┘ ┌─▶└────────┘   │
-  │       │     │       │      │       │      │       │        │
-  │       └─────┴───────┴──────┴───────┴──────┘       ▼        │
+  │  │Original│────▶│ Pass 0 │────▶│ Pass 1 │────▶│ Pass N │   │
+  │  └────────┘  ┌─▶└────────┘  ┌─▶└────────┘  ┌─▶└────────┘   │
+  │       │      │       │      │       │      │       │       │
+  │       └──────┴───────┴──────┴───────┴──────┘       ▼       │
   │                                                  Output    │
   └────────────────────────────────────────────────────────────┘
                                                        │

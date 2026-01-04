@@ -56,7 +56,6 @@ private:
 
     int m_listen_fd = -1;
     int m_client_fd = -1;
-
     CaptureFrame m_frame{};
     capture::CaptureTextureData m_last_texture{};
     int m_frame_ready_fd = -1;
