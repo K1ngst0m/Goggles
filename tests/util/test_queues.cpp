@@ -181,7 +181,7 @@ TEST_CASE("SPSCQueue single-threaded stress test", "[queues]") {
         for (int cycle = 0; cycle < cycles; ++cycle) {
             // Fill queue
             for (size_t i = 0; i < queue.capacity(); ++i) {
-                REQUIRE(queue.try_push(static_cast<int>(cycle * 100 + i)));
+                REQUIRE(queue.try_push(cycle * 100 + static_cast<int>(i)));
             }
 
             REQUIRE(queue.size() == queue.capacity());
@@ -190,7 +190,7 @@ TEST_CASE("SPSCQueue single-threaded stress test", "[queues]") {
             for (size_t i = 0; i < queue.capacity(); ++i) {
                 auto result = queue.try_pop();
                 REQUIRE(result.has_value());
-                REQUIRE(*result == static_cast<int>(cycle * 100 + i));
+                REQUIRE(*result == cycle * 100 + static_cast<int>(i));
             }
 
             REQUIRE(queue.size() == 0);
@@ -202,12 +202,12 @@ TEST_CASE("SPSCQueue multi-threaded producer-consumer", "[queues]") {
     SPSCQueue<int> queue(64); // Larger queue for multi-threaded test
 
     SECTION("Single producer, single consumer") {
-        const int num_items = 1000;
+        constexpr int num_items = 1000;
         std::atomic<bool> producer_done{false};
         std::atomic<int> items_consumed{0};
 
         // Producer thread
-        std::thread producer([&queue, num_items, &producer_done]() {
+        std::thread producer([&queue, &producer_done]() {
             for (int i = 0; i < num_items; ++i) {
                 while (!queue.try_push(i)) {
                     std::this_thread::yield(); // Spin until we can push
@@ -274,7 +274,7 @@ TEST_CASE("SPSCQueue with pointer types for zero-copy patterns", "[queues]") {
     std::vector<std::unique_ptr<FrameData>> frame_buffers;
     for (int i = 0; i < 4; ++i) {
         auto frame = std::make_unique<FrameData>();
-        frame->id = i;
+        frame->id = static_cast<uint64_t>(i);
         frame->data.resize(1024); // Simulate frame data
         frame_buffers.push_back(std::move(frame));
     }

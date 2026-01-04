@@ -37,3 +37,11 @@ pixi run build quality
 - **Format commit missing**: Ensure files are tracked; rerun clang-format command above.
 - **Build/Test failures**: `pixi run build test && pixi run test test` locally to match CI flags.
 - **Clang-tidy issues**: `pixi run build quality` or `pixi run clang-tidy -- <file>` with compile commands from `build/quality`.
+
+## Scheduled (`presets-build.yml`)
+
+Runs weekly (and on manual dispatch) to build every CMake preset, including i686 variants:
+
+```bash
+pixi run build-all-presets --clean
+```

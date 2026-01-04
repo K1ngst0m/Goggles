@@ -62,7 +62,6 @@ private:
     int m_frame_ready_fd = -1;
     int m_frame_consumed_fd = -1;
     bool m_semaphores_updated = false;
-    bool m_awaiting_new_fd = false;
 
     std::vector<char> m_recv_buf;
 };

@@ -64,7 +64,12 @@ bool LayerSocketClient::connect() {
         exe_path[len] = '\0';
         const char* name = strrchr(exe_path, '/');
         name = name ? name + 1 : exe_path;
-        strncpy(hello.exe_name.data(), name, hello.exe_name.size() - 1);
+        std::memset(hello.exe_name.data(), 0, hello.exe_name.size());
+        size_t copy_len = std::strlen(name);
+        if (copy_len >= hello.exe_name.size()) {
+            copy_len = hello.exe_name.size() - 1;
+        }
+        std::memcpy(hello.exe_name.data(), name, copy_len);
     }
 
     ssize_t sent = send(socket_fd_, &hello, sizeof(hello), MSG_NOSIGNAL);

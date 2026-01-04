@@ -67,3 +67,6 @@ CheckOptions:
     value: lower_case
   - key: readability-function-size.LineThreshold
     value: 150
+  # Vulkan handle typedefs cause noisy swappable-params warnings via implicit conversions.
+  - key: bugprone-easily-swappable-parameters.ModelImplicitConversions
+    value: false

@@ -1,11 +1,13 @@
 #include "wsi_virtual.hpp"
 
 #include <bit>
+#include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <thread>
+#include <type_traits>
 #include <unistd.h>
 #include <utility>
 
@@ -14,8 +16,14 @@
 
 namespace goggles::capture {
 
-constexpr uint64_t DRM_FORMAT_MOD_LINEAR = 0;
-constexpr uint64_t DRM_FORMAT_MOD_INVALID = 0xffffffffffffffULL;
+template <typename Handle>
+static auto handle_to_u64(Handle handle) -> uint64_t {
+    if constexpr (std::is_pointer_v<Handle>) {
+        return static_cast<uint64_t>(reinterpret_cast<std::uintptr_t>(handle));
+    } else {
+        return static_cast<uint64_t>(handle);
+    }
+}
 
 static std::optional<uint32_t> parse_env_uint(const char* name, uint32_t min_val,
                                               uint32_t max_val) {
@@ -95,8 +103,8 @@ VkResult WsiVirtualizer::create_surface(VkInstance inst, VkSurfaceKHR* surface) 
     surfaces_[vs.handle] = vs;
     *surface = vs.handle;
 
-    LAYER_DEBUG("Virtual surface created: %p (%ux%u)", reinterpret_cast<void*>(vs.handle), vs.width,
-                vs.height);
+    LAYER_DEBUG("Virtual surface created: 0x%016" PRIx64 " (%ux%u)", handle_to_u64(vs.handle),
+                vs.width, vs.height);
     return VK_SUCCESS;
 }
 
@@ -325,9 +333,9 @@ VkResult WsiVirtualizer::create_swapchain(VkDevice device, const VkSwapchainCrea
     swapchains_[handle] = std::move(swap);
     *swapchain = handle;
 
-    LAYER_DEBUG("Virtual swapchain created: %p (%ux%u, %u images)", reinterpret_cast<void*>(handle),
-                swapchains_[handle].extent.width, swapchains_[handle].extent.height,
-                swapchains_[handle].image_count);
+    LAYER_DEBUG("Virtual swapchain created: 0x%016" PRIx64 " (%ux%u, %u images)",
+                handle_to_u64(handle), swapchains_[handle].extent.width,
+                swapchains_[handle].extent.height, swapchains_[handle].image_count);
     return VK_SUCCESS;
 }
 

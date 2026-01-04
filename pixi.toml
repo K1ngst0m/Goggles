@@ -11,6 +11,7 @@ CC = "$CONDA_PREFIX/bin/clang-21"
 CXX = "$CONDA_PREFIX/bin/clang++-21"
 GCC = "$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
 GXX = "$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
+CCACHE_TEMPDIR = "$PIXI_PROJECT_ROOT/.cache/ccache-tmp"
 LD_LIBRARY_PATH = "$CONDA_PREFIX/lib"
 PKG_CONFIG_PATH = "$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
 VULKAN_SDK = "$CONDA_PREFIX"
@@ -24,7 +25,7 @@ cmd = "bash scripts/ensure-init.sh"
 
 [tasks.build]
 description = "Build 64-bit app + layer"
-cmd = "bash -c \"cmake --preset {{ preset }} && cmake --build --preset {{ preset }}\""
+cmd = "bash -c \"mkdir -p \\\"$CCACHE_TEMPDIR\\\" && cmake --preset {{ preset }} && cmake --build --preset {{ preset }}\""
 args = [{ "arg" = "preset", "default" = "debug" }]
 inputs = ["src/**/*.cpp", "src/**/*.hpp", "CMakeLists.txt"]
 outputs = ["build/{{ preset }}/bin/goggles"]
@@ -32,10 +33,16 @@ depends-on = ["_check-init"]
 
 [tasks.build-i686]
 description = "Build 32-bit layer only"
-cmd = "bash -c \"cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686\""
+cmd = "bash -c \"mkdir -p \\\"$CCACHE_TEMPDIR\\\" && cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686\""
 args = [{ "arg" = "preset", "default" = "debug" }]
 inputs = ["src/capture/**/*.cpp", "src/capture/**/*.hpp"]
 outputs = ["build/{{ preset }}-i686/lib/i386/libgoggles_vklayer.so"]
+
+[tasks.build-all-presets]
+description = "Build all CMake presets (including i686)"
+cmd = "bash scripts/build_all_presets.sh {{ flags }}"
+args = [{ "arg" = "flags", "default" = "" }]
+depends-on = ["_check-init"]
 
 [tasks.install-manifests]
 description = "Install Vulkan layer manifests"

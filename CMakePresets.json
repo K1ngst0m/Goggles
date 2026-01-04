@@ -190,6 +190,69 @@
         ".release",
         ".profiling"
       ]
+    },
+    {
+      "name": "relwithdebinfo-i686",
+      "displayName": "RelWithDebInfo (i686)",
+      "description": "32-bit layer only - release build with debug symbols",
+      "inherits": [
+        ".i686",
+        ".relwithdebinfo"
+      ]
+    },
+    {
+      "name": "asan-i686",
+      "displayName": "Debug + AddressSanitizer (i686)",
+      "description": "32-bit layer only - debug build with AddressSanitizer",
+      "inherits": [
+        ".i686",
+        ".debug",
+        ".asan"
+      ]
+    },
+    {
+      "name": "ubsan-i686",
+      "displayName": "Debug + UndefinedBehaviorSanitizer (i686)",
+      "description": "32-bit layer only - debug build with UBSan",
+      "inherits": [
+        ".i686",
+        ".debug",
+        ".ubsan"
+      ]
+    },
+    {
+      "name": "asan-ubsan-i686",
+      "displayName": "Debug + ASAN + UBSAN (i686)",
+      "description": "32-bit layer only - debug build with both sanitizers",
+      "inherits": [
+        ".i686",
+        ".debug",
+        ".asan",
+        ".ubsan"
+      ]
+    },
+    {
+      "name": "test-i686",
+      "displayName": "Test (i686)",
+      "description": "32-bit layer only - debug build with AddressSanitizer, parallel builds, and static analysis",
+      "inherits": [
+        ".i686",
+        ".debug",
+        ".asan",
+        ".test",
+        ".clang-tidy"
+      ]
+    },
+    {
+      "name": "quality-i686",
+      "displayName": "Quality Assurance (i686)",
+      "description": "32-bit layer only - debug build with comprehensive code quality checks",
+      "inherits": [
+        ".i686",
+        ".debug",
+        ".asan",
+        ".clang-tidy"
+      ]
     }
   ],
   "buildPresets": [
@@ -240,6 +303,30 @@
     {
       "name": "profile-i686",
       "configurePreset": "profile-i686"
+    },
+    {
+      "name": "relwithdebinfo-i686",
+      "configurePreset": "relwithdebinfo-i686"
+    },
+    {
+      "name": "asan-i686",
+      "configurePreset": "asan-i686"
+    },
+    {
+      "name": "ubsan-i686",
+      "configurePreset": "ubsan-i686"
+    },
+    {
+      "name": "asan-ubsan-i686",
+      "configurePreset": "asan-ubsan-i686"
+    },
+    {
+      "name": "test-i686",
+      "configurePreset": "test-i686"
+    },
+    {
+      "name": "quality-i686",
+      "configurePreset": "quality-i686"
     }
   ],
   "testPresets": [

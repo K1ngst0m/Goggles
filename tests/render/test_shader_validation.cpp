@@ -50,7 +50,7 @@ struct TestResult {
 };
 
 auto test_preset(const std::filesystem::path& preset_path) -> TestResult {
-    TestResult result{.path = preset_path};
+    TestResult result{.path = preset_path, .error = ""};
     PresetParser parser;
     RetroArchPreprocessor preprocessor;
 

@@ -1,62 +1,101 @@
-# Goggles Build System
-# Wrapper for common CMake workflows
+# Goggles Build System (legacy entrypoint)
+# This Makefile mirrors Pixi tasks for compatibility (Pixi remains the source of truth).
 
-.PHONY: all app layer layer32 layer64 dev clean distclean help
+.PHONY: \
+	all help _check-pixi \
+	build build-i686 build-all-presets install-manifests test dev start init format clean distclean \
+	app layer layer32 layer64
 
-PRESET ?= debug
-MANIFEST_DIR := $(HOME)/.local/share/vulkan/implicit_layer.d
+PRESET ?= $(preset)
+FLAGS ?= $(flags)
+PIXI ?= pixi
 
-# Default: build main project
-all: app
+preset ?= debug
+flags ?=
 
-# Build main project (includes 64-bit layer)
-app:
-	cmake --preset $(PRESET)
-	cmake --build --preset $(PRESET)
+_check-pixi:
+	@command -v $(PIXI) >/dev/null 2>&1 || { \
+		echo "error: '$(PIXI)' not found"; \
+		echo "hint: install Pixi and run 'pixi run init' once"; \
+		exit 127; \
+	}
 
-# Build both layer architectures
-layer: layer64 layer32
+# Pixi task mirrors
+all: build
 
-# 64-bit layer (from main build)
-layer64: app
+build: _check-pixi
+	@$(PIXI) run build "$(PRESET)"
 
-# 32-bit layer only
-layer32:
-	cmake --preset $(PRESET)-i686
-	cmake --build --preset $(PRESET)-i686
+build-i686: _check-pixi
+	@$(PIXI) run build-i686 "$(PRESET)"
 
-# Development: app + both layers + install manifests
-dev: app layer32
-	@mkdir -p $(MANIFEST_DIR)
-	@cp build/$(PRESET)/share/vulkan/implicit_layer.d/*.json $(MANIFEST_DIR)/
-	@cp build/$(PRESET)-i686/share/vulkan/implicit_layer.d/*.json $(MANIFEST_DIR)/
-	@echo "Manifests installed to $(MANIFEST_DIR)"
+build-all-presets: _check-pixi
+	@$(PIXI) run build-all-presets $(FLAGS)
 
-# Clean build directories for current preset
-clean:
-	rm -rf build/$(PRESET) build/$(PRESET)-i686
+install-manifests: _check-pixi
+	@$(PIXI) run install-manifests "$(PRESET)"
 
-# Clean all build directories
-distclean:
-	rm -rf build
+test: _check-pixi
+	@$(PIXI) run test "$(PRESET)"
 
-# Show available targets
+dev: _check-pixi
+	@$(PIXI) run dev "$(PRESET)"
+
+start: _check-pixi
+	@$(PIXI) run start
+
+init: _check-pixi
+	@$(PIXI) run init
+
+format: _check-pixi
+	@$(PIXI) run format
+
+clean: _check-pixi
+	@$(PIXI) run clean "$(PRESET)"
+
+distclean: _check-pixi
+	@$(PIXI) run distclean
+
 help:
-	@echo "Goggles Build System"
+	@echo "Goggles Makefile (legacy)"
+	@echo "This Makefile is a compatibility wrapper around Pixi tasks (Pixi is the source of truth)."
 	@echo ""
-	@echo "Targets:"
-	@echo "  app       Build main project (default)"
-	@echo "  layer     Build both 64-bit and 32-bit layers"
-	@echo "  layer32   Build 32-bit layer only"
-	@echo "  layer64   Build 64-bit layer (alias for app)"
-	@echo "  dev       Build app + both layers, install manifests"
-	@echo "  clean     Clean current preset build directories"
-	@echo "  distclean Clean all build directories"
+	@echo "Usage:"
+	@echo "  make build [PRESET=debug]"
+	@echo "  make build-i686 [PRESET=debug]"
+	@echo "  make build-all-presets [FLAGS=\"--clean --no-i686\"]"
+	@echo "  make test [PRESET=debug]"
+	@echo "  make install-manifests [PRESET=debug]"
+	@echo "  make dev [PRESET=debug]"
+	@echo "  make start"
+	@echo "  make init"
+	@echo "  make format"
+	@echo "  make clean [PRESET=debug]"
+	@echo "  make distclean"
 	@echo ""
-	@echo "Variables:"
-	@echo "  PRESET=debug|release|profile  Build preset (default: debug)"
+	@echo "Back-compat aliases:"
+	@echo "  make app      == make build"
+	@echo "  make layer64  == make build"
+	@echo "  make layer32  == make build-i686"
+	@echo "  make layer    == make build && make build-i686"
 	@echo ""
-	@echo "Examples:"
-	@echo "  make dev              # Development setup"
-	@echo "  make PRESET=release   # Release build"
-	@echo "  make layer32          # Just 32-bit layer"
+	@echo "Make variables:"
+	@echo "  PRESET=...  (or preset=...)  CMake preset name (default: debug)"
+	@echo "  FLAGS=...   (or flags=...)   Extra flags for build-all-presets"
+	@echo "  PIXI=...                 Pixi binary name/path (default: pixi)"
+	@echo ""
+	@echo "Pixi equivalents:"
+	@echo "  make build PRESET=X              -> pixi run build X"
+	@echo "  make build-i686 PRESET=X         -> pixi run build-i686 X"
+	@echo "  make build-all-presets FLAGS=... -> pixi run build-all-presets ..."
+	@echo "  make dev PRESET=X                -> pixi run dev X"
+	@echo "  make test PRESET=X               -> pixi run test X"
+	@echo "  make install-manifests PRESET=X  -> pixi run install-manifests X"
+	@echo "  make clean PRESET=X              -> pixi run clean X"
+	@echo "  make distclean                   -> pixi run distclean"
+
+# Back-compat aliases
+app: build
+layer32: build-i686
+layer64: build
+layer: build build-i686
