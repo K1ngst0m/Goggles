@@ -12,7 +12,7 @@ Build Commands
   pixi run install-manifests [-p PRESET]  Install Vulkan layer manifests
 
 Run Commands
-  pixi run start [-p PRESET] -- <APP> [APP_ARGS...]
+  pixi run start [-p PRESET] [--] <APP> [APP_ARGS...]
                                           Launch app with capture + viewer
 
 Utilities
@@ -20,8 +20,7 @@ Utilities
   pixi run clean [-p PRESET]              Remove build directories
   pixi run distclean                      Remove all build directories
   pixi run shader-fetch                   Download RetroArch slang shaders
-  pixi run setup-ide [IDE]                Configure IDE clang-format
-  pixi run init                           First-time project setup
+  pixi run init                           First-time project setup (pre-commit hook)
 
 Options
   -p, --preset PRESET   Build preset (default: debug)
@@ -30,6 +29,6 @@ Options
 Examples
   pixi run build                          Build with default preset (debug)
   pixi run build -p release               Build with release preset
-  pixi run start -- vkcube                Run vkcube with capture
-  pixi run start -p release -- vkcube     Run with release build
+  pixi run start vkcube                   Run vkcube with capture
+  pixi run start -p release vkcube        Run with release build
 EOF

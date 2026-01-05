@@ -7,4 +7,4 @@ source "$SCRIPT_DIR/parse-preset.sh" "$@"
 "$SCRIPT_DIR/build.sh" -p "$PRESET"
 
 # Run tests
-ctest --test-dir "build/$PRESET" --output-on-failure
+ctest --preset "$PRESET" --output-on-failure

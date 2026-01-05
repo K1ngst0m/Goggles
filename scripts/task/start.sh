@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CMAKE_PRESETS_FILE="$REPO_ROOT/CMakePresets.json"
 DEFAULT_PRESET="debug"
 VALID_PRESETS=()
@@ -45,15 +45,15 @@ Options:
   --app-env VAR=val       Set environment variable for app (repeatable)
   -h, --help              Show this help
 
-Note: Use '--' to separate goggles args from the app when the app is in PATH.
-      Apps specified as paths (containing '/') don't need '--'.
+Note: '--' is optional. Use it to explicitly separate goggles args from the app.
 
 Examples:
+  pixi run start vkcube
   pixi run start -- vkcube
-  pixi run start -p release -- vkcube
-  pixi run start --input-forwarding -- vkcube
+  pixi run start -p release vkcube
+  pixi run start --input-forwarding vkcube
   pixi run start ./build/debug/bin/app
-  pixi run start --goggles-env DISPLAY=:0 --app-env DISPLAY=:1 -- vkcube
+  pixi run start --goggles-env DISPLAY=:0 --app-env DISPLAY=:1 vkcube
 EOF
 }
 
@@ -161,19 +161,15 @@ if ! $seen_separator; then
   done
 fi
 
-if [[ $# -eq 0 ]]; then
-  # If we collected goggles args but have no app, user likely forgot --
-  if ! $seen_separator && [[ ${#GOGGLES_ARGS[@]} -gt 0 ]]; then
-    last_arg="${GOGGLES_ARGS[-1]}"
-    die "Use '--' before apps in PATH (e.g., pixi run start -- $last_arg)"
-  fi
-  usage
-  die "missing <app> argument"
+# If no -- and no path app, last collected arg is the app
+if [[ $# -eq 0 ]] && ! $seen_separator && [[ ${#GOGGLES_ARGS[@]} -gt 0 ]]; then
+  set -- "${GOGGLES_ARGS[-1]}"
+  unset 'GOGGLES_ARGS[-1]'
 fi
 
-# Enforce -- for PATH apps (no /)
-if ! $seen_separator && [[ "$1" != */* ]]; then
-  die "Use '--' before apps in PATH (e.g., pixi run start -- $1)"
+if [[ $# -eq 0 ]]; then
+  usage
+  die "missing <app> argument"
 fi
 
 APP="$1"

@@ -31,4 +31,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Validate PRESET contains only safe characters (prevent path traversal)
+if [[ ! "$PRESET" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+  echo "Error: Invalid preset '$PRESET'. Use only alphanumeric, dash, underscore." >&2
+  exit 1
+fi
+
 export PRESET

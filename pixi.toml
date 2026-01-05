@@ -35,7 +35,7 @@ cmd = "bash scripts/task/build-i686.sh"
 
 [tasks.build-all-presets]
 description = "Build all CMake presets (including i686)"
-cmd = "bash scripts/build_all_presets.sh"
+cmd = "bash scripts/task/build-all-presets.sh"
 depends-on = ["_check-init"]
 
 [tasks.install-manifests]
@@ -56,11 +56,11 @@ cmd = "bash scripts/task/start.sh"
 
 [tasks.shader-fetch]
 description = "Download RetroArch slang shaders"
-cmd = "bash scripts/download_retroarch_shaders.sh"
+cmd = "bash scripts/task/shader-fetch.sh"
 
 [tasks.init]
 description = "First-time project setup"
-cmd = "bash scripts/init-format-setup.sh"
+cmd = "bash scripts/task/init.sh"
 
 [tasks.clean]
 description = "Remove build directories"
@@ -76,7 +76,7 @@ cmd = "bash -c \"echo 'Formatting C/C++...' && git ls-files -z '*.c' '*.h' '*.cp
 
 [tasks.help]
 description = "Show task usage"
-cmd = "bash scripts/help.sh"
+cmd = "bash scripts/task/help.sh"
 
 [dependencies]
 cmake = "3.31.*"

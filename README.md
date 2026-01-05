@@ -97,13 +97,13 @@ build/<preset>/
 
 ## Usage
 
-Use `pixi run start [preset] <app> [app_args...]` to launch the viewer and
-target together. The preset argument is optional and defaults to `debug`.
+Use `pixi run start [-p preset] [--] <app> [app_args...]` to launch the viewer and
+target together. The preset defaults to `debug`.
 
 ```bash
 # Quick smoke test (build + manifests as needed)
-pixi run start vkcube --wsi xcb           # preset=debug
-pixi run start release vkcube --wsi xcb   # preset=release
+pixi run start vkcube --wsi xcb              # preset=debug
+pixi run start -p release vkcube --wsi xcb   # preset=release
 
 # Standard flow
 pixi run build                   # 1. Build the project
