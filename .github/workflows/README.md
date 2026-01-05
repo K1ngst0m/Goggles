@@ -14,11 +14,11 @@ Runs on every push/PR to `main` using Pixi tasks and shared presets.
 
 2) **Build and Test (test preset)**
 - Uses Vulkan SDK from the Pixi environment (`vulkansdk` package), no system install needed.
-- `pixi run build test` → CMake `test` preset (Debug + ASAN + clang-tidy enabled) via Pixi task.
-- `pixi run test test` → Runs tests with AddressSanitizer.
+- `pixi run build -p test` → CMake `test` preset (Debug + ASAN + clang-tidy enabled) via Pixi task.
+- `pixi run test -p test` → Runs tests with AddressSanitizer.
 
 3) **Static Analysis (clang-tidy)**
-- `pixi run build quality` → CMake `quality` preset (Debug + ASAN + clang-tidy).
+- `pixi run build -p quality` → CMake `quality` preset (Debug + ASAN + clang-tidy).
 
 ### Reproducing Locally
 ```bash
@@ -26,17 +26,17 @@ Runs on every push/PR to `main` using Pixi tasks and shared presets.
 pixi run clang-format -i $(git ls-files '*.cpp' '*.hpp')
 
 # Build + test with ASAN
-pixi run build test
-pixi run test test
+pixi run build -p test
+pixi run test -p test
 
 # Static analysis
-pixi run build quality
+pixi run build -p quality
 ```
 
 ### Debugging CI Failures
 - **Format commit missing**: Ensure files are tracked; rerun clang-format command above.
-- **Build/Test failures**: `pixi run build test && pixi run test test` locally to match CI flags.
-- **Clang-tidy issues**: `pixi run build quality` or `pixi run clang-tidy -- <file>` with compile commands from `build/quality`.
+- **Build/Test failures**: `pixi run build -p test && pixi run test -p test` locally to match CI flags.
+- **Clang-tidy issues**: `pixi run build -p quality` or `pixi run clang-tidy -- <file>` with compile commands from `build/quality`.
 
 ## Scheduled (`presets-build.yml`)
 
