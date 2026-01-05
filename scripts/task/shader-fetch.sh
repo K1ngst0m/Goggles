@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SHADERS_DIR="${PROJECT_DIR}/shaders/retroarch"
 REPO_URL="https://github.com/libretro/slang-shaders.git"
 
