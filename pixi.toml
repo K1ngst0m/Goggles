@@ -19,58 +19,40 @@ VK_ADD_LAYER_PATH = "$CONDA_PREFIX/share/vulkan/explicit_layer.d"
 
 [tasks]
 # Run `pixi task list` or `pixi run help` to see available tasks.
+# All tasks that accept a preset use: -p, --preset PRESET (default: debug)
 
 [tasks._check-init]
 cmd = "bash scripts/ensure-init.sh"
 
 [tasks.build]
 description = "Build 64-bit app + layer"
-cmd = "bash -c \"mkdir -p \\\"$CCACHE_TEMPDIR\\\" && cmake --preset {{ preset }} && cmake --build --preset {{ preset }}\""
-args = [{ "arg" = "preset", "default" = "debug" }]
-inputs = ["src/**/*.cpp", "src/**/*.hpp", "CMakeLists.txt"]
-outputs = ["build/{{ preset }}/bin/goggles"]
+cmd = "bash scripts/task/build.sh"
 depends-on = ["_check-init"]
 
 [tasks.build-i686]
 description = "Build 32-bit layer only"
-cmd = "bash -c \"mkdir -p \\\"$CCACHE_TEMPDIR\\\" && cmake --preset {{ preset }}-i686 && cmake --build --preset {{ preset }}-i686\""
-args = [{ "arg" = "preset", "default" = "debug" }]
-inputs = ["src/capture/**/*.cpp", "src/capture/**/*.hpp"]
-outputs = ["build/{{ preset }}-i686/lib/i386/libgoggles_vklayer.so"]
+cmd = "bash scripts/task/build-i686.sh"
 
 [tasks.build-all-presets]
 description = "Build all CMake presets (including i686)"
-cmd = "bash scripts/build_all_presets.sh {{ flags }}"
-args = [{ "arg" = "flags", "default" = "" }]
+cmd = "bash scripts/build_all_presets.sh"
 depends-on = ["_check-init"]
 
 [tasks.install-manifests]
 description = "Install Vulkan layer manifests"
-cmd = "bash -c \"mkdir -p $HOME/.local/share/vulkan/implicit_layer.d && cp build/{{ preset }}/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && cp build/{{ preset }}-i686/share/vulkan/implicit_layer.d/*.json $HOME/.local/share/vulkan/implicit_layer.d/ && echo 'Manifests installed'\""
-args = [{ "arg" = "preset", "default" = "debug" }]
-depends-on = [
-  { task = "build", args = [
-    "{{ preset }}",
-  ] },
-  { task = "build-i686", args = [
-    "{{ preset }}",
-  ] },
-]
+cmd = "bash scripts/task/install-manifests.sh"
 
 [tasks.test]
 description = "Run tests"
-cmd = "ctest --test-dir build/{{ preset }} --output-on-failure"
-args = [{ "arg" = "preset", "default" = "debug" }]
-depends-on = [{ task = "build", args = ["{{ preset }}"] }]
+cmd = "bash scripts/task/test.sh"
 
 [tasks.dev]
 description = "Build full dev environment"
-depends-on = [{ task = "install-manifests", args = ["{{ preset }}"] }]
-args = [{ "arg" = "preset", "default" = "debug" }]
+cmd = "bash scripts/task/dev.sh"
 
 [tasks.start]
 description = "Launch app with capture + viewer"
-cmd = "bash scripts/start.sh"
+cmd = "bash scripts/task/start.sh"
 
 [tasks.shader-fetch]
 description = "Download RetroArch slang shaders"
@@ -82,8 +64,7 @@ cmd = "bash scripts/init-format-setup.sh"
 
 [tasks.clean]
 description = "Remove build directories"
-cmd = "rm -rf build/{{ preset }} build/{{ preset }}-i686"
-args = [{ "arg" = "preset", "default" = "debug" }]
+cmd = "bash scripts/task/clean.sh"
 
 [tasks.distclean]
 description = "Remove all build directories"

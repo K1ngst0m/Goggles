@@ -36,20 +36,24 @@ fi
 usage() {
   cat <<'EOF'
 Usage:
-  pixi run start [preset] [goggles_args...] [options] -- <app> [app_args...]
-  pixi run start --preset <preset> [goggles_args...] [options] -- <app> [app_args...]
+  pixi run start [options] [goggles_args...] -- <app> [app_args...]
+  pixi run start [options] [goggles_args...] <path/to/app> [app_args...]
 
 Options:
-  --goggles-env VAR=val   Set environment variable for goggles only (can repeat)
-  --app-env VAR=val       Set environment variable for app only (can repeat)
+  -p, --preset <name>     Build preset (default: debug)
+  --goggles-env VAR=val   Set environment variable for goggles (repeatable)
+  --app-env VAR=val       Set environment variable for app (repeatable)
+  -h, --help              Show this help
 
-Note: Use '--' to separate viewer args from the app when the app is in PATH.
+Note: Use '--' to separate goggles args from the app when the app is in PATH.
+      Apps specified as paths (containing '/') don't need '--'.
 
 Examples:
-  pixi run start vkcube --wsi xcb
-  pixi run start release vkcube --wsi xcb
-  pixi run start --input-forwarding --app-env DISPLAY=:1 -- vkcube
-  pixi run start debug --goggles-env DISPLAY=:0 --app-env DISPLAY=:1 -- vkcube
+  pixi run start -- vkcube
+  pixi run start -p release -- vkcube
+  pixi run start --input-forwarding -- vkcube
+  pixi run start ./build/debug/bin/app
+  pixi run start --goggles-env DISPLAY=:0 --app-env DISPLAY=:1 -- vkcube
 EOF
 }
 
@@ -78,7 +82,7 @@ validate_preset() {
 }
 
 PRESET="$DEFAULT_PRESET"
-preset_explicit=false
+seen_separator=false
 GOGGLES_ARGS=()
 GOGGLES_ENV=()
 APP_ENV=()
@@ -89,15 +93,18 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
+    -p)
+      [[ $# -ge 2 ]] || die "-p requires a preset name"
+      PRESET="$2"
+      shift 2
+      ;;
     --preset)
       [[ $# -ge 2 ]] || die "--preset requires a value"
       PRESET="$2"
-      preset_explicit=true
       shift 2
       ;;
     --preset=*)
       PRESET="${1#*=}"
-      preset_explicit=true
       shift
       ;;
     --app-env)
@@ -123,6 +130,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --)
+      seen_separator=true
       shift
       break
       ;;
@@ -132,33 +140,40 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! $preset_explicit && [[ $# -gt 0 ]] && is_valid_preset "$1"; then
-  PRESET="$1"
-  preset_explicit=true
-  shift
+# Collect goggles args until -- or path
+if ! $seen_separator; then
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --)
+        seen_separator=true
+        shift
+        break
+        ;;
+      *)
+        # If it looks like an app path (contains /), stop collecting viewer args.
+        if [[ "$1" == */* ]]; then
+          break
+        fi
+        GOGGLES_ARGS+=("$1")
+        shift
+        ;;
+    esac
+  done
 fi
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --)
-      shift
-      break
-      ;;
-    *)
-      # If it looks like an app path (contains /), stop collecting viewer args.
-      # For apps in PATH, use '--' to separate from viewer args.
-      if [[ "$1" == */* ]]; then
-        break
-      fi
-      GOGGLES_ARGS+=("$1")
-      shift
-      ;;
-  esac
-done
-
 if [[ $# -eq 0 ]]; then
+  # If we collected goggles args but have no app, user likely forgot --
+  if ! $seen_separator && [[ ${#GOGGLES_ARGS[@]} -gt 0 ]]; then
+    last_arg="${GOGGLES_ARGS[-1]}"
+    die "Use '--' before apps in PATH (e.g., pixi run start -- $last_arg)"
+  fi
   usage
   die "missing <app> argument"
+fi
+
+# Enforce -- for PATH apps (no /)
+if ! $seen_separator && [[ "$1" != */* ]]; then
+  die "Use '--' before apps in PATH (e.g., pixi run start -- $1)"
 fi
 
 APP="$1"
@@ -170,7 +185,7 @@ validate_preset "$PRESET"
 cd "$REPO_ROOT"
 
 echo "Ensuring preset '$PRESET' is built..."
-pixi run dev "$PRESET"
+pixi run dev -p "$PRESET"
 
 VIEWER_BIN="$REPO_ROOT/build/$PRESET/bin/goggles"
 [[ -x "$VIEWER_BIN" ]] || die "viewer binary not found at $VIEWER_BIN"
