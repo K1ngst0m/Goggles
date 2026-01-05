@@ -6,9 +6,12 @@
 #include <cstdio>
 #include <ctime>
 #include <linux/input-event-codes.h>
-#include <memory>
 #include <sys/eventfd.h>
+#include <thread>
 #include <unistd.h>
+#include <util/queues.hpp>
+#include <util/unique_fd.hpp>
+#include <vector>
 
 extern "C" {
 #include <wayland-server-core.h>
@@ -54,262 +57,322 @@ auto bind_wayland_socket(wl_display* display) -> Result<int> {
                            "No available DISPLAY numbers (1-9 all bound)");
 }
 
+struct KeyboardDeleter {
+    void operator()(wlr_keyboard* kb) const {
+        if (kb) {
+            wlr_keyboard_finish(kb);
+            delete kb;
+        }
+    }
+};
+using UniqueKeyboard = std::unique_ptr<wlr_keyboard, KeyboardDeleter>;
+
 } // anonymous namespace
 
-struct CompositorServer::Listeners {
-    CompositorServer* server = nullptr;
-    wl_listener new_xdg_toplevel{};
-    wl_listener xdg_surface_commit{};
-    wl_listener xdg_surface_map{};
-    wl_listener xdg_surface_destroy{};
-    wl_listener new_xwayland_surface{};
-    wl_listener xwayland_surface_associate{};
-    wl_listener xwayland_surface_map{};
-    wl_listener xwayland_surface_destroy{};
+struct CompositorServer::Impl {
+    struct Listeners {
+        Impl* impl = nullptr;
+
+        wl_listener new_xdg_toplevel{};
+        wl_listener xdg_surface_commit{};
+        wl_listener xdg_surface_map{};
+        wl_listener xdg_surface_destroy{};
+        wl_listener new_xwayland_surface{};
+        wl_listener xwayland_surface_associate{};
+        wl_listener xwayland_surface_map{};
+        wl_listener xwayland_surface_destroy{};
+    };
+
+    // Fields ordered for optimal padding
+    util::SPSCQueue<InputEvent> event_queue{64};
+    wl_display* display = nullptr;
+    wl_event_loop* event_loop = nullptr;
+    wl_event_source* event_source = nullptr;
+    wlr_backend* backend = nullptr;
+    wlr_renderer* renderer = nullptr;
+    wlr_allocator* allocator = nullptr;
+    wlr_compositor* compositor = nullptr;
+    wlr_xdg_shell* xdg_shell = nullptr;
+    wlr_seat* seat = nullptr;
+    wlr_xwayland* xwayland = nullptr;
+    UniqueKeyboard keyboard;
+    xkb_context* xkb_ctx = nullptr;
+    wlr_output_layout* output_layout = nullptr;
+    wlr_output* output = nullptr;
+    wlr_surface* focused_surface = nullptr;
+    wlr_xwayland_surface* focused_xsurface = nullptr;
+    double last_pointer_x = 0.0;
+    double last_pointer_y = 0.0;
     wlr_xdg_toplevel* pending_toplevel = nullptr;
     wlr_xwayland_surface* pending_xsurface = nullptr;
+    std::jthread compositor_thread;
+    std::vector<wlr_surface*> surfaces;
+    Listeners listeners;
+    util::UniqueFd event_fd;
+    int display_number = -1;
+
+    Impl() {
+        listeners.impl = this;
+        wl_list_init(&listeners.xdg_surface_commit.link);
+        wl_list_init(&listeners.xdg_surface_map.link);
+        wl_list_init(&listeners.xdg_surface_destroy.link);
+        wl_list_init(&listeners.xwayland_surface_associate.link);
+        wl_list_init(&listeners.xwayland_surface_map.link);
+        wl_list_init(&listeners.xwayland_surface_destroy.link);
+    }
+
+    void process_input_events();
+    void handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel);
+    void handle_xdg_surface_commit();
+    void handle_xdg_surface_map();
+    void handle_xdg_surface_destroy();
+    void handle_new_xwayland_surface(wlr_xwayland_surface* xsurface);
+    void handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface);
+    void handle_xwayland_surface_map(wlr_xwayland_surface* xsurface);
+    void handle_xwayland_surface_destroy();
+    void focus_surface(wlr_surface* surface);
+    void focus_xwayland_surface(wlr_xwayland_surface* xsurface);
 };
 
-CompositorServer::CompositorServer() : m_listeners(std::make_unique<Listeners>()) {
-    m_listeners->server = this;
-    wl_list_init(&m_listeners->xdg_surface_commit.link);
-    wl_list_init(&m_listeners->xdg_surface_map.link);
-    wl_list_init(&m_listeners->xdg_surface_destroy.link);
-    wl_list_init(&m_listeners->xwayland_surface_associate.link);
-    wl_list_init(&m_listeners->xwayland_surface_map.link);
-    wl_list_init(&m_listeners->xwayland_surface_destroy.link);
-}
+CompositorServer::CompositorServer() : m_impl(std::make_unique<Impl>()) {}
 
 CompositorServer::~CompositorServer() {
     stop();
 }
 
+auto CompositorServer::x11_display() const -> std::string {
+    return ":" + std::to_string(m_impl->display_number);
+}
+
+auto CompositorServer::wayland_display() const -> std::string {
+    return "wayland-" + std::to_string(m_impl->display_number);
+}
+
 auto CompositorServer::start() -> Result<int> {
+    auto& impl = *m_impl;
     auto cleanup_on_error = [this](void*) { stop(); };
     std::unique_ptr<void, decltype(cleanup_on_error)> guard(this, cleanup_on_error);
 
-    m_display = wl_display_create();
-    if (!m_display) {
+    impl.display = wl_display_create();
+    if (!impl.display) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create Wayland display");
     }
 
-    m_event_loop = wl_display_get_event_loop(m_display);
-    if (!m_event_loop) {
+    impl.event_loop = wl_display_get_event_loop(impl.display);
+    if (!impl.event_loop) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to get event loop");
     }
 
-    m_backend = wlr_headless_backend_create(m_event_loop);
-    if (!m_backend) {
+    impl.backend = wlr_headless_backend_create(impl.event_loop);
+    if (!impl.backend) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create headless backend");
     }
 
-    m_renderer = wlr_renderer_autocreate(m_backend);
-    if (!m_renderer) {
+    impl.renderer = wlr_renderer_autocreate(impl.backend);
+    if (!impl.renderer) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create renderer");
     }
 
-    if (!wlr_renderer_init_wl_display(m_renderer, m_display)) {
+    if (!wlr_renderer_init_wl_display(impl.renderer, impl.display)) {
         return make_error<int>(ErrorCode::input_init_failed,
                                "Failed to initialize renderer protocols");
     }
 
-    m_allocator = wlr_allocator_autocreate(m_backend, m_renderer);
-    if (!m_allocator) {
+    impl.allocator = wlr_allocator_autocreate(impl.backend, impl.renderer);
+    if (!impl.allocator) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create allocator");
     }
 
-    m_compositor = wlr_compositor_create(m_display, 6, m_renderer);
-    if (!m_compositor) {
+    impl.compositor = wlr_compositor_create(impl.display, 6, impl.renderer);
+    if (!impl.compositor) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create compositor");
     }
 
-    m_output_layout = wlr_output_layout_create(m_display);
-    if (!m_output_layout) {
+    impl.output_layout = wlr_output_layout_create(impl.display);
+    if (!impl.output_layout) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create output layout");
     }
 
-    m_xdg_shell = wlr_xdg_shell_create(m_display, 3);
-    if (!m_xdg_shell) {
+    impl.xdg_shell = wlr_xdg_shell_create(impl.display, 3);
+    if (!impl.xdg_shell) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create xdg-shell");
     }
 
-    wl_list_init(&m_listeners->new_xdg_toplevel.link);
-    m_listeners->new_xdg_toplevel.notify = [](wl_listener* listener, void* data) {
-        auto* listeners = reinterpret_cast<Listeners*>(reinterpret_cast<char*>(listener) -
-                                                       offsetof(Listeners, new_xdg_toplevel));
-        auto* toplevel = static_cast<wlr_xdg_toplevel*>(data);
-        listeners->server->handle_new_xdg_toplevel(toplevel);
+    wl_list_init(&impl.listeners.new_xdg_toplevel.link);
+    impl.listeners.new_xdg_toplevel.notify = [](wl_listener* listener, void* data) {
+        auto* listeners = reinterpret_cast<Impl::Listeners*>(
+            reinterpret_cast<char*>(listener) - offsetof(Impl::Listeners, new_xdg_toplevel));
+        listeners->impl->handle_new_xdg_toplevel(static_cast<wlr_xdg_toplevel*>(data));
     };
-    wl_signal_add(&m_xdg_shell->events.new_toplevel, &m_listeners->new_xdg_toplevel);
+    wl_signal_add(&impl.xdg_shell->events.new_toplevel, &impl.listeners.new_xdg_toplevel);
 
-    m_seat = wlr_seat_create(m_display, "seat0");
-    if (!m_seat) {
+    impl.seat = wlr_seat_create(impl.display, "seat0");
+    if (!impl.seat) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create seat");
     }
 
-    wlr_seat_set_capabilities(m_seat, WL_SEAT_CAPABILITY_KEYBOARD | WL_SEAT_CAPABILITY_POINTER);
+    wlr_seat_set_capabilities(impl.seat, WL_SEAT_CAPABILITY_KEYBOARD | WL_SEAT_CAPABILITY_POINTER);
 
-    m_xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    if (!m_xkb_context) {
+    impl.xkb_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (!impl.xkb_ctx) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create xkb context");
     }
 
     xkb_keymap* keymap =
-        xkb_keymap_new_from_names(m_xkb_context, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
+        xkb_keymap_new_from_names(impl.xkb_ctx, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
     if (!keymap) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create xkb keymap");
     }
 
-    m_keyboard = new wlr_keyboard{};
-    wlr_keyboard_init(m_keyboard, nullptr, "virtual-keyboard");
-    wlr_keyboard_set_keymap(m_keyboard, keymap);
+    impl.keyboard = UniqueKeyboard(new wlr_keyboard{});
+    wlr_keyboard_init(impl.keyboard.get(), nullptr, "virtual-keyboard");
+    wlr_keyboard_set_keymap(impl.keyboard.get(), keymap);
     xkb_keymap_unref(keymap);
 
-    wlr_seat_set_keyboard(m_seat, m_keyboard);
+    wlr_seat_set_keyboard(impl.seat, impl.keyboard.get());
 
     int efd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (efd < 0) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create eventfd");
     }
-    m_event_fd = util::UniqueFd(efd);
+    impl.event_fd = util::UniqueFd(efd);
 
-    m_event_source = wl_event_loop_add_fd(
-        m_event_loop, m_event_fd.get(), WL_EVENT_READABLE,
+    impl.event_source = wl_event_loop_add_fd(
+        impl.event_loop, impl.event_fd.get(), WL_EVENT_READABLE,
         [](int /*fd*/, uint32_t /*mask*/, void* data) -> int {
-            auto* server = static_cast<CompositorServer*>(data);
+            auto* self = static_cast<Impl*>(data);
             uint64_t val = 0;
             // eventfd guarantees 8-byte atomic read when readable
-            (void)read(server->m_event_fd.get(), &val, sizeof(val));
-            server->process_input_events();
+            (void)read(self->event_fd.get(), &val, sizeof(val));
+            self->process_input_events();
             return 0;
         },
-        this);
+        &impl);
 
-    if (!m_event_source) {
+    if (!impl.event_source) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to add eventfd to event loop");
     }
 
-    auto socket_result = bind_wayland_socket(m_display);
+    auto socket_result = bind_wayland_socket(impl.display);
     if (!socket_result) {
         return make_error<int>(socket_result.error().code, socket_result.error().message);
     }
-    m_display_number = *socket_result;
+    impl.display_number = *socket_result;
 
-    m_xwayland = wlr_xwayland_create(m_display, m_compositor, false);
-    if (!m_xwayland) {
+    impl.xwayland = wlr_xwayland_create(impl.display, impl.compositor, false);
+    if (!impl.xwayland) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create XWayland server");
     }
 
-    m_listeners->new_xwayland_surface.notify = [](wl_listener* listener, void* data) {
-        auto* listeners = reinterpret_cast<Listeners*>(reinterpret_cast<char*>(listener) -
-                                                       offsetof(Listeners, new_xwayland_surface));
-        auto* xsurface = static_cast<wlr_xwayland_surface*>(data);
-        listeners->server->handle_new_xwayland_surface(xsurface);
+    impl.listeners.new_xwayland_surface.notify = [](wl_listener* listener, void* data) {
+        auto* listeners = reinterpret_cast<Impl::Listeners*>(
+            reinterpret_cast<char*>(listener) - offsetof(Impl::Listeners, new_xwayland_surface));
+        listeners->impl->handle_new_xwayland_surface(static_cast<wlr_xwayland_surface*>(data));
     };
-    wl_signal_add(&m_xwayland->events.new_surface, &m_listeners->new_xwayland_surface);
+    wl_signal_add(&impl.xwayland->events.new_surface, &impl.listeners.new_xwayland_surface);
 
     // wlr_xwm translates seat events to X11 KeyPress/MotionNotify
-    wlr_xwayland_set_seat(m_xwayland, m_seat);
+    wlr_xwayland_set_seat(impl.xwayland, impl.seat);
 
-    if (!wlr_backend_start(m_backend)) {
+    if (!wlr_backend_start(impl.backend)) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to start wlroots backend");
     }
 
     // Create headless output for native Wayland clients
-    m_output = wlr_headless_add_output(m_backend, 1920, 1080);
-    if (!m_output) {
+    impl.output = wlr_headless_add_output(impl.backend, 1920, 1080);
+    if (!impl.output) {
         return make_error<int>(ErrorCode::input_init_failed, "Failed to create headless output");
     }
-    wlr_output_init_render(m_output, m_allocator, m_renderer);
-    wlr_output_layout_add_auto(m_output_layout, m_output);
+    wlr_output_init_render(impl.output, impl.allocator, impl.renderer);
+    wlr_output_layout_add_auto(impl.output_layout, impl.output);
 
     wlr_output_state state;
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, true);
-    wlr_output_commit_state(m_output, &state);
+    wlr_output_commit_state(impl.output, &state);
     wlr_output_state_finish(&state);
 
-    m_compositor_thread = std::jthread([this] { wl_display_run(m_display); });
+    impl.compositor_thread = std::jthread([&impl] { wl_display_run(impl.display); });
 
     guard.release(); // NOLINT(bugprone-unused-return-value)
-    return m_display_number;
+    return impl.display_number;
 }
 
 void CompositorServer::stop() {
-    if (!m_display) {
+    auto& impl = *m_impl;
+
+    if (!impl.display) {
         return;
     }
 
-    wl_display_terminate(m_display);
+    wl_display_terminate(impl.display);
 
     // Must join before destroying objects thread accesses
-    if (m_compositor_thread.joinable()) {
-        m_compositor_thread.join();
+    if (impl.compositor_thread.joinable()) {
+        impl.compositor_thread.join();
     }
 
     // Must remove before closing eventfd
-    if (m_event_source) {
-        wl_event_source_remove(m_event_source);
-        m_event_source = nullptr;
+    if (impl.event_source) {
+        wl_event_source_remove(impl.event_source);
+        impl.event_source = nullptr;
     }
 
-    m_surfaces.clear();
-    m_focused_surface = nullptr;
-    m_focused_xsurface = nullptr;
+    impl.surfaces.clear();
+    impl.focused_surface = nullptr;
+    impl.focused_xsurface = nullptr;
 
     // Destruction order: xwayland before compositor, seat before display
-    if (m_xwayland) {
-        wlr_xwayland_destroy(m_xwayland);
-        m_xwayland = nullptr;
+    if (impl.xwayland) {
+        wlr_xwayland_destroy(impl.xwayland);
+        impl.xwayland = nullptr;
     }
 
-    if (m_keyboard) {
-        wlr_keyboard_finish(m_keyboard);
-        delete m_keyboard;
-        m_keyboard = nullptr;
+    if (impl.keyboard) {
+        impl.keyboard.reset();
     }
 
-    if (m_xkb_context) {
-        xkb_context_unref(m_xkb_context);
-        m_xkb_context = nullptr;
+    if (impl.xkb_ctx) {
+        xkb_context_unref(impl.xkb_ctx);
+        impl.xkb_ctx = nullptr;
     }
 
-    if (m_seat) {
-        wlr_seat_destroy(m_seat);
-        m_seat = nullptr;
+    if (impl.seat) {
+        wlr_seat_destroy(impl.seat);
+        impl.seat = nullptr;
     }
 
-    m_xdg_shell = nullptr;
-    m_compositor = nullptr;
-    m_output = nullptr;
+    impl.xdg_shell = nullptr;
+    impl.compositor = nullptr;
+    impl.output = nullptr;
 
-    if (m_output_layout) {
-        wlr_output_layout_destroy(m_output_layout);
-        m_output_layout = nullptr;
+    if (impl.output_layout) {
+        wlr_output_layout_destroy(impl.output_layout);
+        impl.output_layout = nullptr;
     }
 
-    if (m_allocator) {
-        wlr_allocator_destroy(m_allocator);
-        m_allocator = nullptr;
+    if (impl.allocator) {
+        wlr_allocator_destroy(impl.allocator);
+        impl.allocator = nullptr;
     }
 
-    if (m_renderer) {
-        wlr_renderer_destroy(m_renderer);
-        m_renderer = nullptr;
+    if (impl.renderer) {
+        wlr_renderer_destroy(impl.renderer);
+        impl.renderer = nullptr;
     }
 
-    if (m_backend) {
-        wlr_backend_destroy(m_backend);
-        m_backend = nullptr;
+    if (impl.backend) {
+        wlr_backend_destroy(impl.backend);
+        impl.backend = nullptr;
     }
 
-    if (m_display) {
-        wl_display_destroy(m_display);
-        m_display = nullptr;
+    if (impl.display) {
+        wl_display_destroy(impl.display);
+        impl.display = nullptr;
     }
 
-    m_event_loop = nullptr;
-    m_display_number = -1;
+    impl.event_loop = nullptr;
+    impl.display_number = -1;
 }
 
 auto CompositorServer::inject_key(uint32_t linux_keycode, bool pressed) -> bool {
@@ -318,9 +381,9 @@ auto CompositorServer::inject_key(uint32_t linux_keycode, bool pressed) -> bool 
     event.code = linux_keycode;
     event.pressed = pressed;
 
-    if (m_event_queue.try_push(event)) {
+    if (m_impl->event_queue.try_push(event)) {
         uint64_t val = 1;
-        auto ret = write(m_event_fd.get(), &val, sizeof(val));
+        auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
         return ret == sizeof(val);
     }
     return false;
@@ -332,9 +395,9 @@ auto CompositorServer::inject_pointer_motion(double sx, double sy) -> bool {
     event.x = sx;
     event.y = sy;
 
-    if (m_event_queue.try_push(event)) {
+    if (m_impl->event_queue.try_push(event)) {
         uint64_t val = 1;
-        auto ret = write(m_event_fd.get(), &val, sizeof(val));
+        auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
         return ret == sizeof(val);
     }
     return false;
@@ -346,9 +409,9 @@ auto CompositorServer::inject_pointer_button(uint32_t button, bool pressed) -> b
     event.code = button;
     event.pressed = pressed;
 
-    if (m_event_queue.try_push(event)) {
+    if (m_impl->event_queue.try_push(event)) {
         uint64_t val = 1;
-        auto ret = write(m_event_fd.get(), &val, sizeof(val));
+        auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
         return ret == sizeof(val);
     }
     return false;
@@ -360,217 +423,209 @@ auto CompositorServer::inject_pointer_axis(double value, bool horizontal) -> boo
     event.value = value;
     event.horizontal = horizontal;
 
-    if (m_event_queue.try_push(event)) {
+    if (m_impl->event_queue.try_push(event)) {
         uint64_t val = 1;
-        auto ret = write(m_event_fd.get(), &val, sizeof(val));
+        auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
         return ret == sizeof(val);
     }
     return false;
 }
 
-void CompositorServer::process_input_events() {
-    while (auto event_opt = m_event_queue.try_pop()) {
+void CompositorServer::Impl::process_input_events() {
+    while (auto event_opt = event_queue.try_pop()) {
         auto& event = *event_opt;
         uint32_t time = get_time_msec();
 
         switch (event.type) {
         case InputEventType::key: {
-            if (!m_focused_surface) {
+            if (!focused_surface) {
                 break;
             }
-
             // For XWayland: must re-activate and re-enter keyboard focus before each key
-            if (m_focused_xsurface) {
-                wlr_xwayland_surface_activate(m_focused_xsurface, true);
+            if (focused_xsurface) {
+                wlr_xwayland_surface_activate(focused_xsurface, true);
             }
-            wlr_seat_set_keyboard(m_seat, m_keyboard);
-            wlr_seat_keyboard_notify_enter(m_seat, m_focused_surface, m_keyboard->keycodes,
-                                           m_keyboard->num_keycodes, &m_keyboard->modifiers);
-
+            wlr_seat_set_keyboard(seat, keyboard.get());
+            wlr_seat_keyboard_notify_enter(seat, focused_surface, keyboard->keycodes,
+                                           keyboard->num_keycodes, &keyboard->modifiers);
             auto state =
                 event.pressed ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED;
-            wlr_seat_keyboard_notify_key(m_seat, time, event.code, state);
+            wlr_seat_keyboard_notify_key(seat, time, event.code, state);
             break;
         }
         case InputEventType::pointer_motion: {
-            if (!m_focused_surface) {
+            if (!focused_surface) {
                 break;
             }
             // For XWayland: must re-activate and re-enter pointer focus
-            if (m_focused_xsurface) {
-                wlr_xwayland_surface_activate(m_focused_xsurface, true);
-                wlr_seat_pointer_notify_enter(m_seat, m_focused_surface, event.x, event.y);
+            if (focused_xsurface) {
+                wlr_xwayland_surface_activate(focused_xsurface, true);
+                wlr_seat_pointer_notify_enter(seat, focused_surface, event.x, event.y);
             }
-            wlr_seat_pointer_notify_motion(m_seat, time, event.x, event.y);
-            wlr_seat_pointer_notify_frame(m_seat);
-            m_last_pointer_x = event.x;
-            m_last_pointer_y = event.y;
+            wlr_seat_pointer_notify_motion(seat, time, event.x, event.y);
+            wlr_seat_pointer_notify_frame(seat);
+            last_pointer_x = event.x;
+            last_pointer_y = event.y;
             break;
         }
         case InputEventType::pointer_button: {
-            if (!m_focused_surface) {
+            if (!focused_surface) {
                 break;
             }
-            if (m_focused_xsurface) {
-                wlr_xwayland_surface_activate(m_focused_xsurface, true);
-                wlr_seat_pointer_notify_enter(m_seat, m_focused_surface, m_last_pointer_x,
-                                              m_last_pointer_y);
+            if (focused_xsurface) {
+                wlr_xwayland_surface_activate(focused_xsurface, true);
+                wlr_seat_pointer_notify_enter(seat, focused_surface, last_pointer_x,
+                                              last_pointer_y);
             }
             auto state =
                 event.pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED;
-            wlr_seat_pointer_notify_button(m_seat, time, event.code, state);
-            wlr_seat_pointer_notify_frame(m_seat);
+            wlr_seat_pointer_notify_button(seat, time, event.code, state);
+            wlr_seat_pointer_notify_frame(seat);
             break;
         }
         case InputEventType::pointer_axis: {
-            if (!m_focused_surface) {
+            if (!focused_surface) {
                 break;
             }
-            if (m_focused_xsurface) {
-                wlr_xwayland_surface_activate(m_focused_xsurface, true);
-                wlr_seat_pointer_notify_enter(m_seat, m_focused_surface, m_last_pointer_x,
-                                              m_last_pointer_y);
+            if (focused_xsurface) {
+                wlr_xwayland_surface_activate(focused_xsurface, true);
+                wlr_seat_pointer_notify_enter(seat, focused_surface, last_pointer_x,
+                                              last_pointer_y);
             }
             auto orientation = event.horizontal ? WL_POINTER_AXIS_HORIZONTAL_SCROLL
                                                 : WL_POINTER_AXIS_VERTICAL_SCROLL;
-            wlr_seat_pointer_notify_axis(m_seat, time, orientation, event.value,
+            wlr_seat_pointer_notify_axis(seat, time, orientation, event.value,
                                          0, // value_discrete (legacy)
                                          WL_POINTER_AXIS_SOURCE_WHEEL,
                                          WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
-            wlr_seat_pointer_notify_frame(m_seat);
+            wlr_seat_pointer_notify_frame(seat);
             break;
         }
         }
     }
 }
 
-void CompositorServer::handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel) {
+void CompositorServer::Impl::handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel) {
     // Skip if already waiting for a surface
-    if (!wl_list_empty(&m_listeners->xdg_surface_commit.link)) {
+    if (!wl_list_empty(&listeners.xdg_surface_commit.link)) {
         return;
     }
 
-    m_listeners->pending_toplevel = toplevel;
+    pending_toplevel = toplevel;
 
     // Stage 1: Listen for commit to detect when surface becomes initialized
-    wl_list_init(&m_listeners->xdg_surface_commit.link);
-    m_listeners->xdg_surface_commit.notify = [](wl_listener* listener, void* /*data*/) {
-        auto* listeners = reinterpret_cast<Listeners*>(reinterpret_cast<char*>(listener) -
-                                                       offsetof(Listeners, xdg_surface_commit));
-        listeners->server->handle_xdg_surface_commit();
+    wl_list_init(&listeners.xdg_surface_commit.link);
+    listeners.xdg_surface_commit.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* l = reinterpret_cast<Impl::Listeners*>(reinterpret_cast<char*>(listener) -
+                                                     offsetof(Impl::Listeners, xdg_surface_commit));
+        l->impl->handle_xdg_surface_commit();
     };
-    wl_signal_add(&toplevel->base->surface->events.commit, &m_listeners->xdg_surface_commit);
+    wl_signal_add(&toplevel->base->surface->events.commit, &listeners.xdg_surface_commit);
 }
 
-void CompositorServer::handle_xdg_surface_commit() {
-    auto* toplevel = m_listeners->pending_toplevel;
-    if (!toplevel || !toplevel->base->initialized) {
+void CompositorServer::Impl::handle_xdg_surface_commit() {
+    if (!pending_toplevel || !pending_toplevel->base->initialized) {
         return;
     }
 
     // Remove commit listener - we only need it once
-    wl_list_remove(&m_listeners->xdg_surface_commit.link);
-    wl_list_init(&m_listeners->xdg_surface_commit.link);
+    wl_list_remove(&listeners.xdg_surface_commit.link);
+    wl_list_init(&listeners.xdg_surface_commit.link);
 
-    // Send initial configure
-    wlr_xdg_toplevel_set_activated(toplevel, true);
-    wlr_xdg_surface_schedule_configure(toplevel->base);
+    wlr_xdg_toplevel_set_activated(pending_toplevel, true);
+    wlr_xdg_surface_schedule_configure(pending_toplevel->base);
 
     // Stage 2: Listen for map signal (buffer committed)
-    wl_list_init(&m_listeners->xdg_surface_map.link);
-    m_listeners->xdg_surface_map.notify = [](wl_listener* listener, void* /*data*/) {
-        auto* listeners = reinterpret_cast<Listeners*>(reinterpret_cast<char*>(listener) -
-                                                       offsetof(Listeners, xdg_surface_map));
-        listeners->server->handle_xdg_surface_map();
+    wl_list_init(&listeners.xdg_surface_map.link);
+    listeners.xdg_surface_map.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* l = reinterpret_cast<Impl::Listeners*>(reinterpret_cast<char*>(listener) -
+                                                     offsetof(Impl::Listeners, xdg_surface_map));
+        l->impl->handle_xdg_surface_map();
     };
-    wl_signal_add(&toplevel->base->surface->events.map, &m_listeners->xdg_surface_map);
+    wl_signal_add(&pending_toplevel->base->surface->events.map, &listeners.xdg_surface_map);
 }
 
-void CompositorServer::handle_xdg_surface_map() {
-    auto* toplevel = m_listeners->pending_toplevel;
-    if (!toplevel) {
+void CompositorServer::Impl::handle_xdg_surface_map() {
+    if (!pending_toplevel) {
         return;
     }
 
-    // Remove map listener
-    wl_list_remove(&m_listeners->xdg_surface_map.link);
-    wl_list_init(&m_listeners->xdg_surface_map.link);
+    wl_list_remove(&listeners.xdg_surface_map.link);
+    wl_list_init(&listeners.xdg_surface_map.link);
 
-    wlr_surface* surface = toplevel->base->surface;
-    m_surfaces.push_back(surface);
+    wlr_surface* surface = pending_toplevel->base->surface;
+    surfaces.push_back(surface);
 
-    // Register destroy listener
-    wl_list_remove(&m_listeners->xdg_surface_destroy.link);
-    wl_list_init(&m_listeners->xdg_surface_destroy.link);
-    m_listeners->xdg_surface_destroy.notify = [](wl_listener* listener, void* /*data*/) {
-        auto* listeners = reinterpret_cast<Listeners*>(reinterpret_cast<char*>(listener) -
-                                                       offsetof(Listeners, xdg_surface_destroy));
-        listeners->server->handle_xdg_surface_destroy();
+    wl_list_remove(&listeners.xdg_surface_destroy.link);
+    wl_list_init(&listeners.xdg_surface_destroy.link);
+    listeners.xdg_surface_destroy.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* l = reinterpret_cast<Impl::Listeners*>(
+            reinterpret_cast<char*>(listener) - offsetof(Impl::Listeners, xdg_surface_destroy));
+        l->impl->handle_xdg_surface_destroy();
     };
-    wl_signal_add(&surface->events.destroy, &m_listeners->xdg_surface_destroy);
+    wl_signal_add(&surface->events.destroy, &listeners.xdg_surface_destroy);
 
     // Focus new Wayland surface if:
     // - No current focus, OR
     // - Current focus is XWayland (might be stale - can't detect X11 disconnect)
-    if (!m_focused_surface || m_focused_xsurface) {
+    if (!focused_surface || focused_xsurface) {
         focus_surface(surface);
     }
 
-    m_listeners->pending_toplevel = nullptr;
+    pending_toplevel = nullptr;
 }
 
-void CompositorServer::handle_xdg_surface_destroy() {
-    // Remove all XDG-related listeners
-    wl_list_remove(&m_listeners->xdg_surface_destroy.link);
-    wl_list_init(&m_listeners->xdg_surface_destroy.link);
-    wl_list_remove(&m_listeners->xdg_surface_commit.link);
-    wl_list_init(&m_listeners->xdg_surface_commit.link);
-    wl_list_remove(&m_listeners->xdg_surface_map.link);
-    wl_list_init(&m_listeners->xdg_surface_map.link);
+void CompositorServer::Impl::handle_xdg_surface_destroy() {
+    wl_list_remove(&listeners.xdg_surface_destroy.link);
+    wl_list_init(&listeners.xdg_surface_destroy.link);
+    wl_list_remove(&listeners.xdg_surface_commit.link);
+    wl_list_init(&listeners.xdg_surface_commit.link);
+    wl_list_remove(&listeners.xdg_surface_map.link);
+    wl_list_init(&listeners.xdg_surface_map.link);
 
     // Clear focus if this was a Wayland surface (not XWayland)
-    if (m_focused_surface && !m_focused_xsurface) {
-        auto it = std::find(m_surfaces.begin(), m_surfaces.end(), m_focused_surface);
-        if (it != m_surfaces.end()) {
-            m_surfaces.erase(it);
+    if (focused_surface && !focused_xsurface) {
+        auto it = std::find(surfaces.begin(), surfaces.end(), focused_surface);
+        if (it != surfaces.end()) {
+            surfaces.erase(it);
         }
 
-        m_focused_surface = nullptr;
-        wlr_seat_keyboard_clear_focus(m_seat);
-        wlr_seat_pointer_clear_focus(m_seat);
+        focused_surface = nullptr;
+        wlr_seat_keyboard_clear_focus(seat);
+        wlr_seat_pointer_clear_focus(seat);
     }
 
-    m_listeners->pending_toplevel = nullptr;
+    pending_toplevel = nullptr;
 }
 
-void CompositorServer::handle_new_xwayland_surface(wlr_xwayland_surface* xsurface) {
+void CompositorServer::Impl::handle_new_xwayland_surface(wlr_xwayland_surface* xsurface) {
     // Listener can only belong to one signal's list - skip if already registered
-    if (!wl_list_empty(&m_listeners->xwayland_surface_associate.link)) {
+    if (!wl_list_empty(&listeners.xwayland_surface_associate.link)) {
         return;
     }
 
     // Store xsurface for retrieval in callback
-    m_listeners->pending_xsurface = xsurface;
+    pending_xsurface = xsurface;
 
-    m_listeners->xwayland_surface_associate.notify = [](wl_listener* listener, void* /*data*/) {
-        auto* listeners = reinterpret_cast<Listeners*>(
-            reinterpret_cast<char*>(listener) - offsetof(Listeners, xwayland_surface_associate));
-        auto* xsurface_inner = listeners->pending_xsurface;
-        listeners->server->handle_xwayland_surface_associate(xsurface_inner);
+    listeners.xwayland_surface_associate.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* l = reinterpret_cast<Impl::Listeners*>(
+            reinterpret_cast<char*>(listener) -
+            offsetof(Impl::Listeners, xwayland_surface_associate));
+        l->impl->handle_xwayland_surface_associate(l->impl->pending_xsurface);
     };
-    wl_signal_add(&xsurface->events.associate, &m_listeners->xwayland_surface_associate);
+    wl_signal_add(&xsurface->events.associate, &listeners.xwayland_surface_associate);
 }
 
-void CompositorServer::handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface) {
+void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface) {
     // Remove associate listener - it's one-shot
-    wl_list_remove(&m_listeners->xwayland_surface_associate.link);
-    wl_list_init(&m_listeners->xwayland_surface_associate.link);
+    wl_list_remove(&listeners.xwayland_surface_associate.link);
+    wl_list_init(&listeners.xwayland_surface_associate.link);
 
     if (!xsurface->surface) {
         return;
     }
 
-    // NOTE: Do NOT add xsurface->surface to m_surfaces - we can't clean it up
+    // NOTE: Do NOT add xsurface->surface to surfaces - we can't clean it up
     // when X11 client disconnects (destroy listener breaks X11 input), so it
     // would become a dangling pointer.
 
@@ -578,113 +633,99 @@ void CompositorServer::handle_xwayland_surface_associate(wlr_xwayland_surface* x
     // It fires unexpectedly during normal operation, breaking X11 input entirely.
 
     // Only focus if no surface has focus at all - don't steal from Wayland surfaces
-    if (!m_focused_surface) {
+    if (!focused_surface) {
         focus_xwayland_surface(xsurface);
     }
 }
 
-void CompositorServer::handle_xwayland_surface_map(wlr_xwayland_surface* xsurface) {
+void CompositorServer::Impl::handle_xwayland_surface_map(wlr_xwayland_surface* xsurface) {
     // Remove map listener - it's one-shot
-    wl_list_remove(&m_listeners->xwayland_surface_map.link);
-    wl_list_init(&m_listeners->xwayland_surface_map.link);
+    wl_list_remove(&listeners.xwayland_surface_map.link);
+    wl_list_init(&listeners.xwayland_surface_map.link);
 
     // Only focus if no surface has focus - don't steal from Wayland surfaces
-    if (!m_focused_surface) {
+    if (!focused_surface) {
         focus_xwayland_surface(xsurface);
     }
 
-    m_listeners->pending_xsurface = nullptr;
+    pending_xsurface = nullptr;
 }
 
-void CompositorServer::handle_xwayland_surface_destroy() {
-    // Remove all XWayland-related listeners
-    wl_list_remove(&m_listeners->xwayland_surface_destroy.link);
-    wl_list_init(&m_listeners->xwayland_surface_destroy.link);
-    wl_list_remove(&m_listeners->xwayland_surface_associate.link);
-    wl_list_init(&m_listeners->xwayland_surface_associate.link);
-    wl_list_remove(&m_listeners->xwayland_surface_map.link);
-    wl_list_init(&m_listeners->xwayland_surface_map.link);
+void CompositorServer::Impl::handle_xwayland_surface_destroy() {
+    wl_list_remove(&listeners.xwayland_surface_destroy.link);
+    wl_list_init(&listeners.xwayland_surface_destroy.link);
+    wl_list_remove(&listeners.xwayland_surface_associate.link);
+    wl_list_init(&listeners.xwayland_surface_associate.link);
+    wl_list_remove(&listeners.xwayland_surface_map.link);
+    wl_list_init(&listeners.xwayland_surface_map.link);
 
     // Clear focus if this was an XWayland surface
-    if (m_focused_xsurface) {
-        auto it = std::find(m_surfaces.begin(), m_surfaces.end(), m_focused_surface);
-        if (it != m_surfaces.end()) {
-            m_surfaces.erase(it);
+    if (focused_xsurface) {
+        auto it = std::find(surfaces.begin(), surfaces.end(), focused_surface);
+        if (it != surfaces.end()) {
+            surfaces.erase(it);
         }
 
-        m_focused_xsurface = nullptr;
-        m_focused_surface = nullptr;
-        wlr_seat_keyboard_clear_focus(m_seat);
-        wlr_seat_pointer_clear_focus(m_seat);
+        focused_xsurface = nullptr;
+        focused_surface = nullptr;
+        wlr_seat_keyboard_clear_focus(seat);
+        wlr_seat_pointer_clear_focus(seat);
     }
 
-    m_listeners->pending_xsurface = nullptr;
+    pending_xsurface = nullptr;
 }
 
-void CompositorServer::handle_surface_destroy(wlr_surface* surface) {
-    auto it = std::find(m_surfaces.begin(), m_surfaces.end(), surface);
-    if (it != m_surfaces.end()) {
-        m_surfaces.erase(it);
-    }
-
-    if (m_focused_surface == surface) {
-        m_focused_surface = nullptr;
-        wlr_seat_keyboard_clear_focus(m_seat);
-        wlr_seat_pointer_clear_focus(m_seat);
-    }
-}
-
-void CompositorServer::focus_surface(wlr_surface* surface) {
-    if (m_focused_surface == surface) {
+void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
+    if (focused_surface == surface) {
         return;
     }
 
     // Clear stale pointers BEFORE any wlroots calls that might access them
     // This prevents crashes when switching from XWayland to native Wayland
-    m_focused_xsurface = nullptr;
-    m_focused_surface = surface;
+    focused_xsurface = nullptr;
+    focused_surface = surface;
 
     // Clean up any pending XWayland listeners that might be dangling
-    wl_list_remove(&m_listeners->xwayland_surface_associate.link);
-    wl_list_init(&m_listeners->xwayland_surface_associate.link);
-    wl_list_remove(&m_listeners->xwayland_surface_map.link);
-    wl_list_init(&m_listeners->xwayland_surface_map.link);
-    m_listeners->pending_xsurface = nullptr;
+    wl_list_remove(&listeners.xwayland_surface_associate.link);
+    wl_list_init(&listeners.xwayland_surface_associate.link);
+    wl_list_remove(&listeners.xwayland_surface_map.link);
+    wl_list_init(&listeners.xwayland_surface_map.link);
+    pending_xsurface = nullptr;
 
-    wlr_seat_set_keyboard(m_seat, m_keyboard);
-    wlr_seat_keyboard_notify_enter(m_seat, surface, m_keyboard->keycodes, m_keyboard->num_keycodes,
-                                   &m_keyboard->modifiers);
-    wlr_seat_pointer_notify_enter(m_seat, surface, 0.0, 0.0);
+    wlr_seat_set_keyboard(seat, keyboard.get());
+    wlr_seat_keyboard_notify_enter(seat, surface, keyboard->keycodes, keyboard->num_keycodes,
+                                   &keyboard->modifiers);
+    wlr_seat_pointer_notify_enter(seat, surface, 0.0, 0.0);
 }
 
-void CompositorServer::focus_xwayland_surface(wlr_xwayland_surface* xsurface) {
-    if (m_focused_xsurface == xsurface) {
+void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurface) {
+    if (focused_xsurface == xsurface) {
         return;
     }
 
     // Clear seat focus first to prevent wlroots from sending leave events to stale surface
-    wlr_seat_keyboard_clear_focus(m_seat);
-    wlr_seat_pointer_clear_focus(m_seat);
+    wlr_seat_keyboard_clear_focus(seat);
+    wlr_seat_pointer_clear_focus(seat);
 
     // Clean up any pending XDG listeners that might be dangling
-    wl_list_remove(&m_listeners->xdg_surface_commit.link);
-    wl_list_init(&m_listeners->xdg_surface_commit.link);
-    wl_list_remove(&m_listeners->xdg_surface_map.link);
-    wl_list_init(&m_listeners->xdg_surface_map.link);
-    wl_list_remove(&m_listeners->xdg_surface_destroy.link);
-    wl_list_init(&m_listeners->xdg_surface_destroy.link);
-    m_listeners->pending_toplevel = nullptr;
+    wl_list_remove(&listeners.xdg_surface_commit.link);
+    wl_list_init(&listeners.xdg_surface_commit.link);
+    wl_list_remove(&listeners.xdg_surface_map.link);
+    wl_list_init(&listeners.xdg_surface_map.link);
+    wl_list_remove(&listeners.xdg_surface_destroy.link);
+    wl_list_init(&listeners.xdg_surface_destroy.link);
+    pending_toplevel = nullptr;
 
-    m_focused_xsurface = xsurface;
-    m_focused_surface = xsurface->surface;
+    focused_xsurface = xsurface;
+    focused_surface = xsurface->surface;
 
     // Activate the X11 window - required for wlr_xwm to send focus events
     wlr_xwayland_surface_activate(xsurface, true);
 
-    wlr_seat_set_keyboard(m_seat, m_keyboard);
-    wlr_seat_keyboard_notify_enter(m_seat, xsurface->surface, m_keyboard->keycodes,
-                                   m_keyboard->num_keycodes, &m_keyboard->modifiers);
-    wlr_seat_pointer_notify_enter(m_seat, xsurface->surface, 0.0, 0.0);
+    wlr_seat_set_keyboard(seat, keyboard.get());
+    wlr_seat_keyboard_notify_enter(seat, xsurface->surface, keyboard->keycodes,
+                                   keyboard->num_keycodes, &keyboard->modifiers);
+    wlr_seat_pointer_notify_enter(seat, xsurface->surface, 0.0, 0.0);
 }
 
 } // namespace goggles::input
