@@ -89,18 +89,34 @@ endif()
 
 # graphical test applications
 
-add_executable(goggles_input_test
-    input/goggles_input_test.cpp
+add_executable(goggles_input_test_x11
+    input/goggles_input_test_x11.cpp
 )
 
-target_link_libraries(goggles_input_test PRIVATE
+target_link_libraries(goggles_input_test_x11 PRIVATE
     SDL3::SDL3
     Vulkan::Vulkan
     goggles_util
 )
 
-target_compile_definitions(goggles_input_test PRIVATE
+target_compile_definitions(goggles_input_test_x11 PRIVATE
     GOGGLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
-goggles_enable_sanitizers(goggles_input_test)
+goggles_enable_sanitizers(goggles_input_test_x11)
+
+add_executable(goggles_input_test_wayland
+    input/goggles_input_test_wayland.cpp
+)
+
+target_link_libraries(goggles_input_test_wayland PRIVATE
+    SDL3::SDL3
+    Vulkan::Vulkan
+    goggles_util
+)
+
+target_compile_definitions(goggles_input_test_wayland PRIVATE
+    GOGGLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+goggles_enable_sanitizers(goggles_input_test_wayland)

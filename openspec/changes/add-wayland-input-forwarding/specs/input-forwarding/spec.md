@@ -26,24 +26,35 @@ The system SHALL track surfaces from both xdg_shell (Wayland native) and XWaylan
 The compositor server SHALL:
 - Listen for `new_toplevel` signals from xdg_shell
 - Listen for `new_surface` signals from XWayland
-- Maintain a unified list of active surfaces
-- Remove surfaces from tracking when destroyed
+- Maintain a unified list of active surfaces (Wayland surfaces only)
+- Register destroy listeners for Wayland surfaces only
 - Auto-focus the first connected surface (single-app model)
+- Use mutual exclusion to manage focus between Wayland and XWayland surfaces
+
+**Important**: XWayland surfaces SHALL NOT use destroy listeners. XWayland destroy signals fire at unpredictable times during normal X11 operation, causing input forwarding failures. Instead, stale XWayland pointers are cleared during focus transitions.
 
 #### Scenario: Wayland client connects and receives focus
 - **WHEN** a Wayland client creates an xdg_toplevel
 - **THEN** the surface is tracked by the compositor
 - **AND** if no surface was previously focused, the new surface receives keyboard and pointer focus
+- **AND** if an XWayland surface had focus, the Wayland surface steals focus (XWayland pointer may be stale)
 
 #### Scenario: XWayland client connects and receives focus
 - **WHEN** an X11 app creates a window via XWayland
-- **THEN** the XWayland surface is tracked by the compositor
+- **THEN** the XWayland surface is tracked by the compositor (not in m_surfaces list)
 - **AND** if no surface was previously focused, the surface receives keyboard and pointer focus
+- **AND** if a Wayland surface already has focus, the XWayland surface does NOT steal focus
 
-#### Scenario: Client disconnects
-- **WHEN** a tracked surface is destroyed
-- **THEN** the surface is removed from tracking
+#### Scenario: Wayland client disconnects
+- **WHEN** a tracked Wayland surface is destroyed
+- **THEN** the surface is removed from tracking via destroy listener
 - **AND** if it was focused, focus is cleared
+
+#### Scenario: XWayland client disconnects
+- **WHEN** an X11 app exits
+- **THEN** no destroy listener fires (by design)
+- **AND** m_focused_xsurface becomes a dangling pointer
+- **AND** when a new surface gains focus, stale XWayland pointers are cleared safely
 
 ### Requirement: Unified Keyboard Input
 
@@ -97,15 +108,16 @@ The wlr_xwm SHALL automatically translate pointer events to X11 for XWayland sur
 The system SHALL marshal input events from the main thread to the compositor thread safely.
 
 The implementation SHALL:
-- Use eventfd for notification between threads
-- Queue events in a thread-safe manner
+- Use `SPSCQueue<InputEvent>` for lock-free event passing (per project threading policy)
+- Use eventfd for wl_event_loop wakeup notification
 - Process events on compositor thread via wl_event_loop integration
 - Avoid blocking the main thread during event delivery
 
 #### Scenario: Event delivered without blocking main thread
 - **WHEN** an input event is forwarded
-- **THEN** the main thread returns immediately after queueing the event
-- **AND** the compositor thread processes the event asynchronously
+- **THEN** the main thread pushes to SPSCQueue and writes to eventfd
+- **AND** the main thread returns immediately
+- **AND** the compositor thread drains the queue and dispatches via wlr_seat_*
 
 ### Requirement: Coordinate Handling
 
@@ -123,9 +135,9 @@ Note: Coordinate mapping between viewer and target window dimensions is not impl
 The system SHALL create a virtual keyboard device for input delivery.
 
 The virtual keyboard SHALL:
-- Be created via wlr_headless_add_input_device()
-- Have an xkb keymap configured
-- Be attached to the seat via wlr_seat_set_keyboard()
+- Be created via `wlr_keyboard_init()` from the keyboard interface
+- Have an xkb keymap configured via `wlr_keyboard_set_keymap()`
+- Be attached to the seat via `wlr_seat_set_keyboard()`
 
 #### Scenario: Virtual keyboard provides keymap to clients
 - **WHEN** a Wayland client connects and binds wl_keyboard
