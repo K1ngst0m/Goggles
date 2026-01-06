@@ -106,7 +106,7 @@ The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 | wlr_xwm for X11 translation | Proven wlroots component, no XTest dependency |
 | SPSCQueue + eventfd | Lock-free cross-thread marshaling per project policy |
 | Headless wlroots backend | No GPU/display conflict with host compositor |
-| Auto-focus first surface | MVP targets single captured application |
+| Auto-focus first surface | Focuses the first eligible surface |
 
 ## Thread Model
 
@@ -150,13 +150,17 @@ SPSCQueue.push() + eventfd write    │
 - **Basic mouse support**: Mouse button, motion, and wheel events forwarded. Coordinate mapping is 1:1 (no scaling).
 - **Limited keycode map**: Common keys (A-Z, 0-9, ESC, Enter, Space, arrows, modifiers) mapped.
 - **No modifier state tracking**: Shift/Ctrl/Alt forwarded as key events but state not synchronized.
-- **Single app focus**: Auto-focuses first connected surface (MVP).
+- **Single app focus**: Auto-focuses first eligible surface (MVP).
 - **XWayland surface cleanup**: No destroy listener for XWayland surfaces (fires unexpectedly). Stale pointers cleared during focus transitions.
 
 ### Focus Transition Behavior
 
 - **Wayland app steals focus from X11**: When launching a Wayland app after an X11 app, focus automatically transfers. The X11 app's surface pointer may be stale (freed by wlroots) but is safely cleared.
 - **X11 app does NOT steal focus from Wayland**: XWayland surfaces only gain focus if no surface is currently focused.
+
+### Wayland Focus Timing
+
+Wayland keyboard focus is granted after the client acks the initial xdg-shell configure (`xdg_surface.ack_configure`). This avoids gating focus on wlroots' `surface->events.map`, which may never occur for some Wayland-native Vulkan apps under WSI proxy mode (`GOGGLES_WSI_PROXY=1`).
 
 ### Future Enhancements
 
@@ -197,7 +201,7 @@ WAYLAND_DISPLAY= DISPLAY=:1 ./my_x11_app
 
 For Wayland-native apps:
 ```bash
-WAYLAND_DISPLAY=wayland-1 ./my_wayland_app
+WAYLAND_DISPLAY=goggles-0 ./my_wayland_app
 ```
 
 ## Testing
@@ -219,6 +223,12 @@ WAYLAND_DISPLAY=goggles-0 GOGGLES_CAPTURE=1 ./build/debug/tests/goggles_manual_i
 
 # Focus Goggles window, press keys/move mouse
 # test_app terminal should show input events
+```
+
+For a Wayland-native Vulkan app under WSI proxy (protocol focus sanity check):
+```bash
+DISPLAY=:1 WAYLAND_DISPLAY=goggles-0 WAYLAND_DEBUG=client GOGGLES_WSI_PROXY=1 GOGGLES_CAPTURE=1 \
+  /home/kingstom/workspaces/vksdk/1.4.321.1/x86_64/bin/vkcube
 ```
 
 ### Verify XWayland Running

@@ -78,13 +78,24 @@ struct CompositorServer::Impl {
         wl_listener destroy{};
     };
 
+    struct XdgToplevelHooks {
+        Impl* impl = nullptr;
+        wlr_xdg_toplevel* toplevel = nullptr;
+        wlr_surface* surface = nullptr;
+        bool sent_configure = false;
+        bool acked_configure = false;
+        bool mapped = false;
+
+        wl_listener surface_commit{};
+        wl_listener surface_map{};
+        wl_listener surface_destroy{};
+        wl_listener xdg_ack_configure{};
+    };
+
     struct Listeners {
         Impl* impl = nullptr;
 
         wl_listener new_xdg_toplevel{};
-        wl_listener xdg_surface_commit{};
-        wl_listener xdg_surface_map{};
-        wl_listener xdg_surface_destroy{};
         wl_listener new_xwayland_surface{};
     };
 
@@ -110,7 +121,6 @@ struct CompositorServer::Impl {
     wlr_surface* pointer_entered_surface = nullptr;
     double last_pointer_x = 0.0;
     double last_pointer_y = 0.0;
-    wlr_xdg_toplevel* pending_toplevel = nullptr;
     bool xwayland_surface_detached = false;
     std::jthread compositor_thread;
     std::vector<wlr_surface*> surfaces;
@@ -118,18 +128,14 @@ struct CompositorServer::Impl {
     util::UniqueFd event_fd;
     std::string wayland_socket_name;
 
-    Impl() {
-        listeners.impl = this;
-        wl_list_init(&listeners.xdg_surface_commit.link);
-        wl_list_init(&listeners.xdg_surface_map.link);
-        wl_list_init(&listeners.xdg_surface_destroy.link);
-    }
+    Impl() { listeners.impl = this; }
 
     void process_input_events();
     void handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel);
-    void handle_xdg_surface_commit();
-    void handle_xdg_surface_map();
-    void handle_xdg_surface_destroy();
+    void handle_xdg_surface_commit(XdgToplevelHooks* hooks);
+    void handle_xdg_surface_map(XdgToplevelHooks* hooks);
+    void handle_xdg_surface_destroy(XdgToplevelHooks* hooks);
+    void handle_xdg_surface_ack_configure(XdgToplevelHooks* hooks);
     void handle_new_xwayland_surface(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface);
@@ -581,90 +587,100 @@ void CompositorServer::Impl::process_input_events() {
 }
 
 void CompositorServer::Impl::handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel) {
-    // Skip if already waiting for a surface
-    if (!wl_list_empty(&listeners.xdg_surface_commit.link)) {
-        return;
-    }
+    auto* hooks = new XdgToplevelHooks{};
+    hooks->impl = this;
+    hooks->toplevel = toplevel;
+    hooks->surface = toplevel->base->surface;
 
-    pending_toplevel = toplevel;
-
-    // Stage 1: Listen for commit to detect when surface becomes initialized
-    wl_list_init(&listeners.xdg_surface_commit.link);
-    listeners.xdg_surface_commit.notify = [](wl_listener* listener, void* /*data*/) {
-        auto* l = reinterpret_cast<Impl::Listeners*>(reinterpret_cast<char*>(listener) -
-                                                     offsetof(Impl::Listeners, xdg_surface_commit));
-        l->impl->handle_xdg_surface_commit();
+    wl_list_init(&hooks->surface_commit.link);
+    hooks->surface_commit.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgToplevelHooks*>(reinterpret_cast<char*>(listener) -
+                                                      offsetof(XdgToplevelHooks, surface_commit));
+        h->impl->handle_xdg_surface_commit(h);
     };
-    wl_signal_add(&toplevel->base->surface->events.commit, &listeners.xdg_surface_commit);
+    wl_signal_add(&hooks->surface->events.commit, &hooks->surface_commit);
+
+    wl_list_init(&hooks->xdg_ack_configure.link);
+    hooks->xdg_ack_configure.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgToplevelHooks*>(
+            reinterpret_cast<char*>(listener) - offsetof(XdgToplevelHooks, xdg_ack_configure));
+        h->impl->handle_xdg_surface_ack_configure(h);
+    };
+    wl_signal_add(&toplevel->base->events.ack_configure, &hooks->xdg_ack_configure);
+
+    wl_list_init(&hooks->surface_map.link);
+    hooks->surface_map.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgToplevelHooks*>(reinterpret_cast<char*>(listener) -
+                                                      offsetof(XdgToplevelHooks, surface_map));
+        h->impl->handle_xdg_surface_map(h);
+    };
+    wl_signal_add(&hooks->surface->events.map, &hooks->surface_map);
+
+    wl_list_init(&hooks->surface_destroy.link);
+    hooks->surface_destroy.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgToplevelHooks*>(reinterpret_cast<char*>(listener) -
+                                                      offsetof(XdgToplevelHooks, surface_destroy));
+        h->impl->handle_xdg_surface_destroy(h);
+    };
+    wl_signal_add(&hooks->surface->events.destroy, &hooks->surface_destroy);
 }
 
-void CompositorServer::Impl::handle_xdg_surface_commit() {
-    if (!pending_toplevel || !pending_toplevel->base->initialized) {
+void CompositorServer::Impl::handle_xdg_surface_commit(XdgToplevelHooks* hooks) {
+    if (!hooks->toplevel || !hooks->toplevel->base->initialized) {
         return;
     }
 
-    // Remove commit listener - we only need it once
-    wl_list_remove(&listeners.xdg_surface_commit.link);
-    wl_list_init(&listeners.xdg_surface_commit.link);
+    wl_list_remove(&hooks->surface_commit.link);
+    wl_list_init(&hooks->surface_commit.link);
 
-    wlr_xdg_toplevel_set_activated(pending_toplevel, true);
-    wlr_xdg_surface_schedule_configure(pending_toplevel->base);
-
-    // Stage 2: Listen for map signal (buffer committed)
-    wl_list_init(&listeners.xdg_surface_map.link);
-    listeners.xdg_surface_map.notify = [](wl_listener* listener, void* /*data*/) {
-        auto* l = reinterpret_cast<Impl::Listeners*>(reinterpret_cast<char*>(listener) -
-                                                     offsetof(Impl::Listeners, xdg_surface_map));
-        l->impl->handle_xdg_surface_map();
-    };
-    wl_signal_add(&pending_toplevel->base->surface->events.map, &listeners.xdg_surface_map);
+    wlr_xdg_surface_schedule_configure(hooks->toplevel->base);
+    hooks->sent_configure = true;
 }
 
-void CompositorServer::Impl::handle_xdg_surface_map() {
-    if (!pending_toplevel) {
+void CompositorServer::Impl::handle_xdg_surface_ack_configure(XdgToplevelHooks* hooks) {
+    if (!hooks->toplevel || hooks->acked_configure) {
         return;
     }
 
-    wl_list_remove(&listeners.xdg_surface_map.link);
-    wl_list_init(&listeners.xdg_surface_map.link);
+    hooks->acked_configure = true;
 
-    wlr_surface* surface = pending_toplevel->base->surface;
-    surfaces.push_back(surface);
+    wl_list_remove(&hooks->xdg_ack_configure.link);
+    wl_list_init(&hooks->xdg_ack_configure.link);
 
-    wl_list_remove(&listeners.xdg_surface_destroy.link);
-    wl_list_init(&listeners.xdg_surface_destroy.link);
-    listeners.xdg_surface_destroy.notify = [](wl_listener* listener, void* /*data*/) {
-        auto* l = reinterpret_cast<Impl::Listeners*>(
-            reinterpret_cast<char*>(listener) - offsetof(Impl::Listeners, xdg_surface_destroy));
-        l->impl->handle_xdg_surface_destroy();
-    };
-    wl_signal_add(&surface->events.destroy, &listeners.xdg_surface_destroy);
+    if (!hooks->sent_configure) {
+        return;
+    }
 
-    // Focus new Wayland surface if:
-    // - No current focus, OR
-    // - Current focus is XWayland (might be stale - can't detect X11 disconnect)
     if (!focused_surface || focused_xsurface) {
-        focus_surface(surface);
+        wlr_xdg_toplevel_set_activated(hooks->toplevel, true);
+        focus_surface(hooks->surface);
     }
-
-    pending_toplevel = nullptr;
 }
 
-void CompositorServer::Impl::handle_xdg_surface_destroy() {
-    wl_list_remove(&listeners.xdg_surface_destroy.link);
-    wl_list_init(&listeners.xdg_surface_destroy.link);
-    wl_list_remove(&listeners.xdg_surface_commit.link);
-    wl_list_init(&listeners.xdg_surface_commit.link);
-    wl_list_remove(&listeners.xdg_surface_map.link);
-    wl_list_init(&listeners.xdg_surface_map.link);
+void CompositorServer::Impl::handle_xdg_surface_map(XdgToplevelHooks* hooks) {
+    if (!hooks->toplevel || hooks->mapped) {
+        return;
+    }
 
-    // Clear focus if this was a Wayland surface (not XWayland)
-    if (focused_surface && !focused_xsurface) {
-        auto it = std::find(surfaces.begin(), surfaces.end(), focused_surface);
-        if (it != surfaces.end()) {
-            surfaces.erase(it);
-        }
+    hooks->mapped = true;
 
+    wl_list_remove(&hooks->surface_map.link);
+    wl_list_init(&hooks->surface_map.link);
+
+    surfaces.push_back(hooks->surface);
+}
+
+void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks) {
+    wl_list_remove(&hooks->surface_destroy.link);
+    wl_list_init(&hooks->surface_destroy.link);
+    wl_list_remove(&hooks->surface_commit.link);
+    wl_list_init(&hooks->surface_commit.link);
+    wl_list_remove(&hooks->surface_map.link);
+    wl_list_init(&hooks->surface_map.link);
+    wl_list_remove(&hooks->xdg_ack_configure.link);
+    wl_list_init(&hooks->xdg_ack_configure.link);
+
+    if (!focused_xsurface && focused_surface == hooks->surface) {
         focused_surface = nullptr;
         keyboard_entered_surface = nullptr;
         pointer_entered_surface = nullptr;
@@ -672,7 +688,12 @@ void CompositorServer::Impl::handle_xdg_surface_destroy() {
         wlr_seat_pointer_clear_focus(seat);
     }
 
-    pending_toplevel = nullptr;
+    auto it = std::find(surfaces.begin(), surfaces.end(), hooks->surface);
+    if (it != surfaces.end()) {
+        surfaces.erase(it);
+    }
+
+    delete hooks;
 }
 
 void CompositorServer::Impl::handle_new_xwayland_surface(wlr_xwayland_surface* xsurface) {
@@ -780,15 +801,6 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
     wlr_seat_pointer_clear_focus(seat);
     keyboard_entered_surface = nullptr;
     pointer_entered_surface = nullptr;
-
-    // Clean up any pending XDG listeners that might be dangling
-    wl_list_remove(&listeners.xdg_surface_commit.link);
-    wl_list_init(&listeners.xdg_surface_commit.link);
-    wl_list_remove(&listeners.xdg_surface_map.link);
-    wl_list_init(&listeners.xdg_surface_map.link);
-    wl_list_remove(&listeners.xdg_surface_destroy.link);
-    wl_list_init(&listeners.xdg_surface_destroy.link);
-    pending_toplevel = nullptr;
 
     focused_xsurface = xsurface;
     focused_surface = xsurface->surface;
