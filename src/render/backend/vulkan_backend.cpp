@@ -1413,11 +1413,17 @@ void VulkanBackend::check_pending_chain_swap() {
     }
 
     // Queue old chain for deferred destruction
-    m_deferred_destroys.push_back({
-        .chain = std::move(m_filter_chain),
-        .runtime = std::move(m_shader_runtime),
-        .destroy_after_frame = m_frame_count + MAX_FRAMES_IN_FLIGHT + 1,
-    });
+    if (m_deferred_count < MAX_DEFERRED_DESTROYS) {
+        m_deferred_destroys[m_deferred_count++] = {
+            .chain = std::move(m_filter_chain),
+            .runtime = std::move(m_shader_runtime),
+            .destroy_after_frame = m_frame_count + MAX_FRAMES_IN_FLIGHT + 1,
+        };
+    } else {
+        GOGGLES_LOG_WARN("Deferred destroy queue full, destroying immediately");
+        m_filter_chain.reset();
+        m_shader_runtime.reset();
+    }
 
     // Swap in the new chain
     m_filter_chain = std::move(m_pending_filter_chain);
@@ -1430,13 +1436,19 @@ void VulkanBackend::check_pending_chain_swap() {
 }
 
 void VulkanBackend::cleanup_deferred_destroys() {
-    std::erase_if(m_deferred_destroys, [this](const DeferredDestroy& d) {
-        if (m_frame_count >= d.destroy_after_frame) {
+    size_t write_idx = 0;
+    for (size_t i = 0; i < m_deferred_count; ++i) {
+        if (m_frame_count >= m_deferred_destroys[i].destroy_after_frame) {
             GOGGLES_LOG_DEBUG("Destroying deferred filter chain");
-            return true;
+            m_deferred_destroys[i] = {};
+        } else {
+            if (write_idx != i) {
+                m_deferred_destroys[write_idx] = std::move(m_deferred_destroys[i]);
+            }
+            ++write_idx;
         }
-        return false;
-    });
+    }
+    m_deferred_count = write_idx;
 }
 
 void VulkanBackend::set_shader_enabled(bool enabled) {

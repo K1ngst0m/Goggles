@@ -168,9 +168,11 @@ private:
     struct DeferredDestroy {
         std::unique_ptr<FilterChain> chain;
         std::unique_ptr<ShaderRuntime> runtime;
-        uint64_t destroy_after_frame;
+        uint64_t destroy_after_frame = 0;
     };
-    std::vector<DeferredDestroy> m_deferred_destroys;
+    static constexpr size_t MAX_DEFERRED_DESTROYS = 4;
+    std::array<DeferredDestroy, MAX_DEFERRED_DESTROYS> m_deferred_destroys{};
+    size_t m_deferred_count = 0;
     uint64_t m_frame_count = 0;
 
     void check_pending_chain_swap();
