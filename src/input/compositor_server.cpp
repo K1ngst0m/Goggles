@@ -79,7 +79,6 @@ struct CompositorServer::Impl {
         wl_listener xdg_surface_destroy{};
         wl_listener new_xwayland_surface{};
         wl_listener xwayland_surface_associate{};
-        wl_listener xwayland_surface_destroy{};
     };
 
     // Fields ordered for optimal padding
@@ -118,7 +117,6 @@ struct CompositorServer::Impl {
         wl_list_init(&listeners.xdg_surface_map.link);
         wl_list_init(&listeners.xdg_surface_destroy.link);
         wl_list_init(&listeners.xwayland_surface_associate.link);
-        wl_list_init(&listeners.xwayland_surface_destroy.link);
     }
 
     void process_input_events();
@@ -128,7 +126,6 @@ struct CompositorServer::Impl {
     void handle_xdg_surface_destroy();
     void handle_new_xwayland_surface(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface);
-    void handle_xwayland_surface_destroy();
     void focus_surface(wlr_surface* surface);
     void focus_xwayland_surface(wlr_xwayland_surface* xsurface);
 };
@@ -657,30 +654,6 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
     if (!focused_surface) {
         focus_xwayland_surface(xsurface);
     }
-}
-
-void CompositorServer::Impl::handle_xwayland_surface_destroy() {
-    wl_list_remove(&listeners.xwayland_surface_destroy.link);
-    wl_list_init(&listeners.xwayland_surface_destroy.link);
-    wl_list_remove(&listeners.xwayland_surface_associate.link);
-    wl_list_init(&listeners.xwayland_surface_associate.link);
-
-    // Clear focus if this was an XWayland surface
-    if (focused_xsurface) {
-        auto it = std::find(surfaces.begin(), surfaces.end(), focused_surface);
-        if (it != surfaces.end()) {
-            surfaces.erase(it);
-        }
-
-        focused_xsurface = nullptr;
-        focused_surface = nullptr;
-        keyboard_entered_surface = nullptr;
-        pointer_entered_surface = nullptr;
-        wlr_seat_keyboard_clear_focus(seat);
-        wlr_seat_pointer_clear_focus(seat);
-    }
-
-    pending_xsurface = nullptr;
 }
 
 void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
