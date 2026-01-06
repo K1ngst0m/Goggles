@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <render/chain/pass.hpp>
+#include <util/job_system.hpp>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 #include <util/unique_fd.hpp>
@@ -1345,7 +1346,7 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
     auto command_pool = *m_command_pool;
     auto graphics_queue = m_graphics_queue;
 
-    m_pending_load_future = std::async(std::launch::async, [=, this]() -> Result<void> {
+    m_pending_load_future = util::JobSystem::submit([=, this]() -> Result<void> {
         GOGGLES_PROFILE_SCOPE("AsyncShaderLoad");
 
         auto runtime_result = ShaderRuntime::create();
