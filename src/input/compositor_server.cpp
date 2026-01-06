@@ -45,16 +45,16 @@ auto get_time_msec() -> uint32_t {
     return static_cast<uint32_t>(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
-auto bind_wayland_socket(wl_display* display) -> Result<int> {
-    for (int display_num = 1; display_num < 10; ++display_num) {
+auto bind_wayland_socket(wl_display* display) -> Result<std::string> {
+    for (int display_num = 0; display_num < 10; ++display_num) {
         std::array<char, 32> socket_name{};
-        std::snprintf(socket_name.data(), socket_name.size(), "wayland-%d", display_num);
+        std::snprintf(socket_name.data(), socket_name.size(), "goggles-%d", display_num);
         if (wl_display_add_socket(display, socket_name.data()) == 0) {
-            return display_num;
+            return std::string(socket_name.data());
         }
     }
-    return make_error<int>(ErrorCode::input_init_failed,
-                           "No available Wayland sockets (wayland-1..9 all bound)");
+    return make_error<std::string>(ErrorCode::input_init_failed,
+                                   "No available goggles sockets (goggles-0..9 all bound)");
 }
 
 struct KeyboardDeleter {
@@ -109,7 +109,7 @@ struct CompositorServer::Impl {
     std::vector<wlr_surface*> surfaces;
     Listeners listeners;
     util::UniqueFd event_fd;
-    int display_number = -1;
+    std::string wayland_socket_name;
 
     Impl() {
         listeners.impl = this;
@@ -137,61 +137,64 @@ CompositorServer::~CompositorServer() {
 }
 
 auto CompositorServer::x11_display() const -> std::string {
-    return ":" + std::to_string(m_impl->display_number);
+    if (m_impl->xwayland && m_impl->xwayland->display_name) {
+        return m_impl->xwayland->display_name;
+    }
+    return "";
 }
 
 auto CompositorServer::wayland_display() const -> std::string {
-    return "wayland-" + std::to_string(m_impl->display_number);
+    return m_impl->wayland_socket_name;
 }
 
-auto CompositorServer::start() -> Result<int> {
+auto CompositorServer::start() -> Result<void> {
     auto& impl = *m_impl;
     auto cleanup_on_error = [this](void*) { stop(); };
     std::unique_ptr<void, decltype(cleanup_on_error)> guard(this, cleanup_on_error);
 
     impl.display = wl_display_create();
     if (!impl.display) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create Wayland display");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create Wayland display");
     }
 
     impl.event_loop = wl_display_get_event_loop(impl.display);
     if (!impl.event_loop) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to get event loop");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to get event loop");
     }
 
     impl.backend = wlr_headless_backend_create(impl.event_loop);
     if (!impl.backend) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create headless backend");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create headless backend");
     }
 
     impl.renderer = wlr_renderer_autocreate(impl.backend);
     if (!impl.renderer) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create renderer");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create renderer");
     }
 
     if (!wlr_renderer_init_wl_display(impl.renderer, impl.display)) {
-        return make_error<int>(ErrorCode::input_init_failed,
-                               "Failed to initialize renderer protocols");
+        return make_error<void>(ErrorCode::input_init_failed,
+                                "Failed to initialize renderer protocols");
     }
 
     impl.allocator = wlr_allocator_autocreate(impl.backend, impl.renderer);
     if (!impl.allocator) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create allocator");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create allocator");
     }
 
     impl.compositor = wlr_compositor_create(impl.display, 6, impl.renderer);
     if (!impl.compositor) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create compositor");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create compositor");
     }
 
     impl.output_layout = wlr_output_layout_create(impl.display);
     if (!impl.output_layout) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create output layout");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create output layout");
     }
 
     impl.xdg_shell = wlr_xdg_shell_create(impl.display, 3);
     if (!impl.xdg_shell) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create xdg-shell");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create xdg-shell");
     }
 
     wl_list_init(&impl.listeners.new_xdg_toplevel.link);
@@ -204,20 +207,20 @@ auto CompositorServer::start() -> Result<int> {
 
     impl.seat = wlr_seat_create(impl.display, "seat0");
     if (!impl.seat) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create seat");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create seat");
     }
 
     wlr_seat_set_capabilities(impl.seat, WL_SEAT_CAPABILITY_KEYBOARD | WL_SEAT_CAPABILITY_POINTER);
 
     impl.xkb_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!impl.xkb_ctx) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create xkb context");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create xkb context");
     }
 
     xkb_keymap* keymap =
         xkb_keymap_new_from_names(impl.xkb_ctx, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
     if (!keymap) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create xkb keymap");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create xkb keymap");
     }
 
     impl.keyboard = UniqueKeyboard(new wlr_keyboard{});
@@ -229,7 +232,7 @@ auto CompositorServer::start() -> Result<int> {
 
     int efd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (efd < 0) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create eventfd");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create eventfd");
     }
     impl.event_fd = util::UniqueFd(efd);
 
@@ -246,18 +249,19 @@ auto CompositorServer::start() -> Result<int> {
         &impl);
 
     if (!impl.event_source) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to add eventfd to event loop");
+        return make_error<void>(ErrorCode::input_init_failed,
+                                "Failed to add eventfd to event loop");
     }
 
     auto socket_result = bind_wayland_socket(impl.display);
     if (!socket_result) {
-        return make_error<int>(socket_result.error().code, socket_result.error().message);
+        return make_error<void>(socket_result.error().code, socket_result.error().message);
     }
-    impl.display_number = *socket_result;
+    impl.wayland_socket_name = *socket_result;
 
     impl.xwayland = wlr_xwayland_create(impl.display, impl.compositor, false);
     if (!impl.xwayland) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create XWayland server");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create XWayland server");
     }
 
     impl.listeners.new_xwayland_surface.notify = [](wl_listener* listener, void* data) {
@@ -271,13 +275,13 @@ auto CompositorServer::start() -> Result<int> {
     wlr_xwayland_set_seat(impl.xwayland, impl.seat);
 
     if (!wlr_backend_start(impl.backend)) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to start wlroots backend");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to start wlroots backend");
     }
 
     // Create headless output for native Wayland clients
     impl.output = wlr_headless_add_output(impl.backend, 1920, 1080);
     if (!impl.output) {
-        return make_error<int>(ErrorCode::input_init_failed, "Failed to create headless output");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to create headless output");
     }
     wlr_output_init_render(impl.output, impl.allocator, impl.renderer);
     wlr_output_layout_add_auto(impl.output_layout, impl.output);
@@ -291,7 +295,7 @@ auto CompositorServer::start() -> Result<int> {
     impl.compositor_thread = std::jthread([&impl] { wl_display_run(impl.display); });
 
     guard.release(); // NOLINT(bugprone-unused-return-value)
-    return impl.display_number;
+    return {};
 }
 
 void CompositorServer::stop() {
@@ -370,7 +374,7 @@ void CompositorServer::stop() {
     }
 
     impl.event_loop = nullptr;
-    impl.display_number = -1;
+    impl.wayland_socket_name.clear();
 }
 
 auto CompositorServer::inject_key(uint32_t linux_keycode, bool pressed) -> bool {

@@ -28,7 +28,7 @@ public:
     CompositorServer(CompositorServer&&) = delete;
     CompositorServer& operator=(CompositorServer&&) = delete;
 
-    [[nodiscard]] auto start() -> Result<int>;
+    [[nodiscard]] auto start() -> Result<void>;
     void stop();
     [[nodiscard]] auto x11_display() const -> std::string;
     [[nodiscard]] auto wayland_display() const -> std::string;
