@@ -41,8 +41,8 @@ Since the project is pre-release, we will completely remove the XTest-based impl
 **Test app updates (`tests/input/goggles_input_test.cpp`):**
 - Currently hardcodes `setenv("SDL_VIDEODRIVER", "x11", 1)`
 - Create two separate test binaries for separation of concerns:
-  - `goggles_input_test_x11` - tests X11/XWayland input via wlr_seat -> wlr_xwm path
-  - `goggles_input_test_wayland` - tests native Wayland input via wlr_seat path
+  - `goggles_manual_input_x11` - manual X11/XWayland input probe via wlr_seat -> wlr_xwm path
+  - `goggles_manual_input_wayland` - manual native Wayland input probe via wlr_seat path
 - Each binary sets appropriate `SDL_VIDEODRIVER` (`x11` or `wayland`)
 - Also log `WAYLAND_DISPLAY` in addition to `DISPLAY`
 

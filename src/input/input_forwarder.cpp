@@ -160,9 +160,13 @@ auto InputForwarder::create() -> ResultPtr<InputForwarder> {
 auto InputForwarder::forward_key(const SDL_KeyboardEvent& event) -> Result<void> {
     uint32_t linux_keycode = sdl_to_linux_keycode(event.scancode);
     if (linux_keycode == 0) {
+        GOGGLES_LOG_TRACE("Unmapped key scancode={}, down={}", static_cast<int>(event.scancode),
+                          event.down);
         return {};
     }
 
+    GOGGLES_LOG_TRACE("Forward key scancode={}, down={} -> linux_keycode={}",
+                      static_cast<int>(event.scancode), event.down, linux_keycode);
     if (!m_impl->server.inject_key(linux_keycode, event.down)) {
         GOGGLES_LOG_DEBUG("Input queue full, dropped key event");
     }

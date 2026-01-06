@@ -188,7 +188,7 @@ SDL3 is already in the project via CPM.
 | Variable | Example | Purpose |
 |----------|---------|---------|
 | `DISPLAY` | `:1` | Connect X11 app to XWayland (printed by Goggles on startup) |
-| `WAYLAND_DISPLAY` | `wayland-1` | Connect Wayland app to nested compositor |
+| `WAYLAND_DISPLAY` | `goggles-0` | Connect Wayland app to nested compositor (printed by Goggles on startup) |
 
 For X11 apps (including Wine):
 ```bash
@@ -212,10 +212,10 @@ WAYLAND_DISPLAY=wayland-1 ./my_wayland_app
 # Replace :1 / wayland-1 with values printed by Goggles
 
 # For X11 backend test:
-WAYLAND_DISPLAY= DISPLAY=:1 GOGGLES_CAPTURE=1 ./build/debug/bin/goggles_input_test_x11
+WAYLAND_DISPLAY= DISPLAY=:1 GOGGLES_CAPTURE=1 ./build/debug/tests/goggles_manual_input_x11
 
 # For Wayland backend test:
-WAYLAND_DISPLAY=wayland-1 GOGGLES_CAPTURE=1 ./build/debug/bin/goggles_input_test_wayland
+WAYLAND_DISPLAY=goggles-0 GOGGLES_CAPTURE=1 ./build/debug/tests/goggles_manual_input_wayland
 
 # Focus Goggles window, press keys/move mouse
 # test_app terminal should show input events

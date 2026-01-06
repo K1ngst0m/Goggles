@@ -75,8 +75,8 @@
 
 ## 9. Test App Updates
 
-- [x] 9.1 Create `goggles_input_test_x11.cpp` from existing test (set `SDL_VIDEODRIVER=x11`)
-- [x] 9.2 Create `goggles_input_test_wayland.cpp` (set `SDL_VIDEODRIVER=wayland`)
+- [x] 9.1 Create `goggles_manual_input_x11` (set `SDL_VIDEODRIVER=x11`)
+- [x] 9.2 Create `goggles_manual_input_wayland` (set `SDL_VIDEODRIVER=wayland`)
 - [x] 9.3 Update both to log `WAYLAND_DISPLAY` in addition to `DISPLAY`
 - [x] 9.4 Remove hardcoded `setenv("SDL_VIDEODRIVER", "x11", 1)` from original
 - [x] 9.5 Update `tests/CMakeLists.txt` to build both test binaries
@@ -89,9 +89,9 @@
 
 ## 11. Manual Testing
 
-- [x] 11.1 Test `goggles_input_test_x11` receives keyboard events via wlr_seat -> wlr_xwm
-- [x] 11.2 Test `goggles_input_test_x11` receives pointer events via wlr_seat -> wlr_xwm
-- [x] 11.3 Test `goggles_input_test_wayland` receives keyboard events via wlr_seat
-- [x] 11.4 Test `goggles_input_test_wayland` receives pointer events via wlr_seat
+- [x] 11.1 Test `goggles_manual_input_x11` receives keyboard events via wlr_seat -> wlr_xwm
+- [x] 11.2 Test `goggles_manual_input_x11` receives pointer events via wlr_seat -> wlr_xwm
+- [x] 11.3 Test `goggles_manual_input_wayland` receives keyboard events via wlr_seat
+- [x] 11.4 Test `goggles_manual_input_wayland` receives pointer events via wlr_seat
 - [x] 11.5 Test X11→Wayland focus transition (close X11 app, open Wayland app)
 - [x] 11.6 Test Wayland→X11 focus transition (close Wayland app, open X11 app)
