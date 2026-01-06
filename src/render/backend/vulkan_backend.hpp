@@ -7,6 +7,7 @@
 #include <capture/capture_receiver.hpp>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <render/chain/filter_chain.hpp>
 #include <render/shader/shader_runtime.hpp>
@@ -37,6 +38,29 @@ public:
     [[nodiscard]] auto handle_resize() -> Result<void>;
 
     void load_shader_preset(const std::filesystem::path& preset_path);
+    [[nodiscard]] auto reload_shader_preset(const std::filesystem::path& preset_path)
+        -> Result<void>;
+    [[nodiscard]] auto current_preset_path() const -> const std::filesystem::path& {
+        return m_preset_path;
+    }
+
+    void set_shader_enabled(bool enabled);
+
+    using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
+    [[nodiscard]] auto render_frame_with_ui(const CaptureFrame& frame, UiRenderCallback ui_callback)
+        -> Result<bool>;
+    [[nodiscard]] auto render_clear_with_ui(UiRenderCallback ui_callback) -> Result<bool>;
+
+    [[nodiscard]] auto instance() const -> vk::Instance { return *m_instance; }
+    [[nodiscard]] auto physical_device() const -> vk::PhysicalDevice { return m_physical_device; }
+    [[nodiscard]] auto device() const -> vk::Device { return *m_device; }
+    [[nodiscard]] auto graphics_queue() const -> vk::Queue { return m_graphics_queue; }
+    [[nodiscard]] auto graphics_queue_family() const -> uint32_t { return m_graphics_queue_family; }
+    [[nodiscard]] auto swapchain_format() const -> vk::Format { return m_swapchain_format; }
+    [[nodiscard]] auto swapchain_image_count() const -> uint32_t {
+        return static_cast<uint32_t>(m_swapchain_images.size());
+    }
+    [[nodiscard]] auto filter_chain() -> FilterChain* { return m_filter_chain.get(); }
 
     [[nodiscard]] auto import_sync_semaphores(util::UniqueFd frame_ready_fd,
                                               util::UniqueFd frame_consumed_fd) -> Result<void>;

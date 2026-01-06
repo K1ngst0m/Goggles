@@ -29,6 +29,11 @@ Goggles currently loads a shader preset once at startup from `config/goggles.tom
 3. Implement the preset catalog + UI controls and connect them to a `PresetSelection` dispatcher.
 4. Update the render pipeline to support runtime reload/passthrough toggles and add error reporting hooks consumed by the UI.
 
+## Shader Parameter Editing
+6. **Parameter access** – Expose `FilterChain::get_all_parameters()` returning a flat list of `{pass_index, ShaderParameter, current_value}` tuples. The UI iterates this list and renders sliders/inputs per parameter.
+7. **Parameter modification** – `FilterChain::set_parameter(pass_index, name, value)` delegates to `FilterPass::set_parameter_override()` and triggers `update_ubo_parameters()`. Changes apply on the next frame without reload.
+8. **Parameter reset** – `FilterChain::clear_parameter_overrides()` clears all pass overrides and restores preset defaults.
+
 ## Open Questions
 - Should preset selections persist back to `config/goggles.toml`, or remain session-only?
 - Do we constrain the preset catalog to curated directories, or expose a file picker for arbitrary paths?

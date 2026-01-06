@@ -50,6 +50,9 @@ public:
 
     [[nodiscard]] auto pass_count() const -> size_t { return m_passes.size(); }
 
+    void set_bypass(bool enabled) { m_bypass_enabled = enabled; }
+    [[nodiscard]] auto is_bypass() const -> bool { return m_bypass_enabled; }
+
     [[nodiscard]] static auto calculate_pass_output_size(const ShaderPassConfig& pass_config,
                                                          vk::Extent2D source_extent,
                                                          vk::Extent2D viewport_extent)
@@ -93,6 +96,7 @@ private:
 
     FrameHistory m_frame_history;
     uint32_t m_required_history_depth = 0;
+    bool m_bypass_enabled = false;
 };
 
 } // namespace goggles::render

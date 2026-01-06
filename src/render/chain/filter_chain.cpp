@@ -300,7 +300,7 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
 
     GOGGLES_MUST(ensure_frame_history(original_extent));
 
-    if (m_passes.empty()) {
+    if (m_passes.empty() || m_bypass_enabled) {
         PassContext ctx{};
         ctx.frame_index = frame_index;
         ctx.output_extent = viewport_extent;
@@ -440,6 +440,11 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
 
     if (m_preset.passes.empty() || m_framebuffers.empty()) {
         GOGGLES_LOG_DEBUG("handle_resize: no preset or framebuffers");
+        return {};
+    }
+
+    if (m_last_source_extent.width == 0 || m_last_source_extent.height == 0) {
+        GOGGLES_LOG_DEBUG("handle_resize: no source rendered yet, skipping");
         return {};
     }
 

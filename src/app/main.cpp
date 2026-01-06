@@ -10,15 +10,63 @@
 #include <filesystem>
 #include <memory>
 #include <render/backend/vulkan_backend.hpp>
+#include <render/chain/filter_chain.hpp>
+#include <ui/imgui_layer.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 #include <util/unique_fd.hpp>
 
+static auto scan_presets(const std::filesystem::path& dir) -> std::vector<std::filesystem::path> {
+    std::vector<std::filesystem::path> presets;
+    if (!std::filesystem::exists(dir)) {
+        return presets;
+    }
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".slangp") {
+            presets.push_back(entry.path());
+        }
+    }
+    std::ranges::sort(presets);
+    return presets;
+}
+
+static void handle_ui_state(goggles::render::VulkanBackend& vulkan_backend,
+                            goggles::ui::ImGuiLayer& imgui_layer) {
+    static bool last_shader_enabled = false;
+    auto& state = imgui_layer.state();
+
+    if (state.shader_enabled != last_shader_enabled) {
+        vulkan_backend.set_shader_enabled(state.shader_enabled);
+        last_shader_enabled = state.shader_enabled;
+    }
+
+    if (!state.reload_requested) {
+        return;
+    }
+    state.reload_requested = false;
+
+    if (state.selected_preset_index < 0 ||
+        state.selected_preset_index >= static_cast<int>(state.preset_catalog.size())) {
+        return;
+    }
+
+    const auto& preset = state.preset_catalog[static_cast<size_t>(state.selected_preset_index)];
+    auto result = vulkan_backend.reload_shader_preset(preset);
+    if (!result) {
+        GOGGLES_LOG_ERROR("Failed to load preset '{}': {}", preset.string(),
+                          result.error().message);
+    } else {
+        state.current_preset = preset;
+        GOGGLES_LOG_INFO("Loaded preset: {}", preset.string());
+    }
+}
+
 static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                           goggles::CaptureReceiver* capture_receiver,
-                          goggles::input::InputForwarder* input_forwarder) {
+                          goggles::input::InputForwarder* input_forwarder,
+                          goggles::ui::ImGuiLayer* imgui_layer) {
     bool running = true;
     while (running) {
         GOGGLES_PROFILE_FRAME("Main");
@@ -28,13 +76,29 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
         {
             GOGGLES_PROFILE_SCOPE("EventProcessing");
             while (SDL_PollEvent(&event)) {
+                if (imgui_layer) {
+                    imgui_layer->process_event(event);
+                }
+
                 if (event.type == SDL_EVENT_QUIT) {
                     GOGGLES_LOG_INFO("Quit event received");
                     running = false;
                 } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
                     window_resized = true;
-                } else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
-                    if (input_forwarder) {
+                } else if (event.type == SDL_EVENT_KEY_DOWN) {
+                    if (event.key.key == SDLK_F1 && imgui_layer) {
+                        imgui_layer->toggle_visibility();
+                    } else if (input_forwarder &&
+                               !(imgui_layer && imgui_layer->wants_capture_keyboard())) {
+                        auto forward_result = input_forwarder->forward_key(event.key);
+                        if (!forward_result) {
+                            GOGGLES_LOG_ERROR("Failed to forward key: {}",
+                                              forward_result.error().message);
+                        }
+                    }
+                } else if (event.type == SDL_EVENT_KEY_UP) {
+                    if (input_forwarder &&
+                        !(imgui_layer && imgui_layer->wants_capture_keyboard())) {
                         auto forward_result = input_forwarder->forward_key(event.key);
                         if (!forward_result) {
                             GOGGLES_LOG_ERROR("Failed to forward key: {}",
@@ -43,7 +107,7 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                     }
                 } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                            event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                    if (input_forwarder) {
+                    if (input_forwarder && !(imgui_layer && imgui_layer->wants_capture_mouse())) {
                         auto forward_result = input_forwarder->forward_mouse_button(event.button);
                         if (!forward_result) {
                             GOGGLES_LOG_ERROR("Failed to forward mouse button: {}",
@@ -51,7 +115,7 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                         }
                     }
                 } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
-                    if (input_forwarder) {
+                    if (input_forwarder && !(imgui_layer && imgui_layer->wants_capture_mouse())) {
                         auto forward_result = input_forwarder->forward_mouse_motion(event.motion);
                         if (!forward_result) {
                             GOGGLES_LOG_ERROR("Failed to forward mouse motion: {}",
@@ -59,7 +123,7 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
                         }
                     }
                 } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-                    if (input_forwarder) {
+                    if (input_forwarder && !(imgui_layer && imgui_layer->wants_capture_mouse())) {
                         auto forward_result = input_forwarder->forward_mouse_wheel(event.wheel);
                         if (!forward_result) {
                             GOGGLES_LOG_ERROR("Failed to forward mouse wheel: {}",
@@ -106,10 +170,25 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
             capture_receiver->clear_semaphores_updated();
         }
 
+        if (imgui_layer) {
+            handle_ui_state(vulkan_backend, *imgui_layer);
+            imgui_layer->begin_frame();
+        }
+
         bool needs_resize = false;
+        auto ui_callback = [&](vk::CommandBuffer cmd, vk::ImageView view, vk::Extent2D extent) {
+            if (imgui_layer) {
+                imgui_layer->end_frame();
+                imgui_layer->record(cmd, view, extent);
+            }
+        };
+
         if (capture_receiver && capture_receiver->has_frame()) {
             GOGGLES_PROFILE_SCOPE("RenderFrame");
-            auto render_result = vulkan_backend.render_frame(capture_receiver->get_frame());
+            auto render_result =
+                imgui_layer ? vulkan_backend.render_frame_with_ui(capture_receiver->get_frame(),
+                                                                  ui_callback)
+                            : vulkan_backend.render_frame(capture_receiver->get_frame());
             if (!render_result) {
                 GOGGLES_LOG_ERROR("Render failed: {}", render_result.error().message);
             } else {
@@ -117,7 +196,8 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
             }
         } else {
             GOGGLES_PROFILE_SCOPE("RenderClear");
-            auto render_result = vulkan_backend.render_clear();
+            auto render_result = imgui_layer ? vulkan_backend.render_clear_with_ui(ui_callback)
+                                             : vulkan_backend.render_clear();
             if (!render_result) {
                 GOGGLES_LOG_ERROR("Clear failed: {}", render_result.error().message);
             } else {
@@ -216,6 +296,29 @@ static auto run_app(int argc, char** argv) -> int {
 
     vulkan_backend->load_shader_preset(config.shader.preset);
 
+    goggles::ui::ImGuiConfig imgui_config{
+        .instance = vulkan_backend->instance(),
+        .physical_device = vulkan_backend->physical_device(),
+        .device = vulkan_backend->device(),
+        .queue_family = vulkan_backend->graphics_queue_family(),
+        .queue = vulkan_backend->graphics_queue(),
+        .swapchain_format = vulkan_backend->swapchain_format(),
+        .image_count = vulkan_backend->swapchain_image_count(),
+    };
+
+    std::unique_ptr<goggles::ui::ImGuiLayer> imgui_layer;
+    auto imgui_result = goggles::ui::ImGuiLayer::create(window, imgui_config);
+    if (!imgui_result) {
+        GOGGLES_LOG_WARN("ImGui disabled: {}", imgui_result.error().message);
+    } else {
+        imgui_layer = std::move(imgui_result.value());
+        auto presets = scan_presets("shaders/retroarch");
+        imgui_layer->set_preset_catalog(std::move(presets));
+        imgui_layer->set_current_preset(vulkan_backend->current_preset_path());
+        imgui_layer->state().shader_enabled = !config.shader.preset.empty();
+        GOGGLES_LOG_INFO("ImGui layer initialized (F1 to toggle)");
+    }
+
     auto receiver_result = goggles::CaptureReceiver::create();
     std::unique_ptr<goggles::CaptureReceiver> capture_receiver;
     if (!receiver_result) {
@@ -248,9 +351,11 @@ static auto run_app(int argc, char** argv) -> int {
         GOGGLES_LOG_INFO("Input forwarding disabled");
     }
 
-    run_main_loop(*vulkan_backend, capture_receiver.get(), input_forwarder.get());
+    run_main_loop(*vulkan_backend, capture_receiver.get(), input_forwarder.get(),
+                  imgui_layer.get());
 
     GOGGLES_LOG_INFO("Shutting down...");
+    imgui_layer.reset();
     if (capture_receiver) {
         capture_receiver->shutdown();
     }

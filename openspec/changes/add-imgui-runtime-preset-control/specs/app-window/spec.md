@@ -30,3 +30,24 @@ The Goggles application SHALL expose a dockable "Shader Controls" panel that sho
 - **WHEN** the user toggles "Passthrough (no filter chain)"
 - **THEN** the UI SHALL highlight the passthrough state
 - **AND** it SHALL emit a selection event instructing the render pipeline to bypass or restore the filter chain accordingly
+
+### Requirement: Shader Parameter Controls
+The Goggles application SHALL expose runtime shader parameter editing through the ImGui interface, allowing users to adjust filter chain parameters in real-time.
+
+#### Scenario: Parameter display
+- **GIVEN** a shader preset is loaded with parameters (min, max, step, description)
+- **WHEN** the Shader Controls panel displays parameters
+- **THEN** it SHALL list all available parameters with their current values
+- **AND** each parameter SHALL be editable via slider or input field respecting min/max bounds
+
+#### Scenario: Parameter modification
+- **GIVEN** the user adjusts a shader parameter value
+- **WHEN** the new value is within valid bounds
+- **THEN** the filter chain SHALL update the parameter override
+- **AND** the change SHALL take effect on the next rendered frame without requiring preset reload
+
+#### Scenario: Parameter reset
+- **GIVEN** parameters have been modified from their defaults
+- **WHEN** the user clicks "Reset to Defaults"
+- **THEN** all parameter overrides SHALL be cleared
+- **AND** the shader SHALL render using original preset values

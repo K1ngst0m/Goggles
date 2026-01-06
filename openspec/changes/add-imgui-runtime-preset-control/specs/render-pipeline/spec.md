@@ -30,3 +30,24 @@ The render pipeline SHALL provide a passthrough mode that bypasses all filter pa
 - **WHEN** the render pipeline receives the request
 - **THEN** it SHALL reload the last successful preset (or the default from config if none exists)
 - **AND** rendering SHALL resume using the restored filter chain without requiring an application restart
+
+### Requirement: Runtime Parameter Access
+The render pipeline SHALL expose shader parameter metadata and runtime override capabilities so the UI layer can display and modify filter chain parameters.
+
+#### Scenario: Parameter list query
+- **GIVEN** a filter chain with one or more passes is loaded
+- **WHEN** the UI queries available parameters
+- **THEN** the pipeline SHALL return a list of ShaderParameter (name, description, min, max, step, default, current value)
+- **AND** parameters from all passes SHALL be accessible
+
+#### Scenario: Parameter override
+- **GIVEN** a valid parameter name and value within bounds
+- **WHEN** set_parameter_override(name, value) is called
+- **THEN** the filter chain SHALL apply the override to the appropriate pass
+- **AND** update_ubo_parameters() SHALL be invoked before the next render
+
+#### Scenario: Parameter reset
+- **GIVEN** one or more parameters have been overridden
+- **WHEN** clear_parameter_overrides() is called
+- **THEN** all overrides SHALL be removed
+- **AND** parameters SHALL revert to preset defaults on the next frame

@@ -1,0 +1,41 @@
+package:
+  name: imgui
+  version: "1.91.8"
+
+source:
+  git: https://github.com/ocornut/imgui.git
+  tag: v1.91.8-docking
+
+build:
+  number: 0
+  script:
+    - mkdir -p $PREFIX/include/imgui
+    - mkdir -p $PREFIX/lib
+    - |
+      # Build static library
+      $CXX $CXXFLAGS -c -fPIC -I. \
+        imgui.cpp imgui_demo.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp \
+        backends/imgui_impl_sdl3.cpp backends/imgui_impl_vulkan.cpp \
+        -I$PREFIX/include -I$PREFIX/include/SDL3
+
+      ar rcs libimgui.a *.o
+      mv libimgui.a $PREFIX/lib/
+
+    - |
+      # Install headers
+      cp *.h $PREFIX/include/imgui/
+      cp backends/imgui_impl_sdl3.h $PREFIX/include/imgui/
+      cp backends/imgui_impl_vulkan.h $PREFIX/include/imgui/
+
+requirements:
+  build:
+    - ${{ compiler('cxx') }}
+    - sysroot_linux-64
+  host:
+    - sdl3 >=3.2
+    - libvulkan-headers
+
+about:
+  homepage: https://github.com/ocornut/imgui
+  license: MIT
+  summary: Dear ImGui docking branch with SDL3/Vulkan backends
