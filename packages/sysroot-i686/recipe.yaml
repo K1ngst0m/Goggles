@@ -14,9 +14,9 @@ build:
     # Install prebuilt sysroot
     # rattler-build auto-enters the tarball's top-level directory (i686-sysroot)
     # so we have usr/, lib, include directly in the work directory
-    rm -rf $PREFIX/i686-sysroot
-    mkdir -p $PREFIX/i686-sysroot
-    cp -a usr lib include $PREFIX/i686-sysroot/
+    rm -rf "$PREFIX/i686-sysroot"
+    mkdir -p "$PREFIX/i686-sysroot"
+    cp -a usr lib include "$PREFIX/i686-sysroot/"
 
 requirements:
   build:
