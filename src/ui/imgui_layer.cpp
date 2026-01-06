@@ -1,11 +1,13 @@
 #include "imgui_layer.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 #include <util/logging.hpp>
+#include <utility>
 
 namespace goggles::ui {
 
@@ -40,25 +42,25 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
                                                  "ImGui_ImplSDL3_InitForVulkan failed");
     }
 
-    vk::DescriptorPoolSize pool_sizes[] = {
-        {vk::DescriptorType::eSampler, 1000},
-        {vk::DescriptorType::eCombinedImageSampler, 1000},
-        {vk::DescriptorType::eSampledImage, 1000},
-        {vk::DescriptorType::eStorageImage, 1000},
-        {vk::DescriptorType::eUniformTexelBuffer, 1000},
-        {vk::DescriptorType::eStorageTexelBuffer, 1000},
-        {vk::DescriptorType::eUniformBuffer, 1000},
-        {vk::DescriptorType::eStorageBuffer, 1000},
-        {vk::DescriptorType::eUniformBufferDynamic, 1000},
-        {vk::DescriptorType::eStorageBufferDynamic, 1000},
-        {vk::DescriptorType::eInputAttachment, 1000},
+    std::array pool_sizes = {
+        vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eUniformTexelBuffer, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eStorageTexelBuffer, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eUniformBufferDynamic, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eStorageBufferDynamic, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eInputAttachment, 1000},
     };
 
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
     pool_info.maxSets = 1000;
-    pool_info.poolSizeCount = std::size(pool_sizes);
-    pool_info.pPoolSizes = pool_sizes;
+    pool_info.poolSizeCount = pool_sizes.size();
+    pool_info.pPoolSizes = pool_sizes.data();
 
     auto [pool_result, pool] = config.device.createDescriptorPool(pool_info);
     if (pool_result != vk::Result::eSuccess) {
@@ -80,11 +82,11 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
     init_info.ImageCount = config.image_count;
     init_info.UseDynamicRendering = true;
 
-    VkFormat color_formats[] = {static_cast<VkFormat>(config.swapchain_format)};
+    std::array color_formats = {static_cast<VkFormat>(config.swapchain_format)};
     VkPipelineRenderingCreateInfo rendering_info{};
     rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     rendering_info.colorAttachmentCount = 1;
-    rendering_info.pColorAttachmentFormats = color_formats;
+    rendering_info.pColorAttachmentFormats = color_formats.data();
     init_info.PipelineRenderingCreateInfo = rendering_info;
 
     if (!ImGui_ImplVulkan_Init(&init_info)) {
@@ -225,7 +227,7 @@ void ImGuiLayer::draw_filtered_presets() {
             continue;
         }
         ImGui::PushID(static_cast<int>(i));
-        bool is_selected = (m_state.selected_preset_index == static_cast<int>(i));
+        bool is_selected = std::cmp_equal(m_state.selected_preset_index, i);
         if (ImGui::Selectable(path.filename().string().c_str(), is_selected)) {
             m_state.selected_preset_index = static_cast<int>(i);
         }
