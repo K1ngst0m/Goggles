@@ -47,9 +47,9 @@ public:
     void set_shader_enabled(bool enabled);
 
     using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
-    [[nodiscard]] auto render_frame_with_ui(const CaptureFrame& frame, UiRenderCallback ui_callback)
-        -> Result<bool>;
-    [[nodiscard]] auto render_clear_with_ui(UiRenderCallback ui_callback) -> Result<bool>;
+    [[nodiscard]] auto render_frame_with_ui(const CaptureFrame& frame,
+                                            const UiRenderCallback& ui_callback) -> Result<bool>;
+    [[nodiscard]] auto render_clear_with_ui(const UiRenderCallback& ui_callback) -> Result<bool>;
 
     [[nodiscard]] auto instance() const -> vk::Instance { return *m_instance; }
     [[nodiscard]] auto physical_device() const -> vk::PhysicalDevice { return m_physical_device; }
@@ -66,6 +66,12 @@ public:
                                               util::UniqueFd frame_consumed_fd) -> Result<void>;
     [[nodiscard]] auto has_sync_semaphores() const -> bool { return m_sync_semaphores_imported; }
     void cleanup_sync_semaphores();
+
+    [[nodiscard]] auto consume_format_change() -> bool {
+        bool changed = m_format_changed;
+        m_format_changed = false;
+        return changed;
+    }
 
 private:
     VulkanBackend() = default;
@@ -148,6 +154,7 @@ private:
     ScaleMode m_scale_mode = ScaleMode::stretch;
     bool m_needs_resize = false;
     bool m_sync_semaphores_imported = false;
+    bool m_format_changed = false;
 };
 
 } // namespace goggles::render

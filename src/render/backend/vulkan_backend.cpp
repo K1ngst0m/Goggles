@@ -500,6 +500,7 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
         }
     }
 
+    m_format_changed = true;
     return {};
 }
 
@@ -1155,8 +1156,8 @@ auto VulkanBackend::handle_resize() -> Result<void> {
     return recreate_swapchain();
 }
 
-auto VulkanBackend::render_frame_with_ui(const CaptureFrame& frame, UiRenderCallback ui_callback)
-    -> Result<bool> {
+auto VulkanBackend::render_frame_with_ui(const CaptureFrame& frame,
+                                         const UiRenderCallback& ui_callback) -> Result<bool> {
     GOGGLES_PROFILE_FUNCTION();
 
     if (!m_device) {
@@ -1237,7 +1238,7 @@ auto VulkanBackend::render_frame_with_ui(const CaptureFrame& frame, UiRenderCall
     return submit_and_present(image_index);
 }
 
-auto VulkanBackend::render_clear_with_ui(UiRenderCallback ui_callback) -> Result<bool> {
+auto VulkanBackend::render_clear_with_ui(const UiRenderCallback& ui_callback) -> Result<bool> {
     GOGGLES_PROFILE_FUNCTION();
 
     if (!m_device) {
@@ -1328,8 +1329,12 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
                 auto restore = m_filter_chain->load_preset(previous_path);
                 if (restore) {
                     m_preset_path = previous_path;
+                    return result;
                 }
+                GOGGLES_LOG_WARN("Rollback to '{}' also failed, falling back to passthrough",
+                                 previous_path.string());
             }
+            m_preset_path.clear();
             return result;
         }
     }

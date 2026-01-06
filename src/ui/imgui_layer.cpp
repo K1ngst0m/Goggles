@@ -213,9 +213,9 @@ auto ImGuiLayer::matches_filter(const std::filesystem::path& path) const -> bool
     if (m_state.search_filter[0] == '\0') {
         return true;
     }
-    auto path_lower = to_lower(path.string());
+    auto filename_lower = to_lower(path.filename().string());
     auto filter_lower = to_lower(m_state.search_filter.data());
-    return path_lower.find(filter_lower) != std::string::npos;
+    return filename_lower.find(filter_lower) != std::string::npos;
 }
 
 void ImGuiLayer::draw_filtered_presets() {

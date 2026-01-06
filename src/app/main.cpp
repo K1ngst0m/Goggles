@@ -17,15 +17,18 @@
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 #include <util/unique_fd.hpp>
+#include <utility>
 
 static auto scan_presets(const std::filesystem::path& dir) -> std::vector<std::filesystem::path> {
     std::vector<std::filesystem::path> presets;
-    if (!std::filesystem::exists(dir)) {
+    std::error_code ec;
+    if (!std::filesystem::exists(dir, ec) || ec) {
         return presets;
     }
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".slangp") {
-            presets.push_back(entry.path());
+    for (auto it = std::filesystem::recursive_directory_iterator(dir, ec);
+         it != std::filesystem::recursive_directory_iterator() && !ec; it.increment(ec)) {
+        if (it->is_regular_file(ec) && !ec && it->path().extension() == ".slangp") {
+            presets.push_back(it->path());
         }
     }
     std::ranges::sort(presets);
@@ -48,7 +51,7 @@ static void handle_ui_state(goggles::render::VulkanBackend& vulkan_backend,
     state.reload_requested = false;
 
     if (state.selected_preset_index < 0 ||
-        state.selected_preset_index >= static_cast<int>(state.preset_catalog.size())) {
+        std::cmp_greater_equal(state.selected_preset_index, state.preset_catalog.size())) {
         return;
     }
 
