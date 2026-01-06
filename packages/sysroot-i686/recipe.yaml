@@ -7,7 +7,7 @@ source:
   sha256: d2dfb5277ada92040ae16fa14acf659a48f7e0032dbf17464d727ef27b6adf5f
 
 build:
-  number: 0
+  number: 1
   script: |
     set -e
 
