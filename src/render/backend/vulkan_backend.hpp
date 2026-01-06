@@ -4,10 +4,12 @@
 
 #include <SDL3/SDL.h>
 #include <array>
+#include <atomic>
 #include <capture/capture_receiver.hpp>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <future>
 #include <optional>
 #include <render/chain/filter_chain.hpp>
 #include <render/shader/shader_runtime.hpp>
@@ -155,6 +157,24 @@ private:
     bool m_needs_resize = false;
     bool m_sync_semaphores_imported = false;
     bool m_format_changed = false;
+
+    // Async shader reload state
+    std::unique_ptr<FilterChain> m_pending_filter_chain;
+    std::unique_ptr<ShaderRuntime> m_pending_shader_runtime;
+    std::filesystem::path m_pending_preset_path;
+    std::atomic<bool> m_pending_chain_ready{false};
+    std::future<Result<void>> m_pending_load_future;
+
+    struct DeferredDestroy {
+        std::unique_ptr<FilterChain> chain;
+        std::unique_ptr<ShaderRuntime> runtime;
+        uint64_t destroy_after_frame;
+    };
+    std::vector<DeferredDestroy> m_deferred_destroys;
+    uint64_t m_frame_count = 0;
+
+    void check_pending_chain_swap();
+    void cleanup_deferred_destroys();
 };
 
 } // namespace goggles::render
