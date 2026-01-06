@@ -79,7 +79,6 @@ struct CompositorServer::Impl {
         wl_listener xdg_surface_destroy{};
         wl_listener new_xwayland_surface{};
         wl_listener xwayland_surface_associate{};
-        wl_listener xwayland_surface_map{};
         wl_listener xwayland_surface_destroy{};
     };
 
@@ -117,7 +116,6 @@ struct CompositorServer::Impl {
         wl_list_init(&listeners.xdg_surface_map.link);
         wl_list_init(&listeners.xdg_surface_destroy.link);
         wl_list_init(&listeners.xwayland_surface_associate.link);
-        wl_list_init(&listeners.xwayland_surface_map.link);
         wl_list_init(&listeners.xwayland_surface_destroy.link);
     }
 
@@ -128,7 +126,6 @@ struct CompositorServer::Impl {
     void handle_xdg_surface_destroy();
     void handle_new_xwayland_surface(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface);
-    void handle_xwayland_surface_map(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_destroy();
     void focus_surface(wlr_surface* surface);
     void focus_xwayland_surface(wlr_xwayland_surface* xsurface);
@@ -638,26 +635,11 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
     }
 }
 
-void CompositorServer::Impl::handle_xwayland_surface_map(wlr_xwayland_surface* xsurface) {
-    // Remove map listener - it's one-shot
-    wl_list_remove(&listeners.xwayland_surface_map.link);
-    wl_list_init(&listeners.xwayland_surface_map.link);
-
-    // Only focus if no surface has focus - don't steal from Wayland surfaces
-    if (!focused_surface) {
-        focus_xwayland_surface(xsurface);
-    }
-
-    pending_xsurface = nullptr;
-}
-
 void CompositorServer::Impl::handle_xwayland_surface_destroy() {
     wl_list_remove(&listeners.xwayland_surface_destroy.link);
     wl_list_init(&listeners.xwayland_surface_destroy.link);
     wl_list_remove(&listeners.xwayland_surface_associate.link);
     wl_list_init(&listeners.xwayland_surface_associate.link);
-    wl_list_remove(&listeners.xwayland_surface_map.link);
-    wl_list_init(&listeners.xwayland_surface_map.link);
 
     // Clear focus if this was an XWayland surface
     if (focused_xsurface) {
@@ -688,8 +670,6 @@ void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
     // Clean up any pending XWayland listeners that might be dangling
     wl_list_remove(&listeners.xwayland_surface_associate.link);
     wl_list_init(&listeners.xwayland_surface_associate.link);
-    wl_list_remove(&listeners.xwayland_surface_map.link);
-    wl_list_init(&listeners.xwayland_surface_map.link);
     pending_xsurface = nullptr;
 
     wlr_seat_set_keyboard(seat, keyboard.get());
