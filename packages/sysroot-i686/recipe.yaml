@@ -11,66 +11,14 @@ build:
   script: |
     set -e
 
-    # --- 1. Install prebuilt sysroot ---
+    # Install prebuilt sysroot
     # rattler-build auto-enters the tarball's top-level directory (i686-sysroot)
     # so we have usr/, lib, include directly in the work directory
     rm -rf $PREFIX/i686-sysroot
     mkdir -p $PREFIX/i686-sysroot
     cp -a usr lib include $PREFIX/i686-sysroot/
 
-    # --- 2. Download and install vkcube32 ---
-    echo "Downloading vkcube32..."
-    mkdir -p temp_debs
-    cd temp_debs
-
-    VKCUBE_URL="http://ftp.debian.org/debian/pool/main/v/vulkan-tools/vulkan-tools_1.3.239.0+dfsg1-1_i386.deb"
-    VKCUBE_SHA256="0f76b8efe091f9c47616e65f8168159c57c65956dc959c6eec22d58516227f94"
-
-    curl -L -f -o vulkan-tools.deb "$VKCUBE_URL"
-
-    # Verify SHA256
-    actual_sha256=$(sha256sum vulkan-tools.deb | cut -d' ' -f1)
-    if [ "$actual_sha256" != "$VKCUBE_SHA256" ]; then
-      echo "ERROR: SHA256 checksum mismatch for vulkan-tools.deb"
-      echo "  Expected: $VKCUBE_SHA256"
-      echo "  Actual:   $actual_sha256"
-      exit 1
-    fi
-    echo "  SHA256 verified: $actual_sha256"
-
-    # Extract vkcube from .deb
-    ar x vulkan-tools.deb
-    if [ -f data.tar.zst ]; then
-      tar --use-compress-program=unzstd -xf data.tar.zst
-    elif [ -f data.tar.xz ]; then
-      tar -xf data.tar.xz
-    elif [ -f data.tar.gz ]; then
-      tar -xf data.tar.gz
-    else
-      echo "ERROR: No recognized data archive in vulkan-tools.deb"
-      exit 1
-    fi
-
-    # Install vkcube32
-    if [ -f "usr/bin/vkcube" ]; then
-      echo "Installing vkcube32..."
-      mkdir -p $PREFIX/bin
-      cp usr/bin/vkcube $PREFIX/bin/vkcube32
-      chmod +x $PREFIX/bin/vkcube32
-    else
-      echo "ERROR: vkcube not found in vulkan-tools.deb"
-      exit 1
-    fi
-
-    # Cleanup
-    cd ..
-    rm -rf temp_debs
-
 requirements:
   build:
     - tar
     - xz
-    - curl
-    - binutils
-    - zstd
-    - patchelf
