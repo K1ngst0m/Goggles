@@ -88,6 +88,10 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
 }
 
 void VulkanBackend::shutdown() {
+    if (m_pending_load_future.valid()) {
+        m_pending_load_future.wait();
+    }
+
     if (m_device) {
         auto wait_result = m_device->waitIdle();
         if (wait_result != vk::Result::eSuccess) {
