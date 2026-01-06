@@ -6,14 +6,14 @@ The current input forwarding implementation only supports X11 applications via X
 
 ## What Changes
 
-- **Replace XTest injection with unified `wlr_seat_*` APIs** for both X11 and Wayland apps
+- **BREAKING**: Replace XTest injection with unified `wlr_seat_*` APIs for both X11 and Wayland apps (removes `display_number()`, adds `x11_display()`/`wayland_display()`)
 - Connect XWayland to seat via `wlr_xwayland_set_seat()` so wlr_xwm handles X11 translation
 - Track surfaces from both xdg_shell (Wayland) and XWayland clients
 - Add virtual keyboard device with xkb keymap for proper key event delivery
 - Add pointer capability to seat for mouse event delivery
 - Implement thread-safe input event marshaling from main thread to compositor thread
 - Rename `XWaylandServer` to `CompositorServer` to reflect its broader role
-- Remove X11/XTest dependencies from input forwarding
+- **BREAKING**: Remove X11/XTest dependencies from input forwarding (removes libX11/libXtst link targets from build)
 
 ## Old Code Cleanup
 

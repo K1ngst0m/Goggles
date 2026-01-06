@@ -54,7 +54,7 @@ auto bind_wayland_socket(wl_display* display) -> Result<int> {
         }
     }
     return make_error<int>(ErrorCode::input_init_failed,
-                           "No available DISPLAY numbers (1-9 all bound)");
+                           "No available Wayland sockets (wayland-1..9 all bound)");
 }
 
 struct KeyboardDeleter {
@@ -100,6 +100,8 @@ struct CompositorServer::Impl {
     wlr_output* output = nullptr;
     wlr_surface* focused_surface = nullptr;
     wlr_xwayland_surface* focused_xsurface = nullptr;
+    wlr_surface* keyboard_entered_surface = nullptr;
+    wlr_surface* pointer_entered_surface = nullptr;
     double last_pointer_x = 0.0;
     double last_pointer_y = 0.0;
     wlr_xdg_toplevel* pending_toplevel = nullptr;
@@ -318,6 +320,8 @@ void CompositorServer::stop() {
     impl.surfaces.clear();
     impl.focused_surface = nullptr;
     impl.focused_xsurface = nullptr;
+    impl.keyboard_entered_surface = nullptr;
+    impl.pointer_entered_surface = nullptr;
 
     // Destruction order: xwayland before compositor, seat before display
     if (impl.xwayland) {
@@ -438,13 +442,20 @@ void CompositorServer::Impl::process_input_events() {
             if (!focused_surface) {
                 break;
             }
-            // For XWayland: must re-activate and re-enter keyboard focus before each key
+            // XWayland quirk: wlr_xwm requires re-activation and keyboard re-entry before each
+            // key event. Without this, X11 clients silently drop input after the first event.
+            // Native Wayland clients maintain focus state correctly and only need enter on change.
             if (focused_xsurface) {
                 wlr_xwayland_surface_activate(focused_xsurface, true);
+                wlr_seat_set_keyboard(seat, keyboard.get());
+                wlr_seat_keyboard_notify_enter(seat, focused_surface, keyboard->keycodes,
+                                               keyboard->num_keycodes, &keyboard->modifiers);
+            } else if (keyboard_entered_surface != focused_surface) {
+                wlr_seat_set_keyboard(seat, keyboard.get());
+                wlr_seat_keyboard_notify_enter(seat, focused_surface, keyboard->keycodes,
+                                               keyboard->num_keycodes, &keyboard->modifiers);
+                keyboard_entered_surface = focused_surface;
             }
-            wlr_seat_set_keyboard(seat, keyboard.get());
-            wlr_seat_keyboard_notify_enter(seat, focused_surface, keyboard->keycodes,
-                                           keyboard->num_keycodes, &keyboard->modifiers);
             auto state =
                 event.pressed ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED;
             wlr_seat_keyboard_notify_key(seat, time, event.code, state);
@@ -454,10 +465,13 @@ void CompositorServer::Impl::process_input_events() {
             if (!focused_surface) {
                 break;
             }
-            // For XWayland: must re-activate and re-enter pointer focus
+            // XWayland quirk: requires re-activation and pointer re-entry before each event
             if (focused_xsurface) {
                 wlr_xwayland_surface_activate(focused_xsurface, true);
                 wlr_seat_pointer_notify_enter(seat, focused_surface, event.x, event.y);
+            } else if (pointer_entered_surface != focused_surface) {
+                wlr_seat_pointer_notify_enter(seat, focused_surface, event.x, event.y);
+                pointer_entered_surface = focused_surface;
             }
             wlr_seat_pointer_notify_motion(seat, time, event.x, event.y);
             wlr_seat_pointer_notify_frame(seat);
@@ -473,6 +487,10 @@ void CompositorServer::Impl::process_input_events() {
                 wlr_xwayland_surface_activate(focused_xsurface, true);
                 wlr_seat_pointer_notify_enter(seat, focused_surface, last_pointer_x,
                                               last_pointer_y);
+            } else if (pointer_entered_surface != focused_surface) {
+                wlr_seat_pointer_notify_enter(seat, focused_surface, last_pointer_x,
+                                              last_pointer_y);
+                pointer_entered_surface = focused_surface;
             }
             auto state =
                 event.pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED;
@@ -488,6 +506,10 @@ void CompositorServer::Impl::process_input_events() {
                 wlr_xwayland_surface_activate(focused_xsurface, true);
                 wlr_seat_pointer_notify_enter(seat, focused_surface, last_pointer_x,
                                               last_pointer_y);
+            } else if (pointer_entered_surface != focused_surface) {
+                wlr_seat_pointer_notify_enter(seat, focused_surface, last_pointer_x,
+                                              last_pointer_y);
+                pointer_entered_surface = focused_surface;
             }
             auto orientation = event.horizontal ? WL_POINTER_AXIS_HORIZONTAL_SCROLL
                                                 : WL_POINTER_AXIS_VERTICAL_SCROLL;
@@ -588,6 +610,8 @@ void CompositorServer::Impl::handle_xdg_surface_destroy() {
         }
 
         focused_surface = nullptr;
+        keyboard_entered_surface = nullptr;
+        pointer_entered_surface = nullptr;
         wlr_seat_keyboard_clear_focus(seat);
         wlr_seat_pointer_clear_focus(seat);
     }
@@ -650,6 +674,8 @@ void CompositorServer::Impl::handle_xwayland_surface_destroy() {
 
         focused_xsurface = nullptr;
         focused_surface = nullptr;
+        keyboard_entered_surface = nullptr;
+        pointer_entered_surface = nullptr;
         wlr_seat_keyboard_clear_focus(seat);
         wlr_seat_pointer_clear_focus(seat);
     }
@@ -676,6 +702,8 @@ void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
     wlr_seat_keyboard_notify_enter(seat, surface, keyboard->keycodes, keyboard->num_keycodes,
                                    &keyboard->modifiers);
     wlr_seat_pointer_notify_enter(seat, surface, 0.0, 0.0);
+    keyboard_entered_surface = surface;
+    pointer_entered_surface = surface;
 }
 
 void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurface) {
@@ -686,6 +714,8 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
     // Clear seat focus first to prevent wlroots from sending leave events to stale surface
     wlr_seat_keyboard_clear_focus(seat);
     wlr_seat_pointer_clear_focus(seat);
+    keyboard_entered_surface = nullptr;
+    pointer_entered_surface = nullptr;
 
     // Clean up any pending XDG listeners that might be dangling
     wl_list_remove(&listeners.xdg_surface_commit.link);
@@ -706,6 +736,8 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
     wlr_seat_keyboard_notify_enter(seat, xsurface->surface, keyboard->keycodes,
                                    keyboard->num_keycodes, &keyboard->modifiers);
     wlr_seat_pointer_notify_enter(seat, xsurface->surface, 0.0, 0.0);
+    keyboard_entered_surface = xsurface->surface;
+    pointer_entered_surface = xsurface->surface;
 }
 
 } // namespace goggles::input
