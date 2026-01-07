@@ -89,7 +89,10 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
 
 void VulkanBackend::shutdown() {
     if (m_pending_load_future.valid()) {
-        m_pending_load_future.wait();
+        auto status = m_pending_load_future.wait_for(std::chrono::seconds(3));
+        if (status == std::future_status::timeout) {
+            GOGGLES_LOG_WARN("Shader load task still running during shutdown, may cause issues");
+        }
     }
 
     if (m_device) {
@@ -913,8 +916,8 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     return image_index;
 }
 
-auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index)
-    -> Result<void> {
+auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index,
+                                           const UiRenderCallback& ui_callback) -> Result<void> {
     GOGGLES_PROFILE_SCOPE("RecordCommands");
 
     VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
@@ -961,6 +964,10 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
                            *m_swapchain_image_views[image_index], m_swapchain_extent,
                            m_current_frame, m_scale_mode, m_integer_scale);
 
+    if (ui_callback) {
+        ui_callback(cmd, *m_swapchain_image_views[image_index], m_swapchain_extent);
+    }
+
     dst_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     dst_barrier.dstAccessMask = vk::AccessFlagBits::eNone;
     dst_barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -974,8 +981,8 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
     return {};
 }
 
-auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index)
-    -> Result<void> {
+auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index,
+                                          const UiRenderCallback& ui_callback) -> Result<void> {
     VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
 
     vk::CommandBufferBeginInfo begin_info{};
@@ -1015,6 +1022,10 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
 
     cmd.beginRendering(rendering_info);
     cmd.endRendering();
+
+    if (ui_callback) {
+        ui_callback(cmd, *m_swapchain_image_views[image_index], m_swapchain_extent);
+    }
 
     barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     barrier.dstAccessMask = vk::AccessFlagBits::eNone;
@@ -1188,65 +1199,9 @@ auto VulkanBackend::render_frame_with_ui(const CaptureFrame& frame,
     GOGGLES_TRY(import_dmabuf(frame));
 
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
-    auto cmd = m_frames[m_current_frame].command_buffer;
 
-    VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
-
-    vk::CommandBufferBeginInfo begin_info{};
-    begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    VK_TRY(cmd.begin(begin_info), ErrorCode::vulkan_device_lost, "Command buffer begin failed");
-
-    vk::ImageMemoryBarrier src_barrier{};
-    src_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
-    src_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-    src_barrier.oldLayout = vk::ImageLayout::eUndefined;
-    src_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-    src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    src_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    src_barrier.image = m_import.image;
-    src_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    src_barrier.subresourceRange.baseMipLevel = 0;
-    src_barrier.subresourceRange.levelCount = 1;
-    src_barrier.subresourceRange.baseArrayLayer = 0;
-    src_barrier.subresourceRange.layerCount = 1;
-
-    vk::ImageMemoryBarrier dst_barrier{};
-    dst_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
-    dst_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    dst_barrier.oldLayout = vk::ImageLayout::eUndefined;
-    dst_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    dst_barrier.image = m_swapchain_images[image_index];
-    dst_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    dst_barrier.subresourceRange.baseMipLevel = 0;
-    dst_barrier.subresourceRange.levelCount = 1;
-    dst_barrier.subresourceRange.baseArrayLayer = 0;
-    dst_barrier.subresourceRange.layerCount = 1;
-
-    std::array barriers = {src_barrier, dst_barrier};
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                        vk::PipelineStageFlagBits::eFragmentShader |
-                            vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                        {}, {}, {}, barriers);
-
-    m_filter_chain->record(cmd, m_import.image, m_import.view, m_import_extent,
-                           *m_swapchain_image_views[image_index], m_swapchain_extent,
-                           m_current_frame, m_scale_mode, m_integer_scale);
-
-    if (ui_callback) {
-        ui_callback(cmd, *m_swapchain_image_views[image_index], m_swapchain_extent);
-    }
-
-    dst_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    dst_barrier.dstAccessMask = vk::AccessFlagBits::eNone;
-    dst_barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    dst_barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
-
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                        vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, dst_barrier);
-
-    VK_TRY(cmd.end(), ErrorCode::vulkan_device_lost, "Command buffer end failed");
+    GOGGLES_TRY(
+        record_render_commands(m_frames[m_current_frame].command_buffer, image_index, ui_callback));
 
     return submit_and_present(image_index);
 }
@@ -1263,61 +1218,9 @@ auto VulkanBackend::render_clear_with_ui(const UiRenderCallback& ui_callback) ->
     cleanup_deferred_destroys();
 
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
-    auto cmd = m_frames[m_current_frame].command_buffer;
 
-    VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
-
-    vk::CommandBufferBeginInfo begin_info{};
-    begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    VK_TRY(cmd.begin(begin_info), ErrorCode::vulkan_device_lost, "Command buffer begin failed");
-
-    vk::ImageMemoryBarrier barrier{};
-    barrier.srcAccessMask = vk::AccessFlagBits::eNone;
-    barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    barrier.oldLayout = vk::ImageLayout::eUndefined;
-    barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = m_swapchain_images[image_index];
-    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                        vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {}, barrier);
-
-    vk::RenderingAttachmentInfo color_attachment{};
-    color_attachment.imageView = *m_swapchain_image_views[image_index];
-    color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
-    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
-    color_attachment.clearValue.color = vk::ClearColorValue{std::array{0.0F, 0.0F, 0.0F, 1.0F}};
-
-    vk::RenderingInfo rendering_info{};
-    rendering_info.renderArea.offset = vk::Offset2D{0, 0};
-    rendering_info.renderArea.extent = m_swapchain_extent;
-    rendering_info.layerCount = 1;
-    rendering_info.colorAttachmentCount = 1;
-    rendering_info.pColorAttachments = &color_attachment;
-
-    cmd.beginRendering(rendering_info);
-    cmd.endRendering();
-
-    if (ui_callback) {
-        ui_callback(cmd, *m_swapchain_image_views[image_index], m_swapchain_extent);
-    }
-
-    barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    barrier.dstAccessMask = vk::AccessFlagBits::eNone;
-    barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
-
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                        vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, barrier);
-
-    VK_TRY(cmd.end(), ErrorCode::vulkan_device_lost, "Command buffer end failed");
+    GOGGLES_TRY(
+        record_clear_commands(m_frames[m_current_frame].command_buffer, image_index, ui_callback));
 
     return submit_and_present(image_index);
 }
@@ -1430,6 +1333,7 @@ void VulkanBackend::check_pending_chain_swap() {
     m_shader_runtime = std::move(m_pending_shader_runtime);
     m_preset_path = m_pending_preset_path;
     m_pending_chain_ready.store(false, std::memory_order_release);
+    m_chain_swapped.store(true, std::memory_order_release);
 
     GOGGLES_LOG_INFO("Shader chain swapped: {}",
                      m_preset_path.empty() ? "(passthrough)" : m_preset_path.string());

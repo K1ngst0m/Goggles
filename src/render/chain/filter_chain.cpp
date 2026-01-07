@@ -515,9 +515,19 @@ auto FilterChain::get_all_parameters() const -> std::vector<ParameterInfo> {
 }
 
 void FilterChain::set_parameter(const std::string& name, float value) {
+    bool found = false;
     for (auto& pass : m_passes) {
+        for (const auto& param : pass->parameters()) {
+            if (param.name == name) {
+                found = true;
+                break;
+            }
+        }
         pass->set_parameter_override(name, value);
         GOGGLES_MUST(pass->update_ubo_parameters());
+    }
+    if (!found) {
+        GOGGLES_LOG_WARN("set_parameter: '{}' not found in any pass", name);
     }
 }
 

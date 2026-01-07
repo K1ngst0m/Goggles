@@ -75,6 +75,10 @@ public:
         return changed;
     }
 
+    [[nodiscard]] auto consume_chain_swapped() -> bool {
+        return m_chain_swapped.exchange(false, std::memory_order_acq_rel);
+    }
+
 private:
     VulkanBackend() = default;
 
@@ -96,9 +100,11 @@ private:
     void cleanup_imported_image();
 
     [[nodiscard]] auto acquire_next_image() -> Result<uint32_t>;
-    [[nodiscard]] auto record_render_commands(vk::CommandBuffer cmd, uint32_t image_index)
+    [[nodiscard]] auto record_render_commands(vk::CommandBuffer cmd, uint32_t image_index,
+                                              const UiRenderCallback& ui_callback = nullptr)
         -> Result<void>;
-    [[nodiscard]] auto record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index)
+    [[nodiscard]] auto record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index,
+                                             const UiRenderCallback& ui_callback = nullptr)
         -> Result<void>;
     [[nodiscard]] auto submit_and_present(uint32_t image_index) -> Result<bool>;
 
@@ -157,6 +163,7 @@ private:
     bool m_needs_resize = false;
     bool m_sync_semaphores_imported = false;
     bool m_format_changed = false;
+    std::atomic<bool> m_chain_swapped{false};
 
     // Async shader reload state
     std::unique_ptr<FilterChain> m_pending_filter_chain;

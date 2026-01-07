@@ -23,6 +23,13 @@ Goggles currently loads a shader preset once at startup from `config/goggles.tom
 - **Reload latency** – Rebuilding filter chains can stutter. Solution: perform rebuild between frames and double-buffer chain state so the previous chain finishes before swapping pointers.
 - **Preset parsing errors** – Invalid presets triggered via UI could leave the system without a working chain. We keep the previous preset alive until the new one succeeds and surface errors to the UI/log.
 
+## Async Shader Reload (Implemented)
+9. **Async compilation** – `reload_shader_preset()` spawns a background task via `JobSystem::submit()` to create a new ShaderRuntime and FilterChain, compile shaders, and load the preset. The main thread continues rendering with the old chain.
+10. **Pending chain swap** – When the async task completes, it sets `m_pending_chain_ready` (atomic). The render loop calls `check_pending_chain_swap()` each frame to detect completion and swap in the new chain.
+11. **Deferred destruction** – Old chains are queued for deferred destruction (`m_deferred_destroys` fixed-size array) to ensure in-flight frames complete before resources are freed. Cleanup happens in `cleanup_deferred_destroys()` called each frame.
+12. **UI notification** – `consume_chain_swapped()` (atomic exchange) signals when a swap occurred so the main loop can update UI parameters with the new chain's parameter list.
+13. **Shutdown safety** – `shutdown()` waits for pending async tasks with a 3-second timeout before proceeding with resource cleanup.
+
 ## Migration Plan
 1. Vendor/fetch ImGui docking sources and wire them into the app build.
 2. Add ImGui initialization, frame begin/end hooks, and docking layout persisted under `~/.config/goggles/` (optional) or session memory.

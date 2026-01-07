@@ -89,10 +89,6 @@ static void handle_ui_state(goggles::render::VulkanBackend& vulkan_backend,
     if (!result) {
         GOGGLES_LOG_ERROR("Failed to load preset '{}': {}", preset.string(),
                           result.error().message);
-    } else {
-        state.current_preset = preset;
-        update_ui_parameters(vulkan_backend, imgui_layer);
-        GOGGLES_LOG_INFO("Loaded preset: {}", preset.string());
     }
 }
 
@@ -236,6 +232,11 @@ static void run_main_loop(goggles::render::VulkanBackend& vulkan_backend,
             } else {
                 needs_resize = !*render_result;
             }
+        }
+
+        if (imgui_layer && vulkan_backend.consume_chain_swapped()) {
+            imgui_layer->state().current_preset = vulkan_backend.current_preset_path();
+            update_ui_parameters(vulkan_backend, *imgui_layer);
         }
 
         if (needs_resize) {

@@ -728,6 +728,7 @@ auto FilterPass::update_ubo_parameters() -> Result<void> {
             auto override_it = m_parameter_overrides.find(param.name);
             if (override_it != m_parameter_overrides.end()) {
                 value = override_it->second;
+                GOGGLES_LOG_DEBUG("UBO param '{}' = {} (override)", param.name, value);
             }
             std::memcpy(ubo_data + it->second, &value, sizeof(float));
         }
