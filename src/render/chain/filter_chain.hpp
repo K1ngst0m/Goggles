@@ -14,6 +14,16 @@
 
 namespace goggles::render {
 
+struct ParameterInfo {
+    std::string name;
+    std::string description;
+    float current_value;
+    float default_value;
+    float min_value;
+    float max_value;
+    float step;
+};
+
 struct LoadedTexture {
     TextureData data;
     vk::UniqueSampler sampler;
@@ -60,6 +70,11 @@ public:
                                                          vk::Extent2D source_extent,
                                                          vk::Extent2D viewport_extent)
         -> vk::Extent2D;
+
+    [[nodiscard]] auto get_all_parameters() const -> std::vector<ParameterInfo>;
+    void set_parameter(const std::string& name, float value);
+    void reset_parameter(const std::string& name);
+    void clear_parameter_overrides();
 
 private:
     FilterChain() = default;

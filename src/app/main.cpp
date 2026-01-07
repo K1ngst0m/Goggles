@@ -35,6 +35,35 @@ static auto scan_presets(const std::filesystem::path& dir) -> std::vector<std::f
     return presets;
 }
 
+static void update_ui_parameters(goggles::render::VulkanBackend& vulkan_backend,
+                                 goggles::ui::ImGuiLayer& imgui_layer) {
+    auto* chain = vulkan_backend.filter_chain();
+    if (chain == nullptr) {
+        return;
+    }
+
+    auto params = chain->get_all_parameters();
+    std::vector<goggles::ui::ParameterState> ui_params;
+    ui_params.reserve(params.size());
+
+    for (const auto& p : params) {
+        ui_params.push_back({
+            .pass_index = 0,
+            .info =
+                {
+                    .name = p.name,
+                    .description = p.description,
+                    .default_value = p.default_value,
+                    .min_value = p.min_value,
+                    .max_value = p.max_value,
+                    .step = p.step,
+                },
+            .current_value = p.current_value,
+        });
+    }
+    imgui_layer.set_parameters(std::move(ui_params));
+}
+
 static void handle_ui_state(goggles::render::VulkanBackend& vulkan_backend,
                             goggles::ui::ImGuiLayer& imgui_layer) {
     static bool last_shader_enabled = false;
@@ -62,6 +91,7 @@ static void handle_ui_state(goggles::render::VulkanBackend& vulkan_backend,
                           result.error().message);
     } else {
         state.current_preset = preset;
+        update_ui_parameters(vulkan_backend, imgui_layer);
         GOGGLES_LOG_INFO("Loaded preset: {}", preset.string());
     }
 }
@@ -319,6 +349,21 @@ static auto run_app(int argc, char** argv) -> int {
         imgui_layer->set_preset_catalog(std::move(presets));
         imgui_layer->set_current_preset(vulkan_backend->current_preset_path());
         imgui_layer->state().shader_enabled = !config.shader.preset.empty();
+
+        imgui_layer->set_parameter_change_callback(
+            [&vulkan_backend](size_t /*pass_index*/, const std::string& name, float value) {
+                if (auto* chain = vulkan_backend->filter_chain()) {
+                    chain->set_parameter(name, value);
+                }
+            });
+        imgui_layer->set_parameter_reset_callback([&vulkan_backend, &imgui_layer]() {
+            if (auto* chain = vulkan_backend->filter_chain()) {
+                chain->clear_parameter_overrides();
+                update_ui_parameters(*vulkan_backend, *imgui_layer);
+            }
+        });
+
+        update_ui_parameters(*vulkan_backend, *imgui_layer);
         GOGGLES_LOG_INFO("ImGui layer initialized (F1 to toggle)");
     }
 

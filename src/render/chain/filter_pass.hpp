@@ -81,6 +81,11 @@ public:
     }
     void clear_parameter_overrides() { m_parameter_overrides.clear(); }
 
+    [[nodiscard]] auto parameters() const -> const std::vector<ShaderParameter>& {
+        return m_parameters;
+    }
+    [[nodiscard]] auto get_parameter_value(const std::string& name) const -> float;
+
     [[nodiscard]] auto update_ubo_parameters() -> Result<void>;
     void update_ubo_semantics();
 
