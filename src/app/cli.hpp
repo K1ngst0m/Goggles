@@ -29,7 +29,7 @@ using CliResult = Result<CliOptions>;
         ->check(CLI::ExistingFile);
 
     app.add_flag("--input-forwarding", options.enable_input_forwarding,
-                 "Enable input forwarding (nested XWayland + XTest injection)");
+                 "Enable input forwarding (nested wlroots compositor with XWayland)");
 
     try {
         app.parse(argc, argv);

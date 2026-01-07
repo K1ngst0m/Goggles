@@ -13,33 +13,31 @@ This document explains how Goggles shares GPU textures between processes using L
 
 ## 1. Architecture Overview
 
-```text
-┌───────────────────────────────────────┐
-│         Target Application            │
-│  ┌─────────────┐                      │
-│  │  Swapchain  │                      │
-│  └──────┬──────┘                      │
-│         │ vkQueuePresentKHR           │
-│         ▼                             │
-│  ┌─────────────────────────────────┐  │
-│  │  Capture Layer                  │  │
-│  │  Export DMA-BUF                 │  │
-│  └──────────────┬──────────────────┘  │
-└─────────────────┼─────────────────────┘
-                  │
-                  │ Unix Socket + Semaphore Sync
-                  ▼
-┌─────────────────┼─────────────────────┐
-│  Goggles Viewer │                     │
-│  ┌──────────────┴──────────────────┐  │
-│  │  CaptureReceiver                │  │
-│  └──────────────┬──────────────────┘  │
-│                 ▼                     │
-│  ┌─────────────────────────────────┐  │
-│  │  VulkanBackend                  │  │
-│  │  Import DMA-BUF ──► FilterChain │  │
-│  └─────────────────────────────────┘  │
-└───────────────────────────────────────┘
+```mermaid
+flowchart TB
+  %% Frame transport only (input forwarding is covered in docs/input_forwarding.md).
+
+  subgraph AppProc["Target application process"]
+    App["Target application (Vulkan)"]
+    Layer["Vulkan capture layer"]
+    App --> Layer
+  end
+
+  subgraph IPC["Cross-process transport"]
+    Socket["Unix socket (DMA-BUF fd + metadata)"]
+    Sync["Sync handles (frame_ready / frame_consumed)"]
+  end
+
+  subgraph Goggles["Goggles viewer process"]
+    Receiver["CaptureReceiver"]
+    Backend["VulkanBackend (DMA-BUF import)"]
+    Chain["FilterChain"]
+    Present["Viewer swapchain present"]
+    Receiver --> Backend --> Chain --> Present
+  end
+
+  Layer --> Socket --> Receiver
+  Layer --> Sync --> Backend
 ```
 
 ---
@@ -132,14 +130,19 @@ Binary semaphores require one-to-one signal/wait pairing. Timeline semaphores us
 | `frame_consumed` | Goggles viewer | Capture layer | Frame rendered (back-pressure) |
 
 **Synchronization flow:**
-```
-Capture Layer                          Goggles Viewer
-─────────────                          ──────────────
-1. Wait frame_consumed[N-1]
-2. Copy swapchain → export image
-3. Signal frame_ready[N] ─────────────► 4. Wait frame_ready[N]
-                                        5. Import + render frame
-                          ◄───────────── 6. Signal frame_consumed[N]
+```mermaid
+sequenceDiagram
+  participant Layer as Capture layer (target process)
+  participant Viewer as Goggles viewer
+
+  Layer->>Layer: Wait frame_consumed[N-1]
+  Layer->>Layer: Produce/export frame (DMA-BUF)
+  Layer->>Viewer: Send metadata + DMA-BUF fd
+  Layer->>Viewer: Signal frame_ready[N]
+
+  Viewer->>Viewer: Wait frame_ready[N]
+  Viewer->>Viewer: Import + render frame
+  Viewer-->>Layer: Signal frame_consumed[N]
 ```
 
 ### Required Extensions

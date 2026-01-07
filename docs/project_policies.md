@@ -2,7 +2,7 @@
 
 **Version:** 1.0
 **Status:** Active
-**Last Updated:** 2025-11-13
+**Last Updated:** 2026-01-07
 
 This document establishes mandatory project-wide development policies for the Goggles codebase. All contributors must follow these rules to ensure consistency, maintainability, and quality.
 
@@ -573,8 +573,8 @@ private:
 
 - **Render backend** (`goggles::render`) runs on main thread.
 - **Pipeline execution** runs on main thread.
-- **No thread pool** in initial prototypes (Prototype 1-3).
-- **Phased approach:** Threading introduced only when profiling justifies it (see `docs/threading_architecture.md`).
+- **Job system:** Non-render work may run on worker threads, but the render loop stays predictable (see `docs/threading.md`).
+- **Phased approach:** Threading introduced only when profiling justifies it (see `docs/threading.md`).
 
 ### E.2 Capture Layer Threading
 
@@ -586,13 +586,13 @@ private:
 
 ### E.3 Multi-Threading Implementation (Phase 1+)
 
-**When threading is introduced (Prototype 4+):**
+**When threading is introduced into the render path:**
 
 - **Trigger:** Main thread CPU time consistently exceeds 8ms per frame.
 - **Phased rollout:**
   - Phase 1: Offload blocking tasks (encode, I/O) to worker threads
   - Phase 2: Parallelize Vulkan command buffer generation
-- **See:** `docs/threading_architecture.md` for complete implementation roadmap.
+- **See:** `docs/threading.md` for the implementation details and constraints.
 
 ### E.4 Main Thread Responsibilities
 
@@ -639,7 +639,7 @@ private:
 
 **All real-time inter-thread communication MUST use:**
 
-- **rigtorp::SPSCQueue** for fixed producer-consumer pairs (wait-free guarantee)
+- **`goggles::util::SPSCQueue`** for fixed producer-consumer pairs (wait-free guarantee)
 - **Never MPMC queues** in latency-critical paths (variable latency under contention)
 
 **Communication pattern:**
@@ -676,8 +676,11 @@ Example structure:
 [capture]
 backend = "vulkan_layer"  # or "compositor"
 
-[pipeline]
-shader_preset = "presets/crt-royale.toml"
+[input]
+forwarding = false
+
+[shader]
+preset = "shaders/retroarch/crt/crt-royale.slangp"
 
 [render]
 vsync = true
@@ -709,72 +712,23 @@ file = ""  # empty = console only
 
 ### G.1 Package Manager Strategy
 
-**Use a hybrid approach combining CPM.cmake and Conan.**
+**Use Pixi as the single source of truth for dependencies.**
 
-- **CPM.cmake** for simple and header-only dependencies
-- **Conan** for complex compiled dependencies
-- **System packages** for platform-specific libraries (Vulkan SDK)
+- **Pixi (`pixi.toml` + `pixi.lock`)** provides toolchains and third-party libraries.
+- **Local packages (`packages/`)** are pulled into the Pixi environment by path when we need
+  pinned/forked builds.
+- **System packages** are acceptable only when they are not available in Pixi and are not practical
+  to vendor; if used, they must be documented.
 
-### G.2 CPM.cmake Usage
-
-**For header-only and simple libraries:**
-
-```cmake
-CPMAddPackage(
-    NAME library-name
-    GITHUB_REPOSITORY org/repo
-    VERSION x.y.z
-    OPTIONS
-        "BUILD_TESTS OFF"
-        "BUILD_EXAMPLES OFF"
-)
-```
-
-**Managed via CPM.cmake:**
-- tl::expected (martinmoene/expected-lite)
-- spdlog
-- toml11
-- Catch2
-- SDL3 (window creation and Vulkan surface support)
-- Slang (shader-slang prebuilt binaries for shader compilation)
-
-**Benefits:**
-- Zero setup for developers (included in repo)
-- Perfect sanitizer compatibility (inherits project flags)
-- Fast for small/header-only libraries
-- Cached in `~/.cache/CPM`
-
-### G.3 Conan Usage
-
-**For complex dependencies with build requirements:**
-
-1. **Add to `conanfile.txt` or `conanfile.py`:**
-   ```ini
-   [requires]
-   slang/2024.x
-   ```
-
-2. **Find in CMake:**
-   ```cmake
-   find_package(slang CONFIG REQUIRED)
-   ```
-
-**Managed via Conan:**
-- (none currently)
-
-**Setup requirement:**
-- Developers must install Conan (`pip install conan`)
-- Run `conan install` before CMake configure
-
-### G.4 Version Pinning
+### G.2 Version Pinning
 
 **All dependencies must have explicit versions:**
 
-- **CPM:** Specify `VERSION` parameter (Git tag or commit hash)
-- **Conan:** Use versioning in conanfile (explicit version specifiers)
+- **Pixi:** Pin versions in `pixi.toml` and keep `pixi.lock` committed
+- **Local packages:** Pin by repository state (vendored source or explicit version in the package)
 - **Document rationale** for version changes in commit messages
 
-### G.5 Adding New Dependencies
+### G.3 Adding New Dependencies
 
 **Before adding a dependency:**
 
@@ -785,11 +739,11 @@ CPMAddPackage(
 5. **Discuss with team** - No dependencies added without consensus
 
 **Selection criteria:**
-- Choose CPM for header-only or simple build systems
-- Choose Conan for complex dependencies (requires Vulkan, LLVM, etc.)
-- Use system packages for OS/platform libraries (Vulkan SDK, X11, Wayland)
+- Prefer Pixi packages
+- Use a local package (`packages/`) when we need a pinned fork or special build flags
+- Use system packages only when necessary and documented
 
-### G.6 Dependency Update Policy
+### G.4 Dependency Update Policy
 
 - **Patch updates:** Update freely (bug fixes, no API changes)
 - **Minor updates:** Review changelog, test thoroughly
@@ -809,7 +763,7 @@ CPMAddPackage(
 
 - **Rationale:** Modern C++, header-only option, good diagnostics, widely adopted.
 - **Repository:** [catchorg/Catch2](https://github.com/catchorg/Catch2)
-- **Integration:** Via CMake FetchContent or system package.
+- **Integration:** Provided by the Pixi environment and loaded via `find_package`.
 
 ### H.2 Test Scope (Current Phase)
 
@@ -901,7 +855,7 @@ These policies establish:
 4. **Ownership:** RAII, `std::unique_ptr` default, no raw `new`/`delete`. Vulkan errors must be checked (no `static_cast<void>`).
 5. **Threading:** Single-threaded default, `std::jthread` when needed, no detached threads.
 6. **Configuration:** TOML format, `config/goggles.toml` for development.
-7. **Dependencies:** Hybrid CPM.cmake + conan, version pinning required, justify additions.
+7. **Dependencies:** Pixi-managed environment, pinned versions, justify additions.
 8. **Testing:** Catch2 v3, non-GPU logic only initially, structure mirrors `src/`.
 
 All contributors must read and follow these policies. Questions or proposed changes should be discussed with the team.
