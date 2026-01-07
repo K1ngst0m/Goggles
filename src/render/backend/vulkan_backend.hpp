@@ -70,9 +70,7 @@ public:
     void cleanup_sync_semaphores();
 
     [[nodiscard]] auto consume_format_change() -> bool {
-        bool changed = m_format_changed;
-        m_format_changed = false;
-        return changed;
+        return m_format_changed.exchange(false, std::memory_order_acq_rel);
     }
 
     [[nodiscard]] auto consume_chain_swapped() -> bool {
@@ -162,7 +160,7 @@ private:
     ScaleMode m_scale_mode = ScaleMode::stretch;
     bool m_needs_resize = false;
     bool m_sync_semaphores_imported = false;
-    bool m_format_changed = false;
+    std::atomic<bool> m_format_changed{false};
     std::atomic<bool> m_chain_swapped{false};
 
     // Async shader reload state

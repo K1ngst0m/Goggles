@@ -107,7 +107,10 @@ ImGuiLayer::~ImGuiLayer() {
 
 void ImGuiLayer::shutdown() {
     if (m_device) {
-        static_cast<void>(m_device.waitIdle());
+        auto wait_result = m_device.waitIdle();
+        if (wait_result != vk::Result::eSuccess) {
+            GOGGLES_LOG_WARN("waitIdle failed in ImGui shutdown: {}", vk::to_string(wait_result));
+        }
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplSDL3_Shutdown();
         ImGui::DestroyContext();

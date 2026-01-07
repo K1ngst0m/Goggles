@@ -508,7 +508,7 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
         }
     }
 
-    m_format_changed = true;
+    m_format_changed.store(true, std::memory_order_release);
     return {};
 }
 
