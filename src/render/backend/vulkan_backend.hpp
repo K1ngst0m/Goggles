@@ -4,9 +4,12 @@
 
 #include <SDL3/SDL.h>
 #include <array>
+#include <atomic>
 #include <capture/capture_receiver.hpp>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
+#include <future>
 #include <optional>
 #include <render/chain/filter_chain.hpp>
 #include <render/shader/shader_runtime.hpp>
@@ -37,11 +40,42 @@ public:
     [[nodiscard]] auto handle_resize() -> Result<void>;
 
     void load_shader_preset(const std::filesystem::path& preset_path);
+    [[nodiscard]] auto reload_shader_preset(const std::filesystem::path& preset_path)
+        -> Result<void>;
+    [[nodiscard]] auto current_preset_path() const -> const std::filesystem::path& {
+        return m_preset_path;
+    }
+
+    void set_shader_enabled(bool enabled);
+
+    using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
+    [[nodiscard]] auto render_frame_with_ui(const CaptureFrame& frame,
+                                            const UiRenderCallback& ui_callback) -> Result<bool>;
+    [[nodiscard]] auto render_clear_with_ui(const UiRenderCallback& ui_callback) -> Result<bool>;
+
+    [[nodiscard]] auto instance() const -> vk::Instance { return *m_instance; }
+    [[nodiscard]] auto physical_device() const -> vk::PhysicalDevice { return m_physical_device; }
+    [[nodiscard]] auto device() const -> vk::Device { return *m_device; }
+    [[nodiscard]] auto graphics_queue() const -> vk::Queue { return m_graphics_queue; }
+    [[nodiscard]] auto graphics_queue_family() const -> uint32_t { return m_graphics_queue_family; }
+    [[nodiscard]] auto swapchain_format() const -> vk::Format { return m_swapchain_format; }
+    [[nodiscard]] auto swapchain_image_count() const -> uint32_t {
+        return static_cast<uint32_t>(m_swapchain_images.size());
+    }
+    [[nodiscard]] auto filter_chain() -> FilterChain* { return m_filter_chain.get(); }
 
     [[nodiscard]] auto import_sync_semaphores(util::UniqueFd frame_ready_fd,
                                               util::UniqueFd frame_consumed_fd) -> Result<void>;
     [[nodiscard]] auto has_sync_semaphores() const -> bool { return m_sync_semaphores_imported; }
     void cleanup_sync_semaphores();
+
+    [[nodiscard]] auto consume_format_change() -> bool {
+        return m_format_changed.exchange(false, std::memory_order_acq_rel);
+    }
+
+    [[nodiscard]] auto consume_chain_swapped() -> bool {
+        return m_chain_swapped.exchange(false, std::memory_order_acq_rel);
+    }
 
 private:
     VulkanBackend() = default;
@@ -64,9 +98,11 @@ private:
     void cleanup_imported_image();
 
     [[nodiscard]] auto acquire_next_image() -> Result<uint32_t>;
-    [[nodiscard]] auto record_render_commands(vk::CommandBuffer cmd, uint32_t image_index)
+    [[nodiscard]] auto record_render_commands(vk::CommandBuffer cmd, uint32_t image_index,
+                                              const UiRenderCallback& ui_callback = nullptr)
         -> Result<void>;
-    [[nodiscard]] auto record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index)
+    [[nodiscard]] auto record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index,
+                                             const UiRenderCallback& ui_callback = nullptr)
         -> Result<void>;
     [[nodiscard]] auto submit_and_present(uint32_t image_index) -> Result<bool>;
 
@@ -124,6 +160,28 @@ private:
     ScaleMode m_scale_mode = ScaleMode::stretch;
     bool m_needs_resize = false;
     bool m_sync_semaphores_imported = false;
+    std::atomic<bool> m_format_changed{false};
+    std::atomic<bool> m_chain_swapped{false};
+
+    // Async shader reload state
+    std::unique_ptr<FilterChain> m_pending_filter_chain;
+    std::unique_ptr<ShaderRuntime> m_pending_shader_runtime;
+    std::filesystem::path m_pending_preset_path;
+    std::atomic<bool> m_pending_chain_ready{false};
+    std::future<Result<void>> m_pending_load_future;
+
+    struct DeferredDestroy {
+        std::unique_ptr<FilterChain> chain;
+        std::unique_ptr<ShaderRuntime> runtime;
+        uint64_t destroy_after_frame = 0;
+    };
+    static constexpr size_t MAX_DEFERRED_DESTROYS = 4;
+    std::array<DeferredDestroy, MAX_DEFERRED_DESTROYS> m_deferred_destroys{};
+    size_t m_deferred_count = 0;
+    uint64_t m_frame_count = 0;
+
+    void check_pending_chain_swap();
+    void cleanup_deferred_destroys();
 };
 
 } // namespace goggles::render

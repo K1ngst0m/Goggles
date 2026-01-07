@@ -62,6 +62,15 @@ find_package(slang REQUIRED CONFIG)
 
 find_package(Vulkan REQUIRED)
 
+# ImGui (provided by Pixi local package)
+add_library(imgui STATIC IMPORTED GLOBAL)
+set_target_properties(imgui PROPERTIES
+    IMPORTED_LOCATION "$ENV{CONDA_PREFIX}/lib/libimgui.a"
+    INTERFACE_INCLUDE_DIRECTORIES "$ENV{CONDA_PREFIX}/include/imgui"
+)
+target_link_libraries(imgui INTERFACE SDL3::SDL3 Vulkan::Vulkan)
+
+# Input forwarding dependencies (X11/XWayland for input injection)
 # Input forwarding dependencies (wlroots + XWayland for seat-based input delivery)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(wlroots REQUIRED IMPORTED_TARGET wlroots-0.18)

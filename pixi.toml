@@ -125,6 +125,7 @@ libdrm = "*"
 cli11 = "2.6.*"
 ccache = "4.*"
 lld = "21.*"
+patchelf = "*"
 taplo = "==0.9.3"
 sdl3 = "3.2.*"
 xorg-libxtst = "*"
@@ -139,6 +140,7 @@ stb = { path = "packages/stb" }
 bs-thread-pool = { path = "packages/bs-thread-pool" }
 slang-shaders = { path = "packages/slang-shaders" }
 wlroots-0-18 = { path = "packages/wlroots_0_18" }
+imgui = { path = "packages/imgui" }
 
 # CI-only: Lightweight lint environment
 [feature.lint.dependencies]

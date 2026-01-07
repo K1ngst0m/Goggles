@@ -300,7 +300,7 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
 
     GOGGLES_MUST(ensure_frame_history(original_extent));
 
-    if (m_passes.empty()) {
+    if (m_passes.empty() || m_bypass_enabled.load(std::memory_order_relaxed)) {
         PassContext ctx{};
         ctx.frame_index = frame_index;
         ctx.output_extent = viewport_extent;
@@ -443,6 +443,11 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
         return {};
     }
 
+    if (m_last_source_extent.width == 0 || m_last_source_extent.height == 0) {
+        GOGGLES_LOG_DEBUG("handle_resize: no source rendered yet, skipping");
+        return {};
+    }
+
     auto vp = calculate_viewport(m_last_source_extent.width, m_last_source_extent.height,
                                  new_viewport_extent.width, new_viewport_extent.height,
                                  m_last_scale_mode, m_last_integer_scale);
@@ -479,6 +484,70 @@ void FilterChain::shutdown() {
     m_preset = PresetConfig{};
     m_frame_count = 0;
     m_required_history_depth = 0;
+}
+
+auto FilterChain::get_all_parameters() const -> std::vector<ParameterInfo> {
+    std::unordered_map<std::string, ParameterInfo> param_map;
+
+    for (const auto& pass : m_passes) {
+        for (const auto& param : pass->parameters()) {
+            if (param_map.contains(param.name)) {
+                continue;
+            }
+            param_map[param.name] = {
+                .name = param.name,
+                .description = param.description,
+                .current_value = pass->get_parameter_value(param.name),
+                .default_value = param.default_value,
+                .min_value = param.min_value,
+                .max_value = param.max_value,
+                .step = param.step,
+            };
+        }
+    }
+
+    std::vector<ParameterInfo> result;
+    result.reserve(param_map.size());
+    for (auto& [_, info] : param_map) {
+        result.push_back(std::move(info));
+    }
+    return result;
+}
+
+void FilterChain::set_parameter(const std::string& name, float value) {
+    bool found = false;
+    for (auto& pass : m_passes) {
+        for (const auto& param : pass->parameters()) {
+            if (param.name == name) {
+                found = true;
+                break;
+            }
+        }
+        pass->set_parameter_override(name, value);
+        GOGGLES_MUST(pass->update_ubo_parameters());
+    }
+    if (!found) {
+        GOGGLES_LOG_WARN("set_parameter: '{}' not found in any pass", name);
+    }
+}
+
+void FilterChain::reset_parameter(const std::string& name) {
+    for (auto& pass : m_passes) {
+        for (const auto& param : pass->parameters()) {
+            if (param.name == name) {
+                pass->set_parameter_override(name, param.default_value);
+                GOGGLES_MUST(pass->update_ubo_parameters());
+                break;
+            }
+        }
+    }
+}
+
+void FilterChain::clear_parameter_overrides() {
+    for (auto& pass : m_passes) {
+        pass->clear_parameter_overrides();
+        GOGGLES_MUST(pass->update_ubo_parameters());
+    }
 }
 
 auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents,

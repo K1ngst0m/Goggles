@@ -1,0 +1,6 @@
+[package]
+name = "imgui"
+version = "1.91.8"
+
+[package.build]
+backend = { name = "pixi-build-rattler-build", version = "==0.3.5" }

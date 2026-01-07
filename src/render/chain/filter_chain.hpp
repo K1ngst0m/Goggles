@@ -6,12 +6,23 @@
 #include "output_pass.hpp"
 #include "preset_parser.hpp"
 
+#include <atomic>
 #include <memory>
 #include <render/texture/texture_loader.hpp>
 #include <unordered_map>
 #include <vector>
 
 namespace goggles::render {
+
+struct ParameterInfo {
+    std::string name;
+    std::string description;
+    float current_value;
+    float default_value;
+    float min_value;
+    float max_value;
+    float step;
+};
 
 struct LoadedTexture {
     TextureData data;
@@ -50,10 +61,20 @@ public:
 
     [[nodiscard]] auto pass_count() const -> size_t { return m_passes.size(); }
 
+    void set_bypass(bool enabled) { m_bypass_enabled.store(enabled, std::memory_order_relaxed); }
+    [[nodiscard]] auto is_bypass() const -> bool {
+        return m_bypass_enabled.load(std::memory_order_relaxed);
+    }
+
     [[nodiscard]] static auto calculate_pass_output_size(const ShaderPassConfig& pass_config,
                                                          vk::Extent2D source_extent,
                                                          vk::Extent2D viewport_extent)
         -> vk::Extent2D;
+
+    [[nodiscard]] auto get_all_parameters() const -> std::vector<ParameterInfo>;
+    void set_parameter(const std::string& name, float value);
+    void reset_parameter(const std::string& name);
+    void clear_parameter_overrides();
 
 private:
     FilterChain() = default;
@@ -93,6 +114,7 @@ private:
 
     FrameHistory m_frame_history;
     uint32_t m_required_history_depth = 0;
+    std::atomic<bool> m_bypass_enabled{false};
 };
 
 } // namespace goggles::render

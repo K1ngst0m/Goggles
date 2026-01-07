@@ -119,3 +119,4 @@ shaders/retroarch/crt/shaders/zfast_crt/*
 
 # pixi environments and build artifacts
 .pixi
+imgui.ini

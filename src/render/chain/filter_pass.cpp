@@ -127,6 +127,18 @@ void FilterPass::shutdown() {
     GOGGLES_LOG_DEBUG("FilterPass shutdown");
 }
 
+auto FilterPass::get_parameter_value(const std::string& name) const -> float {
+    if (auto it = m_parameter_overrides.find(name); it != m_parameter_overrides.end()) {
+        return it->second;
+    }
+    for (const auto& param : m_parameters) {
+        if (param.name == name) {
+            return param.default_value;
+        }
+    }
+    return 0.0F;
+}
+
 void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
     GOGGLES_PROFILE_SCOPE("UpdateDescriptor");
 
@@ -716,6 +728,7 @@ auto FilterPass::update_ubo_parameters() -> Result<void> {
             auto override_it = m_parameter_overrides.find(param.name);
             if (override_it != m_parameter_overrides.end()) {
                 value = override_it->second;
+                GOGGLES_LOG_DEBUG("UBO param '{}' = {} (override)", param.name, value);
             }
             std::memcpy(ubo_data + it->second, &value, sizeof(float));
         }

@@ -58,6 +58,7 @@ requirements:
   build:
     - tar
     - xz
+    - patchelf
   host:
     - wayland
     - libxkbcommon

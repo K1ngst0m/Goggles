@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <render/chain/pass.hpp>
+#include <util/job_system.hpp>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 #include <util/unique_fd.hpp>
@@ -87,6 +88,13 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
 }
 
 void VulkanBackend::shutdown() {
+    if (m_pending_load_future.valid()) {
+        auto status = m_pending_load_future.wait_for(std::chrono::seconds(3));
+        if (status == std::future_status::timeout) {
+            GOGGLES_LOG_WARN("Shader load task still running during shutdown, may cause issues");
+        }
+    }
+
     if (m_device) {
         auto wait_result = m_device->waitIdle();
         if (wait_result != vk::Result::eSuccess) {
@@ -500,6 +508,7 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
         }
     }
 
+    m_format_changed.store(true, std::memory_order_release);
     return {};
 }
 
@@ -907,8 +916,8 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     return image_index;
 }
 
-auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index)
-    -> Result<void> {
+auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index,
+                                           const UiRenderCallback& ui_callback) -> Result<void> {
     GOGGLES_PROFILE_SCOPE("RecordCommands");
 
     VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
@@ -955,6 +964,10 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
                            *m_swapchain_image_views[image_index], m_swapchain_extent,
                            m_current_frame, m_scale_mode, m_integer_scale);
 
+    if (ui_callback) {
+        ui_callback(cmd, *m_swapchain_image_views[image_index], m_swapchain_extent);
+    }
+
     dst_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     dst_barrier.dstAccessMask = vk::AccessFlagBits::eNone;
     dst_barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -968,8 +981,8 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
     return {};
 }
 
-auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index)
-    -> Result<void> {
+auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index,
+                                          const UiRenderCallback& ui_callback) -> Result<void> {
     VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
 
     vk::CommandBufferBeginInfo begin_info{};
@@ -1009,6 +1022,10 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
 
     cmd.beginRendering(rendering_info);
     cmd.endRendering();
+
+    if (ui_callback) {
+        ui_callback(cmd, *m_swapchain_image_views[image_index], m_swapchain_extent);
+    }
 
     barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     barrier.dstAccessMask = vk::AccessFlagBits::eNone;
@@ -1116,6 +1133,10 @@ auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
         return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
+    ++m_frame_count;
+    check_pending_chain_swap();
+    cleanup_deferred_destroys();
+
     m_last_frame_number = frame.frame_number;
 
     auto vk_format = static_cast<vk::Format>(frame.format);
@@ -1153,6 +1174,191 @@ auto VulkanBackend::handle_resize() -> Result<void> {
     }
 
     return recreate_swapchain();
+}
+
+auto VulkanBackend::render_frame_with_ui(const CaptureFrame& frame,
+                                         const UiRenderCallback& ui_callback) -> Result<bool> {
+    GOGGLES_PROFILE_FUNCTION();
+
+    if (!m_device) {
+        return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
+    }
+
+    ++m_frame_count;
+    check_pending_chain_swap();
+    cleanup_deferred_destroys();
+
+    m_last_frame_number = frame.frame_number;
+
+    auto vk_format = static_cast<vk::Format>(frame.format);
+    if (m_source_format != vk_format) {
+        GOGGLES_TRY(recreate_swapchain_for_format(vk_format));
+        m_source_format = vk_format;
+    }
+
+    GOGGLES_TRY(import_dmabuf(frame));
+
+    uint32_t image_index = GOGGLES_TRY(acquire_next_image());
+
+    GOGGLES_TRY(
+        record_render_commands(m_frames[m_current_frame].command_buffer, image_index, ui_callback));
+
+    return submit_and_present(image_index);
+}
+
+auto VulkanBackend::render_clear_with_ui(const UiRenderCallback& ui_callback) -> Result<bool> {
+    GOGGLES_PROFILE_FUNCTION();
+
+    if (!m_device) {
+        return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
+    }
+
+    ++m_frame_count;
+    check_pending_chain_swap();
+    cleanup_deferred_destroys();
+
+    uint32_t image_index = GOGGLES_TRY(acquire_next_image());
+
+    GOGGLES_TRY(
+        record_clear_commands(m_frames[m_current_frame].command_buffer, image_index, ui_callback));
+
+    return submit_and_present(image_index);
+}
+
+auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_path) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
+
+    if (!m_device || !m_filter_chain) {
+        return make_error<void>(ErrorCode::vulkan_init_failed, "Backend not initialized");
+    }
+
+    if (m_pending_chain_ready.load(std::memory_order_acquire)) {
+        GOGGLES_LOG_WARN("Shader reload already pending, ignoring request");
+        return {};
+    }
+
+    if (m_pending_load_future.valid() &&
+        m_pending_load_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+        GOGGLES_LOG_WARN("Shader compilation in progress, ignoring request");
+        return {};
+    }
+
+    m_pending_preset_path = preset_path;
+
+    // Capture values needed by the async task
+    auto swapchain_format = m_swapchain_format;
+    auto shader_dir = m_shader_dir;
+    auto device = *m_device;
+    auto physical_device = m_physical_device;
+    auto command_pool = *m_command_pool;
+    auto graphics_queue = m_graphics_queue;
+
+    m_pending_load_future = util::JobSystem::submit([=, this]() -> Result<void> {
+        GOGGLES_PROFILE_SCOPE("AsyncShaderLoad");
+
+        auto runtime_result = ShaderRuntime::create();
+        if (!runtime_result) {
+            GOGGLES_LOG_ERROR("Failed to create shader runtime: {}",
+                              runtime_result.error().message);
+            return make_error<void>(runtime_result.error().code, runtime_result.error().message);
+        }
+
+        VulkanContext vk_ctx{
+            .device = device,
+            .physical_device = physical_device,
+            .command_pool = command_pool,
+            .graphics_queue = graphics_queue,
+        };
+
+        auto chain_result = FilterChain::create(vk_ctx, swapchain_format, MAX_FRAMES_IN_FLIGHT,
+                                                *runtime_result.value(), shader_dir);
+        if (!chain_result) {
+            GOGGLES_LOG_ERROR("Failed to create filter chain: {}", chain_result.error().message);
+            return make_error<void>(chain_result.error().code, chain_result.error().message);
+        }
+
+        if (!preset_path.empty()) {
+            auto load_result = chain_result.value()->load_preset(preset_path);
+            if (!load_result) {
+                GOGGLES_LOG_ERROR("Failed to load preset '{}': {}", preset_path.string(),
+                                  load_result.error().message);
+                return make_error<void>(load_result.error().code, load_result.error().message);
+            }
+        }
+
+        m_pending_shader_runtime = std::move(runtime_result.value());
+        m_pending_filter_chain = std::move(chain_result.value());
+        m_pending_chain_ready.store(true, std::memory_order_release);
+
+        GOGGLES_LOG_INFO("Shader preset compiled: {}",
+                         preset_path.empty() ? "(passthrough)" : preset_path.string());
+        return {};
+    });
+
+    return {};
+}
+
+void VulkanBackend::check_pending_chain_swap() {
+    if (!m_pending_chain_ready.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    // Check if async task completed successfully
+    if (m_pending_load_future.valid()) {
+        auto result = m_pending_load_future.get();
+        if (!result) {
+            GOGGLES_LOG_ERROR("Async shader load failed: {}", result.error().message);
+            m_pending_filter_chain.reset();
+            m_pending_shader_runtime.reset();
+            m_pending_chain_ready.store(false, std::memory_order_release);
+            return;
+        }
+    }
+
+    // Queue old chain for deferred destruction
+    if (m_deferred_count < MAX_DEFERRED_DESTROYS) {
+        m_deferred_destroys[m_deferred_count++] = {
+            .chain = std::move(m_filter_chain),
+            .runtime = std::move(m_shader_runtime),
+            .destroy_after_frame = m_frame_count + MAX_FRAMES_IN_FLIGHT + 1,
+        };
+    } else {
+        GOGGLES_LOG_WARN("Deferred destroy queue full, destroying immediately");
+        m_filter_chain.reset();
+        m_shader_runtime.reset();
+    }
+
+    // Swap in the new chain
+    m_filter_chain = std::move(m_pending_filter_chain);
+    m_shader_runtime = std::move(m_pending_shader_runtime);
+    m_preset_path = m_pending_preset_path;
+    m_pending_chain_ready.store(false, std::memory_order_release);
+    m_chain_swapped.store(true, std::memory_order_release);
+
+    GOGGLES_LOG_INFO("Shader chain swapped: {}",
+                     m_preset_path.empty() ? "(passthrough)" : m_preset_path.string());
+}
+
+void VulkanBackend::cleanup_deferred_destroys() {
+    size_t write_idx = 0;
+    for (size_t i = 0; i < m_deferred_count; ++i) {
+        if (m_frame_count >= m_deferred_destroys[i].destroy_after_frame) {
+            GOGGLES_LOG_DEBUG("Destroying deferred filter chain");
+            m_deferred_destroys[i] = {};
+        } else {
+            if (write_idx != i) {
+                m_deferred_destroys[write_idx] = std::move(m_deferred_destroys[i]);
+            }
+            ++write_idx;
+        }
+    }
+    m_deferred_count = write_idx;
+}
+
+void VulkanBackend::set_shader_enabled(bool enabled) {
+    if (m_filter_chain) {
+        m_filter_chain->set_bypass(!enabled);
+    }
 }
 
 } // namespace goggles::render
