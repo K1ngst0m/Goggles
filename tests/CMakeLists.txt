@@ -89,18 +89,84 @@ endif()
 
 # graphical test applications
 
-add_executable(goggles_input_test
-    input/goggles_input_test.cpp
+add_executable(goggles_manual_input_x11
+    input/manual_input_x11.cpp
 )
 
-target_link_libraries(goggles_input_test PRIVATE
+target_link_libraries(goggles_manual_input_x11 PRIVATE
     SDL3::SDL3
     Vulkan::Vulkan
     goggles_util
 )
 
-target_compile_definitions(goggles_input_test PRIVATE
+target_compile_definitions(goggles_manual_input_x11 PRIVATE
     GOGGLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
-goggles_enable_sanitizers(goggles_input_test)
+goggles_enable_sanitizers(goggles_manual_input_x11)
+
+add_executable(goggles_manual_input_wayland
+    input/manual_input_wayland.cpp
+)
+
+target_link_libraries(goggles_manual_input_wayland PRIVATE
+    SDL3::SDL3
+    Vulkan::Vulkan
+    goggles_util
+)
+
+target_compile_definitions(goggles_manual_input_wayland PRIVATE
+    GOGGLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+goggles_enable_sanitizers(goggles_manual_input_wayland)
+
+# Integration test: validates CompositorServer -> XWayland -> SDL (X11) input forwarding
+add_executable(goggles_auto_input_forwarding_x11
+    input/auto_input_forwarding_x11.cpp
+)
+
+target_link_libraries(goggles_auto_input_forwarding_x11 PRIVATE
+    SDL3::SDL3
+    goggles_input
+)
+
+goggles_enable_sanitizers(goggles_auto_input_forwarding_x11)
+
+add_test(NAME goggles_auto_input_forwarding_x11
+         COMMAND goggles_auto_input_forwarding_x11)
+
+set_property(TEST goggles_auto_input_forwarding_x11
+    PROPERTY WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# LeakSanitizer currently reports leaks inside Mesa/EGL during SDL startup in this
+# headless XWayland integration test. Disable leak detection for this test so it
+# can run under the ASAN preset without failing on external-library leaks.
+set_property(TEST goggles_auto_input_forwarding_x11
+    PROPERTY ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+# Integration test: validates CompositorServer -> Wayland -> SDL (Wayland) input forwarding
+add_executable(goggles_auto_input_forwarding_wayland
+    input/auto_input_forwarding_wayland.cpp
+)
+
+target_link_libraries(goggles_auto_input_forwarding_wayland PRIVATE
+    SDL3::SDL3
+    goggles_input
+)
+
+goggles_enable_sanitizers(goggles_auto_input_forwarding_wayland)
+
+add_test(NAME goggles_auto_input_forwarding_wayland
+         COMMAND goggles_auto_input_forwarding_wayland)
+
+set_property(TEST goggles_auto_input_forwarding_wayland
+    PROPERTY WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+set_property(TEST goggles_auto_input_forwarding_wayland
+    PROPERTY ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+if(DEFINED ENV{CI} OR DEFINED ENV{GITHUB_ACTIONS})
+    set_property(TEST goggles_auto_input_forwarding_x11 PROPERTY DISABLED TRUE)
+    set_property(TEST goggles_auto_input_forwarding_wayland PROPERTY DISABLED TRUE)
+endif()

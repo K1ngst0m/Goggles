@@ -20,7 +20,8 @@ public:
     [[nodiscard]] auto forward_mouse_button(const SDL_MouseButtonEvent& event) -> Result<void>;
     [[nodiscard]] auto forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void>;
     [[nodiscard]] auto forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> Result<void>;
-    [[nodiscard]] auto display_number() const -> int;
+    [[nodiscard]] auto x11_display() const -> std::string;
+    [[nodiscard]] auto wayland_display() const -> std::string;
 
 private:
     InputForwarder();

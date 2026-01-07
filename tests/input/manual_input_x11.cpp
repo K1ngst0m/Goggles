@@ -95,7 +95,7 @@ static auto init_vulkan() -> VulkanInstance {
 
     VkApplicationInfo app_info = {};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    app_info.pApplicationName = "Goggles Input Test";
+    app_info.pApplicationName = "Goggles Input Test (X11)";
     app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     app_info.apiVersion = VK_API_VERSION_1_0;
 
@@ -105,7 +105,7 @@ static auto init_vulkan() -> VulkanInstance {
 
     VkResult result = vkCreateInstance(&create_info, nullptr, &vk.handle);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "[goggles_input_test] vkCreateInstance failed: %d\n", result);
+        fprintf(stderr, "[goggles_manual_input_x11] vkCreateInstance failed: %d\n", result);
         std::exit(1);
     }
 
@@ -118,25 +118,26 @@ static auto init_sdl() -> SDLContext {
     setenv("SDL_VIDEODRIVER", "x11", 1);
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        fprintf(stderr, "[goggles_input_test] SDL_Init failed: %s\n", SDL_GetError());
+        fprintf(stderr, "[goggles_manual_input_x11] SDL_Init failed: %s\n", SDL_GetError());
         std::exit(1);
     }
 
     sdl.initialized = true;
 
-    sdl.window = SDL_CreateWindow("Goggles Input Test", 1280, 720, SDL_WINDOW_RESIZABLE);
+    sdl.window = SDL_CreateWindow("Goggles Manual Input (X11)", 1280, 720, SDL_WINDOW_RESIZABLE);
     if (!sdl.window) {
-        fprintf(stderr, "[goggles_input_test] SDL_CreateWindow failed: %s\n", SDL_GetError());
+        fprintf(stderr, "[goggles_manual_input_x11] SDL_CreateWindow failed: %s\n", SDL_GetError());
         std::exit(1);
     }
 
     sdl.renderer = SDL_CreateRenderer(sdl.window, nullptr);
     if (!sdl.renderer) {
-        fprintf(stderr, "[goggles_input_test] SDL_CreateRenderer failed: %s\n", SDL_GetError());
+        fprintf(stderr, "[goggles_manual_input_x11] SDL_CreateRenderer failed: %s\n",
+                SDL_GetError());
         std::exit(1);
     }
 
-    SDL_SetRenderDrawColor(sdl.renderer, 0, 0, 0, 255);
+    SDL_SetRenderDrawColor(sdl.renderer, 40, 0, 0, 255);
     SDL_RenderClear(sdl.renderer);
     SDL_RenderPresent(sdl.renderer);
 
@@ -180,8 +181,9 @@ static void print_event_info(const SDL_Event& event) {
 static void run_input_loop([[maybe_unused]] SDL_Window* window,
                            [[maybe_unused]] SDL_Renderer* renderer) {
     printf("===========================================\n");
-    printf("Goggles Input Test\n");
-    printf("Press keys or move mouse to test input forwarding\n");
+    printf("Goggles Manual Input (X11 Backend)\n");
+    printf("Tests input forwarding via XWayland\n");
+    printf("Press keys or move mouse to test\n");
     printf("Press ESC to quit\n");
     printf("===========================================\n");
     fflush(stdout);
@@ -207,19 +209,22 @@ static void run_input_loop([[maybe_unused]] SDL_Window* window,
 }
 
 auto main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) -> int {
-    fprintf(stderr, "[goggles_input_test] Starting\n");
+    fprintf(stderr, "[goggles_manual_input_x11] Starting (X11 backend)\n");
 
     auto vk = init_vulkan();
-    fprintf(stderr, "[goggles_input_test] Vulkan instance created (layer loaded)\n");
+    fprintf(stderr, "[goggles_manual_input_x11] Vulkan instance created\n");
 
     auto sdl = init_sdl();
-    fprintf(stderr, "[goggles_input_test] SDL initialized\n");
+    fprintf(stderr, "[goggles_manual_input_x11] SDL initialized\n");
 
     const char* display = getenv("DISPLAY");
-    fprintf(stderr, "[goggles_input_test] DISPLAY='%s'\n", display ? display : "NULL");
+    const char* wayland_display = getenv("WAYLAND_DISPLAY");
+    fprintf(stderr, "[goggles_manual_input_x11] DISPLAY='%s'\n", display ? display : "NULL");
+    fprintf(stderr, "[goggles_manual_input_x11] WAYLAND_DISPLAY='%s'\n",
+            wayland_display ? wayland_display : "NULL");
 
     run_input_loop(sdl.window, sdl.renderer);
 
-    fprintf(stderr, "[goggles_input_test] Exiting\n");
+    fprintf(stderr, "[goggles_manual_input_x11] Exiting\n");
     return 0;
 }
