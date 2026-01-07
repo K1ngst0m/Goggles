@@ -315,6 +315,12 @@ void ImGuiLayer::draw_parameter_controls() {
         }
 
         for (auto& param : m_state.parameters) {
+            // Skip dummy/separator parameters (min == max)
+            if (param.info.min_value >= param.info.max_value) {
+                ImGui::TextDisabled("%s", param.info.description.c_str());
+                continue;
+            }
+
             float old_value = param.current_value;
             if (ImGui::SliderFloat(param.info.name.c_str(), &param.current_value,
                                    param.info.min_value, param.info.max_value, "%.3f")) {

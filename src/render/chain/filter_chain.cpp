@@ -517,7 +517,7 @@ auto FilterChain::get_all_parameters() const -> std::vector<ParameterInfo> {
 void FilterChain::set_parameter(const std::string& name, float value) {
     for (auto& pass : m_passes) {
         pass->set_parameter_override(name, value);
-        static_cast<void>(pass->update_ubo_parameters());
+        GOGGLES_MUST(pass->update_ubo_parameters());
     }
 }
 
@@ -526,7 +526,7 @@ void FilterChain::reset_parameter(const std::string& name) {
         for (const auto& param : pass->parameters()) {
             if (param.name == name) {
                 pass->set_parameter_override(name, param.default_value);
-                static_cast<void>(pass->update_ubo_parameters());
+                GOGGLES_MUST(pass->update_ubo_parameters());
                 break;
             }
         }
@@ -536,7 +536,7 @@ void FilterChain::reset_parameter(const std::string& name) {
 void FilterChain::clear_parameter_overrides() {
     for (auto& pass : m_passes) {
         pass->clear_parameter_overrides();
-        static_cast<void>(pass->update_ubo_parameters());
+        GOGGLES_MUST(pass->update_ubo_parameters());
     }
 }
 
