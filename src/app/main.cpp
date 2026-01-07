@@ -393,8 +393,8 @@ static auto run_app(int argc, char** argv) -> int {
                              input_forwarder_result.error().message);
         } else {
             input_forwarder = std::move(input_forwarder_result.value());
-            int display_num = input_forwarder->display_number();
-            GOGGLES_LOG_INFO("Input forwarding initialized on DISPLAY :{}", display_num);
+            GOGGLES_LOG_INFO("Input forwarding: DISPLAY={} WAYLAND_DISPLAY={}",
+                             input_forwarder->x11_display(), input_forwarder->wayland_display());
         }
     } else {
         GOGGLES_LOG_INFO("Input forwarding disabled");

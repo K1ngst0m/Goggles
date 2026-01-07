@@ -71,12 +71,8 @@ set_target_properties(imgui PROPERTIES
 target_link_libraries(imgui INTERFACE SDL3::SDL3 Vulkan::Vulkan)
 
 # Input forwarding dependencies (X11/XWayland for input injection)
+# Input forwarding dependencies (wlroots + XWayland for seat-based input delivery)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(wlroots REQUIRED IMPORTED_TARGET wlroots-0.18)
 pkg_check_modules(wayland-server REQUIRED IMPORTED_TARGET wayland-server)
 pkg_check_modules(xkbcommon REQUIRED IMPORTED_TARGET xkbcommon)
-find_package(X11 REQUIRED)
-
-if(NOT X11_XTest_FOUND)
-    message(FATAL_ERROR "libXtst (XTest extension) is required for input forwarding")
-endif()

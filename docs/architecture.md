@@ -8,33 +8,37 @@ High-level overview of the Goggles codebase for maintainers. Start here to under
 
 Goggles captures frames from Vulkan applications and applies real-time shader effects before display.
 
-```text
-┌───────────────────────────────────────┐
-│         Target Application            │
-│  ┌─────────────┐                      │
-│  │  Swapchain  │                      │
-│  └──────┬──────┘                      │
-│         │ vkQueuePresentKHR           │
-│         ▼                             │
-│  ┌─────────────────────────────────┐  │
-│  │  Capture Layer                  │  │
-│  │  Export DMA-BUF                 │  │
-│  └──────────────┬──────────────────┘  │
-└─────────────────┼─────────────────────┘
-                  │
-                  │ Unix Socket + Semaphore Sync
-                  ▼
-┌─────────────────┼─────────────────────┐
-│  Goggles Viewer │                     │
-│  ┌──────────────┴──────────────────┐  │
-│  │  CaptureReceiver                │  │
-│  └──────────────┬──────────────────┘  │
-│                 ▼                     │
-│  ┌─────────────────────────────────┐  │
-│  │  VulkanBackend                  │  │
-│  │  Import DMA-BUF ──► FilterChain │  │
-│  └─────────────────────────────────┘  │
-└───────────────────────────────────────┘
+```mermaid
+flowchart TB
+  %% High-level overview: frame path + optional input forwarding.
+
+  subgraph AppProc["Target application process"]
+    App["Target application (Vulkan)"]
+    Layer["Vulkan capture layer"]
+    App --> Layer
+  end
+
+  subgraph IPC["Cross-process transport"]
+    Socket["Unix socket (frames + metadata)"]
+    Sync["Sync handles (frame_ready / frame_consumed)"]
+  end
+
+  subgraph Goggles["Goggles viewer process"]
+    Receiver["CaptureReceiver"]
+    Render["VulkanBackend"]
+    Chain["FilterChain"]
+    Window["Viewer window (SDL + swapchain)"]
+    Receiver --> Render --> Chain --> Window
+  end
+
+  Layer --> Socket --> Receiver
+  Layer --> Sync --> Render
+
+  subgraph Input["Optional: input forwarding"]
+    Window -->|"keyboard/mouse"| Forwarder["InputForwarder"]
+    Forwarder --> Nested["Nested compositor (wlroots headless + XWayland)"]
+    App <-->|"client connection"| Nested
+  end
 ```
 
 ## Module Overview
@@ -90,7 +94,7 @@ See: [threading.md](threading.md)
 
 ```
 1. Target app renders frame
-   └─▶ vkQueuePresentKHR intercepted by capture layer
+   └─▶ present call intercepted by capture layer
 
 2. Capture layer exports swapchain image as DMA-BUF
    └─▶ Sends fd + metadata over Unix socket

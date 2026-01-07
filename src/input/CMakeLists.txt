@@ -2,12 +2,12 @@
 
 add_library(goggles_input STATIC
     input_forwarder.cpp
-    xwayland_server.cpp
+    compositor_server.cpp
 )
 
 target_include_directories(goggles_input
     PUBLIC ${CMAKE_SOURCE_DIR}/src
-    PRIVATE ${X11_INCLUDE_DIR}
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}  # For xdg-shell-protocol.h
 )
 
 target_link_libraries(goggles_input
@@ -15,8 +15,6 @@ target_link_libraries(goggles_input
     PRIVATE PkgConfig::wlroots
             PkgConfig::wayland-server
             PkgConfig::xkbcommon
-            ${X11_LIBRARIES}
-            ${X11_XTest_LIB}
 )
 
 # wlroots requires this define to access unstable API

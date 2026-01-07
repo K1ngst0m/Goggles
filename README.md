@@ -12,57 +12,8 @@ A hooking-based frame streaming tool with support for RetroArch shader processin
 | :---: |
 | ![showcase_crt_royale](showcase-crt-royale.png)|
 
-Goggles captures Vulkan application frames and shares them across processes using Linux DMA-BUF with DRM format modifiers and cross-process GPU synchronization. 
-
-```text
-┌───────────────────────────────────────┐
-│         Target Application            │
-│  ┌─────────────┐                      │
-│  │  Swapchain  │                      │
-│  └──────┬──────┘                      │
-│         │ vkQueuePresentKHR           │
-│         ▼                             │
-│  ┌─────────────────────────────────┐  │
-│  │  Capture Layer                  │  │
-│  │  Export DMA-BUF                 │  │
-│  └──────────────┬──────────────────┘  │
-└─────────────────┼─────────────────────┘
-                  │
-                  │ Unix Socket + Semaphore Sync
-                  ▼
-┌─────────────────┼─────────────────────┐
-│  Goggles Viewer │                     │
-│  ┌──────────────┴──────────────────┐  │
-│  │  CaptureReceiver                │  │
-│  └──────────────┬──────────────────┘  │
-│                 ▼                     │
-│  ┌─────────────────────────────────┐  │
-│  │  VulkanBackend                  │  │
-│  │  Import DMA-BUF ──► FilterChain │  │
-│  └─────────────────────────────────┘  │
-└───────────────────────────────────────┘
-```
-
-The filter chain transforms captured DMA-BUF images through a series of shader passes before presenting to the display. It supports RetroArch `.slangp` preset files which define multi-pass post-processing effects (CRT simulation, scanlines, etc.).
-
-```text
-                        Shader Preset (.slangp)
-                                 │
-  ┌──────────────────────────────┼─────────────────────────────┐
-  │                              ▼                             │
-  │  ┌────────┐     ┌────────┐     ┌────────┐     ┌────────┐   │
-  │  │Original│────▶│ Pass 0 │────▶│ Pass 1 │────▶│ Pass N │   │
-  │  └────────┘  ┌─▶└────────┘  ┌─▶└────────┘  ┌─▶└────────┘   │
-  │       │      │       │      │       │      │       │       │
-  │       └──────┴───────┴──────┴───────┴──────┘       ▼       │
-  │                                                  Output    │
-  └────────────────────────────────────────────────────────────┘
-                                                       │
-                                                       ▼
-                                             ┌───────────────────┐
-                                             │ Goggles Swapchain │
-                                             └───────────────────┘
-```
+Goggles captures Vulkan frames, runs a shader filter chain, and can optionally forward input via a
+nested compositor.
 
 ## Shader Preset Compatibility Database
 
@@ -76,7 +27,7 @@ The filter chain transforms captured DMA-BUF images through a series of shader p
 | **crt/crt-royale.slangp** | Pass | Partial | `Mesa: RDNA3` | Full verification pending after the shader parameter controlling support. |
 | **crt/zfast-crt.slangp** | Pass | Verified | `Mesa: RDNA3`, `Proprietary: Ada` |  |
 
-*More reports pending validation...*
+- [Shader Compatibility Report](docs/shader_compatibility.md) - Full compilation status for all RetroArch presets
 
 ## Build
 
@@ -102,8 +53,9 @@ target together. The preset defaults to `debug`.
 
 ```bash
 # Quick smoke test (build + manifests as needed)
-pixi run start vkcube --wsi xcb              # preset=debug
-pixi run start -p release vkcube --wsi xcb   # preset=release
+pixi run start -- vkcube --wsi xcb              # preset=debug
+pixi run start -p release -- vkcube --wsi xcb   # preset=release
+pixi run start --input-forwarding -- vkcube --wsi xcb
 
 # Standard flow
 pixi run build                   # 1. Build the project
@@ -131,6 +83,8 @@ See [docs/architecture.md](docs/architecture.md) for project architecture and de
 Topic-specific docs:
 - [Threading](docs/threading.md) - Concurrency model and job system
 - [DMA-BUF Sharing](docs/dmabuf_sharing.md) - Cross-process GPU buffer sharing
+- [Input Forwarding](docs/input_forwarding.md) - Forward keyboard/mouse to captured apps
+- [Wayland + wlroots Input Primer](docs/wayland_wlroots_input_primer.md) - Concepts + code map for maintainers
 - [Filter Chain](docs/filter_chain_workflow.md) - RetroArch shader pipeline
 - [RetroArch](docs/retroarch.md) - Shader preset compatibility
 - [Shader Compatibility Report](docs/shader_compatibility.md) - Full compilation status for all RetroArch presets

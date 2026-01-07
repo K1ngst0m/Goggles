@@ -14,7 +14,8 @@ backend = "vulkan_layer"
 # =============================================================================
 [input]
 # Enable input forwarding into the captured app.
-# When enabled, Goggles starts a nested XWayland server and forwards SDL events via XTest.
+# When enabled, Goggles starts a nested wlroots compositor (headless Wayland + XWayland) and
+# forwards SDL events via `wlr_seat_*` so both Wayland and X11 clients receive real input events.
 # Default is false to match pre-input-forwarding behavior.
 forwarding = false
 

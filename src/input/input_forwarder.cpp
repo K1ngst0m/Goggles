@@ -1,142 +1,144 @@
 #include "input_forwarder.hpp"
 
-#include "xwayland_server.hpp"
+#include "compositor_server.hpp"
 
-#include <X11/Xlib.h>
-#include <X11/extensions/XTest.h>
-#include <array>
-#include <cstdio>
+#include <linux/input-event-codes.h>
+#include <util/logging.hpp>
 
 namespace goggles::input {
 
 namespace {
 
-// https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
 auto sdl_to_linux_keycode(SDL_Scancode scancode) -> uint32_t {
     switch (scancode) {
     case SDL_SCANCODE_A:
-        return 30;
+        return KEY_A;
     case SDL_SCANCODE_B:
-        return 48;
+        return KEY_B;
     case SDL_SCANCODE_C:
-        return 46;
+        return KEY_C;
     case SDL_SCANCODE_D:
-        return 32;
+        return KEY_D;
     case SDL_SCANCODE_E:
-        return 18;
+        return KEY_E;
     case SDL_SCANCODE_F:
-        return 33;
+        return KEY_F;
     case SDL_SCANCODE_G:
-        return 34;
+        return KEY_G;
     case SDL_SCANCODE_H:
-        return 35;
+        return KEY_H;
     case SDL_SCANCODE_I:
-        return 23;
+        return KEY_I;
     case SDL_SCANCODE_J:
-        return 36;
+        return KEY_J;
     case SDL_SCANCODE_K:
-        return 37;
+        return KEY_K;
     case SDL_SCANCODE_L:
-        return 38;
+        return KEY_L;
     case SDL_SCANCODE_M:
-        return 50;
+        return KEY_M;
     case SDL_SCANCODE_N:
-        return 49;
+        return KEY_N;
     case SDL_SCANCODE_O:
-        return 24;
+        return KEY_O;
     case SDL_SCANCODE_P:
-        return 25;
+        return KEY_P;
     case SDL_SCANCODE_Q:
-        return 16;
+        return KEY_Q;
     case SDL_SCANCODE_R:
-        return 19;
+        return KEY_R;
     case SDL_SCANCODE_S:
-        return 31;
+        return KEY_S;
     case SDL_SCANCODE_T:
-        return 20;
+        return KEY_T;
     case SDL_SCANCODE_U:
-        return 22;
+        return KEY_U;
     case SDL_SCANCODE_V:
-        return 47;
+        return KEY_V;
     case SDL_SCANCODE_W:
-        return 17;
+        return KEY_W;
     case SDL_SCANCODE_X:
-        return 45;
+        return KEY_X;
     case SDL_SCANCODE_Y:
-        return 21;
+        return KEY_Y;
     case SDL_SCANCODE_Z:
-        return 44;
+        return KEY_Z;
     case SDL_SCANCODE_1:
-        return 2;
+        return KEY_1;
     case SDL_SCANCODE_2:
-        return 3;
+        return KEY_2;
     case SDL_SCANCODE_3:
-        return 4;
+        return KEY_3;
     case SDL_SCANCODE_4:
-        return 5;
+        return KEY_4;
     case SDL_SCANCODE_5:
-        return 6;
+        return KEY_5;
     case SDL_SCANCODE_6:
-        return 7;
+        return KEY_6;
     case SDL_SCANCODE_7:
-        return 8;
+        return KEY_7;
     case SDL_SCANCODE_8:
-        return 9;
+        return KEY_8;
     case SDL_SCANCODE_9:
-        return 10;
+        return KEY_9;
     case SDL_SCANCODE_0:
-        return 11;
+        return KEY_0;
     case SDL_SCANCODE_ESCAPE:
-        return 1;
+        return KEY_ESC;
     case SDL_SCANCODE_RETURN:
-        return 28;
+        return KEY_ENTER;
     case SDL_SCANCODE_BACKSPACE:
-        return 14;
+        return KEY_BACKSPACE;
     case SDL_SCANCODE_TAB:
-        return 15;
+        return KEY_TAB;
     case SDL_SCANCODE_SPACE:
-        return 57;
+        return KEY_SPACE;
     case SDL_SCANCODE_UP:
-        return 103;
+        return KEY_UP;
     case SDL_SCANCODE_DOWN:
-        return 108;
+        return KEY_DOWN;
     case SDL_SCANCODE_LEFT:
-        return 105;
+        return KEY_LEFT;
     case SDL_SCANCODE_RIGHT:
-        return 106;
+        return KEY_RIGHT;
     case SDL_SCANCODE_LCTRL:
-        return 29;
+        return KEY_LEFTCTRL;
     case SDL_SCANCODE_LSHIFT:
-        return 42;
+        return KEY_LEFTSHIFT;
     case SDL_SCANCODE_LALT:
-        return 56;
+        return KEY_LEFTALT;
     case SDL_SCANCODE_RCTRL:
-        return 97;
+        return KEY_RIGHTCTRL;
     case SDL_SCANCODE_RSHIFT:
-        return 54;
+        return KEY_RIGHTSHIFT;
     case SDL_SCANCODE_RALT:
-        return 100;
+        return KEY_RIGHTALT;
     default:
         return 0;
     }
 }
 
-// X11 keycodes are Linux keycodes + 8 (X11 protocol offset)
-auto linux_to_x11_keycode(uint32_t linux_keycode) -> uint32_t {
-    return linux_keycode + 8;
+auto sdl_to_linux_button(uint8_t sdl_button) -> uint32_t {
+    switch (sdl_button) {
+    case SDL_BUTTON_LEFT:
+        return BTN_LEFT;
+    case SDL_BUTTON_MIDDLE:
+        return BTN_MIDDLE;
+    case SDL_BUTTON_RIGHT:
+        return BTN_RIGHT;
+    case SDL_BUTTON_X1:
+        return BTN_SIDE;
+    case SDL_BUTTON_X2:
+        return BTN_EXTRA;
+    default:
+        return 0;
+    }
 }
 
 } // anonymous namespace
 
 struct InputForwarder::Impl {
-    XWaylandServer server;
-    Display* x11_display = nullptr;
-
-    ~Impl() {
-        if (x11_display) {
-            XCloseDisplay(x11_display);
-        }
-    }
+    CompositorServer server;
 };
 
 InputForwarder::InputForwarder() : m_impl(std::make_unique<Impl>()) {}
@@ -151,103 +153,72 @@ auto InputForwarder::create() -> ResultPtr<InputForwarder> {
         return make_result_ptr_error<InputForwarder>(start_result.error().code,
                                                      start_result.error().message);
     }
-    int display_num = *start_result;
-
-    std::array<char, 32> display_str{};
-    std::snprintf(display_str.data(), display_str.size(), ":%d", display_num);
-
-    forwarder->m_impl->x11_display = XOpenDisplay(display_str.data());
-    if (!forwarder->m_impl->x11_display) {
-        forwarder->m_impl->server.stop();
-        return make_result_ptr_error<InputForwarder>(
-            ErrorCode::input_init_failed,
-            "Failed to connect to XWayland server on DISPLAY " + std::string(display_str.data()));
-    }
 
     return make_result_ptr(std::move(forwarder));
 }
 
 auto InputForwarder::forward_key(const SDL_KeyboardEvent& event) -> Result<void> {
-    if (!m_impl->x11_display) {
-        return {};
-    }
-
     uint32_t linux_keycode = sdl_to_linux_keycode(event.scancode);
     if (linux_keycode == 0) {
+        GOGGLES_LOG_TRACE("Unmapped key scancode={}, down={}", static_cast<int>(event.scancode),
+                          event.down);
         return {};
     }
 
-    uint32_t x11_keycode = linux_to_x11_keycode(linux_keycode);
-    Bool is_press = event.down ? True : False;
-
-    XTestFakeKeyEvent(m_impl->x11_display, x11_keycode, is_press, CurrentTime);
-    XFlush(m_impl->x11_display);
-
+    GOGGLES_LOG_TRACE("Forward key scancode={}, down={} -> linux_keycode={}",
+                      static_cast<int>(event.scancode), event.down, linux_keycode);
+    if (!m_impl->server.inject_key(linux_keycode, event.down)) {
+        GOGGLES_LOG_DEBUG("Input queue full, dropped key event");
+    }
     return {};
 }
 
 auto InputForwarder::forward_mouse_button(const SDL_MouseButtonEvent& event) -> Result<void> {
-    if (!m_impl->x11_display) {
+    uint32_t button = sdl_to_linux_button(event.button);
+    if (button == 0) {
         return {};
     }
 
-    // SDL and X11 use same button mapping: 1=left, 2=middle, 3=right
-    unsigned int x11_button = event.button;
-    Bool is_press = event.down ? True : False;
-
-    XTestFakeButtonEvent(m_impl->x11_display, x11_button, is_press, CurrentTime);
-    XFlush(m_impl->x11_display);
-
+    if (!m_impl->server.inject_pointer_button(button, event.down)) {
+        GOGGLES_LOG_DEBUG("Input queue full, dropped button event");
+    }
     return {};
 }
 
 auto InputForwarder::forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void> {
-    if (!m_impl->x11_display) {
-        return {};
+    // TODO: coordinate mapping for different window sizes
+    if (!m_impl->server.inject_pointer_motion(static_cast<double>(event.x),
+                                              static_cast<double>(event.y))) {
+        GOGGLES_LOG_DEBUG("Input queue full, dropped motion event");
     }
-
-    int x = static_cast<int>(event.x);
-    int y = static_cast<int>(event.y);
-
-    // TODO: Coordinate mapping not implemented
-    // This causes mouse position to be incorrect when viewer and target windows have different
-    // sizes Needs: scale factor calculation, window dimension tracking, coordinate space
-    // transformation See OpenSpec for coordinate mapping task
-    XTestFakeMotionEvent(m_impl->x11_display, 0, x, y, CurrentTime);
-    XFlush(m_impl->x11_display);
-
     return {};
 }
 
 auto InputForwarder::forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> Result<void> {
-    if (!m_impl->x11_display) {
-        return {};
+    if (event.y != 0) {
+        // SDL: positive = up, Wayland: positive = down; negate to match
+        double value = static_cast<double>(-event.y) * 15.0;
+        if (!m_impl->server.inject_pointer_axis(value, false)) {
+            GOGGLES_LOG_DEBUG("Input queue full, dropped axis event");
+        }
     }
 
-    // X11 protocol: wheel = button events: 4=up, 5=down, 6=left, 7=right
-    unsigned int button = 0;
-
-    if (event.y > 0) {
-        button = 4;
-    } else if (event.y < 0) {
-        button = 5;
-    } else if (event.x > 0) {
-        button = 7;
-    } else if (event.x < 0) {
-        button = 6;
-    } else {
-        return {};
+    if (event.x != 0) {
+        double value = static_cast<double>(event.x) * 15.0;
+        if (!m_impl->server.inject_pointer_axis(value, true)) {
+            GOGGLES_LOG_DEBUG("Input queue full, dropped axis event");
+        }
     }
-
-    XTestFakeButtonEvent(m_impl->x11_display, button, True, CurrentTime);
-    XTestFakeButtonEvent(m_impl->x11_display, button, False, CurrentTime);
-    XFlush(m_impl->x11_display);
 
     return {};
 }
 
-auto InputForwarder::display_number() const -> int {
-    return m_impl->server.display_number();
+auto InputForwarder::x11_display() const -> std::string {
+    return m_impl->server.x11_display();
+}
+
+auto InputForwarder::wayland_display() const -> std::string {
+    return m_impl->server.wayland_display();
 }
 
 } // namespace goggles::input
