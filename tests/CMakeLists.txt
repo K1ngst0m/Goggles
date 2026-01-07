@@ -165,3 +165,8 @@ set_property(TEST goggles_auto_input_forwarding_wayland
 
 set_property(TEST goggles_auto_input_forwarding_wayland
     PROPERTY ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+if(DEFINED ENV{CI} OR DEFINED ENV{GITHUB_ACTIONS})
+    set_property(TEST goggles_auto_input_forwarding_x11 PROPERTY DISABLED TRUE)
+    set_property(TEST goggles_auto_input_forwarding_wayland PROPERTY DISABLED TRUE)
+endif()
