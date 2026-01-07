@@ -6,23 +6,17 @@ This document describes the filter chain architecture for applying RetroArch sha
 
 The filter chain transforms captured DMA-BUF images through a series of shader passes before presenting to the display. It supports RetroArch `.slangp` preset files which define multi-pass post-processing effects (CRT simulation, scanlines, etc.).
 
-```text
-                        Shader Preset (.slangp)
-                                 │
-  ┌──────────────────────────────┼──────────────────────────────┐
-  │                              ▼                              │
-  │  ┌────────┐     ┌────────┐     ┌────────┐     ┌────────┐   │
-  │  │Original│────▶│ Pass 0 │────▶│ Pass 1 │────▶│ Pass N │   │
-  │  └────────┘  ┌─▶└────────┘  ┌─▶└────────┘  ┌─▶└────────┘   │
-  │       │      │       │      │       │      │       │       │
-  │       └──────┴───────┴──────┴───────┴──────┘       ▼       │
-  │            (Original available to all passes)    Output    │
-  └─────────────────────────────────────────────────────────────┘
-                                                       │
-                                                       ▼
-                                             ┌───────────────────┐
-                                             │ Goggles Swapchain │
-                                             └───────────────────┘
+```mermaid
+flowchart LR
+  Preset["Shader preset (.slangp)"] --> Chain["FilterChain"]
+
+  Original["Original frame<br/>(imported image)"]
+  Chain --> P0["Pass 0"] --> P1["Pass 1"] --> PN["Pass N"] --> Out["OutputPass"] --> Swap["Viewer swapchain"]
+
+  %% Original texture is available to every pass (not just Pass 0).
+  Original -.-> P0
+  Original -.-> P1
+  Original -.-> PN
 ```
 
 ## Data Flow
@@ -121,22 +115,12 @@ Values are written at reflection-reported offsets, not hardcoded struct layout.
 
 ## Preset Lifecycle
 
-```
-load_shader_preset(path)
-    │
-    ▼
-PresetParser::load()           # Parse .slangp file
-    │
-    ▼
-RetroArchPreprocessor          # Resolve #include, extract parameters
-    │
-    ▼
-FilterPass::init_from_sources() # For each pass
-    │
-    ├──▶ ShaderRuntime::compile()  # Slang → SPIR-V
-    ├──▶ SlangReflect::reflect()   # Extract bindings, push constants
-    ├──▶ create_pipeline()         # Vulkan graphics pipeline
-    └──▶ create_descriptor_resources()
+```mermaid
+flowchart TB
+  Load["Load preset path"] --> Parse["Parse .slangp"]
+  Parse --> Resolve["Resolve includes + parameters"]
+  Resolve --> Build["Build passes (compile + pipeline resources)"]
+  Build --> Ready["Ready to record frames"]
 ```
 
 ## Format Handling

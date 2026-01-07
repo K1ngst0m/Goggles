@@ -16,36 +16,22 @@ When capturing frames from a Vulkan application via the layer, the app typically
 
 ### Component Overview
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│  Goggles Application (viewer window on host display)            │
-│                                                                  │
-│  ┌──────────────┐        ┌────────────────────────────┐         │
-│  │ SDL Window   │───────▶│ CompositorServer           │         │
-│  │ (key/mouse)  │        │ (headless wlroots)         │         │
-│  └──────────────┘        └───────────┬────────────────┘         │
-│                                      │                           │
-│                          ┌───────────▼───────────┐               │
-│                          │  wlr_seat_*_notify_*  │               │
-│                          │  (unified input API)  │               │
-│                          └───────────┬───────────┘               │
-│                                      │                           │
-│               ┌──────────────────────┼─────────────────────┐     │
-│               │                      │                     │     │
-│               ▼                      ▼                     │     │
-│  ┌────────────────────┐  ┌────────────────────┐           │     │
-│  │ Native Wayland     │  │ XWayland           │           │     │
-│  │ (wl_keyboard,      │  │ (wlr_xwm translates│           │     │
-│  │  wl_pointer)       │  │  to X11 events)    │           │     │
-│  └─────────┬──────────┘  └─────────┬──────────┘           │     │
-└────────────┼───────────────────────┼──────────────────────┘     │
-             │                       │                             │
-             ▼                       ▼                             │
-┌────────────────────────┐  ┌────────────────────┐                 │
-│ Wayland App            │  │ X11 App (Wine, etc)│                 │
-│ (WAYLAND_DISPLAY=      │  │ (DISPLAY=:N)       │                 │
-│  wayland-N)            │  │                    │                 │
-└────────────────────────┘  └────────────────────┘
+```mermaid
+flowchart TB
+  subgraph Goggles["Goggles viewer process"]
+    SDL["Viewer window (SDL)"]
+    Forwarder["InputForwarder"]
+    Wlroots["CompositorServer<br/>(wlroots headless + XWayland)"]
+    SDL -->|"keyboard/mouse"| Forwarder --> Wlroots
+  end
+
+  subgraph Clients["Captured app connects to the nested session"]
+    WaylandClient["Wayland client<br/>(WAYLAND_DISPLAY=goggles-N)"]
+    X11Client["X11 client (XWayland)<br/>(DISPLAY=:N)"]
+  end
+
+  Wlroots -->|"Wayland socket"| WaylandClient
+  Wlroots -->|"XWayland display"| X11Client
 ```
 
 ### Unified Input via wlr_seat
@@ -62,7 +48,7 @@ For XWayland apps, `wlr_xwayland_set_seat()` connects the seat to XWayland. The 
 
 The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 
-- Creates Wayland sockets (wayland-N, DISPLAY :N) without requiring GPU/display
+- Creates Wayland sockets (`goggles-N`, `DISPLAY=:N`) without requiring GPU/display
 - Doesn't conflict with the host compositor (Wayland/X11)
 - Provides the minimal infrastructure for XWayland and native Wayland clients
 - No actual composition or rendering happens
@@ -72,7 +58,7 @@ The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 ### Initialization
 
 1. **Goggles starts** → `goggles::input::InputForwarder::create()`
-2. **Create headless Wayland compositor** on wayland-N socket
+2. **Create headless Wayland compositor** on `goggles-N` socket
 3. **Create seat** with keyboard and pointer capabilities
 4. **Start XWayland** on DISPLAY=:N
 5. **Connect XWayland to seat** via `wlr_xwayland_set_seat()`
@@ -110,37 +96,18 @@ The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 
 ## Thread Model
 
-```
-Main Thread                    Compositor Thread
------------                    -----------------
-SDL event loop                 wl_display_run() event loop
-    │                               │
-    ▼                               │
-forward_key()                       │
-    │                               │
-    ▼                               │
-inject_key()                        │
-    │                               │
-    ▼                               │
-SPSCQueue.push() + eventfd write    │
-                                    ▼
-                            wl_event_loop wakes
-                                    │
-                                    ▼
-                            process_input_events()
-                                    │
-                                    ▼
-                            wlr_seat_keyboard_notify_key()
-                                    │
-                     ┌──────────────┴──────────────┐
-                     ▼                             ▼
-              [Wayland surface]             [XWayland surface]
-                     │                             │
-                     ▼                             ▼
-              wl_keyboard.key           wlr_xwm → X11 KeyPress
-                     │                             │
-                     ▼                             ▼
-              Wayland Client                  X11 App
+```mermaid
+sequenceDiagram
+  participant Main as Main thread (SDL)
+  participant Comp as Compositor thread (wl_display_run)
+
+  Main->>Main: Poll SDL events
+  Main->>Main: Translate to InputEvent
+  Main->>Comp: Enqueue event (SPSC queue)
+  Main->>Comp: Wake via eventfd
+
+  Comp->>Comp: Drain queue
+  Comp->>Comp: Deliver to focused surface
 ```
 
 ## Limitations
@@ -171,19 +138,16 @@ Wayland keyboard focus is granted after the client acks the initial xdg-shell co
 
 ## Dependencies
 
-All dependencies are system packages (not managed by CPM):
+Dependencies are provided by the Pixi environment (see `pixi.toml`) and a pinned wlroots package:
 
 | Library | Version | Purpose |
 |---------|---------|---------|
 | wlroots | 0.18 | Wayland compositor library (headless backend, seat, XWayland) |
-| wayland-server | Latest | Wayland protocol server implementation |
-| xkbcommon | Latest | Keyboard keymap handling for Wayland |
+| wayland-server | Pixi | Wayland protocol server implementation |
+| xkbcommon | Pixi | Keyboard keymap handling for Wayland |
+| SDL3 | Pixi | Viewer window input source |
 
-SDL3 is already in the project via CPM.
-
-**Removed dependencies** (vs. previous XTest implementation):
-- libX11
-- libXtst
+**Note:** We do not inject via XTest/uinput. X11 clients receive input via wlroots' XWayland integration (`wlr_xwm` translating seat events to X11 events).
 
 ## Environment Variables
 
@@ -243,6 +207,7 @@ DISPLAY=:1 xdotool search --class test
 
 ## See Also
 
+- [Wayland + wlroots Input Primer](wayland_wlroots_input_primer.md) - Concepts and code map for maintainers
 - [Architecture](architecture.md) - System overview
 - [DMA-BUF Sharing](dmabuf_sharing.md) - How frames are captured
 - [Project Policies](project_policies.md) - Coding standards

@@ -6,17 +6,19 @@ Explains Goggles' compatibility with RetroArch shader presets (`.slangp` files),
 
 ## Overview
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌──────────┐
-│   Captured  │────▶│ FilterPass  │────▶│ FilterPass  │────▶│ Swapchain│
-│   Frame     │     │  (Pass 0)   │     │  (Pass N)   │     │  Output  │
-└─────────────┘     └─────────────┘     └─────────────┘     └──────────┘
-      │                   │                   │
-      │                   ▼                   ▼
-      │            ┌─────────────┐     ┌─────────────┐
-      │            │ Framebuffer │     │   (final)   │
-      └──────────▶ │     (0)     │     │  no buffer  │
-     "Original"    └─────────────┘     └─────────────┘
+```mermaid
+flowchart TB
+  Frame["Captured frame<br/>(imported image)"] --> Chain["FilterChain"]
+
+  subgraph Passes["Filter passes (0..N)"]
+    direction TB
+    P0["FilterPass 0"] --> P1["FilterPass 1"] --> PMore["…"] --> PN["FilterPass N"]
+  end
+
+  Chain --> Passes --> Out["OutputPass"] --> Swap["Viewer swapchain"]
+
+  Inputs["Textures available to passes:<br/>Source, Original,<br/>OriginalHistory#, PassOutput#, PassFeedback#"]
+  Inputs -.-> Passes
 ```
 
 A filter chain is a sequence of shader passes. Each pass:
@@ -71,8 +73,11 @@ void main() { /* fragment shader */ }
 | `OriginalSize` | vec4 | Original captured frame size |
 | `FrameCount` | uint | Frame counter for animations |
 | `MVP` | mat4 | Model-View-Projection matrix |
-| `Source` | sampler2D | Previous pass output (binding 2) |
-| `Original` | sampler2D | Original captured frame (binding 3) |
+| `Source` | sampler2D | Previous pass output (or original for pass 0) |
+| `Original` | sampler2D | Original captured frame |
+| `OriginalHistory#` | sampler2D | Previous frames (e.g., `OriginalHistory1` is 1 frame ago) |
+| `PassOutput#` | sampler2D | Output of pass `#` (for referencing earlier passes) |
+| `PassFeedback#` | sampler2D | Feedback buffer for pass `#` (previous frame output) |
 
 ## Key Components
 
@@ -95,35 +100,21 @@ void main() { /* fragment shader */ }
 - Avoids maintaining two compiler integrations
 
 **Processing Pipeline:**
-```
-.slang file
-    → Include resolution
-    → Pragma extraction (#pragma parameter, name, format)
-    → Stage splitting (#pragma stage vertex/fragment)
-    → Slang GLSL compile → SPIR-V
-    → Slang reflection → bindings, push constants
+```mermaid
+flowchart TB
+  Slang[".slang shader"] --> Includes["Resolve includes"]
+  Includes --> Pragmas["Extract pragmas (parameters, metadata)"]
+  Pragmas --> Split["Split vertex/fragment stages"]
+  Split --> Compile["Compile (Slang) → SPIR-V"]
+  Compile --> Reflect["Reflect → resource + push-constant layout"]
 ```
 
 ## Usage Example
 
-```cpp
-#include <render/chain/filter_chain.hpp>
-
-// Load preset
-auto chain = FilterChain::create(device, "crt/zfast-crt.slangp");
-
-// In render loop
-chain->set_original(captured_image_view, width, height);
-chain->record(cmd, swapchain_view, viewport_extent, frame_index);
-```
-
-See tests in `tests/render/chain/` for detailed usage patterns.
+See `docs/filter_chain_workflow.md` for the render-loop flow and how presets map to passes.
 
 ## Current Limitations
 
-- History buffers (`OriginalHistory#`) not yet implemented
-- Feedback buffers (`PassFeedback#`) not yet implemented
-- LUT textures (`User#`) not yet implemented
 - No runtime parameter adjustment UI
 
 ## References
