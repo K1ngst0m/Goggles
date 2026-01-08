@@ -5,6 +5,7 @@
 #include "vk_dispatch.hpp"
 #include "wsi_virtual.hpp"
 
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <util/profiling.hpp>
@@ -164,10 +165,16 @@ VkResult VKAPI_CALL Goggles_EnumeratePhysicalDevices(VkInstance instance,
         VkPhysicalDeviceProperties2 props2{};
         props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
         props2.pNext = &id_props;
-        data->funcs.GetPhysicalDeviceProperties2(dev, &props2);
 
-        char uuid_hex[37];
-        std::snprintf(uuid_hex, sizeof(uuid_hex),
+        if (data->funcs.GetPhysicalDeviceProperties2) {
+            data->funcs.GetPhysicalDeviceProperties2(dev, &props2);
+        } else {
+            data->funcs.GetPhysicalDeviceProperties(dev, &props2.properties);
+            std::memset(id_props.deviceUUID, 0, sizeof(id_props.deviceUUID));
+        }
+
+        std::array<char, 37> uuid_hex{};
+        std::snprintf(uuid_hex.data(), uuid_hex.size(),
                       "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
                       id_props.deviceUUID[0], id_props.deviceUUID[1], id_props.deviceUUID[2],
                       id_props.deviceUUID[3], id_props.deviceUUID[4], id_props.deviceUUID[5],
@@ -176,9 +183,10 @@ VkResult VKAPI_CALL Goggles_EnumeratePhysicalDevices(VkInstance instance,
                       id_props.deviceUUID[12], id_props.deviceUUID[13], id_props.deviceUUID[14],
                       id_props.deviceUUID[15]);
 
-        if (std::strcmp(uuid_hex, gpu_uuid_str) == 0) {
+        if (std::strcmp(uuid_hex.data(), gpu_uuid_str) == 0) {
             matched_device = dev;
-            LAYER_DEBUG("Matched GPU by UUID: %s (%s)", uuid_hex, props2.properties.deviceName);
+            LAYER_DEBUG("Matched GPU by UUID: %s (%s)", uuid_hex.data(),
+                        props2.properties.deviceName);
             break;
         }
     }

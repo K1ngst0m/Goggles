@@ -313,13 +313,13 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
     m_graphics_queue_family = best->graphics_family;
     m_gpu_index = best->index;
 
-    vk::PhysicalDeviceIDProperties id_props;
-    vk::PhysicalDeviceProperties2 props2;
+    vk::PhysicalDeviceIDProperties id_props{};
+    vk::PhysicalDeviceProperties2 props2{};
     props2.pNext = &id_props;
     m_physical_device.getProperties2(&props2);
 
-    char uuid_hex[37];
-    std::snprintf(uuid_hex, sizeof(uuid_hex),
+    std::array<char, 37> uuid_hex{};
+    std::snprintf(uuid_hex.data(), uuid_hex.size(),
                   "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
                   id_props.deviceUUID[0], id_props.deviceUUID[1], id_props.deviceUUID[2],
                   id_props.deviceUUID[3], id_props.deviceUUID[4], id_props.deviceUUID[5],
@@ -327,7 +327,7 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
                   id_props.deviceUUID[9], id_props.deviceUUID[10], id_props.deviceUUID[11],
                   id_props.deviceUUID[12], id_props.deviceUUID[13], id_props.deviceUUID[14],
                   id_props.deviceUUID[15]);
-    m_gpu_uuid = uuid_hex;
+    m_gpu_uuid = uuid_hex.data();
 
     GOGGLES_LOG_INFO("Selected GPU: {} (UUID: {})", props2.properties.deviceName.data(),
                      m_gpu_uuid);
