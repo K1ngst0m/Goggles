@@ -87,24 +87,20 @@ Application::~Application() {
 
 void Application::shutdown() {
     if (m_ui_controller) {
-        m_ui_controller->shutdown();
         m_ui_controller.reset();
     }
 
     if (m_capture_receiver) {
-        m_capture_receiver->shutdown();
         m_capture_receiver.reset();
     }
 
     m_input_forwarder.reset();
 
     if (m_vulkan_backend) {
-        m_vulkan_backend->shutdown();
         m_vulkan_backend.reset();
     }
 
     if (m_platform) {
-        m_platform->shutdown();
         m_platform.reset();
     }
 }

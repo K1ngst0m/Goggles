@@ -20,10 +20,9 @@ auto SdlPlatform::create(const CreateInfo& create_info) -> ResultPtr<SdlPlatform
     }
     platform->m_sdl_initialized = true;
 
-    SDL_WindowFlags window_flags = static_cast<SDL_WindowFlags>(
-        (create_info.enable_vulkan ? SDL_WINDOW_VULKAN : 0) |
-        (create_info.resizable    ? SDL_WINDOW_RESIZABLE : 0)
-    );
+    auto window_flags =
+        static_cast<SDL_WindowFlags>((create_info.enable_vulkan ? SDL_WINDOW_VULKAN : 0) |
+                                     (create_info.resizable ? SDL_WINDOW_RESIZABLE : 0));
 
     auto* window = SDL_CreateWindow(create_info.title.c_str(), create_info.width,
                                     create_info.height, window_flags);
