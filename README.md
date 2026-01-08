@@ -48,25 +48,27 @@ build/<preset>/
 
 ## Usage
 
-Use `pixi run start [-p preset] [--] <app> [app_args...]` to launch the viewer and
-target together. The preset defaults to `debug`.
+Use `pixi run start [-p preset] [goggles_args...] -- <app> [app_args...]` to launch the viewer and
+target together. The `--` separator is required so app arguments (like `--config`) don't get parsed
+as Goggles options. The preset defaults to `debug`.
 
 ```bash
-# Quick smoke test (build + manifests as needed)
-pixi run start -- vkcube --wsi xcb              # preset=debug
-pixi run start -p release -- vkcube --wsi xcb   # preset=release
-pixi run start --input-forwarding -- vkcube --wsi xcb
+# Quick smoke tests (build + manifests as needed)
+pixi run start -- vkcube --wsi xcb                            # preset=debug
+pixi run start -p release -- vkcube --wsi xcb                 # preset=release
+pixi run start -p profile --app-width 480 --app-height 240 -- vkcube --wsi xcb
 
-# Standard flow
-pixi run build                   # 1. Build the project
-./build/debug/bin/goggles        # 2. Run goggles app (receiver)
-GOGGLES_CAPTURE=1 vkcube         # 3. Run target app with capture enabled
+# Viewer-only mode (manual target launch)
+pixi run dev                                 # 1. Build the project
+./build/debug/bin/goggles --detach           # 2. Run goggles viewer
+GOGGLES_CAPTURE=1 vkcube --wsi xcb           # 3. Run target app with capture enabled
 ```
 
-For Steam games, set launch options:
-```
-GOGGLES_CAPTURE=1 %command%
-```
+In default mode, Goggles exits when the target app exits. If the viewer window is closed early,
+Goggles terminates the launched target process.
+
+For Steam games, prefer a wrapper that launches the game through Goggles:
+`goggles -- %command%` (packaging support is planned).
 
 ### RetroArch Shaders
 
@@ -84,7 +86,6 @@ Topic-specific docs:
 - [Threading](docs/threading.md) - Concurrency model and job system
 - [DMA-BUF Sharing](docs/dmabuf_sharing.md) - Cross-process GPU buffer sharing
 - [Input Forwarding](docs/input_forwarding.md) - Forward keyboard/mouse to captured apps
-- [Wayland + wlroots Input Primer](docs/wayland_wlroots_input_primer.md) - Concepts + code map for maintainers
 - [Filter Chain](docs/filter_chain_workflow.md) - RetroArch shader pipeline
 - [RetroArch](docs/retroarch.md) - Shader preset compatibility
 - [Shader Compatibility Report](docs/shader_compatibility.md) - Full compilation status for all RetroArch presets

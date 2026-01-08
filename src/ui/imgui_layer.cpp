@@ -1,8 +1,10 @@
 #include "imgui_layer.hpp"
 
+#include <SDL3/SDL_video.h>
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
@@ -22,12 +24,54 @@ auto to_lower(std::string_view str) -> std::string {
     return result;
 }
 
+auto get_display_scale(SDL_Window* window) -> float {
+    if (window == nullptr) {
+        return 1.0F;
+    }
+    float scale = SDL_GetWindowDisplayScale(window);
+    if (scale <= 0.0F) {
+        return 1.0F;
+    }
+    return scale;
+}
+
+void rebuild_fonts(ImGuiIO& io, const std::filesystem::path& font_path, float size_pixels,
+                   float display_scale) {
+    io.Fonts->Clear();
+
+    ImFontConfig cfg{};
+    cfg.RasterizerDensity = 1.0F;
+
+    ImFont* font = nullptr;
+    const float rasterized_size_pixels = size_pixels * display_scale;
+    std::error_code ec;
+    if (!font_path.empty() && std::filesystem::exists(font_path, ec) && !ec) {
+        font =
+            io.Fonts->AddFontFromFileTTF(font_path.string().c_str(), rasterized_size_pixels, &cfg);
+        if (font == nullptr) {
+            GOGGLES_LOG_WARN("Failed to load ImGui font from '{}', falling back to default",
+                             font_path.string());
+        }
+    }
+
+    if (font == nullptr) {
+        ImFontConfig default_cfg = cfg;
+        default_cfg.SizePixels = rasterized_size_pixels;
+        font = io.Fonts->AddFontDefault(&default_cfg);
+    }
+
+    io.FontDefault = font;
+    io.FontGlobalScale = 1.0F / display_scale;
+}
+
 } // namespace
 
 auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> ResultPtr<ImGuiLayer> {
     auto layer = std::unique_ptr<ImGuiLayer>(new ImGuiLayer());
+    layer->m_window = window;
     layer->m_device = config.device;
     layer->m_swapchain_format = config.swapchain_format;
+    layer->m_font_path = std::filesystem::path("assets") / "fonts" / "RobotoMono-Regular.ttf";
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -36,6 +80,10 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     ImGui::StyleColorsDark();
+
+    float display_scale = get_display_scale(window);
+    layer->m_last_display_scale = display_scale;
+    rebuild_fonts(io, layer->m_font_path, layer->m_font_size_pixels, display_scale);
 
     if (!ImGui_ImplSDL3_InitForVulkan(window)) {
         return make_result_ptr_error<ImGuiLayer>(ErrorCode::vulkan_init_failed,
@@ -97,6 +145,10 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
                                                  "ImGui_ImplVulkan_Init failed");
     }
 
+    if (!ImGui_ImplVulkan_CreateFontsTexture()) {
+        GOGGLES_LOG_WARN("ImGui_ImplVulkan_CreateFontsTexture failed (UI may look wrong on HiDPI)");
+    }
+
     GOGGLES_LOG_INFO("ImGui layer initialized");
     return make_result_ptr(std::move(layer));
 }
@@ -128,6 +180,29 @@ void ImGuiLayer::process_event(const SDL_Event& event) {
 }
 
 void ImGuiLayer::begin_frame() {
+    if (m_window != nullptr) {
+        float display_scale = get_display_scale(m_window);
+        if (std::fabs(display_scale - m_last_display_scale) > 0.01F) {
+            auto wait_result = m_device.waitIdle();
+            if (wait_result != vk::Result::eSuccess) {
+                GOGGLES_LOG_WARN("waitIdle failed during ImGui DPI font rebuild: {}",
+                                 vk::to_string(wait_result));
+            }
+
+            auto& io = ImGui::GetIO();
+            rebuild_fonts(io, m_font_path, m_font_size_pixels, display_scale);
+
+            ImGui_ImplVulkan_DestroyFontsTexture();
+            if (!ImGui_ImplVulkan_CreateFontsTexture()) {
+                GOGGLES_LOG_WARN(
+                    "ImGui_ImplVulkan_CreateFontsTexture failed after DPI change (scale={})",
+                    display_scale);
+            }
+
+            m_last_display_scale = display_scale;
+        }
+    }
+
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();

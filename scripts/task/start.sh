@@ -36,24 +36,22 @@ fi
 usage() {
   cat <<'EOF'
 Usage:
+  pixi run start [options] --detach
   pixi run start [options] [goggles_args...] -- <app> [app_args...]
-  pixi run start [options] [goggles_args...] <path/to/app> [app_args...]
 
 Options:
-  -p, --preset <name>     Build preset (default: debug)
-  --goggles-env VAR=val   Set environment variable for goggles (repeatable)
-  --app-env VAR=val       Set environment variable for app (repeatable)
-  -h, --help              Show this help
+  -p, --preset <name>   Build preset (default: debug)
+  -h, --help            Show this help
 
-Note: '--' is optional. Use it to explicitly separate goggles args from the app.
+Notes:
+  - Default mode (no --detach) launches the target app with capture + input forwarding enabled.
+  - Use '--detach' to start viewer-only mode (manual app launch).
+  - When launching an app, '--' is required to separate Goggles args from app args.
 
 Examples:
-  pixi run start vkcube
   pixi run start -- vkcube
-  pixi run start -p release vkcube
-  pixi run start --input-forwarding vkcube
-  pixi run start ./build/debug/bin/app
-  pixi run start --goggles-env DISPLAY=:0 --app-env DISPLAY=:1 vkcube
+  pixi run start -p profile --app-width 480 --app-height 240 -- vkcube
+  pixi run start --detach
 EOF
 }
 
@@ -82,10 +80,7 @@ validate_preset() {
 }
 
 PRESET="$DEFAULT_PRESET"
-seen_separator=false
 GOGGLES_ARGS=()
-GOGGLES_ENV=()
-APP_ENV=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -107,74 +102,17 @@ while [[ $# -gt 0 ]]; do
       PRESET="${1#*=}"
       shift
       ;;
-    --app-env)
-      [[ $# -ge 2 ]] || die "--app-env requires VAR=value"
-      [[ "$2" == *=* && "${2%%=*}" != "" ]] || die "--app-env: invalid format '$2', expected VAR=value"
-      APP_ENV+=("$2")
-      shift 2
-      ;;
-    --app-env=*)
-      [[ "${1#*=}" == *=* && "${1#*=}" != =* ]] || die "--app-env: invalid format '${1#*=}', expected VAR=value"
-      APP_ENV+=("${1#*=}")
-      shift
-      ;;
-    --goggles-env)
-      [[ $# -ge 2 ]] || die "--goggles-env requires VAR=value"
-      [[ "$2" == *=* && "${2%%=*}" != "" ]] || die "--goggles-env: invalid format '$2', expected VAR=value"
-      GOGGLES_ENV+=("$2")
-      shift 2
-      ;;
-    --goggles-env=*)
-      [[ "${1#*=}" == *=* && "${1#*=}" != =* ]] || die "--goggles-env: invalid format '${1#*=}', expected VAR=value"
-      GOGGLES_ENV+=("${1#*=}")
-      shift
-      ;;
-    --)
-      seen_separator=true
-      shift
-      break
-      ;;
     *)
+      GOGGLES_ARGS=("$@")
       break
       ;;
   esac
 done
 
-# Collect goggles args until -- or path
-if ! $seen_separator; then
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --)
-        seen_separator=true
-        shift
-        break
-        ;;
-      *)
-        # If it looks like an app path (contains /), stop collecting viewer args.
-        if [[ "$1" == */* ]]; then
-          break
-        fi
-        GOGGLES_ARGS+=("$1")
-        shift
-        ;;
-    esac
-  done
-fi
-
-# If no -- and no path app, last collected arg is the app
-if [[ $# -eq 0 ]] && ! $seen_separator && [[ ${#GOGGLES_ARGS[@]} -gt 0 ]]; then
-  set -- "${GOGGLES_ARGS[-1]}"
-  unset 'GOGGLES_ARGS[-1]'
-fi
-
-if [[ $# -eq 0 ]]; then
+if [[ ${#GOGGLES_ARGS[@]} -eq 0 ]]; then
   usage
-  die "missing <app> argument"
+  die "missing goggles arguments and/or target app command"
 fi
-
-APP="$1"
-shift
-APP_ARGS=("$@")
 
 validate_preset "$PRESET"
 
@@ -186,27 +124,4 @@ pixi run dev -p "$PRESET"
 VIEWER_BIN="$REPO_ROOT/build/$PRESET/bin/goggles"
 [[ -x "$VIEWER_BIN" ]] || die "viewer binary not found at $VIEWER_BIN"
 
-cleanup() {
-  if [[ -n "${VIEWER_PID:-}" ]] && kill -0 "$VIEWER_PID" 2>/dev/null; then
-    kill "$VIEWER_PID" 2>/dev/null || true
-    wait "$VIEWER_PID" 2>/dev/null || true
-  fi
-}
-
-trap cleanup EXIT INT TERM
-
-if [[ ${#GOGGLES_ARGS[@]} -gt 0 ]]; then
-  env "${GOGGLES_ENV[@]}" "$VIEWER_BIN" "${GOGGLES_ARGS[@]}" &
-else
-  env "${GOGGLES_ENV[@]}" "$VIEWER_BIN" &
-fi
-VIEWER_PID=$!
-
-sleep 1
-
-set +e
-env GOGGLES_CAPTURE=1 "${APP_ENV[@]}" "$APP" "${APP_ARGS[@]}"
-APP_STATUS=$?
-set -e
-
-exit "$APP_STATUS"
+exec "$VIEWER_BIN" "${GOGGLES_ARGS[@]}"
