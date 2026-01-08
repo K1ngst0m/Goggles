@@ -17,12 +17,12 @@
 
 namespace goggles::app {
 
-static auto to_sdl_event(EventRef event) -> const SDL_Event& {
-    return *static_cast<const SDL_Event*>(event.ptr);
+static auto to_sdl_event(EventRef event) -> const SDL_Event* {
+    return event.ptr ? static_cast<const SDL_Event*>(event.ptr) : nullptr;
 }
 
 static auto to_sdl_window(WindowHandle window) -> SDL_Window* {
-    return static_cast<SDL_Window*>(window.ptr);
+    return window.ptr ? static_cast<SDL_Window*>(window.ptr) : nullptr;
 }
 
 auto Application::create(const Config& config, bool enable_input_forwarding)
@@ -38,9 +38,15 @@ auto Application::create(const Config& config, bool enable_input_forwarding)
     }));
     GOGGLES_LOG_INFO("SDL3 initialized");
 
-    app->m_vulkan_backend = GOGGLES_TRY(render::VulkanBackend::create(
-        to_sdl_window(app->m_platform->window()), config.render.enable_validation, "shaders",
-        config.render.scale_mode, config.render.integer_scale));
+    auto* sdl_window = to_sdl_window(app->m_platform->window());
+    if (sdl_window == nullptr) {
+        return make_result_ptr_error<Application>(
+            ErrorCode::unknown_error, "SDL window handle is null (WindowHandle.ptr is null)");
+    }
+
+    app->m_vulkan_backend = GOGGLES_TRY(
+        render::VulkanBackend::create(sdl_window, config.render.enable_validation, "shaders",
+                                      config.render.scale_mode, config.render.integer_scale));
 
     app->m_vulkan_backend->load_shader_preset(config.shader.preset);
 
@@ -122,23 +128,27 @@ void Application::pump_events() {
 }
 
 void Application::handle_event(EventRef event) {
-    const auto& sdl_event = to_sdl_event(event);
+    const auto* sdl_event = to_sdl_event(event);
+    if (sdl_event == nullptr) {
+        GOGGLES_LOG_ERROR("handle_event: null SDL_Event (EventRef.ptr is null)");
+        return;
+    }
     if (m_ui_controller) {
         m_ui_controller->process_event(event);
     }
 
-    if (sdl_event.type == SDL_EVENT_QUIT) {
+    if (sdl_event->type == SDL_EVENT_QUIT) {
         GOGGLES_LOG_INFO("Quit event received");
         m_running = false;
         return;
     }
 
-    if (sdl_event.type == SDL_EVENT_WINDOW_RESIZED) {
+    if (sdl_event->type == SDL_EVENT_WINDOW_RESIZED) {
         m_window_resized = true;
         return;
     }
 
-    if (sdl_event.type == SDL_EVENT_KEY_DOWN && sdl_event.key.key == SDLK_F1 && m_ui_controller &&
+    if (sdl_event->type == SDL_EVENT_KEY_DOWN && sdl_event->key.key == SDLK_F1 && m_ui_controller &&
         m_ui_controller->enabled()) {
         m_ui_controller->toggle_visibility();
         return;
@@ -152,33 +162,37 @@ void Application::forward_input_event(EventRef event) {
         return;
     }
 
-    const auto& sdl_event = to_sdl_event(event);
+    const auto* sdl_event = to_sdl_event(event);
+    if (sdl_event == nullptr) {
+        GOGGLES_LOG_ERROR("forward_input_event: null SDL_Event (EventRef.ptr is null)");
+        return;
+    }
 
     Result<void> result;
     bool capture_kb = m_ui_controller && m_ui_controller->wants_capture_keyboard();
     bool capture_mouse = m_ui_controller && m_ui_controller->wants_capture_mouse();
 
-    switch (sdl_event.type) {
+    switch (sdl_event->type) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP:
         if (!capture_kb) {
-            result = m_input_forwarder->forward_key(sdl_event.key);
+            result = m_input_forwarder->forward_key(sdl_event->key);
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP:
         if (!capture_mouse) {
-            result = m_input_forwarder->forward_mouse_button(sdl_event.button);
+            result = m_input_forwarder->forward_mouse_button(sdl_event->button);
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
         if (!capture_mouse) {
-            result = m_input_forwarder->forward_mouse_motion(sdl_event.motion);
+            result = m_input_forwarder->forward_mouse_motion(sdl_event->motion);
         }
         break;
     case SDL_EVENT_MOUSE_WHEEL:
         if (!capture_mouse) {
-            result = m_input_forwarder->forward_mouse_wheel(sdl_event.wheel);
+            result = m_input_forwarder->forward_mouse_wheel(sdl_event->wheel);
         }
         break;
     default:

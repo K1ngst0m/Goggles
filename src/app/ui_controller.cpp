@@ -18,11 +18,11 @@
 namespace goggles::app {
 
 static auto to_sdl_window(app::WindowHandle window) -> SDL_Window* {
-    return static_cast<SDL_Window*>(window.ptr);
+    return window.ptr ? static_cast<SDL_Window*>(window.ptr) : nullptr;
 }
 
-static auto to_sdl_event(app::EventRef event) -> const SDL_Event& {
-    return *static_cast<const SDL_Event*>(event.ptr);
+static auto to_sdl_event(app::EventRef event) -> const SDL_Event* {
+    return event.ptr ? static_cast<const SDL_Event*>(event.ptr) : nullptr;
 }
 
 static auto scan_presets(const std::filesystem::path& dir) -> std::vector<std::filesystem::path> {
@@ -75,6 +75,10 @@ auto UiController::create(app::WindowHandle window, render::VulkanBackend& vulka
     auto controller = std::unique_ptr<UiController>(new UiController());
 
     auto* sdl_window = to_sdl_window(window);
+    if (sdl_window == nullptr) {
+        GOGGLES_LOG_WARN("ImGui disabled: null SDL_Window (WindowHandle.ptr is null)");
+        return make_result_ptr(std::move(controller));
+    }
 
     ui::ImGuiConfig imgui_config{
         .instance = vulkan_backend.instance(),
@@ -135,7 +139,10 @@ auto UiController::enabled() const -> bool {
 
 void UiController::process_event(app::EventRef event) {
     if (m_imgui_layer) {
-        m_imgui_layer->process_event(to_sdl_event(event));
+        auto* sdl_event = to_sdl_event(event);
+        if (sdl_event != nullptr) {
+            m_imgui_layer->process_event(*sdl_event);
+        }
     }
 }
 
