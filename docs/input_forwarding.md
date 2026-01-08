@@ -158,6 +158,9 @@ Dependencies are provided by the Pixi environment (see `pixi.toml`) and a pinned
 | `DISPLAY` | `:1` | Connect X11 app to XWayland (printed by Goggles on startup) |
 | `WAYLAND_DISPLAY` | `goggles-0` | Connect Wayland app to nested compositor (printed by Goggles on startup) |
 
+**Preferred:** Launch the target app through Goggles (default mode). Goggles will start the nested
+compositor and set both `DISPLAY` and `WAYLAND_DISPLAY` for the target process automatically.
+
 For X11 apps (including Wine):
 ```bash
 WAYLAND_DISPLAY= DISPLAY=:1 ./my_x11_app
@@ -173,17 +176,9 @@ WAYLAND_DISPLAY=goggles-0 ./my_wayland_app
 ### Manual Test
 
 ```bash
-# Terminal 1: Start Goggles
-./build/debug/bin/goggles --input-forwarding
-
-# Terminal 2: Start test app inside the nested session
-# Replace :1 / wayland-1 with values printed by Goggles
-
-# For X11 backend test:
-WAYLAND_DISPLAY= DISPLAY=:1 GOGGLES_CAPTURE=1 ./build/debug/tests/goggles_manual_input_x11
-
-# For Wayland backend test:
-WAYLAND_DISPLAY=goggles-0 GOGGLES_CAPTURE=1 ./build/debug/tests/goggles_manual_input_wayland
+# Launch test apps through Goggles (default mode sets DISPLAY/WAYLAND_DISPLAY automatically).
+./build/debug/bin/goggles -- ./build/debug/tests/goggles_manual_input_x11
+./build/debug/bin/goggles -- ./build/debug/tests/goggles_manual_input_wayland
 
 # Focus Goggles window, press keys/move mouse
 # test_app terminal should show input events

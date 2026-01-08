@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <util/error.hpp>
 
 namespace goggles {
@@ -43,6 +44,8 @@ public:
     void tick_frame();
 
     [[nodiscard]] auto is_running() const -> bool { return m_running; }
+    [[nodiscard]] auto x11_display() const -> std::string;
+    [[nodiscard]] auto wayland_display() const -> std::string;
 
 private:
     Application() = default;

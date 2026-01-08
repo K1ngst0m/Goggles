@@ -109,6 +109,20 @@ void Application::run() {
     }
 }
 
+auto Application::x11_display() const -> std::string {
+    if (!m_input_forwarder) {
+        return "";
+    }
+    return m_input_forwarder->x11_display();
+}
+
+auto Application::wayland_display() const -> std::string {
+    if (!m_input_forwarder) {
+        return "";
+    }
+    return m_input_forwarder->wayland_display();
+}
+
 void Application::pump_events() {
     SDL_Event event;
     {

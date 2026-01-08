@@ -1,17 +1,155 @@
 #include "application.hpp"
 #include "cli.hpp"
 
+#include <SDL3/SDL.h>
+#include <cerrno>
+#include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
+#include <spawn.h>
+#include <string>
+#include <string_view>
+#include <sys/wait.h>
+#include <thread>
+#include <unistd.h>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/logging.hpp>
+#include <vector>
+
+static auto spawn_target_app(const std::vector<std::string>& command,
+                             const std::string& x11_display, const std::string& wayland_display,
+                             uint32_t app_width, uint32_t app_height) -> goggles::Result<pid_t> {
+    if (command.empty()) {
+        return goggles::make_error<pid_t>(goggles::ErrorCode::invalid_config,
+                                          "missing target app command");
+    }
+
+    if (x11_display.empty() || wayland_display.empty()) {
+        return goggles::make_error<pid_t>(goggles::ErrorCode::input_init_failed,
+                                          "input forwarding display information unavailable");
+    }
+
+    auto is_override_key = [](std::string_view key) -> bool {
+        return key == "GOGGLES_CAPTURE" || key == "GOGGLES_WSI_PROXY" || key == "DISPLAY" ||
+               key == "WAYLAND_DISPLAY" || key == "GOGGLES_WIDTH" || key == "GOGGLES_HEIGHT";
+    };
+
+    std::vector<std::string> env_overrides;
+    env_overrides.reserve(6);
+    env_overrides.emplace_back("GOGGLES_CAPTURE=1");
+    env_overrides.emplace_back("GOGGLES_WSI_PROXY=1");
+    env_overrides.emplace_back("DISPLAY=" + x11_display);
+    env_overrides.emplace_back("WAYLAND_DISPLAY=" + wayland_display);
+
+    if (app_width != 0 && app_height != 0) {
+        env_overrides.emplace_back("GOGGLES_WIDTH=" + std::to_string(app_width));
+        env_overrides.emplace_back("GOGGLES_HEIGHT=" + std::to_string(app_height));
+    }
+
+    std::vector<char*> envp;
+    envp.reserve(env_overrides.size() + 64);
+    for (auto& entry : env_overrides) {
+        envp.push_back(entry.data());
+    }
+    for (char** entry = environ; entry != nullptr && *entry != nullptr; ++entry) {
+        std::string_view kv{*entry};
+        const auto eq = kv.find('=');
+        if (eq != std::string_view::npos) {
+            const auto key = kv.substr(0, eq);
+            if (is_override_key(key)) {
+                continue;
+            }
+        }
+        envp.push_back(*entry);
+    }
+    envp.push_back(nullptr);
+
+    std::vector<char*> argv;
+    argv.reserve(command.size() + 1);
+    for (const auto& arg : command) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    pid_t pid = -1;
+    const int rc = posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), envp.data());
+    if (rc != 0) {
+        return goggles::make_error<pid_t>(goggles::ErrorCode::unknown_error,
+                                          std::string("posix_spawnp() failed: ") +
+                                              std::strerror(rc));
+    }
+
+    return pid;
+}
+
+static auto terminate_child(pid_t pid) -> void {
+    if (pid <= 0) {
+        return;
+    }
+
+    auto reap_with_timeout = [](pid_t child_pid, std::chrono::milliseconds timeout) -> bool {
+        constexpr auto POLL_INTERVAL = std::chrono::milliseconds(50);
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+
+        for (;;) {
+            int status = 0;
+            const pid_t result = waitpid(child_pid, &status, WNOHANG);
+            if (result == child_pid) {
+                return true;
+            }
+            if (result == 0) {
+                if (std::chrono::steady_clock::now() >= deadline) {
+                    return false;
+                }
+                std::this_thread::sleep_for(POLL_INTERVAL);
+                continue;
+            }
+
+            if (errno == EINTR) {
+                continue;
+            }
+            // Child already reaped or not our child anymore.
+            return true;
+        }
+    };
+
+    constexpr auto SIGTERM_TIMEOUT = std::chrono::seconds(3);
+    constexpr auto SIGKILL_TIMEOUT = std::chrono::seconds(2);
+
+    (void)kill(pid, SIGTERM);
+    if (reap_with_timeout(pid, SIGTERM_TIMEOUT)) {
+        return;
+    }
+
+    GOGGLES_LOG_WARN("Target app did not exit after SIGTERM; sending SIGKILL (pid={})", pid);
+    (void)kill(pid, SIGKILL);
+    if (reap_with_timeout(pid, SIGKILL_TIMEOUT)) {
+        return;
+    }
+
+    GOGGLES_LOG_ERROR("Target app did not exit after SIGKILL (pid={})", pid);
+}
+
+static auto push_quit_event() -> void {
+    SDL_Event quit{};
+    quit.type = SDL_EVENT_QUIT;
+    SDL_PushEvent(&quit);
+}
 
 static auto run_app(int argc, char** argv) -> int {
     auto cli_result = goggles::app::parse_cli(argc, argv);
     if (!cli_result) {
-        return (cli_result.error().code == goggles::ErrorCode::ok) ? EXIT_SUCCESS : EXIT_FAILURE;
+        if (cli_result.error().code == goggles::ErrorCode::ok) {
+            return EXIT_SUCCESS;
+        }
+
+        std::fprintf(stderr, "Error: %s\n", cli_result.error().message.c_str());
+        std::fprintf(stderr, "Run '%s --help' for usage.\n", argv[0]);
+        return EXIT_FAILURE;
     }
     const auto& cli_opts = cli_result.value();
 
@@ -61,9 +199,12 @@ static auto run_app(int argc, char** argv) -> int {
     GOGGLES_LOG_DEBUG("  Render integer_scale: {}", config.render.integer_scale);
     GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
 
-    bool enable_input_forwarding = config.input.forwarding;
-    if (cli_opts.enable_input_forwarding) {
-        enable_input_forwarding = true;
+    bool enable_input_forwarding = !cli_opts.detach;
+    if (!cli_opts.detach && !config.input.forwarding) {
+        GOGGLES_LOG_INFO("Default mode: input forwarding enabled");
+    }
+    if (cli_opts.detach && config.input.forwarding) {
+        GOGGLES_LOG_INFO("Detach mode: input forwarding disabled");
     }
 
     auto app_result = goggles::app::Application::create(config, enable_input_forwarding);
@@ -75,7 +216,57 @@ static auto run_app(int argc, char** argv) -> int {
 
     {
         auto app = std::move(app_result.value());
-        app->run();
+
+        pid_t child_pid = -1;
+        int child_status = 0;
+        bool child_exited = false;
+
+        if (!cli_opts.detach) {
+            if (enable_input_forwarding) {
+                const auto x11_display = app->x11_display();
+                const auto wayland_display = app->wayland_display();
+
+                auto spawn_result =
+                    spawn_target_app(cli_opts.app_command, x11_display, wayland_display,
+                                     cli_opts.app_width, cli_opts.app_height);
+                if (!spawn_result) {
+                    GOGGLES_LOG_CRITICAL("Failed to launch target app: {} ({})",
+                                         spawn_result.error().message,
+                                         goggles::error_code_name(spawn_result.error().code));
+                    return EXIT_FAILURE;
+                }
+                child_pid = spawn_result.value();
+                GOGGLES_LOG_INFO("Launched target app (pid={})", child_pid);
+            }
+
+            while (app->is_running()) {
+                app->pump_events();
+                app->tick_frame();
+
+                if (child_pid > 0 && !child_exited) {
+                    pid_t result = waitpid(child_pid, &child_status, WNOHANG);
+                    if (result == child_pid) {
+                        child_exited = true;
+                        push_quit_event();
+                    }
+                }
+            }
+
+            if (child_pid > 0 && !child_exited) {
+                GOGGLES_LOG_INFO("Viewer exited; terminating target app (pid={})", child_pid);
+                terminate_child(child_pid);
+                return EXIT_FAILURE;
+            }
+
+            if (child_pid > 0 && child_exited) {
+                if (WIFEXITED(child_status)) {
+                    return WEXITSTATUS(child_status);
+                }
+                return EXIT_FAILURE;
+            }
+        } else {
+            app->run();
+        }
         GOGGLES_LOG_INFO("Shutting down...");
     }
     GOGGLES_LOG_INFO("Goggles terminated successfully");
