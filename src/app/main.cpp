@@ -2,12 +2,18 @@
 #include "cli.hpp"
 
 #include <SDL3/SDL.h>
+#include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
+#include <spawn.h>
 #include <string>
+#include <string_view>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <util/config.hpp>
 #include <util/error.hpp>
@@ -27,31 +33,54 @@ static auto spawn_target_app(const std::vector<std::string>& command,
                                           "input forwarding display information unavailable");
     }
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        return goggles::make_error<pid_t>(goggles::ErrorCode::unknown_error, "fork() failed");
+    auto is_override_key = [](std::string_view key) -> bool {
+        return key == "GOGGLES_CAPTURE" || key == "GOGGLES_WSI_PROXY" || key == "DISPLAY" ||
+               key == "WAYLAND_DISPLAY" || key == "GOGGLES_WIDTH" || key == "GOGGLES_HEIGHT";
+    };
+
+    std::vector<std::string> env_overrides;
+    env_overrides.reserve(6);
+    env_overrides.emplace_back("GOGGLES_CAPTURE=1");
+    env_overrides.emplace_back("GOGGLES_WSI_PROXY=1");
+    env_overrides.emplace_back("DISPLAY=" + x11_display);
+    env_overrides.emplace_back("WAYLAND_DISPLAY=" + wayland_display);
+
+    if (app_width != 0 && app_height != 0) {
+        env_overrides.emplace_back("GOGGLES_WIDTH=" + std::to_string(app_width));
+        env_overrides.emplace_back("GOGGLES_HEIGHT=" + std::to_string(app_height));
     }
 
-    if (pid == 0) {
-        setenv("GOGGLES_CAPTURE", "1", 1);
-        setenv("GOGGLES_WSI_PROXY", "1", 1);
-        setenv("DISPLAY", x11_display.c_str(), 1);
-        setenv("WAYLAND_DISPLAY", wayland_display.c_str(), 1);
-
-        if (app_width != 0 && app_height != 0) {
-            setenv("GOGGLES_WIDTH", std::to_string(app_width).c_str(), 1);
-            setenv("GOGGLES_HEIGHT", std::to_string(app_height).c_str(), 1);
+    std::vector<char*> envp;
+    envp.reserve(env_overrides.size() + 64);
+    for (auto& entry : env_overrides) {
+        envp.push_back(entry.data());
+    }
+    for (char** entry = environ; entry != nullptr && *entry != nullptr; ++entry) {
+        std::string_view kv{*entry};
+        const auto eq = kv.find('=');
+        if (eq != std::string_view::npos) {
+            const auto key = kv.substr(0, eq);
+            if (is_override_key(key)) {
+                continue;
+            }
         }
+        envp.push_back(*entry);
+    }
+    envp.push_back(nullptr);
 
-        std::vector<char*> argv;
-        argv.reserve(command.size() + 1);
-        for (const auto& arg : command) {
-            argv.push_back(const_cast<char*>(arg.c_str()));
-        }
-        argv.push_back(nullptr);
+    std::vector<char*> argv;
+    argv.reserve(command.size() + 1);
+    for (const auto& arg : command) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
 
-        execvp(argv[0], argv.data());
-        _exit(127);
+    pid_t pid = -1;
+    const int rc = posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), envp.data());
+    if (rc != 0) {
+        return goggles::make_error<pid_t>(goggles::ErrorCode::unknown_error,
+                                          std::string("posix_spawnp() failed: ") +
+                                              std::strerror(rc));
     }
 
     return pid;
@@ -61,9 +90,48 @@ static auto terminate_child(pid_t pid) -> void {
     if (pid <= 0) {
         return;
     }
-    kill(pid, SIGTERM);
-    int status = 0;
-    waitpid(pid, &status, 0);
+
+    auto reap_with_timeout = [](pid_t child_pid, std::chrono::milliseconds timeout) -> bool {
+        constexpr auto POLL_INTERVAL = std::chrono::milliseconds(50);
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+
+        for (;;) {
+            int status = 0;
+            const pid_t result = waitpid(child_pid, &status, WNOHANG);
+            if (result == child_pid) {
+                return true;
+            }
+            if (result == 0) {
+                if (std::chrono::steady_clock::now() >= deadline) {
+                    return false;
+                }
+                std::this_thread::sleep_for(POLL_INTERVAL);
+                continue;
+            }
+
+            if (errno == EINTR) {
+                continue;
+            }
+            // Child already reaped or not our child anymore.
+            return true;
+        }
+    };
+
+    constexpr auto SIGTERM_TIMEOUT = std::chrono::seconds(3);
+    constexpr auto SIGKILL_TIMEOUT = std::chrono::seconds(2);
+
+    (void)kill(pid, SIGTERM);
+    if (reap_with_timeout(pid, SIGTERM_TIMEOUT)) {
+        return;
+    }
+
+    GOGGLES_LOG_WARN("Target app did not exit after SIGTERM; sending SIGKILL (pid={})", pid);
+    (void)kill(pid, SIGKILL);
+    if (reap_with_timeout(pid, SIGKILL_TIMEOUT)) {
+        return;
+    }
+
+    GOGGLES_LOG_ERROR("Target app did not exit after SIGKILL (pid={})", pid);
 }
 
 static auto push_quit_event() -> void {
