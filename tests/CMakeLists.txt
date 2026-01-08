@@ -13,6 +13,9 @@ add_executable(goggles_tests)
 
 # Test sources - mirrors src/ structure
 target_sources(goggles_tests PRIVATE
+    # App module tests
+    app/test_cli.cpp
+
     # Utility module tests
     util/test_error.cpp
     util/test_config.cpp
