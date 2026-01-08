@@ -153,6 +153,11 @@ void Application::handle_event(EventRef event) {
         m_window_resized = true;
         return;
     }
+    if (sdl_event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
+        sdl_event->type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) {
+        m_window_resized = true;
+        return;
+    }
 
     if (sdl_event->type == SDL_EVENT_KEY_DOWN && sdl_event->key.key == SDLK_F1 && m_ui_controller &&
         m_ui_controller->enabled()) {
