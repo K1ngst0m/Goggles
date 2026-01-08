@@ -232,7 +232,18 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
         return make_error<void>(ErrorCode::vulkan_init_failed, "No Vulkan devices found");
     }
 
-    for (const auto& device : devices) {
+    struct Candidate {
+        vk::PhysicalDevice device;
+        uint32_t graphics_family;
+        uint32_t index;
+        int score;
+    };
+    std::vector<Candidate> candidates;
+
+    GOGGLES_LOG_INFO("Available GPUs:");
+    for (size_t idx = 0; idx < devices.size(); ++idx) {
+        const auto& device = devices[idx];
+        auto props = device.getProperties();
         auto queue_families = device.getQueueFamilyProperties();
         uint32_t graphics_family = UINT32_MAX;
 
@@ -247,44 +258,80 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
             }
         }
 
-        if (graphics_family == UINT32_MAX) {
-            continue;
-        }
+        bool surface_ok = graphics_family != UINT32_MAX;
+        bool extensions_ok = false;
 
-        auto [ext_result, available_extensions] = device.enumerateDeviceExtensionProperties();
-        if (ext_result != vk::Result::eSuccess) {
-            continue;
-        }
-
-        bool all_extensions_found = true;
-        for (const auto* required : REQUIRED_DEVICE_EXTENSIONS) {
-            bool found = false;
-            for (const auto& ext : available_extensions) {
-                if (std::strcmp(ext.extensionName, required) == 0) {
-                    found = true;
-                    break;
+        if (surface_ok) {
+            auto [ext_result, available_extensions] = device.enumerateDeviceExtensionProperties();
+            if (ext_result == vk::Result::eSuccess) {
+                extensions_ok = true;
+                for (const auto* required : REQUIRED_DEVICE_EXTENSIONS) {
+                    bool found = false;
+                    for (const auto& ext : available_extensions) {
+                        if (std::strcmp(ext.extensionName, required) == 0) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        extensions_ok = false;
+                        break;
+                    }
                 }
             }
-            if (!found) {
-                all_extensions_found = false;
-                break;
+        }
+
+        const char* status = (surface_ok && extensions_ok)
+                                 ? "suitable"
+                                 : (!surface_ok ? "no surface support" : "missing extensions");
+        GOGGLES_LOG_INFO("  [{}] {} ({})", idx, props.deviceName.data(), status);
+
+        if (surface_ok && extensions_ok) {
+            int score = 0;
+            if (props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+                score += 1000;
+            } else if (props.deviceType == vk::PhysicalDeviceType::eIntegratedGpu) {
+                score += 500;
             }
+            candidates.push_back({.device = device,
+                                  .graphics_family = graphics_family,
+                                  .index = static_cast<uint32_t>(idx),
+                                  .score = score});
         }
-
-        if (!all_extensions_found) {
-            continue;
-        }
-
-        m_physical_device = device;
-        m_graphics_queue_family = graphics_family;
-
-        auto props = device.getProperties();
-        GOGGLES_LOG_INFO("Selected GPU: {}", props.deviceName.data());
-        return {};
     }
 
-    return make_error<void>(ErrorCode::vulkan_init_failed,
-                            "No suitable GPU found with DMA-BUF support");
+    if (candidates.empty()) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "No suitable GPU found with DMA-BUF and surface support");
+    }
+
+    auto best =
+        std::max_element(candidates.begin(), candidates.end(),
+                         [](const Candidate& a, const Candidate& b) { return a.score < b.score; });
+
+    m_physical_device = best->device;
+    m_graphics_queue_family = best->graphics_family;
+    m_gpu_index = best->index;
+
+    vk::PhysicalDeviceIDProperties id_props;
+    vk::PhysicalDeviceProperties2 props2;
+    props2.pNext = &id_props;
+    m_physical_device.getProperties2(&props2);
+
+    char uuid_hex[37];
+    std::snprintf(uuid_hex, sizeof(uuid_hex),
+                  "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                  id_props.deviceUUID[0], id_props.deviceUUID[1], id_props.deviceUUID[2],
+                  id_props.deviceUUID[3], id_props.deviceUUID[4], id_props.deviceUUID[5],
+                  id_props.deviceUUID[6], id_props.deviceUUID[7], id_props.deviceUUID[8],
+                  id_props.deviceUUID[9], id_props.deviceUUID[10], id_props.deviceUUID[11],
+                  id_props.deviceUUID[12], id_props.deviceUUID[13], id_props.deviceUUID[14],
+                  id_props.deviceUUID[15]);
+    m_gpu_uuid = uuid_hex;
+
+    GOGGLES_LOG_INFO("Selected GPU: {} (UUID: {})", props2.properties.deviceName.data(),
+                     m_gpu_uuid);
+    return {};
 }
 
 auto VulkanBackend::create_device() -> Result<void> {

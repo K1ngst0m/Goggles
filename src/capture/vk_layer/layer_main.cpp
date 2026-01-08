@@ -54,6 +54,7 @@ static PFN_vkVoidFunction VKAPI_CALL Goggles_GetInstanceProcAddr(VkInstance inst
     GETPROCADDR(GetInstanceProcAddr);
     GETPROCADDR(CreateInstance);
     GETPROCADDR(DestroyInstance);
+    GETPROCADDR(EnumeratePhysicalDevices);
     GETPROCADDR(GetDeviceProcAddr);
     GETPROCADDR(CreateDevice);
     GETPROCADDR(DestroyDevice);

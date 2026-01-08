@@ -22,6 +22,7 @@ struct VkInstFuncs {
     PFN_vkGetPhysicalDeviceMemoryProperties GetPhysicalDeviceMemoryProperties;
     PFN_vkGetPhysicalDeviceQueueFamilyProperties GetPhysicalDeviceQueueFamilyProperties;
     PFN_vkEnumerateDeviceExtensionProperties EnumerateDeviceExtensionProperties;
+    PFN_vkGetPhysicalDeviceProperties2 GetPhysicalDeviceProperties2;
     PFN_vkGetPhysicalDeviceFormatProperties2 GetPhysicalDeviceFormatProperties2;
     PFN_vkGetPhysicalDeviceImageFormatProperties2 GetPhysicalDeviceImageFormatProperties2;
 
