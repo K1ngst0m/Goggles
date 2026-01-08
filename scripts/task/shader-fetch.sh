@@ -15,6 +15,10 @@ echo ""
 
 if [[ -d "${SHADERS_DIR}/.git" ]]; then
     echo "Updating existing clone..."
+    if git -C "${SHADERS_DIR}" status --porcelain | grep -Eq '^[^ D?]|^ [^ D?]'; then
+        echo "Warning: Local modifications will be discarded" >&2
+    fi
+    git -C "${SHADERS_DIR}" reset --hard
     if ! git -C "${SHADERS_DIR}" pull --ff-only; then
         echo "Error: Failed to update existing repository" >&2
         exit 1
