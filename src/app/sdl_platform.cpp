@@ -20,14 +20,10 @@ auto SdlPlatform::create(const CreateInfo& create_info) -> ResultPtr<SdlPlatform
     }
     platform->m_sdl_initialized = true;
 
-    std::uint64_t raw_flags = 0;
-    if (create_info.enable_vulkan) {
-        raw_flags |= static_cast<std::uint64_t>(SDL_WINDOW_VULKAN);
-    }
-    if (create_info.resizable) {
-        raw_flags |= static_cast<std::uint64_t>(SDL_WINDOW_RESIZABLE);
-    }
-    auto window_flags = static_cast<SDL_WindowFlags>(raw_flags);
+    SDL_WindowFlags window_flags = static_cast<SDL_WindowFlags>(
+        (create_info.enable_vulkan ? SDL_WINDOW_VULKAN : 0) |
+        (create_info.resizable    ? SDL_WINDOW_RESIZABLE : 0)
+    );
 
     auto* window = SDL_CreateWindow(create_info.title.c_str(), create_info.width,
                                     create_info.height, window_flags);
