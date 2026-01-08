@@ -1,4 +1,5 @@
 #include "ui_controller.hpp"
+
 #include "sdl_platform.hpp"
 
 #include <SDL3/SDL.h>

@@ -29,8 +29,8 @@ auto SdlPlatform::create(const CreateInfo& create_info) -> ResultPtr<SdlPlatform
     }
     auto window_flags = static_cast<SDL_WindowFlags>(raw_flags);
 
-    auto* window = SDL_CreateWindow(create_info.title.c_str(), create_info.width, create_info.height,
-                                    window_flags);
+    auto* window = SDL_CreateWindow(create_info.title.c_str(), create_info.width,
+                                    create_info.height, window_flags);
     if (window == nullptr) {
         return make_result_ptr_error<SdlPlatform>(
             ErrorCode::unknown_error, "Failed to create window: " + std::string(SDL_GetError()));
