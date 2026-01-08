@@ -9,9 +9,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <spawn.h>
 #include <string>
 #include <string_view>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -78,12 +78,22 @@ static auto spawn_target_app(const std::vector<std::string>& command,
     }
     argv.push_back(nullptr);
 
-    pid_t pid = -1;
-    const int rc = posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), envp.data());
-    if (rc != 0) {
+    const pid_t parent_pid = getpid();
+    const pid_t pid = fork();
+    if (pid < 0) {
         return goggles::make_error<pid_t>(goggles::ErrorCode::unknown_error,
-                                          std::string("posix_spawnp() failed: ") +
-                                              std::strerror(rc));
+                                          std::string("fork() failed: ") + std::strerror(errno));
+    }
+
+    if (pid == 0) {
+        // Child: set death signal before exec so we die if parent crashes
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        // Handle race: if parent already died, getppid() returns 1 (init)
+        if (getppid() != parent_pid) {
+            _exit(EXIT_FAILURE);
+        }
+        execvpe(argv[0], argv.data(), envp.data());
+        _exit(EXIT_FAILURE);
     }
 
     return pid;
