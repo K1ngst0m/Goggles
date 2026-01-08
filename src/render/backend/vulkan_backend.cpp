@@ -4,6 +4,7 @@
 
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <render/chain/pass.hpp>
 #include <util/job_system.hpp>
@@ -70,7 +71,11 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
 
     int width = 0;
     int height = 0;
-    SDL_GetWindowSize(window, &width, &height);
+    if (!SDL_GetWindowSizeInPixels(window, &width, &height)) {
+        return make_result_ptr_error<VulkanBackend>(ErrorCode::unknown_error,
+                                                    "SDL_GetWindowSizeInPixels failed: " +
+                                                        std::string(SDL_GetError()));
+    }
 
     GOGGLES_TRY(backend->create_instance(enable_validation));
     GOGGLES_TRY(backend->create_debug_messenger());
@@ -455,10 +460,16 @@ auto VulkanBackend::recreate_swapchain() -> Result<void> {
 
     int width = 0;
     int height = 0;
-    SDL_GetWindowSize(m_window, &width, &height);
+    if (!SDL_GetWindowSizeInPixels(m_window, &width, &height)) {
+        return make_error<void>(ErrorCode::unknown_error,
+                                "SDL_GetWindowSizeInPixels failed: " + std::string(SDL_GetError()));
+    }
 
     while (width == 0 || height == 0) {
-        SDL_GetWindowSize(m_window, &width, &height);
+        if (!SDL_GetWindowSizeInPixels(m_window, &width, &height)) {
+            return make_error<void>(ErrorCode::unknown_error, "SDL_GetWindowSizeInPixels failed: " +
+                                                                  std::string(SDL_GetError()));
+        }
         SDL_WaitEvent(nullptr);
     }
 
@@ -486,7 +497,10 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
 
     int width = 0;
     int height = 0;
-    SDL_GetWindowSize(m_window, &width, &height);
+    if (!SDL_GetWindowSizeInPixels(m_window, &width, &height)) {
+        return make_error<void>(ErrorCode::unknown_error,
+                                "SDL_GetWindowSizeInPixels failed: " + std::string(SDL_GetError()));
+    }
 
     VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost,
            "waitIdle failed before swapchain format change");

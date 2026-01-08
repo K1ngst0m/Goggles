@@ -1,12 +1,17 @@
 #pragma once
 
-#include <SDL3/SDL.h>
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <map>
 #include <render/shader/retroarch_preprocessor.hpp>
+#include <string>
 #include <util/error.hpp>
+#include <vector>
 #include <vulkan/vulkan.hpp>
+
+struct SDL_Window;
+union SDL_Event;
 
 namespace goggles::ui {
 
@@ -89,6 +94,9 @@ private:
     void rebuild_preset_tree();
     [[nodiscard]] auto matches_filter(const std::filesystem::path& path) const -> bool;
 
+    std::filesystem::path m_font_path;
+    float m_font_size_pixels = 17.0F;
+    SDL_Window* m_window = nullptr;
     vk::Device m_device;
     vk::DescriptorPool m_descriptor_pool;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
@@ -97,6 +105,7 @@ private:
     PresetTreeNode m_preset_tree;
     ParameterChangeCallback m_on_parameter_change;
     ParameterResetCallback m_on_parameter_reset;
+    float m_last_display_scale = 1.0F;
     bool m_visible = true;
 };
 
