@@ -274,12 +274,12 @@ void Application::tick_frame() {
     if (m_ui_controller) {
         m_ui_controller->apply_state(*m_vulkan_backend);
         m_ui_controller->begin_frame();
-        m_ui_controller->end_frame();
     }
 
     bool needs_resize = false;
     auto ui_callback = [this](vk::CommandBuffer cmd, vk::ImageView view, vk::Extent2D extent) {
-        if (m_ui_controller) {
+        if (m_ui_controller && m_ui_controller->enabled()) {
+            m_ui_controller->end_frame();
             m_ui_controller->record(cmd, view, extent);
         }
     };
