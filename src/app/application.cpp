@@ -39,10 +39,6 @@ auto Application::create(const Config& config, bool enable_input_forwarding)
     GOGGLES_LOG_INFO("SDL3 initialized");
 
     auto* sdl_window = to_sdl_window(app->m_platform->window());
-    if (sdl_window == nullptr) {
-        return make_result_ptr_error<Application>(
-            ErrorCode::unknown_error, "SDL window handle is null (WindowHandle.ptr is null)");
-    }
 
     app->m_vulkan_backend = GOGGLES_TRY(
         render::VulkanBackend::create(sdl_window, config.render.enable_validation, "shaders",
@@ -164,7 +160,6 @@ void Application::forward_input_event(EventRef event) {
         return;
     }
 
-    Result<void> result;
     bool capture_kb = m_ui_controller && m_ui_controller->wants_capture_keyboard();
     bool capture_mouse = m_ui_controller && m_ui_controller->wants_capture_mouse();
 
@@ -214,10 +209,6 @@ void Application::forward_input_event(EventRef event) {
     default:
         return;
     }
-
-    if (!result) {
-        GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
-    }
 }
 
 void Application::handle_sync_semaphores() {
@@ -229,24 +220,26 @@ void Application::handle_sync_semaphores() {
         return;
     }
 
-    m_vulkan_backend->cleanup_sync_semaphores();
     auto ready_fd = util::UniqueFd::dup_from(m_capture_receiver->get_frame_ready_fd());
     auto consumed_fd = util::UniqueFd::dup_from(m_capture_receiver->get_frame_consumed_fd());
 
     if (!ready_fd || !consumed_fd) {
-        GOGGLES_LOG_ERROR("Failed to dup semaphore fds");
+        GOGGLES_LOG_ERROR("Failed to dup semaphore fds (ready_fd={}, consumed_fd={})",
+                          m_capture_receiver->get_frame_ready_fd(),
+                          m_capture_receiver->get_frame_consumed_fd());
+        return;
+    }
+
+    auto import_result =
+        m_vulkan_backend->import_sync_semaphores(std::move(ready_fd), std::move(consumed_fd));
+    if (!import_result) {
+        GOGGLES_LOG_ERROR("Failed to import sync semaphores: {}", import_result.error().message);
         m_capture_receiver->clear_sync_semaphores();
     } else {
-        auto import_result =
-            m_vulkan_backend->import_sync_semaphores(std::move(ready_fd), std::move(consumed_fd));
-        if (!import_result) {
-            GOGGLES_LOG_ERROR("Failed to import sync semaphores: {}",
-                              import_result.error().message);
-            m_capture_receiver->clear_sync_semaphores();
-        } else {
-            GOGGLES_LOG_INFO("Sync semaphores imported successfully");
-        }
+        GOGGLES_LOG_INFO("Sync semaphores imported successfully");
+        m_capture_receiver->clear_sync_semaphores();
     }
+
     m_capture_receiver->clear_semaphores_updated();
 }
 
@@ -271,7 +264,7 @@ void Application::tick_frame() {
 
     handle_sync_semaphores();
 
-    if (m_ui_controller) {
+    if (m_ui_controller && m_ui_controller->enabled()) {
         m_ui_controller->apply_state(*m_vulkan_backend);
         m_ui_controller->begin_frame();
     }
