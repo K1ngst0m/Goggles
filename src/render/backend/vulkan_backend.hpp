@@ -53,6 +53,10 @@ public:
                                             const UiRenderCallback& ui_callback) -> Result<bool>;
     [[nodiscard]] auto render_clear_with_ui(const UiRenderCallback& ui_callback) -> Result<bool>;
 
+    [[nodiscard]] auto needs_format_rebuild(vk::Format source_format) const -> bool;
+    [[nodiscard]] auto rebuild_for_format(vk::Format source_format) -> Result<void>;
+    void wait_all_frames();
+
     [[nodiscard]] auto instance() const -> vk::Instance { return *m_instance; }
     [[nodiscard]] auto physical_device() const -> vk::PhysicalDevice { return m_physical_device; }
     [[nodiscard]] auto device() const -> vk::Device { return *m_device; }
