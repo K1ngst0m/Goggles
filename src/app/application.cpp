@@ -170,27 +170,47 @@ void Application::forward_input_event(EventRef event) {
 
     switch (sdl_event->type) {
     case SDL_EVENT_KEY_DOWN:
-    case SDL_EVENT_KEY_UP:
-        if (!capture_kb) {
-            result = m_input_forwarder->forward_key(sdl_event->key);
+    case SDL_EVENT_KEY_UP: {
+        if (capture_kb) {
+            return;
         }
-        break;
+        auto result = m_input_forwarder->forward_key(sdl_event->key);
+        if (!result) {
+            GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
+        }
+        return;
+    }
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (!capture_mouse) {
-            result = m_input_forwarder->forward_mouse_button(sdl_event->button);
+    case SDL_EVENT_MOUSE_BUTTON_UP: {
+        if (capture_mouse) {
+            return;
         }
-        break;
-    case SDL_EVENT_MOUSE_MOTION:
-        if (!capture_mouse) {
-            result = m_input_forwarder->forward_mouse_motion(sdl_event->motion);
+        auto result = m_input_forwarder->forward_mouse_button(sdl_event->button);
+        if (!result) {
+            GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
         }
-        break;
-    case SDL_EVENT_MOUSE_WHEEL:
-        if (!capture_mouse) {
-            result = m_input_forwarder->forward_mouse_wheel(sdl_event->wheel);
+        return;
+    }
+    case SDL_EVENT_MOUSE_MOTION: {
+        if (capture_mouse) {
+            return;
         }
-        break;
+        auto result = m_input_forwarder->forward_mouse_motion(sdl_event->motion);
+        if (!result) {
+            GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
+        }
+        return;
+    }
+    case SDL_EVENT_MOUSE_WHEEL: {
+        if (capture_mouse) {
+            return;
+        }
+        auto result = m_input_forwarder->forward_mouse_wheel(sdl_event->wheel);
+        if (!result) {
+            GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
+        }
+        return;
+    }
     default:
         return;
     }
