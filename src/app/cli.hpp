@@ -11,7 +11,7 @@
 namespace goggles::app {
 
 struct CliOptions {
-    std::filesystem::path config_path = "config/goggles.toml";
+    std::filesystem::path config_path;
     std::string shader_preset;
     bool detach = false;
     uint32_t app_width = 0;
@@ -36,8 +36,8 @@ Notes:
 
     CliOptions options;
 
-    app.add_option("-c,--config", options.config_path, "Path to configuration file")
-        ->check(CLI::ExistingFile);
+    auto* config_opt =
+        app.add_option("-c,--config", options.config_path, "Path to configuration file");
 
     app.add_option("-s,--shader", options.shader_preset, "Override shader preset (path to .slangp)")
         ->check(CLI::ExistingFile);
@@ -97,6 +97,11 @@ Notes:
         }
         return make_error<CliOptions>(ErrorCode::parse_error,
                                       "Failed to parse command line arguments.");
+    }
+
+    if (config_opt->count() > 0 && !std::filesystem::exists(options.config_path)) {
+        return make_error<CliOptions>(ErrorCode::file_not_found, "Configuration file not found: " +
+                                                                     options.config_path.string());
     }
 
     if (separator_index >= 0) {

@@ -233,6 +233,7 @@ export GOGGLES_RESOURCE_DIR="${APPDIR}/usr/share/goggles"
 DEFAULT_CONFIG="${APPDIR}/usr/share/goggles/config/goggles.toml"
 DEFAULT_SHADER="${APPDIR}/usr/share/goggles/shaders/retroarch/crt/zfast-crt.slangp"
 XDG_SHADER="${DATA_ROOT}/goggles/shaders/retroarch/crt/zfast-crt.slangp"
+XDG_CONFIG="${XDG_CONFIG_HOME:-${HOME}/.config}/goggles/goggles.toml"
 
 extra_args=()
 has_config=0
@@ -250,8 +251,12 @@ for arg in "$@"; do
 done
 
 if [[ $has_config -eq 0 ]]; then
-  [[ -f "${DEFAULT_CONFIG}" ]] || die "missing default config: ${DEFAULT_CONFIG}"
-  extra_args+=(--config "${DEFAULT_CONFIG}")
+  if [[ -f "${XDG_CONFIG}" ]]; then
+    extra_args+=(--config "${XDG_CONFIG}")
+  else
+    [[ -f "${DEFAULT_CONFIG}" ]] || die "missing default config: ${DEFAULT_CONFIG}"
+    extra_args+=(--config "${DEFAULT_CONFIG}")
+  fi
 fi
 
 if [[ $has_shader -eq 0 ]]; then
