@@ -2,6 +2,7 @@
 #include "cli.hpp"
 
 #include <SDL3/SDL.h>
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <spawn.h>
 #include <string>
 #include <string_view>
@@ -19,6 +21,17 @@
 #include <util/error.hpp>
 #include <util/logging.hpp>
 #include <vector>
+
+static auto get_reaper_path() -> std::string {
+    std::array<char, 4096> exe_path{};
+    const ssize_t len = readlink("/proc/self/exe", exe_path.data(), exe_path.size() - 1);
+    if (len <= 0) {
+        return "goggles-reaper";
+    }
+    exe_path[static_cast<size_t>(len)] = '\0';
+    const std::filesystem::path exe_dir = std::filesystem::path(exe_path.data()).parent_path();
+    return (exe_dir / "goggles-reaper").string();
+}
 
 static auto spawn_target_app(const std::vector<std::string>& command,
                              const std::string& x11_display, const std::string& wayland_display,
@@ -71,18 +84,22 @@ static auto spawn_target_app(const std::vector<std::string>& command,
     }
     envp.push_back(nullptr);
 
+    // Build argv: goggles-reaper <target_command...>
+    const std::string reaper_path = get_reaper_path();
     std::vector<char*> argv;
-    argv.reserve(command.size() + 1);
+    argv.reserve(command.size() + 2);
+    argv.push_back(const_cast<char*>(reaper_path.c_str()));
     for (const auto& arg : command) {
         argv.push_back(const_cast<char*>(arg.c_str()));
     }
     argv.push_back(nullptr);
 
     pid_t pid = -1;
-    const int rc = posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), envp.data());
+    const int rc =
+        posix_spawn(&pid, reaper_path.c_str(), nullptr, nullptr, argv.data(), envp.data());
     if (rc != 0) {
         return goggles::make_error<pid_t>(goggles::ErrorCode::unknown_error,
-                                          std::string("posix_spawnp() failed: ") +
+                                          std::string("posix_spawn() failed: ") +
                                               std::strerror(rc));
     }
 

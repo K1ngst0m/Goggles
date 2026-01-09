@@ -28,3 +28,10 @@ set_target_properties(goggles PROPERTIES
 goggles_enable_clang_tidy(goggles)
 goggles_enable_sanitizers(goggles)
 goggles_enable_profiling(goggles)
+
+# Reaper watchdog process
+add_executable(goggles-reaper reaper_main.cpp)
+set_target_properties(goggles-reaper PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+goggles_enable_clang_tidy(goggles-reaper)

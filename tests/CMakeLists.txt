@@ -173,3 +173,16 @@ if(DEFINED ENV{CI} OR DEFINED ENV{GITHUB_ACTIONS})
     set_property(TEST goggles_auto_input_forwarding_x11 PROPERTY DISABLED TRUE)
     set_property(TEST goggles_auto_input_forwarding_wayland PROPERTY DISABLED TRUE)
 endif()
+
+# Integration test: validates child process receives SIGTERM when parent dies
+add_executable(goggles_test_child_death_signal
+    app/test_child_death_signal.cpp
+)
+
+goggles_enable_sanitizers(goggles_test_child_death_signal)
+
+add_test(NAME goggles_test_child_death_signal
+         COMMAND goggles_test_child_death_signal)
+
+set_property(TEST goggles_test_child_death_signal
+    PROPERTY WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
