@@ -241,7 +241,7 @@ void ImGuiLayer::begin_frame() {
     if (m_last_frame_time.time_since_epoch().count() > 0) {
         auto delta = std::chrono::duration<float, std::milli>(now - m_last_frame_time).count();
         m_frame_times[m_frame_idx] = delta;
-        m_frame_idx = (m_frame_idx + 1) % k_frame_history_size;
+        m_frame_idx = (m_frame_idx + 1) % K_FRAME_HISTORY_SIZE;
     }
     m_last_frame_time = now;
 
@@ -528,21 +528,21 @@ void ImGuiLayer::draw_debug_overlay() {
 
     if (ImGui::Begin("##debug_overlay", nullptr, K_FLAGS)) {
         float avg_ms = std::accumulate(m_frame_times.begin(), m_frame_times.end(), 0.F) /
-                       static_cast<float>(k_frame_history_size);
+                       static_cast<float>(K_FRAME_HISTORY_SIZE);
         float fps = avg_ms > 0.F ? 1000.F / avg_ms : 0.F;
 
         float src_avg_ms =
             std::accumulate(m_source_frame_times.begin(), m_source_frame_times.end(), 0.F) /
-            static_cast<float>(k_frame_history_size);
+            static_cast<float>(K_FRAME_HISTORY_SIZE);
         float src_fps = src_avg_ms > 0.F ? 1000.F / src_avg_ms : 0.F;
 
         ImGui::Text("Render: %.1f FPS (%.2f ms)", fps, avg_ms);
         ImGui::PlotLines("##render_ft", m_frame_times.data(),
-                         static_cast<int>(k_frame_history_size), static_cast<int>(m_frame_idx),
+                         static_cast<int>(K_FRAME_HISTORY_SIZE), static_cast<int>(m_frame_idx),
                          nullptr, 0.F, 33.F, ImVec2(150, 40));
         ImGui::Text("Source: %.1f FPS (%.2f ms)", src_fps, src_avg_ms);
         ImGui::PlotLines("##source_ft", m_source_frame_times.data(),
-                         static_cast<int>(k_frame_history_size),
+                         static_cast<int>(K_FRAME_HISTORY_SIZE),
                          static_cast<int>(m_source_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 40));
     }
     ImGui::End();
@@ -554,7 +554,7 @@ void ImGuiLayer::notify_source_frame() {
         auto delta =
             std::chrono::duration<float, std::milli>(now - m_last_source_frame_time).count();
         m_source_frame_times[m_source_frame_idx] = delta;
-        m_source_frame_idx = (m_source_frame_idx + 1) % k_frame_history_size;
+        m_source_frame_idx = (m_source_frame_idx + 1) % K_FRAME_HISTORY_SIZE;
     }
     m_last_source_frame_time = now;
 }

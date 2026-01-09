@@ -123,9 +123,9 @@ private:
     bool m_debug_overlay_visible = true;
     bool m_initialized = false;
 
-    static constexpr size_t k_frame_history_size = 120;
-    std::array<float, k_frame_history_size> m_frame_times{};
-    std::array<float, k_frame_history_size> m_source_frame_times{};
+    static constexpr size_t K_FRAME_HISTORY_SIZE = 120;
+    std::array<float, K_FRAME_HISTORY_SIZE> m_frame_times{};
+    std::array<float, K_FRAME_HISTORY_SIZE> m_source_frame_times{};
     size_t m_frame_idx = 0;
     size_t m_source_frame_idx = 0;
     std::chrono::steady_clock::time_point m_last_frame_time;
