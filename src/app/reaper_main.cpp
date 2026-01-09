@@ -145,7 +145,7 @@ auto main(int argc, char** argv) -> int {
 
     // Cleanup all remaining children
     g_should_run = 0;
-    kill_all_children(SIGTERM);
+    kill_all_children(SIGKILL);
     wait_all_children();
 
     if (WIFEXITED(status)) {
