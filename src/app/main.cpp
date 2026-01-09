@@ -200,6 +200,59 @@ static auto resolve_default_config_path() -> std::optional<std::filesystem::path
     return std::nullopt;
 }
 
+static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts) -> goggles::Config {
+    std::optional<std::filesystem::path> config_path;
+    if (!cli_opts.config_path.empty()) {
+        config_path = cli_opts.config_path;
+    } else {
+        config_path = resolve_default_config_path();
+    }
+
+    if (!config_path) {
+        GOGGLES_LOG_WARN("No configuration file found; using defaults");
+        return goggles::default_config();
+    }
+
+    GOGGLES_LOG_INFO("Loading configuration: {}", config_path->string());
+    auto config_result = goggles::load_config(*config_path);
+    if (!config_result) {
+        const auto& error = config_result.error();
+        GOGGLES_LOG_ERROR("Failed to load configuration from '{}': {} ({})", config_path->string(),
+                          error.message, goggles::error_code_name(error.code));
+        GOGGLES_LOG_INFO("Using default configuration");
+        return goggles::default_config();
+    }
+    return config_result.value();
+}
+
+static auto apply_log_level(const goggles::Config& config) -> void {
+    if (config.logging.level == "trace") {
+        goggles::set_log_level(spdlog::level::trace);
+    } else if (config.logging.level == "debug") {
+        goggles::set_log_level(spdlog::level::debug);
+    } else if (config.logging.level == "info") {
+        goggles::set_log_level(spdlog::level::info);
+    } else if (config.logging.level == "warn") {
+        goggles::set_log_level(spdlog::level::warn);
+    } else if (config.logging.level == "error") {
+        goggles::set_log_level(spdlog::level::err);
+    } else if (config.logging.level == "critical") {
+        goggles::set_log_level(spdlog::level::critical);
+    }
+}
+
+static auto log_config_summary(const goggles::Config& config) -> void {
+    GOGGLES_LOG_DEBUG("Configuration loaded:");
+    GOGGLES_LOG_DEBUG("  Capture backend: {}", config.capture.backend);
+    GOGGLES_LOG_DEBUG("  Input forwarding: {}", config.input.forwarding);
+    GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
+    GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
+    GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
+    GOGGLES_LOG_DEBUG("  Render scale_mode: {}", to_string(config.render.scale_mode));
+    GOGGLES_LOG_DEBUG("  Render integer_scale: {}", config.render.integer_scale);
+    GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
+}
+
 static auto run_app(int argc, char** argv) -> int {
     auto cli_result = goggles::app::parse_cli(argc, argv);
     if (!cli_result) {
@@ -216,31 +269,7 @@ static auto run_app(int argc, char** argv) -> int {
     goggles::initialize_logger("goggles");
     GOGGLES_LOG_INFO(GOGGLES_PROJECT_NAME " v" GOGGLES_VERSION " starting");
 
-    goggles::Config config;
-    std::optional<std::filesystem::path> config_path;
-    if (!cli_opts.config_path.empty()) {
-        config_path = cli_opts.config_path;
-    } else {
-        config_path = resolve_default_config_path();
-    }
-
-    if (!config_path) {
-        GOGGLES_LOG_WARN("No configuration file found; using defaults");
-        config = goggles::default_config();
-    } else {
-        GOGGLES_LOG_INFO("Loading configuration: {}", config_path->string());
-        auto config_result = goggles::load_config(*config_path);
-        if (!config_result) {
-            const auto& error = config_result.error();
-            GOGGLES_LOG_ERROR("Failed to load configuration from '{}': {} ({})",
-                              config_path->string(), error.message,
-                              goggles::error_code_name(error.code));
-            GOGGLES_LOG_INFO("Using default configuration");
-            config = goggles::default_config();
-        } else {
-            config = config_result.value();
-        }
-    }
+    goggles::Config config = load_config_for_cli(cli_opts);
 
     if (!cli_opts.shader_preset.empty()) {
         config.shader.preset = cli_opts.shader_preset;
@@ -257,29 +286,8 @@ static auto run_app(int argc, char** argv) -> int {
         }
     }
 
-    if (config.logging.level == "trace") {
-        goggles::set_log_level(spdlog::level::trace);
-    } else if (config.logging.level == "debug") {
-        goggles::set_log_level(spdlog::level::debug);
-    } else if (config.logging.level == "info") {
-        goggles::set_log_level(spdlog::level::info);
-    } else if (config.logging.level == "warn") {
-        goggles::set_log_level(spdlog::level::warn);
-    } else if (config.logging.level == "error") {
-        goggles::set_log_level(spdlog::level::err);
-    } else if (config.logging.level == "critical") {
-        goggles::set_log_level(spdlog::level::critical);
-    }
-
-    GOGGLES_LOG_DEBUG("Configuration loaded:");
-    GOGGLES_LOG_DEBUG("  Capture backend: {}", config.capture.backend);
-    GOGGLES_LOG_DEBUG("  Input forwarding: {}", config.input.forwarding);
-    GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
-    GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
-    GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
-    GOGGLES_LOG_DEBUG("  Render scale_mode: {}", to_string(config.render.scale_mode));
-    GOGGLES_LOG_DEBUG("  Render integer_scale: {}", config.render.integer_scale);
-    GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
+    apply_log_level(config);
+    log_config_summary(config);
 
     bool enable_input_forwarding = !cli_opts.detach;
     if (!cli_opts.detach && !config.input.forwarding) {
