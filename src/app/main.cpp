@@ -221,14 +221,16 @@ struct FileCopyPaths {
     std::filesystem::path dst;
 };
 
-static auto copy_file_atomic(const FileCopyPaths& paths) -> bool {
+static auto copy_file_atomic(const FileCopyPaths& paths) -> goggles::Result<std::filesystem::path> {
     std::error_code ec;
     const auto dst_dir = paths.dst.parent_path();
     std::filesystem::create_directories(dst_dir, ec);
     if (ec) {
         GOGGLES_LOG_DEBUG("Failed to create config directory '{}': {}", dst_dir.string(),
                           ec.message());
-        return false;
+        return goggles::make_error<std::filesystem::path>(
+            goggles::ErrorCode::file_write_failed,
+            "Failed to create config directory '" + dst_dir.string() + "': " + ec.message());
     }
 
     auto tmp = paths.dst;
@@ -238,38 +240,42 @@ static auto copy_file_atomic(const FileCopyPaths& paths) -> bool {
                                ec);
     if (ec) {
         std::filesystem::remove(tmp, ec);
-        return false;
+        return goggles::make_error<std::filesystem::path>(goggles::ErrorCode::file_write_failed,
+                                                          "Failed to write config file '" +
+                                                              tmp.string() + "': " + ec.message());
     }
 
     std::filesystem::rename(tmp, paths.dst, ec);
     if (ec) {
         std::filesystem::remove(tmp, ec);
-        return false;
+        return goggles::make_error<std::filesystem::path>(
+            goggles::ErrorCode::file_write_failed, "Failed to rename config file '" + tmp.string() +
+                                                       "' -> '" + paths.dst.string() +
+                                                       "': " + ec.message());
     }
 
-    return true;
+    return paths.dst;
 }
 
 static auto ensure_user_default_config_from_template(const std::filesystem::path& template_path)
-    -> std::optional<std::filesystem::path> {
-    auto user_cfg = resolve_user_config_path();
-    if (!user_cfg) {
-        return std::nullopt;
+    -> goggles::Result<std::filesystem::path> {
+    auto user_cfg_path = resolve_user_config_path();
+    if (!user_cfg_path) {
+        return goggles::make_error<std::filesystem::path>(goggles::ErrorCode::invalid_data,
+                                                          "Unable to resolve XDG config directory");
     }
 
     std::error_code ec;
-    if (std::filesystem::exists(*user_cfg, ec) && !ec) {
-        if (std::filesystem::is_regular_file(*user_cfg, ec) && !ec) {
-            return user_cfg;
+    if (std::filesystem::exists(*user_cfg_path, ec) && !ec) {
+        if (std::filesystem::is_regular_file(*user_cfg_path, ec) && !ec) {
+            return *user_cfg_path;
         }
-        return std::nullopt;
+        return goggles::make_error<std::filesystem::path>(
+            goggles::ErrorCode::invalid_data,
+            "Config path exists but is not a regular file: " + user_cfg_path->string());
     }
 
-    if (copy_file_atomic(FileCopyPaths{.src = template_path, .dst = *user_cfg})) {
-        return user_cfg;
-    }
-
-    return std::nullopt;
+    return copy_file_atomic(FileCopyPaths{.src = template_path, .dst = *user_cfg_path});
 }
 
 static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts)
@@ -282,10 +288,14 @@ static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts)
         if (auto existing = resolve_default_config_path()) {
             config_path = *existing;
         } else if (auto template_path = resolve_config_template_path()) {
-            if (auto created = ensure_user_default_config_from_template(*template_path)) {
-                config_path = *created;
+            auto created = ensure_user_default_config_from_template(*template_path);
+            if (created) {
+                config_path = created.value();
                 GOGGLES_LOG_INFO("Wrote default configuration: {}", config_path->string());
             } else {
+                const auto& error = created.error();
+                GOGGLES_LOG_WARN("Failed to write default configuration; using template: {} ({})",
+                                 error.message, goggles::error_code_name(error.code));
                 config_path = *template_path;
                 GOGGLES_LOG_INFO("Using template configuration: {}", config_path->string());
             }
