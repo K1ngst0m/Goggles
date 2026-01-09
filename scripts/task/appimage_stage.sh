@@ -95,7 +95,8 @@ cp -f "$REPO_ROOT/showcase-crt-royale.png" "$APPDIR/goggles.png"
 cp -f "$GOGGLES_BIN" "$APPDIR/usr/bin/goggles"
 cp -f "$GOGGLES_REAPER_BIN" "$APPDIR/usr/bin/goggles-reaper"
 
-cp -f "$REPO_ROOT/config/goggles.toml" "$APPDIR/usr/share/goggles/config/goggles.toml"
+cp -f "$REPO_ROOT/config/goggles.template.toml" \
+  "$APPDIR/usr/share/goggles/config/goggles.template.toml"
 
 # Package only git-tracked resources (avoid shipping locally-downloaded shader packs).
 copy_git_tracked_paths "$APPDIR/usr/share/goggles" assets shaders

@@ -184,29 +184,89 @@ static auto resolve_default_config_path() -> std::optional<std::filesystem::path
         }
     }
 
+    return std::nullopt;
+}
+
+static auto resolve_user_config_path() -> std::optional<std::filesystem::path> {
+    auto xdg = resolve_xdg_config_home();
+    if (!xdg) {
+        return std::nullopt;
+    }
+    return *xdg / "goggles" / "goggles.toml";
+}
+
+static auto resolve_config_template_path() -> std::optional<std::filesystem::path> {
+    std::error_code ec;
+
     if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
         resource_dir && *resource_dir) {
-        auto candidate = std::filesystem::path(resource_dir) / "config" / "goggles.toml";
-        std::error_code ec;
+        auto candidate = std::filesystem::path(resource_dir) / "config" / "goggles.template.toml";
         if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
             return candidate;
-        }
-        if (ec) {
-            GOGGLES_LOG_DEBUG("Failed to stat config candidate '{}': {}", candidate.string(),
-                              ec.message());
         }
     }
 
     {
-        auto candidate = std::filesystem::path("config") / "goggles.toml";
-        std::error_code ec;
+        auto candidate = std::filesystem::path("config") / "goggles.template.toml";
         if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
             return candidate;
         }
-        if (ec) {
-            GOGGLES_LOG_DEBUG("Failed to stat config candidate '{}': {}", candidate.string(),
-                              ec.message());
+    }
+
+    return std::nullopt;
+}
+
+struct FileCopyPaths {
+    std::filesystem::path src;
+    std::filesystem::path dst;
+};
+
+static auto copy_file_atomic(const FileCopyPaths& paths) -> bool {
+    std::error_code ec;
+    const auto dst_dir = paths.dst.parent_path();
+    std::filesystem::create_directories(dst_dir, ec);
+    if (ec) {
+        GOGGLES_LOG_DEBUG("Failed to create config directory '{}': {}", dst_dir.string(),
+                          ec.message());
+        return false;
+    }
+
+    auto tmp = paths.dst;
+    tmp += ".tmp";
+
+    std::filesystem::copy_file(paths.src, tmp, std::filesystem::copy_options::overwrite_existing,
+                               ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+        return false;
+    }
+
+    std::filesystem::rename(tmp, paths.dst, ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+        return false;
+    }
+
+    return true;
+}
+
+static auto ensure_user_default_config_from_template(const std::filesystem::path& template_path)
+    -> std::optional<std::filesystem::path> {
+    auto user_cfg = resolve_user_config_path();
+    if (!user_cfg) {
+        return std::nullopt;
+    }
+
+    std::error_code ec;
+    if (std::filesystem::exists(*user_cfg, ec) && !ec) {
+        if (std::filesystem::is_regular_file(*user_cfg, ec) && !ec) {
+            return user_cfg;
         }
+        return std::nullopt;
+    }
+
+    if (copy_file_atomic(FileCopyPaths{.src = template_path, .dst = *user_cfg})) {
+        return user_cfg;
     }
 
     return std::nullopt;
@@ -219,7 +279,17 @@ static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts)
     if (!cli_opts.config_path.empty()) {
         config_path = cli_opts.config_path;
     } else {
-        config_path = resolve_default_config_path();
+        if (auto existing = resolve_default_config_path()) {
+            config_path = *existing;
+        } else if (auto template_path = resolve_config_template_path()) {
+            if (auto created = ensure_user_default_config_from_template(*template_path)) {
+                config_path = *created;
+                GOGGLES_LOG_INFO("Wrote default configuration: {}", config_path->string());
+            } else {
+                config_path = *template_path;
+                GOGGLES_LOG_INFO("Using template configuration: {}", config_path->string());
+            }
+        }
     }
 
     if (!config_path) {
