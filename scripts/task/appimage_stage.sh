@@ -64,10 +64,12 @@ BUILD_DIR="$REPO_ROOT/build/$PRESET"
 BUILD_I686_DIR="$REPO_ROOT/build/${PRESET}-i686"
 
 GOGGLES_BIN="$BUILD_DIR/bin/goggles"
+GOGGLES_REAPER_BIN="$BUILD_DIR/bin/goggles-reaper"
 LAYER64="$BUILD_DIR/lib/x86_64/libgoggles_vklayer.so"
 LAYER32="$BUILD_I686_DIR/lib/i386/libgoggles_vklayer.so"
 
 [[ -x "$GOGGLES_BIN" ]] || die "Missing built viewer binary: $GOGGLES_BIN"
+[[ -x "$GOGGLES_REAPER_BIN" ]] || die "Missing built reaper binary: $GOGGLES_REAPER_BIN"
 [[ -f "$LAYER64" ]] || die "Missing built 64-bit layer: $LAYER64"
 [[ -f "$LAYER32" ]] || die "Missing built 32-bit layer: $LAYER32"
 
@@ -91,6 +93,7 @@ cp -f "$REPO_ROOT/platform/linux/appimage/goggles.desktop" "$APPDIR/goggles.desk
 cp -f "$REPO_ROOT/showcase-crt-royale.png" "$APPDIR/goggles.png"
 
 cp -f "$GOGGLES_BIN" "$APPDIR/usr/bin/goggles"
+cp -f "$GOGGLES_REAPER_BIN" "$APPDIR/usr/bin/goggles-reaper"
 
 cp -f "$REPO_ROOT/config/goggles.toml" "$APPDIR/usr/share/goggles/config/goggles.toml"
 
@@ -104,11 +107,16 @@ echo "$VERSION" >"$APPDIR/usr/share/goggles/VERSION"
 
 # Bundle Pixi/Conda libs used by the viewer into AppDir/usr/lib.
 echo "Collecting runtime libraries from CONDA_PREFIX..."
-mapfile -t deps < <(ldd "$APPDIR/usr/bin/goggles" | awk -v p="$CONDA_PREFIX" '
+mapfile -t deps < <(
+  {
+    ldd "$APPDIR/usr/bin/goggles"
+    ldd "$APPDIR/usr/bin/goggles-reaper"
+  } | awk -v p="$CONDA_PREFIX" '
   $0 ~ /=>/ {
     for (i=1;i<=NF;i++) if ($i ~ /^\//) { print $i }
   }
-' | sort -u)
+' | sort -u
+)
 
 for lib in "${deps[@]}"; do
   case "$lib" in
@@ -134,6 +142,17 @@ if ! patchelf_err="$(patchelf --set-rpath "\$ORIGIN/../lib" "$APPDIR/usr/bin/gog
 fi
 if ! patchelf_err="$(patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$APPDIR/usr/bin/goggles" 2>&1)"; then
   echo "Error: patchelf --set-interpreter failed for $APPDIR/usr/bin/goggles" >&2
+  echo "$patchelf_err" >&2
+  exit 1
+fi
+
+if ! patchelf_err="$(patchelf --set-rpath "\$ORIGIN/../lib" "$APPDIR/usr/bin/goggles-reaper" 2>&1)"; then
+  echo "Error: patchelf --set-rpath failed for $APPDIR/usr/bin/goggles-reaper" >&2
+  echo "$patchelf_err" >&2
+  exit 1
+fi
+if ! patchelf_err="$(patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$APPDIR/usr/bin/goggles-reaper" 2>&1)"; then
+  echo "Error: patchelf --set-interpreter failed for $APPDIR/usr/bin/goggles-reaper" >&2
   echo "$patchelf_err" >&2
   exit 1
 fi
