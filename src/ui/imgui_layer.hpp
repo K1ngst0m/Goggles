@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -93,6 +94,7 @@ private:
     void draw_parameter_controls();
     void draw_preset_tree(const PresetTreeNode& node);
     void draw_filtered_presets();
+    void draw_debug_overlay();
     void rebuild_preset_tree();
     [[nodiscard]] auto matches_filter(const std::filesystem::path& path) const -> bool;
 
@@ -116,6 +118,11 @@ private:
     float m_last_display_scale = 1.0F;
     bool m_visible = true;
     bool m_initialized = false;
+
+    static constexpr size_t k_frame_history_size = 120;
+    std::array<float, k_frame_history_size> m_frame_times{};
+    size_t m_frame_idx = 0;
+    std::chrono::steady_clock::time_point m_last_frame_time;
 };
 
 } // namespace goggles::ui

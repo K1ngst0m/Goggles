@@ -10,6 +10,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+#include <numeric>
 #include <util/logging.hpp>
 #include <utility>
 
@@ -235,6 +236,15 @@ void ImGuiLayer::begin_frame() {
     if (!m_initialized) {
         return;
     }
+
+    auto now = std::chrono::steady_clock::now();
+    if (m_last_frame_time.time_since_epoch().count() > 0) {
+        auto delta = std::chrono::duration<float, std::milli>(now - m_last_frame_time).count();
+        m_frame_times[m_frame_idx] = delta;
+        m_frame_idx = (m_frame_idx + 1) % k_frame_history_size;
+    }
+    m_last_frame_time = now;
+
     if (m_window != nullptr) {
         float display_scale = get_display_scale(m_window);
         if (std::fabs(display_scale - m_last_display_scale) > 0.01F) {
@@ -264,6 +274,7 @@ void ImGuiLayer::begin_frame() {
 
     if (m_visible) {
         draw_shader_controls();
+        draw_debug_overlay();
     }
 }
 
@@ -503,6 +514,27 @@ void ImGuiLayer::draw_parameter_controls() {
             }
         }
     }
+}
+
+void ImGuiLayer::draw_debug_overlay() {
+    auto& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 160, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowBgAlpha(0.5F);
+
+    constexpr auto flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                           ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+
+    if (ImGui::Begin("##debug_overlay", nullptr, flags)) {
+        float avg_ms = std::accumulate(m_frame_times.begin(), m_frame_times.end(), 0.F) /
+                       static_cast<float>(k_frame_history_size);
+        float fps = avg_ms > 0.F ? 1000.F / avg_ms : 0.F;
+
+        ImGui::Text("FPS: %.1f", fps);
+        ImGui::Text("Frame: %.2f ms", avg_ms);
+        ImGui::PlotLines("##ft", m_frame_times.data(), static_cast<int>(k_frame_history_size),
+                         static_cast<int>(m_frame_idx), nullptr, 0.F, 33.F, ImVec2(140, 40));
+    }
+    ImGui::End();
 }
 
 void ImGuiLayer::rebuild_for_format(vk::Format new_format) {
