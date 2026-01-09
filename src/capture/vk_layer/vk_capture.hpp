@@ -85,6 +85,9 @@ public:
     SwapData* get_swap_data(VkSwapchainKHR swapchain);
     void shutdown();
 
+    void enqueue_virtual_frame(uint32_t width, uint32_t height, uint32_t format, uint32_t stride,
+                               int dmabuf_fd);
+
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
     bool init_device_sync(VkDevice device, VkDeviceData* dev_data);
@@ -109,6 +112,7 @@ private:
     std::unordered_map<VkSwapchainKHR, SwapData> swaps_;
     std::unordered_map<VkDevice, DeviceSyncState> device_sync_;
     std::atomic<bool> shutdown_{false};
+    std::atomic<uint64_t> virtual_frame_counter_{0};
 };
 
 CaptureManager& get_capture_manager();

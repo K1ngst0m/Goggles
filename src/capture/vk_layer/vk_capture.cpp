@@ -49,6 +49,20 @@ void CaptureManager::worker_func() {
             }
             AsyncCaptureItem item = *opt_item;
 
+            // Virtual frame (no semaphore wait needed)
+            if (item.timeline_sem == VK_NULL_HANDLE) {
+                auto& socket = get_layer_socket();
+                if (!socket.is_connected()) {
+                    socket.connect();
+                }
+                if (socket.is_connected()) {
+                    socket.send_texture_with_fd(item.metadata, item.dmabuf_fd);
+                }
+                close(item.dmabuf_fd);
+                continue;
+            }
+
+            // Regular frame with semaphore sync
             auto* dev_data = get_object_tracker().get_device(item.device);
             if (!dev_data) {
                 close(item.dmabuf_fd);
@@ -70,6 +84,9 @@ void CaptureManager::worker_func() {
             }
 
             auto& socket = get_layer_socket();
+            if (!socket.is_connected()) {
+                socket.connect();
+            }
             if (socket.is_connected()) {
                 socket.send_texture_with_fd(item.metadata, item.dmabuf_fd);
             }
@@ -896,6 +913,34 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
 // =============================================================================
 // Cleanup
 // =============================================================================
+
+void CaptureManager::enqueue_virtual_frame(uint32_t width, uint32_t height, uint32_t format,
+                                           uint32_t stride, int dmabuf_fd) {
+    uint64_t frame_num = virtual_frame_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    CaptureFrameMetadata metadata{};
+    metadata.type = CaptureMessageType::frame_metadata;
+    metadata.width = width;
+    metadata.height = height;
+    metadata.format = static_cast<VkFormat>(format);
+    metadata.stride = stride;
+    metadata.offset = 0;
+    metadata.modifier = 0;
+    metadata.frame_number = frame_num;
+
+    AsyncCaptureItem item{};
+    item.device = VK_NULL_HANDLE;
+    item.timeline_sem = VK_NULL_HANDLE;
+    item.timeline_value = 0;
+    item.dmabuf_fd = dmabuf_fd;
+    item.metadata = metadata;
+
+    if (async_queue_.try_push(item)) {
+        cv_.notify_one();
+    } else {
+        close(dmabuf_fd);
+    }
+}
 
 void CaptureManager::cleanup_swap_data(SwapData* swap, VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
