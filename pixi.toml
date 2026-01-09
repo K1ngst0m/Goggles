@@ -58,6 +58,22 @@ cmd = "bash scripts/task/start.sh"
 description = "Download RetroArch slang shaders"
 cmd = "bash scripts/task/shader-fetch.sh"
 
+[tasks.appimage-stage]
+description = "Stage AppDir for AppImage"
+cmd = "bash scripts/task/appimage_stage.sh"
+
+[tasks.appimage-build]
+description = "Build AppImage from staged AppDir"
+cmd = "bash scripts/task/appimage_build.sh"
+
+[tasks.appimage]
+description = "Build Goggles AppImage (viewer + multiarch layer)"
+cmd = "bash scripts/task/appimage.sh"
+
+[tasks.vulkan-layer-check]
+description = "Check Vulkan loader discovers Goggles layer (64-bit)"
+cmd = "bash scripts/task/vulkan_layer_check.sh"
+
 [tasks.init]
 description = "First-time project setup"
 cmd = "bash scripts/task/init.sh"

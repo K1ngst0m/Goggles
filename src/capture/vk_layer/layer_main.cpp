@@ -2,6 +2,7 @@
 #include "vk_hooks.hpp"
 #include "wsi_virtual.hpp"
 
+#include <cstdint>
 #include <cstring>
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
@@ -18,7 +19,12 @@
 namespace goggles::capture {
 
 // Must match manifest JSON
-[[maybe_unused]] static constexpr const char* LAYER_NAME = "VK_LAYER_goggles_capture";
+[[maybe_unused]] static constexpr const char* LAYER_NAME =
+#if INTPTR_MAX == INT64_MAX
+    "VK_LAYER_goggles_capture_64";
+#else
+    "VK_LAYER_goggles_capture_32";
+#endif
 
 #define GETPROCADDR(func)                                                                          \
     if (strcmp(pName, "vk" #func) == 0) {                                                          \

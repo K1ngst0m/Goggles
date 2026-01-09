@@ -68,7 +68,7 @@ In default mode, Goggles exits when the target app exits. If the viewer window i
 Goggles terminates the launched target process.
 
 For Steam games, prefer a wrapper that launches the game through Goggles:
-`goggles -- %command%` (packaging support is planned).
+`goggles -- %command%`.
 
 ### RetroArch Shaders
 

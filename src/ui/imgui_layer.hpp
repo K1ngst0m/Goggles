@@ -97,6 +97,7 @@ private:
     [[nodiscard]] auto matches_filter(const std::filesystem::path& path) const -> bool;
 
     std::filesystem::path m_font_path;
+    std::string m_ini_path;
     float m_font_size_pixels = 17.0F;
     SDL_Window* m_window = nullptr;
     vk::Instance m_instance;

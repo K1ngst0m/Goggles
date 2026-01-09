@@ -23,7 +23,7 @@ struct ArgvBuilder {
 };
 
 [[nodiscard]] auto default_config_path() -> std::string {
-    return std::string(GOGGLES_SOURCE_DIR) + "/config/goggles.toml";
+    return std::string(GOGGLES_SOURCE_DIR) + "/tests/util/test_data/valid_config.toml";
 }
 
 } // namespace

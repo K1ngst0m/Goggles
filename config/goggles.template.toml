@@ -1,0 +1,52 @@
+# Goggles Configuration File (Template)
+# Format: TOML (https://toml.io/)
+#
+# This file is intended to be a safe, user-editable template.
+# If no config is found, Goggles will write a copy to:
+#   ~/.config/goggles/goggles.toml (or $XDG_CONFIG_HOME/goggles/goggles.toml)
+
+# =============================================================================
+# Capture Settings
+# =============================================================================
+[capture]
+# Backend to use for frame capture.
+# Options: "vulkan_layer" (primary), "compositor" (fallback)
+backend = "vulkan_layer"
+
+# =============================================================================
+# Input Settings
+# =============================================================================
+[input]
+# Enable input forwarding into the captured app.
+forwarding = false
+
+# =============================================================================
+# Shader Settings
+# =============================================================================
+[shader]
+# Path to shader preset file (.slangp).
+# Leave empty for passthrough mode (no processing).
+preset = ""
+# Examples:
+# preset = "shaders/retroarch/crt/zfast-crt.slangp"
+# preset = "shaders/retroarch/handheld/lcd3x.slangp"
+
+# =============================================================================
+# Render Settings
+# =============================================================================
+[render]
+vsync = true
+target_fps = 60
+enable_validation = false
+
+# Display scaling mode for captured frames: "fit" | "fill" | "stretch" | "integer"
+scale_mode = "stretch"
+integer_scale = 0
+
+# =============================================================================
+# Logging Settings
+# =============================================================================
+[logging]
+# Log level: "trace" | "debug" | "info" | "warn" | "error" | "critical"
+level = "info"
+file = ""

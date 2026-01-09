@@ -11,6 +11,7 @@
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <spawn.h>
 #include <string>
 #include <string_view>
@@ -160,6 +161,196 @@ static auto push_quit_event() -> void {
     SDL_PushEvent(&quit);
 }
 
+static auto resolve_xdg_config_home() -> std::optional<std::filesystem::path> {
+    if (const char* xdg_config = std::getenv("XDG_CONFIG_HOME"); xdg_config && *xdg_config) {
+        return std::filesystem::path(xdg_config);
+    }
+    if (const char* home = std::getenv("HOME"); home && *home) {
+        return std::filesystem::path(home) / ".config";
+    }
+    return std::nullopt;
+}
+
+static auto resolve_default_config_path() -> std::optional<std::filesystem::path> {
+    if (auto xdg = resolve_xdg_config_home()) {
+        auto candidate = *xdg / "goggles" / "goggles.toml";
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
+            return candidate;
+        }
+        if (ec) {
+            GOGGLES_LOG_DEBUG("Failed to stat config candidate '{}': {}", candidate.string(),
+                              ec.message());
+        }
+    }
+
+    return std::nullopt;
+}
+
+static auto resolve_user_config_path() -> std::optional<std::filesystem::path> {
+    auto xdg = resolve_xdg_config_home();
+    if (!xdg) {
+        return std::nullopt;
+    }
+    return *xdg / "goggles" / "goggles.toml";
+}
+
+static auto resolve_config_template_path() -> std::optional<std::filesystem::path> {
+    std::error_code ec;
+
+    if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
+        resource_dir && *resource_dir) {
+        auto candidate = std::filesystem::path(resource_dir) / "config" / "goggles.template.toml";
+        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
+            return candidate;
+        }
+    }
+
+    {
+        auto candidate = std::filesystem::path("config") / "goggles.template.toml";
+        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
+            return candidate;
+        }
+    }
+
+    return std::nullopt;
+}
+
+struct FileCopyPaths {
+    std::filesystem::path src;
+    std::filesystem::path dst;
+};
+
+static auto copy_file_atomic(const FileCopyPaths& paths) -> goggles::Result<std::filesystem::path> {
+    std::error_code ec;
+    const auto dst_dir = paths.dst.parent_path();
+    std::filesystem::create_directories(dst_dir, ec);
+    if (ec) {
+        GOGGLES_LOG_DEBUG("Failed to create config directory '{}': {}", dst_dir.string(),
+                          ec.message());
+        return goggles::make_error<std::filesystem::path>(
+            goggles::ErrorCode::file_write_failed,
+            "Failed to create config directory '" + dst_dir.string() + "': " + ec.message());
+    }
+
+    auto tmp = paths.dst;
+    tmp += ".tmp";
+
+    std::filesystem::copy_file(paths.src, tmp, std::filesystem::copy_options::overwrite_existing,
+                               ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+        return goggles::make_error<std::filesystem::path>(goggles::ErrorCode::file_write_failed,
+                                                          "Failed to write config file '" +
+                                                              tmp.string() + "': " + ec.message());
+    }
+
+    std::filesystem::rename(tmp, paths.dst, ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+        return goggles::make_error<std::filesystem::path>(
+            goggles::ErrorCode::file_write_failed, "Failed to rename config file '" + tmp.string() +
+                                                       "' -> '" + paths.dst.string() +
+                                                       "': " + ec.message());
+    }
+
+    return paths.dst;
+}
+
+static auto ensure_user_default_config_from_template(const std::filesystem::path& template_path)
+    -> goggles::Result<std::filesystem::path> {
+    auto user_cfg_path = resolve_user_config_path();
+    if (!user_cfg_path) {
+        return goggles::make_error<std::filesystem::path>(goggles::ErrorCode::invalid_data,
+                                                          "Unable to resolve XDG config directory");
+    }
+
+    std::error_code ec;
+    if (std::filesystem::exists(*user_cfg_path, ec) && !ec) {
+        if (std::filesystem::is_regular_file(*user_cfg_path, ec) && !ec) {
+            return *user_cfg_path;
+        }
+        return goggles::make_error<std::filesystem::path>(
+            goggles::ErrorCode::invalid_data,
+            "Config path exists but is not a regular file: " + user_cfg_path->string());
+    }
+
+    return copy_file_atomic(FileCopyPaths{.src = template_path, .dst = *user_cfg_path});
+}
+
+static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts)
+    -> std::optional<goggles::Config> {
+    std::optional<std::filesystem::path> config_path;
+    const bool explicit_config = !cli_opts.config_path.empty();
+    if (!cli_opts.config_path.empty()) {
+        config_path = cli_opts.config_path;
+    } else {
+        if (auto existing = resolve_default_config_path()) {
+            config_path = *existing;
+        } else if (auto template_path = resolve_config_template_path()) {
+            auto created = ensure_user_default_config_from_template(*template_path);
+            if (created) {
+                config_path = created.value();
+                GOGGLES_LOG_INFO("Wrote default configuration: {}", config_path->string());
+            } else {
+                const auto& error = created.error();
+                GOGGLES_LOG_WARN("Failed to write default configuration; using template: {} ({})",
+                                 error.message, goggles::error_code_name(error.code));
+                config_path = *template_path;
+                GOGGLES_LOG_INFO("Using template configuration: {}", config_path->string());
+            }
+        }
+    }
+
+    if (!config_path) {
+        GOGGLES_LOG_WARN("No configuration file found; using defaults");
+        return goggles::default_config();
+    }
+
+    GOGGLES_LOG_INFO("Loading configuration: {}", config_path->string());
+    auto config_result = goggles::load_config(*config_path);
+    if (!config_result) {
+        const auto& error = config_result.error();
+        GOGGLES_LOG_ERROR("Failed to load configuration from '{}': {} ({})", config_path->string(),
+                          error.message, goggles::error_code_name(error.code));
+        if (explicit_config) {
+            GOGGLES_LOG_CRITICAL("Config was provided explicitly; refusing to continue");
+            return std::nullopt;
+        }
+        GOGGLES_LOG_INFO("Using default configuration");
+        return goggles::default_config();
+    }
+    return config_result.value();
+}
+
+static auto apply_log_level(const goggles::Config& config) -> void {
+    if (config.logging.level == "trace") {
+        goggles::set_log_level(spdlog::level::trace);
+    } else if (config.logging.level == "debug") {
+        goggles::set_log_level(spdlog::level::debug);
+    } else if (config.logging.level == "info") {
+        goggles::set_log_level(spdlog::level::info);
+    } else if (config.logging.level == "warn") {
+        goggles::set_log_level(spdlog::level::warn);
+    } else if (config.logging.level == "error") {
+        goggles::set_log_level(spdlog::level::err);
+    } else if (config.logging.level == "critical") {
+        goggles::set_log_level(spdlog::level::critical);
+    }
+}
+
+static auto log_config_summary(const goggles::Config& config) -> void {
+    GOGGLES_LOG_DEBUG("Configuration loaded:");
+    GOGGLES_LOG_DEBUG("  Capture backend: {}", config.capture.backend);
+    GOGGLES_LOG_DEBUG("  Input forwarding: {}", config.input.forwarding);
+    GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
+    GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
+    GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
+    GOGGLES_LOG_DEBUG("  Render scale_mode: {}", to_string(config.render.scale_mode));
+    GOGGLES_LOG_DEBUG("  Render integer_scale: {}", config.render.integer_scale);
+    GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
+}
+
 static auto run_app(int argc, char** argv) -> int {
     auto cli_result = goggles::app::parse_cli(argc, argv);
     if (!cli_result) {
@@ -176,48 +367,29 @@ static auto run_app(int argc, char** argv) -> int {
     goggles::initialize_logger("goggles");
     GOGGLES_LOG_INFO(GOGGLES_PROJECT_NAME " v" GOGGLES_VERSION " starting");
 
-    auto config_result = goggles::load_config(cli_opts.config_path);
-
-    goggles::Config config;
+    auto config_result = load_config_for_cli(cli_opts);
     if (!config_result) {
-        const auto& error = config_result.error();
-        GOGGLES_LOG_ERROR("Failed to load configuration from '{}': {} ({})",
-                          cli_opts.config_path.string(), error.message,
-                          goggles::error_code_name(error.code));
-        GOGGLES_LOG_INFO("Using default configuration");
-        config = goggles::default_config();
-    } else {
-        config = config_result.value();
+        return EXIT_FAILURE;
     }
+    goggles::Config config = config_result.value();
 
     if (!cli_opts.shader_preset.empty()) {
         config.shader.preset = cli_opts.shader_preset;
         GOGGLES_LOG_INFO("Shader preset overridden by CLI: {}", config.shader.preset);
     }
-
-    if (config.logging.level == "trace") {
-        goggles::set_log_level(spdlog::level::trace);
-    } else if (config.logging.level == "debug") {
-        goggles::set_log_level(spdlog::level::debug);
-    } else if (config.logging.level == "info") {
-        goggles::set_log_level(spdlog::level::info);
-    } else if (config.logging.level == "warn") {
-        goggles::set_log_level(spdlog::level::warn);
-    } else if (config.logging.level == "error") {
-        goggles::set_log_level(spdlog::level::err);
-    } else if (config.logging.level == "critical") {
-        goggles::set_log_level(spdlog::level::critical);
+    if (!config.shader.preset.empty()) {
+        std::filesystem::path preset_path{config.shader.preset};
+        if (preset_path.is_relative()) {
+            if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
+                resource_dir && *resource_dir) {
+                preset_path = std::filesystem::path(resource_dir) / preset_path;
+                config.shader.preset = preset_path.lexically_normal().string();
+            }
+        }
     }
 
-    GOGGLES_LOG_DEBUG("Configuration loaded:");
-    GOGGLES_LOG_DEBUG("  Capture backend: {}", config.capture.backend);
-    GOGGLES_LOG_DEBUG("  Input forwarding: {}", config.input.forwarding);
-    GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
-    GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
-    GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
-    GOGGLES_LOG_DEBUG("  Render scale_mode: {}", to_string(config.render.scale_mode));
-    GOGGLES_LOG_DEBUG("  Render integer_scale: {}", config.render.integer_scale);
-    GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
+    apply_log_level(config);
+    log_config_summary(config);
 
     bool enable_input_forwarding = !cli_opts.detach;
     if (!cli_opts.detach && !config.input.forwarding) {

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Goggles
+Exec=AppRun
+Icon=goggles
+Categories=Game;Graphics;
+Terminal=false
