@@ -175,8 +175,12 @@ static auto resolve_default_config_path() -> std::optional<std::filesystem::path
     if (auto xdg = resolve_xdg_config_home()) {
         auto candidate = *xdg / "goggles" / "goggles.toml";
         std::error_code ec;
-        if (std::filesystem::exists(candidate, ec) && !ec) {
+        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
             return candidate;
+        }
+        if (ec) {
+            GOGGLES_LOG_DEBUG("Failed to stat config candidate '{}': {}", candidate.string(),
+                              ec.message());
         }
     }
 
@@ -184,24 +188,34 @@ static auto resolve_default_config_path() -> std::optional<std::filesystem::path
         resource_dir && *resource_dir) {
         auto candidate = std::filesystem::path(resource_dir) / "config" / "goggles.toml";
         std::error_code ec;
-        if (std::filesystem::exists(candidate, ec) && !ec) {
+        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
             return candidate;
+        }
+        if (ec) {
+            GOGGLES_LOG_DEBUG("Failed to stat config candidate '{}': {}", candidate.string(),
+                              ec.message());
         }
     }
 
     {
         auto candidate = std::filesystem::path("config") / "goggles.toml";
         std::error_code ec;
-        if (std::filesystem::exists(candidate, ec) && !ec) {
+        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
             return candidate;
+        }
+        if (ec) {
+            GOGGLES_LOG_DEBUG("Failed to stat config candidate '{}': {}", candidate.string(),
+                              ec.message());
         }
     }
 
     return std::nullopt;
 }
 
-static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts) -> goggles::Config {
+static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts)
+    -> std::optional<goggles::Config> {
     std::optional<std::filesystem::path> config_path;
+    const bool explicit_config = !cli_opts.config_path.empty();
     if (!cli_opts.config_path.empty()) {
         config_path = cli_opts.config_path;
     } else {
@@ -219,6 +233,10 @@ static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts) -> gog
         const auto& error = config_result.error();
         GOGGLES_LOG_ERROR("Failed to load configuration from '{}': {} ({})", config_path->string(),
                           error.message, goggles::error_code_name(error.code));
+        if (explicit_config) {
+            GOGGLES_LOG_CRITICAL("Config was provided explicitly; refusing to continue");
+            return std::nullopt;
+        }
         GOGGLES_LOG_INFO("Using default configuration");
         return goggles::default_config();
     }
@@ -269,7 +287,11 @@ static auto run_app(int argc, char** argv) -> int {
     goggles::initialize_logger("goggles");
     GOGGLES_LOG_INFO(GOGGLES_PROJECT_NAME " v" GOGGLES_VERSION " starting");
 
-    goggles::Config config = load_config_for_cli(cli_opts);
+    auto config_result = load_config_for_cli(cli_opts);
+    if (!config_result) {
+        return EXIT_FAILURE;
+    }
+    goggles::Config config = config_result.value();
 
     if (!cli_opts.shader_preset.empty()) {
         config.shader.preset = cli_opts.shader_preset;
