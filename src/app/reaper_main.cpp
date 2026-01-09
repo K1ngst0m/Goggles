@@ -38,9 +38,23 @@ auto get_child_pids(pid_t parent_pid) -> std::vector<pid_t> {
             continue;
         }
 
-        pid_t ppid = -1;
-        std::fscanf(stat_file, "%*d %*s %*c %d", &ppid);
+        std::array<char, 512> buf{};
+        if (std::fgets(buf.data(), buf.size(), stat_file) == nullptr) {
+            std::fclose(stat_file);
+            continue;
+        }
         std::fclose(stat_file);
+
+        const char* comm_end = std::strrchr(buf.data(), ')');
+        if (comm_end == nullptr || comm_end[1] == '\0') {
+            continue;
+        }
+
+        char state = 0;
+        pid_t ppid = -1;
+        if (std::sscanf(comm_end + 1, " %c %d", &state, &ppid) != 2) {
+            continue;
+        }
 
         if (ppid == parent_pid) {
             pids.push_back(static_cast<pid_t>(std::atoi(entry->d_name)));

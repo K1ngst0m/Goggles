@@ -25,7 +25,6 @@ auto get_reaper_path() -> std::string {
     exe_path[static_cast<size_t>(len)] = '\0';
 
     std::string path(exe_path.data());
-    // Test binary is in build/debug/tests/, reaper is in build/debug/bin/
     const auto pos = path.rfind('/');
     if (pos != std::string::npos) {
         path = path.substr(0, pos);
