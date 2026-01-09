@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <util/error.hpp>
@@ -63,6 +64,7 @@ private:
 
     bool m_running = true;
     bool m_window_resized = false;
+    uint32_t m_pending_format = 0;
 };
 
 } // namespace app
