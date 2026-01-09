@@ -518,7 +518,7 @@ void ImGuiLayer::draw_parameter_controls() {
 
 void ImGuiLayer::draw_debug_overlay() {
     auto& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 160, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 170, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.5F);
 
     constexpr auto flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
@@ -529,12 +529,28 @@ void ImGuiLayer::draw_debug_overlay() {
                        static_cast<float>(k_frame_history_size);
         float fps = avg_ms > 0.F ? 1000.F / avg_ms : 0.F;
 
-        ImGui::Text("FPS: %.1f", fps);
-        ImGui::Text("Frame: %.2f ms", avg_ms);
+        float src_avg_ms =
+            std::accumulate(m_source_frame_times.begin(), m_source_frame_times.end(), 0.F) /
+            static_cast<float>(k_frame_history_size);
+        float src_fps = src_avg_ms > 0.F ? 1000.F / src_avg_ms : 0.F;
+
+        ImGui::Text("Render: %.1f FPS (%.2f ms)", fps, avg_ms);
+        ImGui::Text("Source: %.1f FPS (%.2f ms)", src_fps, src_avg_ms);
         ImGui::PlotLines("##ft", m_frame_times.data(), static_cast<int>(k_frame_history_size),
-                         static_cast<int>(m_frame_idx), nullptr, 0.F, 33.F, ImVec2(140, 40));
+                         static_cast<int>(m_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 35));
     }
     ImGui::End();
+}
+
+void ImGuiLayer::notify_source_frame() {
+    auto now = std::chrono::steady_clock::now();
+    if (m_last_source_frame_time.time_since_epoch().count() > 0) {
+        auto delta =
+            std::chrono::duration<float, std::milli>(now - m_last_source_frame_time).count();
+        m_source_frame_times[m_source_frame_idx] = delta;
+        m_source_frame_idx = (m_source_frame_idx + 1) % k_frame_history_size;
+    }
+    m_last_source_frame_time = now;
 }
 
 void ImGuiLayer::rebuild_for_format(vk::Format new_format) {

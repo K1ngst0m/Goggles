@@ -259,4 +259,10 @@ void UiController::rebuild_for_format(vk::Format new_format) {
     }
 }
 
+void UiController::notify_source_frame() {
+    if (m_imgui_layer) {
+        m_imgui_layer->notify_source_frame();
+    }
+}
+
 } // namespace goggles::app

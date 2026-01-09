@@ -52,6 +52,7 @@ public:
     void sync_from_backend(render::VulkanBackend& vulkan_backend);
 
     void rebuild_for_format(vk::Format new_format);
+    void notify_source_frame();
 
 private:
     UiController() = default;

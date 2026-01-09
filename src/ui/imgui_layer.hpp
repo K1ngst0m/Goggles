@@ -87,6 +87,7 @@ public:
     [[nodiscard]] auto is_visible() const -> bool { return m_visible; }
 
     void rebuild_for_format(vk::Format new_format);
+    void notify_source_frame();
 
 private:
     ImGuiLayer() = default;
@@ -121,8 +122,11 @@ private:
 
     static constexpr size_t k_frame_history_size = 120;
     std::array<float, k_frame_history_size> m_frame_times{};
+    std::array<float, k_frame_history_size> m_source_frame_times{};
     size_t m_frame_idx = 0;
+    size_t m_source_frame_idx = 0;
     std::chrono::steady_clock::time_point m_last_frame_time;
+    std::chrono::steady_clock::time_point m_last_source_frame_time;
 };
 
 } // namespace goggles::ui
