@@ -690,8 +690,14 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
             if (frame.valid && frame.dmabuf_fd >= 0) {
                 int dup_fd = dup(frame.dmabuf_fd);
                 if (dup_fd >= 0) {
-                    VirtualFrameInfo info{frame.width, frame.height, frame.format, frame.stride,
-                                          dup_fd};
+                    VirtualFrameInfo info{};
+                    info.width = frame.width;
+                    info.height = frame.height;
+                    info.format = frame.format;
+                    info.stride = frame.stride;
+                    info.offset = frame.offset;
+                    info.modifier = frame.modifier;
+                    info.dmabuf_fd = dup_fd;
                     get_capture_manager().enqueue_virtual_frame(info);
                 }
             }

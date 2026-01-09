@@ -737,7 +737,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
 
     // For single-plane images, provide a minimal plane layout
     // The actual layout is determined by the exporter and encoded in the modifier
-    plane_layout.offset = 0;
+    plane_layout.offset = frame.offset;
     plane_layout.size = 0;
     plane_layout.rowPitch = frame.stride;
     plane_layout.arrayPitch = 0;

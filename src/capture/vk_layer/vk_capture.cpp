@@ -923,8 +923,8 @@ void CaptureManager::enqueue_virtual_frame(const VirtualFrameInfo& frame) {
     metadata.height = frame.height;
     metadata.format = static_cast<VkFormat>(frame.format);
     metadata.stride = frame.stride;
-    metadata.offset = 0;
-    metadata.modifier = 0;
+    metadata.offset = frame.offset;
+    metadata.modifier = frame.modifier;
     metadata.frame_number = frame_num;
 
     AsyncCaptureItem item{};

@@ -251,12 +251,14 @@ bool CaptureReceiver::process_message(const char* data, size_t len, const std::v
         bool texture_changed =
             (tex_data->width != m_last_texture.width || tex_data->height != m_last_texture.height ||
              tex_data->format != m_last_texture.format ||
+             tex_data->offset != m_last_texture.offset ||
              tex_data->modifier != m_last_texture.modifier);
 
         m_frame.dmabuf_fd = util::UniqueFd{new_fd};
         m_frame.width = tex_data->width;
         m_frame.height = tex_data->height;
         m_frame.stride = tex_data->stride;
+        m_frame.offset = tex_data->offset;
         m_frame.format = static_cast<uint32_t>(tex_data->format);
         m_frame.modifier = tex_data->modifier;
         m_last_texture = *tex_data;
@@ -307,6 +309,7 @@ bool CaptureReceiver::process_message(const char* data, size_t len, const std::v
         m_frame.width = metadata->width;
         m_frame.height = metadata->height;
         m_frame.stride = metadata->stride;
+        m_frame.offset = metadata->offset;
         m_frame.format = static_cast<uint32_t>(metadata->format);
         m_frame.modifier = metadata->modifier;
         m_frame.frame_number = metadata->frame_number;
