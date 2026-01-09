@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Goggles
+Exec=goggles
+Icon=goggles
+Categories=Game;Graphics;
+Terminal=false
+

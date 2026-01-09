@@ -194,6 +194,16 @@ static auto run_app(int argc, char** argv) -> int {
         config.shader.preset = cli_opts.shader_preset;
         GOGGLES_LOG_INFO("Shader preset overridden by CLI: {}", config.shader.preset);
     }
+    if (!config.shader.preset.empty()) {
+        std::filesystem::path preset_path{config.shader.preset};
+        if (preset_path.is_relative()) {
+            if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
+                resource_dir && *resource_dir) {
+                preset_path = std::filesystem::path(resource_dir) / preset_path;
+                config.shader.preset = preset_path.lexically_normal().string();
+            }
+        }
+    }
 
     if (config.logging.level == "trace") {
         goggles::set_log_level(spdlog::level::trace);

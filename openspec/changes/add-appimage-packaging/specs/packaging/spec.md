@@ -53,3 +53,20 @@ The packaging SHALL support Steam launch options of the form `goggles -- %comman
 - **THEN** Goggles SHALL execute the target command exactly as provided by Steam
 - **AND** set `GOGGLES_CAPTURE=1` for the spawned game process
 
+### Requirement: Packaged Assets Are Not CWD-Dependent
+
+The packaged runtime SHALL locate shipped assets (configuration and shaders) without relying on the current working directory.
+
+#### Scenario: AppImage provides a stable resource root
+- **GIVEN** the Goggles AppImage is executed from an arbitrary working directory
+- **WHEN** the viewer loads its default configuration, UI font asset, and default shader preset
+- **THEN** the viewer SHALL locate shipped assets via a stable resource root (e.g. provided by the AppImage wrapper)
+- **AND** it SHALL NOT require `./shaders` to exist in the working directory
+
+### Requirement: Optional Shader Pack Install Location
+
+The packaging SHALL provide a way to install/update the full RetroArch shader pack (slang-shaders) into a stable user location without requiring Pixi.
+
+#### Scenario: Shader pack is fetched into XDG data
+- **WHEN** the user invokes the AppImage shader fetch/update flow
+- **THEN** the shader pack SHALL be installed under `${XDG_DATA_HOME:-$HOME/.local/share}/goggles/shaders/retroarch/`

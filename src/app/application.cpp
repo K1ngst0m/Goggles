@@ -9,6 +9,7 @@
 #include <input/input_forwarder.hpp>
 #include <render/backend/vulkan_backend.hpp>
 #include <string>
+#include <string_view>
 #include <util/config.hpp>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
@@ -23,6 +24,19 @@ static auto to_sdl_event(EventRef event) -> const SDL_Event* {
 
 static auto to_sdl_window(WindowHandle window) -> SDL_Window* {
     return window.ptr ? static_cast<SDL_Window*>(window.ptr) : nullptr;
+}
+
+static auto resolve_shader_base_dir() -> std::filesystem::path {
+    if (const char* shader_dir = std::getenv("GOGGLES_SHADER_DIR"); shader_dir && *shader_dir) {
+        return shader_dir;
+    }
+
+    if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
+        resource_dir && *resource_dir) {
+        return std::filesystem::path(resource_dir) / "shaders";
+    }
+
+    return "shaders";
 }
 
 auto Application::create(const Config& config, bool enable_input_forwarding)
@@ -40,9 +54,9 @@ auto Application::create(const Config& config, bool enable_input_forwarding)
 
     auto* sdl_window = to_sdl_window(app->m_platform->window());
 
-    app->m_vulkan_backend = GOGGLES_TRY(
-        render::VulkanBackend::create(sdl_window, config.render.enable_validation, "shaders",
-                                      config.render.scale_mode, config.render.integer_scale));
+    app->m_vulkan_backend = GOGGLES_TRY(render::VulkanBackend::create(
+        sdl_window, config.render.enable_validation, resolve_shader_base_dir(),
+        config.render.scale_mode, config.render.integer_scale));
 
     app->m_vulkan_backend->load_shader_preset(config.shader.preset);
 

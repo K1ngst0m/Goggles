@@ -4,6 +4,7 @@
 
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <ranges>
 #include <render/backend/vulkan_backend.hpp>
@@ -39,6 +40,40 @@ static auto scan_presets(const std::filesystem::path& dir) -> std::vector<std::f
     }
     std::ranges::sort(presets);
     return presets;
+}
+
+static auto resolve_preset_catalog_dir() -> std::filesystem::path {
+    // Prefer the downloaded shader pack (AppImage --shader-fetch) if present.
+    const char* xdg_data_home = std::getenv("XDG_DATA_HOME");
+    const char* home = std::getenv("HOME");
+
+    std::filesystem::path data_root;
+    if (xdg_data_home && *xdg_data_home) {
+        data_root = xdg_data_home;
+    } else if (home && *home) {
+        data_root = std::filesystem::path(home) / ".local/share";
+    }
+
+    if (!data_root.empty()) {
+        auto xdg_dir = data_root / "goggles/shaders/retroarch";
+        std::error_code ec;
+        if (std::filesystem::exists(xdg_dir, ec) && !ec) {
+            return xdg_dir;
+        }
+    }
+
+    // Fall back to packaged resources (AppImage) if configured.
+    if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
+        resource_dir && *resource_dir) {
+        auto packaged_dir = std::filesystem::path(resource_dir) / "shaders/retroarch";
+        std::error_code ec;
+        if (std::filesystem::exists(packaged_dir, ec) && !ec) {
+            return packaged_dir;
+        }
+    }
+
+    // Dev fallback: repository-relative path.
+    return "shaders/retroarch";
 }
 
 static void update_ui_parameters(render::VulkanBackend& vulkan_backend,
@@ -98,7 +133,9 @@ auto UiController::create(app::WindowHandle window, render::VulkanBackend& vulka
 
     controller->m_imgui_layer = std::move(imgui_result.value());
 
-    auto presets = scan_presets("shaders/retroarch");
+    auto preset_dir = resolve_preset_catalog_dir();
+    GOGGLES_LOG_INFO("Preset catalog directory: {}", preset_dir.string());
+    auto presets = scan_presets(preset_dir);
     controller->m_imgui_layer->set_preset_catalog(std::move(presets));
     controller->m_imgui_layer->set_current_preset(vulkan_backend.current_preset_path());
     controller->m_imgui_layer->state().shader_enabled = !config.shader.preset.empty();

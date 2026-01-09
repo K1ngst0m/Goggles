@@ -44,9 +44,8 @@ We need a packaging approach that works on arbitrary Linux distros and Steam Dec
 ## Open Questions
 
 - Installation location and versioning:
-  - Should the installed layer path be versioned (`…/vulkan-layers/<version>/…`) or unversioned with an atomic overwrite?
+  - **Decision**: Use a versioned install root: `${XDG_DATA_HOME:-$HOME/.local/share}/goggles/vulkan-layers/<version>/...`.
 - Uninstall UX:
-  - Do we need a supported `goggles --uninstall-layer` command, or is documentation for deleting installed files sufficient?
+  - **Decision**: Provide an AppImage wrapper flag `--uninstall-layer` to remove the installed layer for the current AppImage version.
 - Updates:
-  - Should the wrapper always refresh manifests on launch, or only when a version marker changes?
-
+  - **Decision**: Refresh manifests on launch to ensure they point at the active version directory.

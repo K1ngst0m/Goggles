@@ -5,6 +5,8 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
@@ -14,6 +16,39 @@
 namespace goggles::ui {
 
 namespace {
+
+auto resolve_default_font_path() -> std::filesystem::path {
+    if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
+        resource_dir && *resource_dir) {
+        return std::filesystem::path(resource_dir) / "assets" / "fonts" / "RobotoMono-Regular.ttf";
+    }
+    return std::filesystem::path("assets") / "fonts" / "RobotoMono-Regular.ttf";
+}
+
+auto resolve_imgui_ini_path() -> std::optional<std::filesystem::path> {
+    // Allow override for power users / debugging.
+    if (const char* ini = std::getenv("GOGGLES_IMGUI_INI"); ini && *ini) {
+        return std::filesystem::path(ini);
+    }
+
+    std::filesystem::path config_root;
+    if (const char* xdg_config = std::getenv("XDG_CONFIG_HOME"); xdg_config && *xdg_config) {
+        config_root = xdg_config;
+    } else if (const char* home = std::getenv("HOME"); home && *home) {
+        config_root = std::filesystem::path(home) / ".config";
+    } else {
+        return std::nullopt;
+    }
+
+    auto dir = config_root / "goggles";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+
+    return dir / "imgui.ini";
+}
 
 auto to_lower(std::string_view str) -> std::string {
     std::string result;
@@ -76,13 +111,21 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
     layer->m_queue = config.queue;
     layer->m_swapchain_format = config.swapchain_format;
     layer->m_image_count = config.image_count;
-    layer->m_font_path = std::filesystem::path("assets") / "fonts" / "RobotoMono-Regular.ttf";
+    layer->m_font_path = resolve_default_font_path();
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     auto& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+    if (auto ini_path = resolve_imgui_ini_path()) {
+        layer->m_ini_path = ini_path->string();
+        io.IniFilename = layer->m_ini_path.c_str();
+    } else {
+        // Avoid leaking `imgui.ini` into the working directory if we can't resolve a writable path.
+        io.IniFilename = nullptr;
+    }
 
     ImGui::StyleColorsDark();
 
@@ -261,14 +304,45 @@ void ImGuiLayer::set_preset_catalog(std::vector<std::filesystem::path> presets) 
 void ImGuiLayer::rebuild_preset_tree() {
     m_preset_tree = PresetTreeNode{};
 
+    // If presets are absolute (AppImage/XDG), building the UI tree from raw paths
+    // produces a confusing root-level hierarchy (/, home, ...). Strip the common
+    // parent prefix so the tree starts at the shader-pack root (e.g. crt/...).
+    std::filesystem::path common_parent_prefix;
+    if (!m_state.preset_catalog.empty()) {
+        common_parent_prefix = m_state.preset_catalog[0].parent_path();
+        for (size_t i = 1; i < m_state.preset_catalog.size(); ++i) {
+            const auto dir = m_state.preset_catalog[i].parent_path();
+            std::filesystem::path next_prefix;
+            auto it_a = common_parent_prefix.begin();
+            auto it_b = dir.begin();
+            while (it_a != common_parent_prefix.end() && it_b != dir.end() && *it_a == *it_b) {
+                next_prefix /= *it_a;
+                ++it_a;
+                ++it_b;
+            }
+            common_parent_prefix = std::move(next_prefix);
+            if (common_parent_prefix.empty()) {
+                break;
+            }
+        }
+    }
+
     for (size_t i = 0; i < m_state.preset_catalog.size(); ++i) {
         const auto& path = m_state.preset_catalog[i];
+
+        auto display_path = path;
+        if (!common_parent_prefix.empty()) {
+            auto rel = path.lexically_relative(common_parent_prefix);
+            if (!rel.empty()) {
+                display_path = std::move(rel);
+            }
+        }
         PresetTreeNode* current = &m_preset_tree;
 
-        for (auto it = path.begin(); it != path.end(); ++it) {
+        for (auto it = display_path.begin(); it != display_path.end(); ++it) {
             std::string part = it->string();
             auto next = std::next(it);
-            if (next == path.end()) {
+            if (next == display_path.end()) {
                 current->children[part].preset_index = static_cast<int>(i);
             } else {
                 current = &current->children[part];
