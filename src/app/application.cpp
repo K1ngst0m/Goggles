@@ -123,6 +123,14 @@ auto Application::wayland_display() const -> std::string {
     return m_input_forwarder->wayland_display();
 }
 
+auto Application::gpu_index() const -> uint32_t {
+    return m_vulkan_backend ? m_vulkan_backend->gpu_index() : 0;
+}
+
+auto Application::gpu_uuid() const -> std::string {
+    return m_vulkan_backend ? m_vulkan_backend->gpu_uuid() : "";
+}
+
 void Application::pump_events() {
     SDL_Event event;
     {

@@ -18,6 +18,10 @@ VkResult VKAPI_CALL Goggles_CreateInstance(const VkInstanceCreateInfo* pCreateIn
 void VKAPI_CALL Goggles_DestroyInstance(VkInstance instance,
                                         const VkAllocationCallbacks* pAllocator);
 
+VkResult VKAPI_CALL Goggles_EnumeratePhysicalDevices(VkInstance instance,
+                                                     uint32_t* pPhysicalDeviceCount,
+                                                     VkPhysicalDevice* pPhysicalDevices);
+
 // =============================================================================
 // Device Hooks
 // =============================================================================

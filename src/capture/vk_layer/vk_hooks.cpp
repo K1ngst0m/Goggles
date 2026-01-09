@@ -5,6 +5,7 @@
 #include "vk_dispatch.hpp"
 #include "wsi_virtual.hpp"
 
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <util/profiling.hpp>
@@ -90,6 +91,7 @@ VkResult VKAPI_CALL Goggles_CreateInstance(const VkInstanceCreateInfo* pCreateIn
     GETADDR(GetPhysicalDeviceMemoryProperties);
     GETADDR(GetPhysicalDeviceQueueFamilyProperties);
     GETADDR(EnumerateDeviceExtensionProperties);
+    GETADDR(GetPhysicalDeviceProperties2);
     GETADDR(GetPhysicalDeviceFormatProperties2);
     GETADDR(GetPhysicalDeviceImageFormatProperties2);
     GETADDR(DestroySurfaceKHR);
@@ -128,6 +130,85 @@ void VKAPI_CALL Goggles_DestroyInstance(VkInstance instance,
     PFN_vkDestroyInstance destroy_func = data->funcs.DestroyInstance;
     get_object_tracker().remove_instance(instance);
     destroy_func(instance, pAllocator);
+}
+
+VkResult VKAPI_CALL Goggles_EnumeratePhysicalDevices(VkInstance instance,
+                                                     uint32_t* pPhysicalDeviceCount,
+                                                     VkPhysicalDevice* pPhysicalDevices) {
+    auto* data = get_object_tracker().get_instance(instance);
+    if (!data) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    const char* gpu_uuid_str = std::getenv("GOGGLES_GPU_UUID");
+    if (!gpu_uuid_str || gpu_uuid_str[0] == '\0') {
+        return data->funcs.EnumeratePhysicalDevices(instance, pPhysicalDeviceCount,
+                                                    pPhysicalDevices);
+    }
+
+    uint32_t all_count = 0;
+    VkResult result = data->funcs.EnumeratePhysicalDevices(instance, &all_count, nullptr);
+    if (result != VK_SUCCESS || all_count == 0) {
+        return result;
+    }
+
+    std::vector<VkPhysicalDevice> all_devices(all_count);
+    result = data->funcs.EnumeratePhysicalDevices(instance, &all_count, all_devices.data());
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    VkPhysicalDevice matched_device = VK_NULL_HANDLE;
+    for (auto dev : all_devices) {
+        VkPhysicalDeviceIDProperties id_props{};
+        id_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+        VkPhysicalDeviceProperties2 props2{};
+        props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        props2.pNext = &id_props;
+
+        if (data->funcs.GetPhysicalDeviceProperties2) {
+            data->funcs.GetPhysicalDeviceProperties2(dev, &props2);
+        } else {
+            data->funcs.GetPhysicalDeviceProperties(dev, &props2.properties);
+            std::memset(id_props.deviceUUID, 0, sizeof(id_props.deviceUUID));
+        }
+
+        std::array<char, 37> uuid_hex{};
+        std::snprintf(uuid_hex.data(), uuid_hex.size(),
+                      "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                      id_props.deviceUUID[0], id_props.deviceUUID[1], id_props.deviceUUID[2],
+                      id_props.deviceUUID[3], id_props.deviceUUID[4], id_props.deviceUUID[5],
+                      id_props.deviceUUID[6], id_props.deviceUUID[7], id_props.deviceUUID[8],
+                      id_props.deviceUUID[9], id_props.deviceUUID[10], id_props.deviceUUID[11],
+                      id_props.deviceUUID[12], id_props.deviceUUID[13], id_props.deviceUUID[14],
+                      id_props.deviceUUID[15]);
+
+        if (std::strcmp(uuid_hex.data(), gpu_uuid_str) == 0) {
+            matched_device = dev;
+            LAYER_DEBUG("Matched GPU by UUID: %s (%s)", uuid_hex.data(),
+                        props2.properties.deviceName);
+            break;
+        }
+    }
+
+    if (matched_device == VK_NULL_HANDLE) {
+        LAYER_DEBUG("GOGGLES_GPU_UUID='%s' not found, using all devices", gpu_uuid_str);
+        return data->funcs.EnumeratePhysicalDevices(instance, pPhysicalDeviceCount,
+                                                    pPhysicalDevices);
+    }
+
+    if (pPhysicalDevices == nullptr) {
+        *pPhysicalDeviceCount = 1;
+        return VK_SUCCESS;
+    }
+
+    if (*pPhysicalDeviceCount >= 1) {
+        pPhysicalDevices[0] = matched_device;
+        *pPhysicalDeviceCount = 1;
+        return VK_SUCCESS;
+    }
+
+    return VK_INCOMPLETE;
 }
 
 // =============================================================================

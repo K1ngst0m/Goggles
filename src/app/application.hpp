@@ -46,6 +46,8 @@ public:
     [[nodiscard]] auto is_running() const -> bool { return m_running; }
     [[nodiscard]] auto x11_display() const -> std::string;
     [[nodiscard]] auto wayland_display() const -> std::string;
+    [[nodiscard]] auto gpu_index() const -> uint32_t;
+    [[nodiscard]] auto gpu_uuid() const -> std::string;
 
 private:
     Application() = default;

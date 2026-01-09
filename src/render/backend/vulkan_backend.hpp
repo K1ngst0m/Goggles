@@ -63,6 +63,8 @@ public:
         return static_cast<uint32_t>(m_swapchain_images.size());
     }
     [[nodiscard]] auto filter_chain() -> FilterChain* { return m_filter_chain.get(); }
+    [[nodiscard]] auto gpu_index() const -> uint32_t { return m_gpu_index; }
+    [[nodiscard]] auto gpu_uuid() const -> const std::string& { return m_gpu_uuid; }
 
     [[nodiscard]] auto import_sync_semaphores(util::UniqueFd frame_ready_fd,
                                               util::UniqueFd frame_consumed_fd) -> Result<void>;
@@ -150,6 +152,8 @@ private:
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> m_frames{};
 
     uint32_t m_graphics_queue_family = UINT32_MAX;
+    uint32_t m_gpu_index = 0;
+    std::string m_gpu_uuid;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     uint32_t m_current_frame = 0;
     vk::Format m_source_format = vk::Format::eUndefined;
