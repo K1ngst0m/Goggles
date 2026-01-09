@@ -216,4 +216,10 @@ void UiController::sync_from_backend(render::VulkanBackend& vulkan_backend) {
     update_ui_parameters(vulkan_backend, *m_imgui_layer);
 }
 
+void UiController::rebuild_for_format(vk::Format new_format) {
+    if (m_imgui_layer) {
+        m_imgui_layer->rebuild_for_format(new_format);
+    }
+}
+
 } // namespace goggles::app

@@ -69,8 +69,13 @@ void rebuild_fonts(ImGuiIO& io, const std::filesystem::path& font_path, float si
 auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> ResultPtr<ImGuiLayer> {
     auto layer = std::unique_ptr<ImGuiLayer>(new ImGuiLayer());
     layer->m_window = window;
+    layer->m_instance = config.instance;
+    layer->m_physical_device = config.physical_device;
     layer->m_device = config.device;
+    layer->m_queue_family = config.queue_family;
+    layer->m_queue = config.queue;
     layer->m_swapchain_format = config.swapchain_format;
+    layer->m_image_count = config.image_count;
     layer->m_font_path = std::filesystem::path("assets") / "fonts" / "RobotoMono-Regular.ttf";
 
     IMGUI_CHECKVERSION();
@@ -149,6 +154,7 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
         GOGGLES_LOG_WARN("ImGui_ImplVulkan_CreateFontsTexture failed (UI may look wrong on HiDPI)");
     }
 
+    layer->m_initialized = true;
     GOGGLES_LOG_INFO("ImGui layer initialized");
     return make_result_ptr(std::move(layer));
 }
@@ -176,10 +182,16 @@ void ImGuiLayer::shutdown() {
 }
 
 void ImGuiLayer::process_event(const SDL_Event& event) {
+    if (!m_initialized) {
+        return;
+    }
     ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
 void ImGuiLayer::begin_frame() {
+    if (!m_initialized) {
+        return;
+    }
     if (m_window != nullptr) {
         float display_scale = get_display_scale(m_window);
         if (std::fabs(display_scale - m_last_display_scale) > 0.01F) {
@@ -213,10 +225,16 @@ void ImGuiLayer::begin_frame() {
 }
 
 void ImGuiLayer::end_frame() {
+    if (!m_initialized) {
+        return;
+    }
     ImGui::Render();
 }
 
 void ImGuiLayer::record(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Extent2D extent) {
+    if (!m_initialized) {
+        return;
+    }
     vk::RenderingAttachmentInfo color_attachment{};
     color_attachment.imageView = target_view;
     color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -411,6 +429,63 @@ void ImGuiLayer::draw_parameter_controls() {
             }
         }
     }
+}
+
+void ImGuiLayer::rebuild_for_format(vk::Format new_format) {
+    if (new_format == m_swapchain_format) {
+        return;
+    }
+
+    GOGGLES_LOG_INFO("rebuild_for_format: {} -> {}", vk::to_string(m_swapchain_format),
+                     vk::to_string(new_format));
+
+    auto wait_result = m_device.waitIdle();
+    if (wait_result != vk::Result::eSuccess) {
+        GOGGLES_LOG_WARN("waitIdle failed during ImGui format rebuild: {}",
+                         vk::to_string(wait_result));
+    }
+
+    m_initialized = false;
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+
+    m_swapchain_format = new_format;
+
+    if (!ImGui_ImplSDL3_InitForVulkan(m_window)) {
+        GOGGLES_LOG_ERROR("ImGui_ImplSDL3_InitForVulkan failed during format change, UI disabled");
+        return;
+    }
+
+    ImGui_ImplVulkan_InitInfo init_info{};
+    init_info.Instance = m_instance;
+    init_info.PhysicalDevice = m_physical_device;
+    init_info.Device = m_device;
+    init_info.QueueFamily = m_queue_family;
+    init_info.Queue = m_queue;
+    init_info.DescriptorPool = m_descriptor_pool;
+    init_info.MinImageCount = m_image_count;
+    init_info.ImageCount = m_image_count;
+    init_info.UseDynamicRendering = true;
+
+    std::array color_formats = {static_cast<VkFormat>(m_swapchain_format)};
+    VkPipelineRenderingCreateInfo rendering_info{};
+    rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachmentFormats = color_formats.data();
+    init_info.PipelineRenderingCreateInfo = rendering_info;
+
+    if (!ImGui_ImplVulkan_Init(&init_info)) {
+        ImGui_ImplSDL3_Shutdown();
+        GOGGLES_LOG_ERROR("ImGui_ImplVulkan_Init failed during format change, UI disabled");
+        return;
+    }
+
+    if (!ImGui_ImplVulkan_CreateFontsTexture()) {
+        GOGGLES_LOG_WARN("ImGui_ImplVulkan_CreateFontsTexture failed after format change");
+    }
+
+    m_initialized = true;
+    GOGGLES_LOG_INFO("ImGui layer rebuilt for format {}", vk::to_string(m_swapchain_format));
 }
 
 } // namespace goggles::ui

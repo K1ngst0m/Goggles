@@ -85,6 +85,8 @@ public:
     void toggle_visibility() { m_visible = !m_visible; }
     [[nodiscard]] auto is_visible() const -> bool { return m_visible; }
 
+    void rebuild_for_format(vk::Format new_format);
+
 private:
     ImGuiLayer() = default;
     void draw_shader_controls();
@@ -97,9 +99,14 @@ private:
     std::filesystem::path m_font_path;
     float m_font_size_pixels = 17.0F;
     SDL_Window* m_window = nullptr;
+    vk::Instance m_instance;
+    vk::PhysicalDevice m_physical_device;
     vk::Device m_device;
+    uint32_t m_queue_family = 0;
+    vk::Queue m_queue;
     vk::DescriptorPool m_descriptor_pool;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
+    uint32_t m_image_count = 0;
 
     ShaderControlState m_state;
     PresetTreeNode m_preset_tree;
@@ -107,6 +114,7 @@ private:
     ParameterResetCallback m_on_parameter_reset;
     float m_last_display_scale = 1.0F;
     bool m_visible = true;
+    bool m_initialized = false;
 };
 
 } // namespace goggles::ui

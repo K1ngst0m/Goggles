@@ -549,8 +549,6 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
                                 "SDL_GetWindowSizeInPixels failed: " + std::string(SDL_GetError()));
     }
 
-    VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost,
-           "waitIdle failed before swapchain format change");
     if (m_filter_chain) {
         m_filter_chain->shutdown();
     }
@@ -569,8 +567,29 @@ auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> R
         }
     }
 
+    m_source_format = source_format;
     m_format_changed.store(true, std::memory_order_release);
     return {};
+}
+
+auto VulkanBackend::needs_format_rebuild(vk::Format source_format) const -> bool {
+    vk::Format target_format = get_matching_swapchain_format(source_format);
+    return target_format != m_swapchain_format;
+}
+
+auto VulkanBackend::rebuild_for_format(vk::Format source_format) -> Result<void> {
+    return recreate_swapchain_for_format(source_format);
+}
+
+void VulkanBackend::wait_all_frames() {
+    std::array<vk::Fence, MAX_FRAMES_IN_FLIGHT> fences{};
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        fences[i] = m_frames[i].in_flight_fence;
+    }
+    auto result = m_device->waitForFences(fences, VK_TRUE, UINT64_MAX);
+    if (result != vk::Result::eSuccess) {
+        GOGGLES_LOG_WARN("wait_all_frames failed: {}", vk::to_string(result));
+    }
 }
 
 auto VulkanBackend::get_matching_swapchain_format(vk::Format source_format) -> vk::Format {
@@ -1200,12 +1219,6 @@ auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
 
     m_last_frame_number = frame.frame_number;
 
-    auto vk_format = static_cast<vk::Format>(frame.format);
-    if (m_source_format != vk_format) {
-        GOGGLES_TRY(recreate_swapchain_for_format(vk_format));
-        m_source_format = vk_format;
-    }
-
     GOGGLES_TRY(import_dmabuf(frame));
 
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
@@ -1250,12 +1263,6 @@ auto VulkanBackend::render_frame_with_ui(const CaptureFrame& frame,
     cleanup_deferred_destroys();
 
     m_last_frame_number = frame.frame_number;
-
-    auto vk_format = static_cast<vk::Format>(frame.format);
-    if (m_source_format != vk_format) {
-        GOGGLES_TRY(recreate_swapchain_for_format(vk_format));
-        m_source_format = vk_format;
-    }
 
     GOGGLES_TRY(import_dmabuf(frame));
 

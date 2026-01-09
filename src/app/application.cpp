@@ -275,13 +275,29 @@ void Application::tick_frame() {
         return;
     }
 
-    if (m_window_resized) {
-        GOGGLES_PROFILE_SCOPE("HandleResize");
-        auto resize_result = m_vulkan_backend->handle_resize();
-        if (!resize_result) {
-            GOGGLES_LOG_ERROR("Resize failed: {}", resize_result.error().message);
+    if (m_pending_format != 0 || m_window_resized) {
+        GOGGLES_PROFILE_SCOPE("SwapchainRebuild");
+        m_vulkan_backend->wait_all_frames();
+
+        if (m_pending_format != 0) {
+            auto fmt = static_cast<vk::Format>(m_pending_format);
+            m_pending_format = 0;
+            m_window_resized = false;
+            auto result = m_vulkan_backend->rebuild_for_format(fmt);
+            if (result) {
+                if (m_ui_controller) {
+                    m_ui_controller->rebuild_for_format(m_vulkan_backend->swapchain_format());
+                }
+            } else {
+                GOGGLES_LOG_ERROR("Format rebuild failed: {}", result.error().message);
+            }
+        } else {
+            m_window_resized = false;
+            auto result = m_vulkan_backend->handle_resize();
+            if (!result) {
+                GOGGLES_LOG_ERROR("Resize failed: {}", result.error().message);
+            }
         }
-        m_window_resized = false;
     }
 
     if (m_capture_receiver) {
@@ -290,6 +306,15 @@ void Application::tick_frame() {
     }
 
     handle_sync_semaphores();
+
+    if (m_capture_receiver && m_capture_receiver->has_frame()) {
+        auto& frame = m_capture_receiver->get_frame();
+        auto source_format = static_cast<vk::Format>(frame.format);
+        if (m_vulkan_backend->needs_format_rebuild(source_format)) {
+            m_pending_format = frame.format;
+            return;
+        }
+    }
 
     if (m_ui_controller && m_ui_controller->enabled()) {
         m_ui_controller->apply_state(*m_vulkan_backend);
