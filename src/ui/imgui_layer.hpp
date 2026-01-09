@@ -85,6 +85,8 @@ public:
 
     void toggle_visibility() { m_visible = !m_visible; }
     [[nodiscard]] auto is_visible() const -> bool { return m_visible; }
+    void toggle_debug_overlay() { m_debug_overlay_visible = !m_debug_overlay_visible; }
+    [[nodiscard]] auto is_debug_overlay_visible() const -> bool { return m_debug_overlay_visible; }
 
     void rebuild_for_format(vk::Format new_format);
     void notify_source_frame();
@@ -118,6 +120,7 @@ private:
     ParameterResetCallback m_on_parameter_reset;
     float m_last_display_scale = 1.0F;
     bool m_visible = true;
+    bool m_debug_overlay_visible = true;
     bool m_initialized = false;
 
     static constexpr size_t k_frame_history_size = 120;

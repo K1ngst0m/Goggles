@@ -274,6 +274,8 @@ void ImGuiLayer::begin_frame() {
 
     if (m_visible) {
         draw_shader_controls();
+    }
+    if (m_debug_overlay_visible) {
         draw_debug_overlay();
     }
 }
@@ -521,10 +523,10 @@ void ImGuiLayer::draw_debug_overlay() {
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 170, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.5F);
 
-    constexpr auto flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-                           ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+    constexpr auto K_FLAGS = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
 
-    if (ImGui::Begin("##debug_overlay", nullptr, flags)) {
+    if (ImGui::Begin("##debug_overlay", nullptr, K_FLAGS)) {
         float avg_ms = std::accumulate(m_frame_times.begin(), m_frame_times.end(), 0.F) /
                        static_cast<float>(k_frame_history_size);
         float fps = avg_ms > 0.F ? 1000.F / avg_ms : 0.F;
