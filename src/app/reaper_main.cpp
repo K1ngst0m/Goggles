@@ -71,10 +71,7 @@ auto wait_all_children() -> void {
 }
 
 auto signal_handler(int /*sig*/) -> void {
-    if (g_should_run != 0) {
-        g_should_run = 0;
-        kill_all_children(SIGTERM);
-    }
+    g_should_run = 0;
 }
 
 auto setup_signal_handlers() -> void {
