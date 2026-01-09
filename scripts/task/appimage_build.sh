@@ -84,7 +84,14 @@ if [[ "$need_download" -eq 1 ]]; then
   chmod +x "$APPIMAGETOOL"
 fi
 
-OUTPUT="$REPO_ROOT/dist/Goggles-${VERSION}-x86_64.AppImage"
+OUTPUT_SUFFIX=""
+if [[ -n "${PRESET}" ]] && [[ "${PRESET}" != "release" ]]; then
+  # Avoid creating nested paths if a preset contains '/'.
+  safe_preset="${PRESET//\//-}"
+  OUTPUT_SUFFIX="-${safe_preset}"
+fi
+
+OUTPUT="$REPO_ROOT/dist/Goggles-${VERSION}${OUTPUT_SUFFIX}-x86_64.AppImage"
 ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" "$OUTPUT"
 
 echo "Built: $OUTPUT"

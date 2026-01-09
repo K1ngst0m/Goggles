@@ -1,8 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Goggles
-Exec=goggles
+Exec=AppRun
 Icon=goggles
 Categories=Game;Graphics;
 Terminal=false
-

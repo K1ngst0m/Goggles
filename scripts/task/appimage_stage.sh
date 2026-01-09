@@ -124,8 +124,19 @@ for lib in "${deps[@]}"; do
 done
 
 # Make the executable load bundled libs first.
-patchelf --set-rpath '$ORIGIN/../lib' "$APPDIR/usr/bin/goggles" 2>/dev/null || true
-patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$APPDIR/usr/bin/goggles" 2>/dev/null || true
+command -v patchelf >/dev/null 2>&1 || die "patchelf is required to stage the AppDir"
+
+patchelf_err=""
+if ! patchelf_err="$(patchelf --set-rpath "\$ORIGIN/../lib" "$APPDIR/usr/bin/goggles" 2>&1)"; then
+  echo "Error: patchelf --set-rpath failed for $APPDIR/usr/bin/goggles" >&2
+  echo "$patchelf_err" >&2
+  exit 1
+fi
+if ! patchelf_err="$(patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$APPDIR/usr/bin/goggles" 2>&1)"; then
+  echo "Error: patchelf --set-interpreter failed for $APPDIR/usr/bin/goggles" >&2
+  echo "$patchelf_err" >&2
+  exit 1
+fi
 
 chmod +x "$APPDIR/AppRun"
 

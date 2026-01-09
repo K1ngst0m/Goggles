@@ -18,7 +18,10 @@ PORTABLE_HOME=""
 if [[ -n "${APPIMAGE:-}" ]]; then
   PORTABLE_HOME="${APPIMAGE}.home"
   if [[ -n "${GOGGLES_PORTABLE:-}" ]] && [[ ! -d "${PORTABLE_HOME}" ]]; then
-    mkdir -p "${PORTABLE_HOME}"
+    if ! mkdir -p "${PORTABLE_HOME}"; then
+      echo "Warning: failed to create ${PORTABLE_HOME}, falling back to non-portable mode" >&2
+      PORTABLE_HOME=""
+    fi
   fi
   if [[ -d "${PORTABLE_HOME}" ]]; then
     export HOME="${PORTABLE_HOME}"
@@ -166,7 +169,12 @@ self_install() {
 }
 
 uninstall_layer() {
-  rm -f -- "${manifest_path_x86_64}" "${manifest_path_i386}" 2>/dev/null || true
+  if [[ -f "${manifest_path_x86_64}" ]] && grep -Fq "${VERSION_DIR}" "${manifest_path_x86_64}" 2>/dev/null; then
+    rm -f -- "${manifest_path_x86_64}" 2>/dev/null || true
+  fi
+  if [[ -f "${manifest_path_i386}" ]] && grep -Fq "${VERSION_DIR}" "${manifest_path_i386}" 2>/dev/null; then
+    rm -f -- "${manifest_path_i386}" 2>/dev/null || true
+  fi
   rm -rf -- "${VERSION_DIR}" 2>/dev/null || true
   echo "Uninstalled Goggles Vulkan layer for version ${VERSION} from ${DATA_ROOT}"
 }
