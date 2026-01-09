@@ -439,6 +439,12 @@ void ImGuiLayer::rebuild_for_format(vk::Format new_format) {
     GOGGLES_LOG_INFO("rebuild_for_format: {} -> {}", vk::to_string(m_swapchain_format),
                      vk::to_string(new_format));
 
+    auto wait_result = m_device.waitIdle();
+    if (wait_result != vk::Result::eSuccess) {
+        GOGGLES_LOG_WARN("waitIdle failed during ImGui format rebuild: {}",
+                         vk::to_string(wait_result));
+    }
+
     m_initialized = false;
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
@@ -472,6 +478,10 @@ void ImGuiLayer::rebuild_for_format(vk::Format new_format) {
         ImGui_ImplSDL3_Shutdown();
         GOGGLES_LOG_ERROR("ImGui_ImplVulkan_Init failed during format change, UI disabled");
         return;
+    }
+
+    if (!ImGui_ImplVulkan_CreateFontsTexture()) {
+        GOGGLES_LOG_WARN("ImGui_ImplVulkan_CreateFontsTexture failed after format change");
     }
 
     m_initialized = true;
