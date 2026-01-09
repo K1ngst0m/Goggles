@@ -133,7 +133,7 @@ write_manifest() {
 	    "type": "GLOBAL",
 	    "library_path": "${lib_path}",
 	    "api_version": "1.3.0",
-	    "implementation_version": 1,
+	    "implementation_version": "1",
 	    "description": "Goggles frame capture layer",
 	    "functions": {
 	      "vkNegotiateLoaderLayerInterfaceVersion": "vkNegotiateLoaderLayerInterfaceVersion",
