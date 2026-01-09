@@ -84,8 +84,8 @@ mkdir -p \
   "$APPDIR/usr/share/goggles/vulkan-layers/x86_64" \
   "$APPDIR/usr/share/goggles/vulkan-layers/i386"
 
-cp -f "$REPO_ROOT/packaging/appimage/AppRun" "$APPDIR/AppRun"
-cp -f "$REPO_ROOT/packaging/appimage/goggles.desktop" "$APPDIR/goggles.desktop"
+cp -f "$REPO_ROOT/platform/linux/appimage/AppRun" "$APPDIR/AppRun"
+cp -f "$REPO_ROOT/platform/linux/appimage/goggles.desktop" "$APPDIR/goggles.desktop"
 
 # AppImage icon convention: <IconName>.png at AppDir root (IconName from .desktop).
 cp -f "$REPO_ROOT/showcase-crt-royale.png" "$APPDIR/goggles.png"
