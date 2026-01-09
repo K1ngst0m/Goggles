@@ -2,7 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$REPO_ROOT" ]]; then
+  REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
 
 die() {
   echo "Error: $*" >&2
@@ -49,11 +52,35 @@ VERSION="$(cat "$APPDIR/usr/share/goggles/VERSION" 2>/dev/null || true)"
 TOOLS_DIR="$REPO_ROOT/.cache/appimage-tools"
 mkdir -p "$TOOLS_DIR"
 
-APPIMAGETOOL="$TOOLS_DIR/appimagetool-x86_64.AppImage"
-if [[ ! -x "$APPIMAGETOOL" ]]; then
-  echo "Downloading appimagetool..."
-  curl -L --fail -o "$APPIMAGETOOL" \
-    "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+# appimagetool is not available on conda-forge (as of 2026-01-09), so we download it.
+# Pin to a stable release for reproducibility.
+APPIMAGETOOL_VERSION="${APPIMAGETOOL_VERSION:-1.9.1}"
+APPIMAGETOOL_URL="${APPIMAGETOOL_URL:-https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage}"
+APPIMAGETOOL_SHA256="${APPIMAGETOOL_SHA256:-ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0}"
+APPIMAGETOOL="$TOOLS_DIR/appimagetool-${APPIMAGETOOL_VERSION}-x86_64.AppImage"
+
+command -v curl >/dev/null 2>&1 || die "curl is required to download appimagetool"
+command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required to verify appimagetool"
+
+need_download=1
+if [[ -f "$APPIMAGETOOL" ]]; then
+  current_sha="$(sha256sum "$APPIMAGETOOL" | awk '{print $1}')"
+  if [[ "$current_sha" == "$APPIMAGETOOL_SHA256" ]]; then
+    need_download=0
+  else
+    echo "appimagetool checksum mismatch; re-downloading (got=$current_sha expected=$APPIMAGETOOL_SHA256)"
+    rm -f "$APPIMAGETOOL"
+  fi
+fi
+
+if [[ "$need_download" -eq 1 ]]; then
+  echo "Downloading appimagetool ${APPIMAGETOOL_VERSION}..."
+  tmp="$(mktemp)"
+  trap 'rm -f "$tmp"' RETURN
+  curl -L --fail -o "$tmp" "$APPIMAGETOOL_URL"
+  got_sha="$(sha256sum "$tmp" | awk '{print $1}')"
+  [[ "$got_sha" == "$APPIMAGETOOL_SHA256" ]] || die "appimagetool checksum mismatch (got=$got_sha expected=$APPIMAGETOOL_SHA256)"
+  mv -f "$tmp" "$APPIMAGETOOL"
   chmod +x "$APPIMAGETOOL"
 fi
 
