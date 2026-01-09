@@ -9,4 +9,5 @@
 - [x] Fix vk_layer to use CaptureFrameMetadata with frame_number
 - [x] Add separate plots for render and source frame times
 - [x] Remove verbose DMA-BUF log
+- [x] Add F2 keybind to toggle debug overlay independently
 - [x] Test overlay display

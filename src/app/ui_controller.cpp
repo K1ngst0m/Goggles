@@ -197,6 +197,12 @@ void UiController::toggle_visibility() {
     }
 }
 
+void UiController::toggle_debug_overlay() {
+    if (m_imgui_layer) {
+        m_imgui_layer->toggle_debug_overlay();
+    }
+}
+
 void UiController::apply_state(render::VulkanBackend& vulkan_backend) {
     if (!m_imgui_layer) {
         return;

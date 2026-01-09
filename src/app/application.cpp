@@ -181,10 +181,15 @@ void Application::handle_event(EventRef event) {
         return;
     }
 
-    if (sdl_event->type == SDL_EVENT_KEY_DOWN && sdl_event->key.key == SDLK_F1 && m_ui_controller &&
-        m_ui_controller->enabled()) {
-        m_ui_controller->toggle_visibility();
-        return;
+    if (sdl_event->type == SDL_EVENT_KEY_DOWN && m_ui_controller && m_ui_controller->enabled()) {
+        if (sdl_event->key.key == SDLK_F1) {
+            m_ui_controller->toggle_visibility();
+            return;
+        }
+        if (sdl_event->key.key == SDLK_F2) {
+            m_ui_controller->toggle_debug_overlay();
+            return;
+        }
     }
 
     forward_input_event(event);
