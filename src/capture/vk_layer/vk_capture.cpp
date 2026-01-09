@@ -914,16 +914,15 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
 // Cleanup
 // =============================================================================
 
-void CaptureManager::enqueue_virtual_frame(uint32_t width, uint32_t height, uint32_t format,
-                                           uint32_t stride, int dmabuf_fd) {
+void CaptureManager::enqueue_virtual_frame(const VirtualFrameInfo& frame) {
     uint64_t frame_num = virtual_frame_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     CaptureFrameMetadata metadata{};
     metadata.type = CaptureMessageType::frame_metadata;
-    metadata.width = width;
-    metadata.height = height;
-    metadata.format = static_cast<VkFormat>(format);
-    metadata.stride = stride;
+    metadata.width = frame.width;
+    metadata.height = frame.height;
+    metadata.format = static_cast<VkFormat>(frame.format);
+    metadata.stride = frame.stride;
     metadata.offset = 0;
     metadata.modifier = 0;
     metadata.frame_number = frame_num;
@@ -932,13 +931,13 @@ void CaptureManager::enqueue_virtual_frame(uint32_t width, uint32_t height, uint
     item.device = VK_NULL_HANDLE;
     item.timeline_sem = VK_NULL_HANDLE;
     item.timeline_value = 0;
-    item.dmabuf_fd = dmabuf_fd;
+    item.dmabuf_fd = frame.dmabuf_fd;
     item.metadata = metadata;
 
     if (async_queue_.try_push(item)) {
         cv_.notify_one();
     } else {
-        close(dmabuf_fd);
+        close(frame.dmabuf_fd);
     }
 }
 

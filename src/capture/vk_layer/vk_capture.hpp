@@ -22,6 +22,14 @@ struct CopyCmd {
     bool busy = false;
 };
 
+struct VirtualFrameInfo {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t format = 0;
+    uint32_t stride = 0;
+    int dmabuf_fd = -1;
+};
+
 struct AsyncCaptureItem {
     VkDevice device = VK_NULL_HANDLE;
     VkSemaphore timeline_sem = VK_NULL_HANDLE;
@@ -85,8 +93,7 @@ public:
     SwapData* get_swap_data(VkSwapchainKHR swapchain);
     void shutdown();
 
-    void enqueue_virtual_frame(uint32_t width, uint32_t height, uint32_t format, uint32_t stride,
-                               int dmabuf_fd);
+    void enqueue_virtual_frame(const VirtualFrameInfo& frame);
 
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
