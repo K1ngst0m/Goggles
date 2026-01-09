@@ -114,6 +114,7 @@ private:
     ParameterResetCallback m_on_parameter_reset;
     float m_last_display_scale = 1.0F;
     bool m_visible = true;
+    bool m_initialized = false;
 };
 
 } // namespace goggles::ui

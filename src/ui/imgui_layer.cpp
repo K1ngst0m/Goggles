@@ -154,6 +154,7 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
         GOGGLES_LOG_WARN("ImGui_ImplVulkan_CreateFontsTexture failed (UI may look wrong on HiDPI)");
     }
 
+    layer->m_initialized = true;
     GOGGLES_LOG_INFO("ImGui layer initialized");
     return make_result_ptr(std::move(layer));
 }
@@ -181,10 +182,16 @@ void ImGuiLayer::shutdown() {
 }
 
 void ImGuiLayer::process_event(const SDL_Event& event) {
+    if (!m_initialized) {
+        return;
+    }
     ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
 void ImGuiLayer::begin_frame() {
+    if (!m_initialized) {
+        return;
+    }
     if (m_window != nullptr) {
         float display_scale = get_display_scale(m_window);
         if (std::fabs(display_scale - m_last_display_scale) > 0.01F) {
@@ -218,10 +225,16 @@ void ImGuiLayer::begin_frame() {
 }
 
 void ImGuiLayer::end_frame() {
+    if (!m_initialized) {
+        return;
+    }
     ImGui::Render();
 }
 
 void ImGuiLayer::record(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Extent2D extent) {
+    if (!m_initialized) {
+        return;
+    }
     vk::RenderingAttachmentInfo color_attachment{};
     color_attachment.imageView = target_view;
     color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -426,13 +439,14 @@ void ImGuiLayer::rebuild_for_format(vk::Format new_format) {
     GOGGLES_LOG_INFO("rebuild_for_format: {} -> {}", vk::to_string(m_swapchain_format),
                      vk::to_string(new_format));
 
+    m_initialized = false;
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
 
     m_swapchain_format = new_format;
 
     if (!ImGui_ImplSDL3_InitForVulkan(m_window)) {
-        GOGGLES_LOG_ERROR("ImGui_ImplSDL3_InitForVulkan failed during format change");
+        GOGGLES_LOG_ERROR("ImGui_ImplSDL3_InitForVulkan failed during format change, UI disabled");
         return;
     }
 
@@ -455,10 +469,12 @@ void ImGuiLayer::rebuild_for_format(vk::Format new_format) {
     init_info.PipelineRenderingCreateInfo = rendering_info;
 
     if (!ImGui_ImplVulkan_Init(&init_info)) {
-        GOGGLES_LOG_ERROR("ImGui_ImplVulkan_Init failed during format change");
+        ImGui_ImplSDL3_Shutdown();
+        GOGGLES_LOG_ERROR("ImGui_ImplVulkan_Init failed during format change, UI disabled");
         return;
     }
 
+    m_initialized = true;
     GOGGLES_LOG_INFO("ImGui layer rebuilt for format {}", vk::to_string(m_swapchain_format));
 }
 
