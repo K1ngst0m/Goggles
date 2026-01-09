@@ -535,9 +535,13 @@ void ImGuiLayer::draw_debug_overlay() {
         float src_fps = src_avg_ms > 0.F ? 1000.F / src_avg_ms : 0.F;
 
         ImGui::Text("Render: %.1f FPS (%.2f ms)", fps, avg_ms);
+        ImGui::PlotLines("##render_ft", m_frame_times.data(),
+                         static_cast<int>(k_frame_history_size), static_cast<int>(m_frame_idx),
+                         nullptr, 0.F, 33.F, ImVec2(150, 40));
         ImGui::Text("Source: %.1f FPS (%.2f ms)", src_fps, src_avg_ms);
-        ImGui::PlotLines("##ft", m_frame_times.data(), static_cast<int>(k_frame_history_size),
-                         static_cast<int>(m_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 35));
+        ImGui::PlotLines("##source_ft", m_source_frame_times.data(),
+                         static_cast<int>(k_frame_history_size),
+                         static_cast<int>(m_source_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 40));
     }
     ImGui::End();
 }

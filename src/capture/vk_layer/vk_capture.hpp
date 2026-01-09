@@ -27,7 +27,7 @@ struct AsyncCaptureItem {
     VkSemaphore timeline_sem = VK_NULL_HANDLE;
     uint64_t timeline_value = 0;
     int dmabuf_fd = -1;
-    CaptureTextureData metadata{};
+    CaptureFrameMetadata metadata{};
 };
 
 // Device-level sync state (independent of swapchain lifecycle)

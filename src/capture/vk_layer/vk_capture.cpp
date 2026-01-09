@@ -71,7 +71,7 @@ void CaptureManager::worker_func() {
 
             auto& socket = get_layer_socket();
             if (socket.is_connected()) {
-                socket.send_texture(item.metadata, item.dmabuf_fd);
+                socket.send_texture_with_fd(item.metadata, item.dmabuf_fd);
             }
 
             close(item.dmabuf_fd);
@@ -100,7 +100,7 @@ void CaptureManager::worker_func() {
             if (res == VK_SUCCESS) {
                 auto& socket = get_layer_socket();
                 if (socket.is_connected()) {
-                    socket.send_texture(item.metadata, item.dmabuf_fd);
+                    socket.send_texture_with_fd(item.metadata, item.dmabuf_fd);
                 }
             }
         }
