@@ -87,7 +87,8 @@ static auto spawn_target_app(const std::vector<std::string>& command,
 
     if (pid == 0) {
         // Child: set death signal before exec so we die if parent crashes
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        // Use SIGKILL to ensure child cannot ignore the signal
+        prctl(PR_SET_PDEATHSIG, SIGKILL);
         // Handle race: if parent already died, getppid() returns 1 (init)
         if (getppid() != parent_pid) {
             _exit(EXIT_FAILURE);

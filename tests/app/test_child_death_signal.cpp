@@ -1,9 +1,8 @@
-// Integration test: validates child process receives SIGTERM when parent dies
+// Integration test: validates child process receives SIGKILL when parent dies
 // Uses prctl(PR_SET_PDEATHSIG) which is Linux-specific
 
 #include <cerrno>
 #include <chrono>
-#include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <sys/prctl.h>
@@ -15,30 +14,23 @@ namespace {
 
 constexpr int EXIT_TEST_PASS = 0;
 constexpr int EXIT_TEST_FAIL = 1;
-constexpr int CHILD_SIGNAL_RECEIVED = 42;
 
-volatile sig_atomic_t g_signal_received = 0;
-
-void signal_handler(int sig) {
-    if (sig == SIGTERM) {
-        g_signal_received = 1;
-    }
-}
-
-// Child process that waits for SIGTERM from parent death
+// Child process that waits for SIGKILL from parent death
+// SIGKILL cannot be caught - process will be killed immediately
 [[noreturn]] void run_grandchild(pid_t expected_parent) {
-    signal(SIGTERM, signal_handler);
-    prctl(PR_SET_PDEATHSIG, SIGTERM);
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
 
     if (getppid() != expected_parent) {
         _exit(EXIT_TEST_FAIL);
     }
 
-    for (int i = 0; i < 100 && g_signal_received == 0; ++i) {
+    // Sleep until killed by SIGKILL
+    for (int i = 0; i < 100; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
-    _exit(g_signal_received != 0 ? CHILD_SIGNAL_RECEIVED : EXIT_TEST_FAIL);
+    // If we reach here, SIGKILL was not received
+    _exit(EXIT_TEST_FAIL);
 }
 
 // Intermediate process that spawns grandchild then exits
@@ -89,17 +81,22 @@ int main() {
     // We need to wait a bit for the grandchild to receive signal and exit
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    // Try to reap any grandchild
+    // Try to reap grandchild - should have been killed by SIGKILL
     int grandchild_status = 0;
     const pid_t reaped = waitpid(-1, &grandchild_status, WNOHANG);
 
-    if (reaped > 0 && WIFEXITED(grandchild_status)) {
-        const int exit_code = WEXITSTATUS(grandchild_status);
-        if (exit_code == CHILD_SIGNAL_RECEIVED) {
-            std::printf("PASS: Grandchild received SIGTERM on parent death\n");
+    if (reaped > 0) {
+        if (WIFSIGNALED(grandchild_status) && WTERMSIG(grandchild_status) == SIGKILL) {
+            std::printf("PASS: Grandchild killed by SIGKILL on parent death\n");
             return EXIT_TEST_PASS;
         }
-        std::fprintf(stderr, "FAIL: Grandchild exited with code %d\n", exit_code);
+        if (WIFEXITED(grandchild_status)) {
+            std::fprintf(stderr, "FAIL: Grandchild exited normally with code %d\n",
+                         WEXITSTATUS(grandchild_status));
+        } else if (WIFSIGNALED(grandchild_status)) {
+            std::fprintf(stderr, "FAIL: Grandchild killed by signal %d (expected SIGKILL)\n",
+                         WTERMSIG(grandchild_status));
+        }
         return EXIT_TEST_FAIL;
     }
 
