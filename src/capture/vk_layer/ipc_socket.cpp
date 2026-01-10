@@ -263,9 +263,9 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
 
     if (received == sizeof(control) && control.type == CaptureMessageType::control) {
         std::lock_guard lock(mutex_);
-        capturing_ = (control.capturing != 0);
-        if (control.resolution_request != 0 && control.requested_width > 0 &&
-            control.requested_height > 0) {
+        capturing_ = (control.flags & CAPTURE_CONTROL_CAPTURING) != 0;
+        if ((control.flags & CAPTURE_CONTROL_RESOLUTION_REQUEST) != 0 &&
+            control.requested_width > 0 && control.requested_height > 0) {
             resolution_request_.pending = true;
             resolution_request_.width = control.requested_width;
             resolution_request_.height = control.requested_height;

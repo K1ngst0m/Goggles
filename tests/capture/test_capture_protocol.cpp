@@ -42,11 +42,14 @@ TEST_CASE("CaptureTextureData default values", "[capture][protocol]") {
 TEST_CASE("CaptureControl default values", "[capture][protocol]") {
     CaptureControl ctrl{};
     REQUIRE(ctrl.type == CaptureMessageType::control);
-    REQUIRE(ctrl.capturing == 0);
-    REQUIRE(ctrl.resolution_request == 0);
-    REQUIRE(ctrl.reserved_flags == 0);
+    REQUIRE(ctrl.flags == 0);
     REQUIRE(ctrl.requested_width == 0);
     REQUIRE(ctrl.requested_height == 0);
+}
+
+TEST_CASE("CaptureControl flag constants", "[capture][protocol]") {
+    REQUIRE(CAPTURE_CONTROL_CAPTURING == 1u);
+    REQUIRE(CAPTURE_CONTROL_RESOLUTION_REQUEST == 2u);
 }
 
 TEST_CASE("CaptureSemaphoreInit default values", "[capture][protocol]") {

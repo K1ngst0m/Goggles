@@ -110,7 +110,7 @@ bool CaptureReceiver::accept_client() {
 
     CaptureControl ctrl{};
     ctrl.type = CaptureMessageType::control;
-    ctrl.capturing = 1;
+    ctrl.flags = CAPTURE_CONTROL_CAPTURING;
     send(m_client_fd, &ctrl, sizeof(ctrl), MSG_NOSIGNAL);
 
     return true;
@@ -346,8 +346,7 @@ void CaptureReceiver::request_resolution(uint32_t width, uint32_t height) {
 
     CaptureControl ctrl{};
     ctrl.type = CaptureMessageType::control;
-    ctrl.capturing = 1;
-    ctrl.resolution_request = 1;
+    ctrl.flags = CAPTURE_CONTROL_CAPTURING | CAPTURE_CONTROL_RESOLUTION_REQUEST;
     ctrl.requested_width = width;
     ctrl.requested_height = height;
     send(m_client_fd, &ctrl, sizeof(ctrl), MSG_NOSIGNAL);
