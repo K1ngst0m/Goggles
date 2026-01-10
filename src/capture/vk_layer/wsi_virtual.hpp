@@ -16,6 +16,7 @@ struct VirtualSurface {
     VkInstance instance = VK_NULL_HANDLE;
     uint32_t width = 1920;
     uint32_t height = 1080;
+    bool out_of_date = false;
 };
 
 struct VirtualSwapchain {
@@ -56,6 +57,7 @@ public:
     void destroy_surface(VkInstance inst, VkSurfaceKHR surface);
     bool is_virtual_surface(VkSurfaceKHR surface);
     VirtualSurface* get_surface(VkSurfaceKHR surface);
+    void set_resolution(uint32_t width, uint32_t height);
 
     VkResult get_surface_capabilities(VkPhysicalDevice phys_dev, VkSurfaceKHR surface,
                                       VkSurfaceCapabilitiesKHR* caps);

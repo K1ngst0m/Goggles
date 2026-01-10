@@ -338,4 +338,18 @@ void CaptureReceiver::cleanup_frame() {
     clear_sync_semaphores();
 }
 
+void CaptureReceiver::request_resolution(uint32_t width, uint32_t height) {
+    if (m_client_fd < 0) {
+        return;
+    }
+
+    CaptureControl ctrl{};
+    ctrl.type = CaptureMessageType::control;
+    ctrl.capturing = 1;
+    ctrl.resolution_request = 1;
+    ctrl.requested_width = width;
+    ctrl.requested_height = height;
+    send(m_client_fd, &ctrl, sizeof(ctrl), MSG_NOSIGNAL);
+}
+
 } // namespace goggles

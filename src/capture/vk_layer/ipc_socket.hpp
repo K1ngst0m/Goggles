@@ -6,6 +6,12 @@
 
 namespace goggles::capture {
 
+struct ResolutionRequest {
+    bool pending = false;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
 class LayerSocketClient {
 public:
     LayerSocketClient() = default;
@@ -23,12 +29,14 @@ public:
     bool send_frame_metadata(const CaptureFrameMetadata& metadata);
     bool poll_control(CaptureControl& control);
     bool is_capturing() const;
+    ResolutionRequest consume_resolution_request();
 
 private:
     mutable std::mutex mutex_;
     int socket_fd_ = -1;
     bool capturing_ = false;
     int64_t last_connect_attempt_ = 0;
+    ResolutionRequest resolution_request_;
 };
 
 LayerSocketClient& get_layer_socket();

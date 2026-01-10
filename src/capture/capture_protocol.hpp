@@ -41,8 +41,11 @@ static_assert(sizeof(CaptureTextureData) == 32);
 
 struct CaptureControl {
     CaptureMessageType type = CaptureMessageType::control;
-    uint32_t capturing = 0;
-    std::array<uint32_t, 2> reserved{};
+    uint32_t capturing : 1 {0};
+    uint32_t resolution_request : 1 {0};
+    uint32_t reserved_flags : 30 {0};
+    uint32_t requested_width = 0;
+    uint32_t requested_height = 0;
 };
 
 static_assert(sizeof(CaptureControl) == 16);
