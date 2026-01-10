@@ -567,8 +567,14 @@ VkResult WsiVirtualizer::create_swapchain(VkDevice device, const VkSwapchainCrea
     }
 
     VkSwapchainKHR handle = swap.handle;
+    VkSurfaceKHR surface = swap.surface;
     swapchains_[handle] = std::move(swap);
     *swapchain = handle;
+
+    auto surf_it = surfaces_.find(surface);
+    if (surf_it != surfaces_.end()) {
+        surf_it->second.out_of_date = false;
+    }
 
     LAYER_DEBUG("Virtual swapchain created: 0x%016" PRIx64 " (%ux%u, %u images)",
                 handle_to_u64(handle), swapchains_[handle].extent.width,
@@ -692,7 +698,6 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
 
         auto surf_it = surfaces_.find(swap.surface);
         if (surf_it != surfaces_.end() && surf_it->second.out_of_date) {
-            surf_it->second.out_of_date = false;
             return VK_ERROR_OUT_OF_DATE_KHR;
         }
 

@@ -7,7 +7,7 @@ When the Goggles window aspect ratio doesn't match the source, users can only ch
 ## What Changes
 
 - Add `dynamic` scale mode that triggers resolution requests on window resize
-- Extend `CaptureControl` protocol with resolution request fields
+- **BREAKING**: Extend `CaptureControl` protocol with resolution request fields (changes struct layout from `capturing + reserved[]` to `flags + requested_width + requested_height`, breaking binary compatibility with existing viewers/layers)
 - Add `request_resolution()` method to `CaptureReceiver`
 - Handle resolution requests in vk_layer (WSI Proxy mode only)
 

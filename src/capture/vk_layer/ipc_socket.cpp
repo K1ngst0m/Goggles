@@ -80,8 +80,10 @@ bool LayerSocketClient::connect() {
         return false;
     }
 
-    capturing_ = false;
-    resolution_request_ = {};
+    capturing_.store(false, std::memory_order_release);
+    res_pending_.store(false, std::memory_order_release);
+    res_width_.store(0, std::memory_order_release);
+    res_height_.store(0, std::memory_order_release);
     return true;
 }
 
@@ -92,8 +94,10 @@ void LayerSocketClient::disconnect() {
         close(socket_fd_);
         socket_fd_ = -1;
     }
-    capturing_ = false;
-    resolution_request_ = {};
+    capturing_.store(false, std::memory_order_release);
+    res_pending_.store(false, std::memory_order_release);
+    res_width_.store(0, std::memory_order_release);
+    res_height_.store(0, std::memory_order_release);
 }
 
 bool LayerSocketClient::is_connected() const {
@@ -102,8 +106,7 @@ bool LayerSocketClient::is_connected() const {
 }
 
 bool LayerSocketClient::is_capturing() const {
-    std::lock_guard lock(mutex_);
-    return capturing_;
+    return capturing_.load(std::memory_order_acquire);
 }
 
 bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_fd) {
@@ -136,7 +139,7 @@ bool LayerSocketClient::send_texture(const CaptureTextureData& data, int dmabuf_
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             close(socket_fd_);
             socket_fd_ = -1;
-            capturing_ = false;
+            capturing_.store(false, std::memory_order_release);
         }
         return false;
     }
@@ -180,7 +183,7 @@ bool LayerSocketClient::send_semaphores(int frame_ready_fd, int frame_consumed_f
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             close(socket_fd_);
             socket_fd_ = -1;
-            capturing_ = false;
+            capturing_.store(false, std::memory_order_release);
         }
         return false;
     }
@@ -218,7 +221,7 @@ bool LayerSocketClient::send_texture_with_fd(const CaptureFrameMetadata& metadat
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             close(socket_fd_);
             socket_fd_ = -1;
-            capturing_ = false;
+            capturing_.store(false, std::memory_order_release);
         }
         return false;
     }
@@ -239,7 +242,7 @@ bool LayerSocketClient::send_frame_metadata(const CaptureFrameMetadata& metadata
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             close(socket_fd_);
             socket_fd_ = -1;
-            capturing_ = false;
+            capturing_.store(false, std::memory_order_release);
         }
         return false;
     }
@@ -262,16 +265,16 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
     ssize_t received = recv(fd, &control, sizeof(control), MSG_DONTWAIT);
 
     if (received == sizeof(control) && control.type == CaptureMessageType::control) {
-        std::lock_guard lock(mutex_);
-        capturing_ = (control.flags & CAPTURE_CONTROL_CAPTURING) != 0;
+        capturing_.store((control.flags & CAPTURE_CONTROL_CAPTURING) != 0,
+                         std::memory_order_release);
         if ((control.flags & CAPTURE_CONTROL_RESOLUTION_REQUEST) != 0 &&
             control.requested_width > 0 && control.requested_height > 0) {
             constexpr uint32_t max_resolution = 16384;
             if (control.requested_width <= max_resolution &&
                 control.requested_height <= max_resolution) {
-                resolution_request_.pending = true;
-                resolution_request_.width = control.requested_width;
-                resolution_request_.height = control.requested_height;
+                res_width_.store(control.requested_width, std::memory_order_relaxed);
+                res_height_.store(control.requested_height, std::memory_order_relaxed);
+                res_pending_.store(true, std::memory_order_release);
             }
         }
         return true;
@@ -282,7 +285,7 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
         if (socket_fd_ == fd) {
             close(socket_fd_);
             socket_fd_ = -1;
-            capturing_ = false;
+            capturing_.store(false, std::memory_order_release);
         }
     }
 
@@ -290,10 +293,14 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
 }
 
 ResolutionRequest LayerSocketClient::consume_resolution_request() {
-    std::lock_guard lock(mutex_);
-    ResolutionRequest req = resolution_request_;
-    resolution_request_ = {};
-    return req;
+    if (!res_pending_.exchange(false, std::memory_order_acquire)) {
+        return {};
+    }
+    return {
+        .pending = true,
+        .width = res_width_.load(std::memory_order_relaxed),
+        .height = res_height_.load(std::memory_order_relaxed),
+    };
 }
 
 } // namespace goggles::capture
