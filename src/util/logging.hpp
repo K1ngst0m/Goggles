@@ -10,7 +10,7 @@
 
 namespace goggles {
 
-void initialize_logger(std::string_view app_name = "goggles", bool is_layer = false);
+void initialize_logger(std::string_view app_name = "goggles");
 [[nodiscard]] auto get_logger() -> std::shared_ptr<spdlog::logger>;
 void set_log_level(spdlog::level::level_enum level);
 void set_log_timestamp_enabled(bool enabled);
