@@ -17,6 +17,7 @@ enum class CaptureMessageType : uint32_t {
     control = 3,
     semaphore_init = 4,
     frame_metadata = 5,
+    resolution_response = 6,
 };
 
 struct CaptureClientHello {

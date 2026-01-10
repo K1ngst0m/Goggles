@@ -343,6 +343,8 @@ void CaptureReceiver::request_resolution(uint32_t width, uint32_t height) {
         return;
     }
 
+    GOGGLES_LOG_INFO("Requesting source resolution: {}x{}", width, height);
+
     CaptureControl ctrl{};
     ctrl.type = CaptureMessageType::control;
     ctrl.capturing = 1;
