@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -84,8 +85,11 @@ public:
 
     void toggle_visibility() { m_visible = !m_visible; }
     [[nodiscard]] auto is_visible() const -> bool { return m_visible; }
+    void toggle_debug_overlay() { m_debug_overlay_visible = !m_debug_overlay_visible; }
+    [[nodiscard]] auto is_debug_overlay_visible() const -> bool { return m_debug_overlay_visible; }
 
     void rebuild_for_format(vk::Format new_format);
+    void notify_source_frame();
 
 private:
     ImGuiLayer() = default;
@@ -93,6 +97,7 @@ private:
     void draw_parameter_controls();
     void draw_preset_tree(const PresetTreeNode& node);
     void draw_filtered_presets();
+    void draw_debug_overlay();
     void rebuild_preset_tree();
     [[nodiscard]] auto matches_filter(const std::filesystem::path& path) const -> bool;
 
@@ -115,7 +120,16 @@ private:
     ParameterResetCallback m_on_parameter_reset;
     float m_last_display_scale = 1.0F;
     bool m_visible = true;
+    bool m_debug_overlay_visible = true;
     bool m_initialized = false;
+
+    static constexpr size_t K_FRAME_HISTORY_SIZE = 120;
+    std::array<float, K_FRAME_HISTORY_SIZE> m_frame_times{};
+    std::array<float, K_FRAME_HISTORY_SIZE> m_source_frame_times{};
+    size_t m_frame_idx = 0;
+    size_t m_source_frame_idx = 0;
+    std::chrono::steady_clock::time_point m_last_frame_time;
+    std::chrono::steady_clock::time_point m_last_source_frame_time;
 };
 
 } // namespace goggles::ui

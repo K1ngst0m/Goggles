@@ -22,12 +22,20 @@ struct CopyCmd {
     bool busy = false;
 };
 
+struct VirtualFrameInfo {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t format = 0;
+    uint32_t stride = 0;
+    int dmabuf_fd = -1;
+};
+
 struct AsyncCaptureItem {
     VkDevice device = VK_NULL_HANDLE;
     VkSemaphore timeline_sem = VK_NULL_HANDLE;
     uint64_t timeline_value = 0;
     int dmabuf_fd = -1;
-    CaptureTextureData metadata{};
+    CaptureFrameMetadata metadata{};
 };
 
 // Device-level sync state (independent of swapchain lifecycle)
@@ -85,6 +93,8 @@ public:
     SwapData* get_swap_data(VkSwapchainKHR swapchain);
     void shutdown();
 
+    void enqueue_virtual_frame(const VirtualFrameInfo& frame);
+
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
     bool init_device_sync(VkDevice device, VkDeviceData* dev_data);
@@ -109,6 +119,7 @@ private:
     std::unordered_map<VkSwapchainKHR, SwapData> swaps_;
     std::unordered_map<VkDevice, DeviceSyncState> device_sync_;
     std::atomic<bool> shutdown_{false};
+    std::atomic<uint64_t> virtual_frame_counter_{0};
 };
 
 CaptureManager& get_capture_manager();
