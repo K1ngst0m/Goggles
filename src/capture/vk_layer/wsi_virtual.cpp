@@ -385,6 +385,18 @@ bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice d
         subres.arrayLayer = 0;
         VkSubresourceLayout layout{};
         funcs.GetImageSubresourceLayout(device, image, &subres, &layout);
+
+        if (layout.rowPitch > UINT32_MAX) {
+            LAYER_DEBUG("Virtual swapchain image %u: stride %" PRIu64 " exceeds uint32_t max", i,
+                        layout.rowPitch);
+            return false;
+        }
+        if (layout.offset > UINT32_MAX) {
+            LAYER_DEBUG("Virtual swapchain image %u: offset %" PRIu64 " exceeds uint32_t max", i,
+                        layout.offset);
+            return false;
+        }
+
         swap.strides.push_back(static_cast<uint32_t>(layout.rowPitch));
         swap.offsets.push_back(static_cast<uint32_t>(layout.offset));
 
