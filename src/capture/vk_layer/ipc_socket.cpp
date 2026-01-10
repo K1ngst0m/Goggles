@@ -80,6 +80,8 @@ bool LayerSocketClient::connect() {
         return false;
     }
 
+    capturing_ = false;
+    resolution_request_ = {};
     return true;
 }
 
@@ -267,8 +269,6 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
             resolution_request_.pending = true;
             resolution_request_.width = control.requested_width;
             resolution_request_.height = control.requested_height;
-            LAYER_DEBUG("Resolution request received: %ux%u", control.requested_width,
-                        control.requested_height);
         }
         return true;
     }

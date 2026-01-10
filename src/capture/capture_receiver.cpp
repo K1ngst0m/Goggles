@@ -338,12 +338,11 @@ void CaptureReceiver::cleanup_frame() {
     clear_sync_semaphores();
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void CaptureReceiver::request_resolution(uint32_t width, uint32_t height) {
     if (m_client_fd < 0) {
         return;
     }
-
-    GOGGLES_LOG_INFO("Requesting source resolution: {}x{}", width, height);
 
     CaptureControl ctrl{};
     ctrl.type = CaptureMessageType::control;

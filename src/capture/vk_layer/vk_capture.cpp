@@ -802,12 +802,8 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
     socket.poll_control(ctrl);
 
     auto res_req = socket.consume_resolution_request();
-    if (res_req.pending) {
-        if (WsiVirtualizer::instance().is_enabled()) {
-            WsiVirtualizer::instance().set_resolution(res_req.width, res_req.height);
-        } else {
-            LAYER_DEBUG("Resolution request ignored: WSI proxy not enabled");
-        }
+    if (res_req.pending && WsiVirtualizer::instance().is_enabled()) {
+        WsiVirtualizer::instance().set_resolution(res_req.width, res_req.height);
     }
 
     VkPresentInfoKHR modified_present = *present_info;

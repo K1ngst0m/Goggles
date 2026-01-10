@@ -693,8 +693,6 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
         auto surf_it = surfaces_.find(swap.surface);
         if (surf_it != surfaces_.end() && surf_it->second.out_of_date) {
             surf_it->second.out_of_date = false;
-            LAYER_DEBUG("Swapchain out-of-date due to resolution change: %ux%u",
-                        surf_it->second.width, surf_it->second.height);
             return VK_ERROR_OUT_OF_DATE_KHR;
         }
 
