@@ -1355,7 +1355,9 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
                                 "Present failed: " + vk::to_string(present_result));
     }
 
-    if (m_present_wait_supported && present_value > 0) {
+    if (m_target_fps == 0) {
+        // Uncapped mode: avoid any extra pacing waits.
+    } else if (m_present_wait_supported && present_value > 0) {
         auto wait_result = apply_present_wait(present_value);
         if (!wait_result) {
             return make_error<bool>(wait_result.error().code, wait_result.error().message);
@@ -1369,14 +1371,22 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 }
 
 auto VulkanBackend::apply_present_wait(uint64_t present_id) -> Result<void> {
+    if (m_target_fps == 0) {
+        return {};
+    }
+
     constexpr uint64_t MAX_TIMEOUT_NS = 1'000'000'000ULL; // 1 second max
     const uint64_t timeout_ns =
-        (m_target_fps == 0)
-            ? MAX_TIMEOUT_NS
-            : std::min(MAX_TIMEOUT_NS, static_cast<uint64_t>(1'000'000'000ULL / m_target_fps));
+        std::min(MAX_TIMEOUT_NS, static_cast<uint64_t>(1'000'000'000ULL / m_target_fps));
     auto wait_result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkWaitForPresentKHR(
         *m_device, *m_swapchain, present_id, timeout_ns));
-    if (wait_result == vk::Result::eSuccess || wait_result == vk::Result::eTimeout) {
+    if (wait_result == vk::Result::eSuccess || wait_result == vk::Result::eTimeout ||
+        wait_result == vk::Result::eSuboptimalKHR) {
+        return {};
+    }
+    if (wait_result == vk::Result::eErrorOutOfDateKHR ||
+        wait_result == vk::Result::eErrorSurfaceLostKHR) {
+        m_needs_resize = true;
         return {};
     }
     return make_error<void>(ErrorCode::vulkan_device_lost,
