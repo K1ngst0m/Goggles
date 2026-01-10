@@ -54,9 +54,13 @@ auto Application::create(const Config& config, bool enable_input_forwarding)
 
     auto* sdl_window = to_sdl_window(app->m_platform->window());
 
+    render::RenderSettings render_settings{};
+    render_settings.scale_mode = config.render.scale_mode;
+    render_settings.integer_scale = config.render.integer_scale;
+    render_settings.target_fps = config.render.target_fps;
+
     app->m_vulkan_backend = GOGGLES_TRY(render::VulkanBackend::create(
-        sdl_window, config.render.enable_validation, resolve_shader_base_dir(),
-        config.render.scale_mode, config.render.integer_scale));
+        sdl_window, config.render.enable_validation, resolve_shader_base_dir(), render_settings));
 
     app->m_vulkan_backend->load_shader_preset(config.shader.preset);
 

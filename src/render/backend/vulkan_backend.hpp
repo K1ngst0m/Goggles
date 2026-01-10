@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <capture/capture_receiver.hpp>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -19,12 +20,17 @@
 
 namespace goggles::render {
 
+struct RenderSettings {
+    ScaleMode scale_mode = ScaleMode::stretch;
+    uint32_t integer_scale = 0;
+    uint32_t target_fps = 60;
+};
+
 class VulkanBackend {
 public:
     [[nodiscard]] static auto create(SDL_Window* window, bool enable_validation = false,
                                      const std::filesystem::path& shader_dir = "shaders",
-                                     ScaleMode scale_mode = ScaleMode::stretch,
-                                     uint32_t integer_scale = 0) -> ResultPtr<VulkanBackend>;
+                                     RenderSettings settings = {}) -> ResultPtr<VulkanBackend>;
 
     ~VulkanBackend();
 
@@ -75,10 +81,6 @@ public:
     [[nodiscard]] auto has_sync_semaphores() const -> bool { return m_sync_semaphores_imported; }
     void cleanup_sync_semaphores();
 
-    [[nodiscard]] auto consume_format_change() -> bool {
-        return m_format_changed.exchange(false, std::memory_order_acq_rel);
-    }
-
     [[nodiscard]] auto consume_chain_swapped() -> bool {
         return m_chain_swapped.exchange(false, std::memory_order_acq_rel);
     }
@@ -86,11 +88,18 @@ public:
 private:
     VulkanBackend() = default;
 
+    void update_target_fps(uint32_t target_fps) {
+        m_target_fps = target_fps;
+        m_last_present_time = std::chrono::steady_clock::time_point{};
+    }
+
     [[nodiscard]] auto create_instance(bool enable_validation) -> Result<void>;
     [[nodiscard]] auto create_debug_messenger() -> Result<void>;
     [[nodiscard]] auto create_surface(SDL_Window* window) -> Result<void>;
     [[nodiscard]] auto select_physical_device() -> Result<void>;
     [[nodiscard]] auto create_device() -> Result<void>;
+
+    [[nodiscard]] auto is_present_wait_ready() const -> bool { return m_present_wait_supported; }
     [[nodiscard]] auto create_swapchain(uint32_t width, uint32_t height,
                                         vk::Format preferred_format) -> Result<void>;
     [[nodiscard]] auto recreate_swapchain() -> Result<void>;
@@ -114,6 +123,9 @@ private:
 
     [[nodiscard]] static auto get_matching_swapchain_format(vk::Format source_format) -> vk::Format;
     [[nodiscard]] static auto is_srgb_format(vk::Format format) -> bool;
+
+    [[nodiscard]] auto apply_present_wait(uint64_t present_id) -> Result<void>;
+    void throttle_present();
 
     vk::PhysicalDevice m_physical_device;
     vk::Queue m_graphics_queue;
@@ -168,6 +180,10 @@ private:
     ScaleMode m_scale_mode = ScaleMode::stretch;
     bool m_needs_resize = false;
     bool m_sync_semaphores_imported = false;
+    bool m_present_wait_supported = false;
+    uint32_t m_target_fps = 0;
+    uint64_t m_present_id = 0;
+    std::chrono::steady_clock::time_point m_last_present_time;
     std::atomic<bool> m_format_changed{false};
     std::atomic<bool> m_chain_swapped{false};
 

@@ -4,6 +4,7 @@
 
 #include <CLI/CLI.hpp>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +18,7 @@ struct CliOptions {
     uint32_t app_width = 0;
     uint32_t app_height = 0;
     bool enable_input_forwarding = false;
+    std::optional<uint32_t> target_fps;
     std::vector<std::string> app_command;
 };
 
@@ -57,6 +59,9 @@ Notes:
            "--app-height", options.app_height,
            "Default mode only: virtual surface height (sets GOGGLES_HEIGHT for launched app)")
         ->check(CLI::Range(1u, 16384u));
+
+    app.add_option("--target-fps", options.target_fps, "Override render target FPS (0 = uncapped)")
+        ->check(CLI::Range(0u, 1000u));
 
     int separator_index = -1;
     for (int i = 0; i < argc; ++i) {

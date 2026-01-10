@@ -8,6 +8,7 @@
 #include <cstring>
 #include <format>
 #include <render/chain/pass.hpp>
+#include <thread>
 #include <util/job_system.hpp>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
@@ -31,6 +32,11 @@ constexpr std::array REQUIRED_DEVICE_EXTENSIONS = {
     VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
     VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,  VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
     VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
+};
+
+constexpr std::array OPTIONAL_DEVICE_EXTENSIONS = {
+    VK_KHR_PRESENT_ID_EXTENSION_NAME,
+    VK_KHR_PRESENT_WAIT_EXTENSION_NAME,
 };
 
 // from drm_fourcc.h (kept local to avoid adding extra headers)
@@ -162,8 +168,8 @@ VulkanBackend::~VulkanBackend() {
 }
 
 auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
-                           const std::filesystem::path& shader_dir, ScaleMode scale_mode,
-                           uint32_t integer_scale) -> ResultPtr<VulkanBackend> {
+                           const std::filesystem::path& shader_dir, RenderSettings settings)
+    -> ResultPtr<VulkanBackend> {
     GOGGLES_PROFILE_FUNCTION();
 
     auto backend = std::unique_ptr<VulkanBackend>(new VulkanBackend());
@@ -179,8 +185,9 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     backend->m_window = window;
     backend->m_enable_validation = enable_validation;
     backend->m_shader_dir = shader_dir;
-    backend->m_scale_mode = scale_mode;
-    backend->m_integer_scale = integer_scale;
+    backend->m_scale_mode = settings.scale_mode;
+    backend->m_integer_scale = settings.integer_scale;
+    backend->update_target_fps(settings.target_fps);
 
     int width = 0;
     int height = 0;
@@ -349,6 +356,7 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
         vk::PhysicalDevice device;
         uint32_t graphics_family;
         uint32_t index;
+        bool present_wait_supported;
         int score;
     };
     std::vector<Candidate> candidates;
@@ -373,6 +381,7 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
 
         bool surface_ok = graphics_family != UINT32_MAX;
         bool extensions_ok = false;
+        bool present_wait_supported = false;
 
         if (surface_ok) {
             auto [ext_result, available_extensions] = device.enumerateDeviceExtensionProperties();
@@ -390,6 +399,20 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
                         extensions_ok = false;
                         break;
                     }
+                }
+
+                if (extensions_ok) {
+                    bool present_id_ok = false;
+                    bool present_wait_ok = false;
+                    for (const auto& ext : available_extensions) {
+                        if (std::strcmp(ext.extensionName, VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0) {
+                            present_id_ok = true;
+                        } else if (std::strcmp(ext.extensionName,
+                                               VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0) {
+                            present_wait_ok = true;
+                        }
+                    }
+                    present_wait_supported = present_id_ok && present_wait_ok;
                 }
             }
         }
@@ -409,6 +432,7 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
             candidates.push_back({.device = device,
                                   .graphics_family = graphics_family,
                                   .index = static_cast<uint32_t>(idx),
+                                  .present_wait_supported = present_wait_supported,
                                   .score = score});
         }
     }
@@ -425,6 +449,7 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
     m_physical_device = best->device;
     m_graphics_queue_family = best->graphics_family;
     m_gpu_index = best->index;
+    m_present_wait_supported = best->present_wait_supported;
 
     vk::PhysicalDeviceIDProperties id_props{};
     vk::PhysicalDeviceProperties2 props2{};
@@ -457,8 +482,15 @@ auto VulkanBackend::create_device() -> Result<void> {
     vk::PhysicalDeviceVulkan11Features vk11_features{};
     vk::PhysicalDeviceVulkan12Features vk12_features{};
     vk::PhysicalDeviceVulkan13Features vk13_features{};
+    vk::PhysicalDevicePresentIdFeaturesKHR present_id_features{};
+    vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{};
     vk11_features.pNext = &vk12_features;
     vk12_features.pNext = &vk13_features;
+    bool present_wait_ready = is_present_wait_ready();
+    if (present_wait_ready) {
+        vk13_features.pNext = &present_id_features;
+        present_id_features.pNext = &present_wait_features;
+    }
     vk::PhysicalDeviceFeatures2 features2{};
     features2.pNext = &vk11_features;
     m_physical_device.getFeatures2(&features2);
@@ -482,15 +514,35 @@ auto VulkanBackend::create_device() -> Result<void> {
     vk12_enable.timelineSemaphore = VK_TRUE;
     vk::PhysicalDeviceVulkan13Features vk13_enable{};
     vk13_enable.dynamicRendering = VK_TRUE;
+    vk::PhysicalDevicePresentIdFeaturesKHR present_id_enable{};
+    vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_enable{};
     vk11_enable.pNext = &vk12_enable;
     vk12_enable.pNext = &vk13_enable;
+    if (is_present_wait_ready()) {
+        present_id_enable.presentId = VK_TRUE;
+        present_wait_enable.presentWait = VK_TRUE;
+        vk13_enable.pNext = &present_id_enable;
+        present_id_enable.pNext = &present_wait_enable;
+    }
+
+    std::array<const char*, REQUIRED_DEVICE_EXTENSIONS.size() + OPTIONAL_DEVICE_EXTENSIONS.size()>
+        extensions{};
+    size_t extension_count = 0;
+    for (const auto* ext : REQUIRED_DEVICE_EXTENSIONS) {
+        extensions[extension_count++] = ext;
+    }
+    if (is_present_wait_ready()) {
+        for (const auto* ext : OPTIONAL_DEVICE_EXTENSIONS) {
+            extensions[extension_count++] = ext;
+        }
+    }
 
     vk::DeviceCreateInfo create_info{};
     create_info.pNext = &vk11_enable;
     create_info.queueCreateInfoCount = 1;
     create_info.pQueueCreateInfos = &queue_info;
-    create_info.enabledExtensionCount = static_cast<uint32_t>(REQUIRED_DEVICE_EXTENSIONS.size());
-    create_info.ppEnabledExtensionNames = REQUIRED_DEVICE_EXTENSIONS.data();
+    create_info.enabledExtensionCount = static_cast<uint32_t>(extension_count);
+    create_info.ppEnabledExtensionNames = extensions.data();
 
     auto [result, device] = m_physical_device.createDeviceUnique(create_info);
     if (result != vk::Result::eSuccess) {
@@ -560,12 +612,22 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
 
     auto [pm_result, present_modes] = m_physical_device.getSurfacePresentModesKHR(*m_surface);
     vk::PresentModeKHR chosen_mode = vk::PresentModeKHR::eFifo;
-    for (auto mode : present_modes) {
-        if (mode == vk::PresentModeKHR::eMailbox) {
-            chosen_mode = vk::PresentModeKHR::eMailbox;
-            break;
+    bool mailbox_supported = false;
+    if (pm_result == vk::Result::eSuccess) {
+        for (auto mode : present_modes) {
+            if (mode == vk::PresentModeKHR::eMailbox) {
+                mailbox_supported = true;
+                break;
+            }
         }
     }
+
+    if (is_present_wait_ready()) {
+        chosen_mode = vk::PresentModeKHR::eFifo;
+    } else if (mailbox_supported) {
+        chosen_mode = vk::PresentModeKHR::eMailbox;
+    }
+
     create_info.presentMode = chosen_mode;
     create_info.clipped = VK_TRUE;
 
@@ -603,6 +665,9 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
         }
         m_swapchain_image_views.push_back(std::move(view));
     }
+
+    m_present_id = 0;
+    m_last_present_time = std::chrono::steady_clock::time_point{};
 
     GOGGLES_LOG_DEBUG("Swapchain created: {}x{}, {} images", extent.width, extent.height,
                       m_swapchain_images.size());
@@ -1248,6 +1313,15 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     present_info.pSwapchains = &*m_swapchain;
     present_info.pImageIndices = &image_index;
 
+    vk::PresentIdKHR present_id{};
+    uint64_t present_value = 0;
+    if (is_present_wait_ready()) {
+        present_value = ++m_present_id;
+        present_id.swapchainCount = 1;
+        present_id.pPresentIds = &present_value;
+        present_info.pNext = &present_id;
+    }
+
     auto present_result = m_graphics_queue.presentKHR(present_info);
     if (present_result == vk::Result::eErrorOutOfDateKHR ||
         present_result == vk::Result::eSuboptimalKHR) {
@@ -1259,8 +1333,52 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
                                 "Present failed: " + vk::to_string(present_result));
     }
 
+    if (is_present_wait_ready() && present_value > 0) {
+        auto wait_result = apply_present_wait(present_value);
+        if (!wait_result) {
+            return make_error<bool>(wait_result.error().code, wait_result.error().message);
+        }
+    } else {
+        throttle_present();
+    }
+
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
     return !m_needs_resize;
+}
+
+auto VulkanBackend::apply_present_wait(uint64_t present_id) -> Result<void> {
+    const uint64_t timeout_ns =
+        (m_target_fps == 0) ? UINT64_MAX : static_cast<uint64_t>(1'000'000'000ULL / m_target_fps);
+    auto wait_result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkWaitForPresentKHR(
+        *m_device, *m_swapchain, present_id, timeout_ns));
+    if (wait_result == vk::Result::eSuccess || wait_result == vk::Result::eTimeout) {
+        return {};
+    }
+    return make_error<void>(ErrorCode::vulkan_device_lost,
+                            "vkWaitForPresentKHR failed: " + vk::to_string(wait_result));
+}
+
+void VulkanBackend::throttle_present() {
+    if (m_target_fps == 0) {
+        return;
+    }
+
+    using clock = std::chrono::steady_clock;
+    auto frame_duration = std::chrono::nanoseconds(1'000'000'000ULL / m_target_fps);
+
+    if (m_last_present_time.time_since_epoch().count() == 0) {
+        m_last_present_time = clock::now();
+        return;
+    }
+
+    auto next_frame = m_last_present_time + frame_duration;
+    auto now = clock::now();
+    if (now < next_frame) {
+        std::this_thread::sleep_until(next_frame);
+        m_last_present_time = next_frame;
+    } else {
+        m_last_present_time = now;
+    }
 }
 
 auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
