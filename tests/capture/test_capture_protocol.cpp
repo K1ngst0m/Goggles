@@ -43,8 +43,10 @@ TEST_CASE("CaptureControl default values", "[capture][protocol]") {
     CaptureControl ctrl{};
     REQUIRE(ctrl.type == CaptureMessageType::control);
     REQUIRE(ctrl.capturing == 0);
-    REQUIRE(ctrl.reserved[0] == 0);
-    REQUIRE(ctrl.reserved[1] == 0);
+    REQUIRE(ctrl.resolution_request == 0);
+    REQUIRE(ctrl.reserved_flags == 0);
+    REQUIRE(ctrl.requested_width == 0);
+    REQUIRE(ctrl.requested_height == 0);
 }
 
 TEST_CASE("CaptureSemaphoreInit default values", "[capture][protocol]") {
