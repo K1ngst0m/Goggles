@@ -13,8 +13,8 @@ enum class ScaleMode : uint8_t {
     fill,
     stretch,
     integer,
+    dynamic,
 };
-;
 
 [[nodiscard]] constexpr auto to_string(ScaleMode mode) -> const char* {
     switch (mode) {
@@ -26,6 +26,8 @@ enum class ScaleMode : uint8_t {
         return "stretch";
     case ScaleMode::integer:
         return "integer";
+    case ScaleMode::dynamic:
+        return "dynamic";
     }
     return "unknown";
 }

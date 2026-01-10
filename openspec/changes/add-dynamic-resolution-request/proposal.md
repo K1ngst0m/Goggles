@@ -6,15 +6,16 @@ When the Goggles window aspect ratio doesn't match the source, users can only ch
 
 ## What Changes
 
+- Add `dynamic` scale mode that triggers resolution requests on window resize
 - Extend `CaptureControl` protocol with resolution request fields
 - Add `request_resolution()` method to `CaptureReceiver`
 - Handle resolution requests in vk_layer (WSI Proxy mode only)
-- Send resolution requests on window resize in application
 
 ## Impact
 
-- Affected specs: `vk-layer-capture`
+- Affected specs: `vk-layer-capture`, `render-pipeline`
 - Affected code:
+  - `src/util/config.hpp/cpp` - add dynamic scale mode
   - `src/capture/capture_protocol.hpp` - protocol extension
   - `src/capture/capture_receiver.cpp/hpp` - send requests
   - `src/capture/vk_layer/ipc_socket.cpp` - receive requests

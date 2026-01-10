@@ -81,10 +81,12 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
                 config.render.scale_mode = ScaleMode::stretch;
             } else if (mode_str == "integer") {
                 config.render.scale_mode = ScaleMode::integer;
+            } else if (mode_str == "dynamic") {
+                config.render.scale_mode = ScaleMode::dynamic;
             } else {
                 return make_error<Config>(ErrorCode::invalid_config,
                                           "Invalid scale_mode: " + mode_str +
-                                              " (expected: fit, fill, stretch, integer)");
+                                              " (expected: fit, fill, stretch, integer, dynamic)");
             }
         }
         if (render.contains("integer_scale")) {
