@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <util/config.hpp>
 #include <util/error.hpp>
 
 namespace goggles {
@@ -64,8 +65,10 @@ private:
 
     bool m_running = true;
     bool m_window_resized = false;
+    bool m_initial_resolution_sent = false;
     uint32_t m_pending_format = 0;
     uint64_t m_last_source_frame_number = UINT64_MAX;
+    ScaleMode m_scale_mode = ScaleMode::fill;
 };
 
 } // namespace app

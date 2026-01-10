@@ -2,9 +2,16 @@
 
 #include "capture/capture_protocol.hpp"
 
+#include <atomic>
 #include <mutex>
 
 namespace goggles::capture {
+
+struct ResolutionRequest {
+    bool pending = false;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
 
 class LayerSocketClient {
 public:
@@ -23,12 +30,16 @@ public:
     bool send_frame_metadata(const CaptureFrameMetadata& metadata);
     bool poll_control(CaptureControl& control);
     bool is_capturing() const;
+    ResolutionRequest consume_resolution_request();
 
 private:
     mutable std::mutex mutex_;
     int socket_fd_ = -1;
-    bool capturing_ = false;
+    std::atomic<bool> capturing_{false};
     int64_t last_connect_attempt_ = 0;
+    std::atomic<bool> res_pending_{false};
+    std::atomic<uint32_t> res_width_{0};
+    std::atomic<uint32_t> res_height_{0};
 };
 
 LayerSocketClient& get_layer_socket();

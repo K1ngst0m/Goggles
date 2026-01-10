@@ -31,6 +31,8 @@ public:
 
     void shutdown();
     bool poll_frame();
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    void request_resolution(uint32_t width, uint32_t height);
 
     [[nodiscard]] const CaptureFrame& get_frame() const { return m_frame; }
     [[nodiscard]] bool is_connected() const { return m_client_fd >= 0; }

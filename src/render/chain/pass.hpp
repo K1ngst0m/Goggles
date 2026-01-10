@@ -124,6 +124,26 @@ struct ScaledViewport {
         result.offset_y = static_cast<int32_t>(target_height - result.height) / 2;
         break;
     }
+
+    case ScaleMode::dynamic: {
+        // Dynamic mode uses fit behavior while waiting for source resolution change
+        float source_aspect = static_cast<float>(source_width) / static_cast<float>(source_height);
+        float target_aspect = static_cast<float>(target_width) / static_cast<float>(target_height);
+
+        if (source_aspect > target_aspect) {
+            result.width = target_width;
+            result.height =
+                static_cast<uint32_t>(std::round(static_cast<float>(target_width) / source_aspect));
+        } else {
+            result.height = target_height;
+            result.width = static_cast<uint32_t>(
+                std::round(static_cast<float>(target_height) * source_aspect));
+        }
+
+        result.offset_x = static_cast<int32_t>((target_width - result.width) / 2);
+        result.offset_y = static_cast<int32_t>((target_height - result.height) / 2);
+        break;
+    }
     }
 
     return result;

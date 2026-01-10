@@ -1,5 +1,7 @@
 #include "wsi_virtual.hpp"
 
+#include "ipc_socket.hpp"
+
 #include <bit>
 #include <cinttypes>
 #include <cstdio>
@@ -122,6 +124,19 @@ VirtualSurface* WsiVirtualizer::get_surface(VkSurfaceKHR surface) {
     std::lock_guard lock(mutex_);
     auto it = surfaces_.find(surface);
     return it != surfaces_.end() ? &it->second : nullptr;
+}
+
+void WsiVirtualizer::set_resolution(uint32_t width, uint32_t height) {
+    std::lock_guard lock(mutex_);
+    for (auto& [handle, surface] : surfaces_) {
+        if (surface.width != width || surface.height != height) {
+            surface.width = width;
+            surface.height = height;
+            surface.out_of_date = true;
+            LAYER_DEBUG("Virtual surface 0x%016" PRIx64 " resolution changed to %ux%u",
+                        handle_to_u64(handle), width, height);
+        }
+    }
 }
 
 VkResult WsiVirtualizer::get_surface_capabilities(VkPhysicalDevice /*physDev*/,
@@ -552,8 +567,14 @@ VkResult WsiVirtualizer::create_swapchain(VkDevice device, const VkSwapchainCrea
     }
 
     VkSwapchainKHR handle = swap.handle;
+    VkSurfaceKHR surface = swap.surface;
     swapchains_[handle] = std::move(swap);
     *swapchain = handle;
+
+    auto surf_it = surfaces_.find(surface);
+    if (surf_it != surfaces_.end()) {
+        surf_it->second.out_of_date = false;
+    }
 
     LAYER_DEBUG("Virtual swapchain created: 0x%016" PRIx64 " (%ux%u, %u images)",
                 handle_to_u64(handle), swapchains_[handle].extent.width,
@@ -636,6 +657,15 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
                                             uint64_t /*timeout*/, VkSemaphore semaphore,
                                             VkFence fence, uint32_t* index,
                                             VkDeviceData* dev_data) {
+    // Poll for resolution requests before acquiring
+    auto& socket = get_layer_socket();
+    CaptureControl ctrl{};
+    socket.poll_control(ctrl);
+    auto res_req = socket.consume_resolution_request();
+    if (res_req.pending) {
+        set_resolution(res_req.width, res_req.height);
+    }
+
     uint32_t fps = get_fps_limit();
     if (fps > 0) {
         std::chrono::steady_clock::time_point last_acquire;
@@ -665,6 +695,12 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
         }
 
         auto& swap = it->second;
+
+        auto surf_it = surfaces_.find(swap.surface);
+        if (surf_it != surfaces_.end() && surf_it->second.out_of_date) {
+            return VK_ERROR_OUT_OF_DATE_KHR;
+        }
+
         current_idx = swap.current_index;
         swap.current_index = (current_idx + 1) % swap.image_count;
         swap.last_acquire = std::chrono::steady_clock::now();

@@ -17,6 +17,7 @@ enum class CaptureMessageType : uint32_t {
     control = 3,
     semaphore_init = 4,
     frame_metadata = 5,
+    resolution_response = 6,
 };
 
 struct CaptureClientHello {
@@ -39,10 +40,14 @@ struct CaptureTextureData {
 
 static_assert(sizeof(CaptureTextureData) == 32);
 
+constexpr uint32_t CAPTURE_CONTROL_CAPTURING = 1u << 0;
+constexpr uint32_t CAPTURE_CONTROL_RESOLUTION_REQUEST = 1u << 1;
+
 struct CaptureControl {
     CaptureMessageType type = CaptureMessageType::control;
-    uint32_t capturing = 0;
-    std::array<uint32_t, 2> reserved{};
+    uint32_t flags = 0;
+    uint32_t requested_width = 0;
+    uint32_t requested_height = 0;
 };
 
 static_assert(sizeof(CaptureControl) == 16);

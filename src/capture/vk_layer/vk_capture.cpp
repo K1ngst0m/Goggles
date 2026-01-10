@@ -1,6 +1,7 @@
 #include "vk_capture.hpp"
 
 #include "ipc_socket.hpp"
+#include "wsi_virtual.hpp"
 
 #include <cinttypes>
 #include <cstdio>
@@ -799,6 +800,11 @@ void CaptureManager::on_present(VkQueue queue, const VkPresentInfoKHR* present_i
 
     CaptureControl ctrl{};
     socket.poll_control(ctrl);
+
+    auto res_req = socket.consume_resolution_request();
+    if (res_req.pending && WsiVirtualizer::instance().is_enabled()) {
+        WsiVirtualizer::instance().set_resolution(res_req.width, res_req.height);
+    }
 
     VkPresentInfoKHR modified_present = *present_info;
     capture_frame(swap, image_index, queue, dev_data, &modified_present);

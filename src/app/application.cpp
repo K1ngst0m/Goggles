@@ -59,6 +59,8 @@ auto Application::create(const Config& config, bool enable_input_forwarding)
     render_settings.integer_scale = config.render.integer_scale;
     render_settings.target_fps = config.render.target_fps;
 
+    app->m_scale_mode = config.render.scale_mode;
+    GOGGLES_LOG_INFO("Scale mode: {}", to_string(app->m_scale_mode));
     app->m_vulkan_backend = GOGGLES_TRY(render::VulkanBackend::create(
         sdl_window, config.render.enable_validation, resolve_shader_base_dir(), render_settings));
 
@@ -320,12 +322,28 @@ void Application::tick_frame() {
             if (!result) {
                 GOGGLES_LOG_ERROR("Resize failed: {}", result.error().message);
             }
+            if (m_scale_mode == ScaleMode::dynamic && m_capture_receiver &&
+                m_capture_receiver->is_connected()) {
+                auto extent = m_vulkan_backend->swapchain_extent();
+                if (extent.width > 0 && extent.height > 0) {
+                    m_capture_receiver->request_resolution(extent.width, extent.height);
+                }
+            }
         }
     }
 
     if (m_capture_receiver) {
         GOGGLES_PROFILE_SCOPE("CaptureReceive");
         m_capture_receiver->poll_frame();
+
+        if (m_scale_mode == ScaleMode::dynamic && !m_initial_resolution_sent &&
+            m_capture_receiver->is_connected()) {
+            auto extent = m_vulkan_backend->swapchain_extent();
+            if (extent.width > 0 && extent.height > 0) {
+                m_capture_receiver->request_resolution(extent.width, extent.height);
+                m_initial_resolution_sent = true;
+            }
+        }
     }
 
     handle_sync_semaphores();

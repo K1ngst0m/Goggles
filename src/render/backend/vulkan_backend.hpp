@@ -69,6 +69,7 @@ public:
     [[nodiscard]] auto graphics_queue() const -> vk::Queue { return m_graphics_queue; }
     [[nodiscard]] auto graphics_queue_family() const -> uint32_t { return m_graphics_queue_family; }
     [[nodiscard]] auto swapchain_format() const -> vk::Format { return m_swapchain_format; }
+    [[nodiscard]] auto swapchain_extent() const -> vk::Extent2D { return m_swapchain_extent; }
     [[nodiscard]] auto swapchain_image_count() const -> uint32_t {
         return static_cast<uint32_t>(m_swapchain_images.size());
     }

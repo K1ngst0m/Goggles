@@ -11,6 +11,7 @@ TEST_CASE("CaptureMessageType enum values", "[capture][protocol]") {
     REQUIRE(static_cast<uint32_t>(CaptureMessageType::control) == 3);
     REQUIRE(static_cast<uint32_t>(CaptureMessageType::semaphore_init) == 4);
     REQUIRE(static_cast<uint32_t>(CaptureMessageType::frame_metadata) == 5);
+    REQUIRE(static_cast<uint32_t>(CaptureMessageType::resolution_response) == 6);
 }
 
 TEST_CASE("Capture struct sizes match wire format", "[capture][protocol]") {
@@ -42,9 +43,14 @@ TEST_CASE("CaptureTextureData default values", "[capture][protocol]") {
 TEST_CASE("CaptureControl default values", "[capture][protocol]") {
     CaptureControl ctrl{};
     REQUIRE(ctrl.type == CaptureMessageType::control);
-    REQUIRE(ctrl.capturing == 0);
-    REQUIRE(ctrl.reserved[0] == 0);
-    REQUIRE(ctrl.reserved[1] == 0);
+    REQUIRE(ctrl.flags == 0);
+    REQUIRE(ctrl.requested_width == 0);
+    REQUIRE(ctrl.requested_height == 0);
+}
+
+TEST_CASE("CaptureControl flag constants", "[capture][protocol]") {
+    REQUIRE(CAPTURE_CONTROL_CAPTURING == 1u);
+    REQUIRE(CAPTURE_CONTROL_RESOLUTION_REQUEST == 2u);
 }
 
 TEST_CASE("CaptureSemaphoreInit default values", "[capture][protocol]") {

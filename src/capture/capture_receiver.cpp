@@ -3,6 +3,7 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -110,8 +111,28 @@ bool CaptureReceiver::accept_client() {
 
     CaptureControl ctrl{};
     ctrl.type = CaptureMessageType::control;
-    ctrl.capturing = 1;
-    send(m_client_fd, &ctrl, sizeof(ctrl), MSG_NOSIGNAL);
+    ctrl.flags = CAPTURE_CONTROL_CAPTURING;
+
+    size_t total_sent = 0;
+    while (total_sent < sizeof(ctrl)) {
+        ssize_t sent = send(m_client_fd, reinterpret_cast<const char*>(&ctrl) + total_sent,
+                            sizeof(ctrl) - total_sent, MSG_NOSIGNAL);
+        if (sent < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                pollfd pfd{m_client_fd, POLLOUT, 0};
+                poll(&pfd, 1, 100);
+                continue;
+            }
+            GOGGLES_LOG_ERROR("Failed to send initial control: {}", strerror(errno));
+            close(m_client_fd);
+            m_client_fd = -1;
+            return false;
+        }
+        total_sent += static_cast<size_t>(sent);
+    }
 
     return true;
 }
@@ -336,6 +357,20 @@ void CaptureReceiver::cleanup_frame() {
     m_last_texture = {};
     m_recv_buf.clear();
     clear_sync_semaphores();
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+void CaptureReceiver::request_resolution(uint32_t width, uint32_t height) {
+    if (m_client_fd < 0) {
+        return;
+    }
+
+    CaptureControl ctrl{};
+    ctrl.type = CaptureMessageType::control;
+    ctrl.flags = CAPTURE_CONTROL_CAPTURING | CAPTURE_CONTROL_RESOLUTION_REQUEST;
+    ctrl.requested_width = width;
+    ctrl.requested_height = height;
+    send(m_client_fd, &ctrl, sizeof(ctrl), MSG_NOSIGNAL);
 }
 
 } // namespace goggles

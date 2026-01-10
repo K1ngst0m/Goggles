@@ -640,16 +640,6 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
         chosen_mode = vk::PresentModeKHR::eMailbox;
     }
 
-    const char* pacing_strategy = nullptr;
-    if (m_present_wait_supported) {
-        pacing_strategy = "present wait";
-    } else if (mailbox_supported) {
-        pacing_strategy = "mailbox";
-    } else {
-        pacing_strategy = "sleep throttle";
-    }
-    GOGGLES_LOG_INFO("Frame pacing strategy: {}", pacing_strategy);
-
     create_info.presentMode = chosen_mode;
     create_info.clipped = VK_TRUE;
 

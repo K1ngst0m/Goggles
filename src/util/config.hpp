@@ -13,8 +13,8 @@ enum class ScaleMode : uint8_t {
     fill,
     stretch,
     integer,
+    dynamic,
 };
-;
 
 [[nodiscard]] constexpr auto to_string(ScaleMode mode) -> const char* {
     switch (mode) {
@@ -26,6 +26,8 @@ enum class ScaleMode : uint8_t {
         return "stretch";
     case ScaleMode::integer:
         return "integer";
+    case ScaleMode::dynamic:
+        return "dynamic";
     }
     return "unknown";
 }
@@ -47,7 +49,7 @@ struct Config {
         bool vsync = true;
         uint32_t target_fps = 60; // 0 = uncapped
         bool enable_validation = false;
-        ScaleMode scale_mode = ScaleMode::stretch;
+        ScaleMode scale_mode = ScaleMode::fill;
         uint32_t integer_scale = 0;
     } render;
 
