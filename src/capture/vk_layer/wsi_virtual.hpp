@@ -28,6 +28,8 @@ struct VirtualSwapchain {
     std::vector<VkDeviceMemory> memory;
     std::vector<int> dmabuf_fds;
     std::vector<uint32_t> strides;
+    std::vector<uint32_t> offsets;
+    std::vector<uint64_t> modifiers;
     uint32_t image_count = 0;
     uint32_t current_index = 0;
     std::chrono::steady_clock::time_point last_acquire;
@@ -39,6 +41,8 @@ struct SwapchainFrameData {
     uint32_t height = 0;
     VkFormat format = VK_FORMAT_UNDEFINED;
     uint32_t stride = 0;
+    uint32_t offset = 0;
+    uint64_t modifier = 0;
     int dmabuf_fd = -1;
 };
 

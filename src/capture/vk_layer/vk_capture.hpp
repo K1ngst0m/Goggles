@@ -27,6 +27,8 @@ struct VirtualFrameInfo {
     uint32_t height = 0;
     uint32_t format = 0;
     uint32_t stride = 0;
+    uint32_t offset = 0;
+    uint64_t modifier = 0;
     int dmabuf_fd = -1;
 };
 
