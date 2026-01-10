@@ -11,6 +11,7 @@ TEST_CASE("CaptureMessageType enum values", "[capture][protocol]") {
     REQUIRE(static_cast<uint32_t>(CaptureMessageType::control) == 3);
     REQUIRE(static_cast<uint32_t>(CaptureMessageType::semaphore_init) == 4);
     REQUIRE(static_cast<uint32_t>(CaptureMessageType::frame_metadata) == 5);
+    REQUIRE(static_cast<uint32_t>(CaptureMessageType::resolution_response) == 6);
 }
 
 TEST_CASE("Capture struct sizes match wire format", "[capture][protocol]") {

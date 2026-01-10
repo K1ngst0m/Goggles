@@ -266,9 +266,13 @@ bool LayerSocketClient::poll_control(CaptureControl& control) {
         capturing_ = (control.flags & CAPTURE_CONTROL_CAPTURING) != 0;
         if ((control.flags & CAPTURE_CONTROL_RESOLUTION_REQUEST) != 0 &&
             control.requested_width > 0 && control.requested_height > 0) {
-            resolution_request_.pending = true;
-            resolution_request_.width = control.requested_width;
-            resolution_request_.height = control.requested_height;
+            constexpr uint32_t max_resolution = 16384;
+            if (control.requested_width <= max_resolution &&
+                control.requested_height <= max_resolution) {
+                resolution_request_.pending = true;
+                resolution_request_.width = control.requested_width;
+                resolution_request_.height = control.requested_height;
+            }
         }
         return true;
     }
