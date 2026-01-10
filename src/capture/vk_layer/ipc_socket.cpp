@@ -91,6 +91,7 @@ void LayerSocketClient::disconnect() {
         socket_fd_ = -1;
     }
     capturing_ = false;
+    resolution_request_ = {};
 }
 
 bool LayerSocketClient::is_connected() const {

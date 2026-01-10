@@ -49,7 +49,7 @@ struct Config {
         bool vsync = true;
         uint32_t target_fps = 60; // 0 = uncapped
         bool enable_validation = false;
-        ScaleMode scale_mode = ScaleMode::stretch;
+        ScaleMode scale_mode = ScaleMode::fill;
         uint32_t integer_scale = 0;
     } render;
 
