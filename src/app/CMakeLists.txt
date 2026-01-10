@@ -21,6 +21,10 @@ target_link_libraries(goggles PRIVATE
     CLI11::CLI11
 )
 
+target_compile_definitions(goggles PRIVATE
+    GOGGLES_LOG_TAG="app"
+)
+
 set_target_properties(goggles PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )

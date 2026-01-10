@@ -57,6 +57,10 @@ if(NOT GOGGLES_LAYER_ONLY)
         goggles_util
     )
 
+    target_compile_definitions(goggles_capture PRIVATE
+        GOGGLES_LOG_TAG="capture"
+    )
+
     goggles_enable_profiling(goggles_capture)
 endif()
 

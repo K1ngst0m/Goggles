@@ -116,6 +116,9 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         if (logging.contains("file")) {
             config.logging.file = toml::find<std::string>(logging, "file");
         }
+        if (logging.contains("timestamp")) {
+            config.logging.timestamp = toml::find<bool>(logging, "timestamp");
+        }
     }
 
     return config;

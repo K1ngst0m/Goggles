@@ -29,7 +29,7 @@ TEST_CASE("initialize_logger creates global logger", "[logging]") {
 TEST_CASE("initialize_logger with layer mode", "[logging]") {
     SECTION("Layer mode initialization") {
         // Note: Due to global state, we test that the function completes successfully
-        initialize_logger("test_layer_mode", true);
+        initialize_logger("test_layer_mode");
         auto logger = get_logger();
 
         REQUIRE(logger != nullptr);
@@ -42,7 +42,7 @@ TEST_CASE("initialize_logger with layer mode", "[logging]") {
 
 TEST_CASE("initialize_logger with app mode", "[logging]") {
     SECTION("App mode initialization") {
-        initialize_logger("test_app_mode", false);
+        initialize_logger("test_app_mode");
         auto logger = get_logger();
 
         REQUIRE(logger != nullptr);

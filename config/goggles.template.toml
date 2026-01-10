@@ -50,3 +50,6 @@ integer_scale = 0
 # Log level: "trace" | "debug" | "info" | "warn" | "error" | "critical"
 level = "info"
 file = ""
+
+# Include timestamp prefix in console logs.
+timestamp = false

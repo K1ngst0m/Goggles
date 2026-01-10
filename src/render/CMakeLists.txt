@@ -1,18 +1,15 @@
 # Render subsystem
 
+add_subdirectory(backend)
+add_subdirectory(chain)
+add_subdirectory(shader)
+add_subdirectory(texture)
+
 add_library(goggles_render STATIC
-    backend/vulkan_backend.cpp
-    backend/vulkan_debug.cpp
-    shader/shader_runtime.cpp
-    shader/retroarch_preprocessor.cpp
-    shader/slang_reflect.cpp
-    chain/output_pass.cpp
-    chain/preset_parser.cpp
-    chain/filter_pass.cpp
-    chain/framebuffer.cpp
-    chain/filter_chain.cpp
-    chain/frame_history.cpp
-    texture/texture_loader.cpp
+    $<TARGET_OBJECTS:goggles_render_backend_obj>
+    $<TARGET_OBJECTS:goggles_render_chain_obj>
+    $<TARGET_OBJECTS:goggles_render_shader_obj>
+    $<TARGET_OBJECTS:goggles_render_texture_obj>
 )
 
 target_include_directories(goggles_render PUBLIC
@@ -20,6 +17,7 @@ target_include_directories(goggles_render PUBLIC
     ${CMAKE_SOURCE_DIR}/src
 )
 
+# Link deps here so downstream users only need to link goggles_render.
 target_link_libraries(goggles_render PUBLIC
     goggles_util
     Vulkan::Vulkan

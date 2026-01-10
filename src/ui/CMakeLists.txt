@@ -15,6 +15,7 @@ target_link_libraries(goggles_ui PUBLIC
 )
 
 target_compile_definitions(goggles_ui PRIVATE
+    GOGGLES_LOG_TAG="ui"
     VULKAN_HPP_NO_EXCEPTIONS
 )
 
