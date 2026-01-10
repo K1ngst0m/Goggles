@@ -1,5 +1,7 @@
 #include "wsi_virtual.hpp"
 
+#include "ipc_socket.hpp"
+
 #include <bit>
 #include <cinttypes>
 #include <cstdio>
@@ -649,6 +651,15 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
                                             uint64_t /*timeout*/, VkSemaphore semaphore,
                                             VkFence fence, uint32_t* index,
                                             VkDeviceData* dev_data) {
+    // Poll for resolution requests before acquiring
+    auto& socket = get_layer_socket();
+    CaptureControl ctrl{};
+    socket.poll_control(ctrl);
+    auto res_req = socket.consume_resolution_request();
+    if (res_req.pending) {
+        set_resolution(res_req.width, res_req.height);
+    }
+
     uint32_t fps = get_fps_limit();
     if (fps > 0) {
         std::chrono::steady_clock::time_point last_acquire;

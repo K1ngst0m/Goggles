@@ -325,6 +325,8 @@ void Application::tick_frame() {
                 m_capture_receiver->is_connected()) {
                 auto extent = m_vulkan_backend->swapchain_extent();
                 if (extent.width > 0 && extent.height > 0) {
+                    GOGGLES_LOG_DEBUG("Window resized to {}x{}, requesting source resolution change",
+                                      extent.width, extent.height);
                     m_capture_receiver->request_resolution(extent.width, extent.height);
                 }
             }
