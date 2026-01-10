@@ -495,8 +495,9 @@ bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice d
 
     // Prefer DRM modifier tiling to keep the format stable (e.g. SRGB) and to export a correct
     // modifier to the viewer. Fall back to LINEAR only if no suitable modifier is available.
-    constexpr VkFormatFeatureFlags required_features =
-        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    constexpr VkFormatFeatureFlags required_features = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                                       VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                                                       VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
     auto modifiers = query_export_modifiers(dev_data->physical_device, swap.format,
                                             &inst_data->funcs, required_features);
 
