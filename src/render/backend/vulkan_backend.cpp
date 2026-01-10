@@ -1347,8 +1347,11 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 }
 
 auto VulkanBackend::apply_present_wait(uint64_t present_id) -> Result<void> {
+    constexpr uint64_t MAX_TIMEOUT_NS = 1'000'000'000ULL; // 1 second max
     const uint64_t timeout_ns =
-        (m_target_fps == 0) ? UINT64_MAX : static_cast<uint64_t>(1'000'000'000ULL / m_target_fps);
+        (m_target_fps == 0)
+            ? MAX_TIMEOUT_NS
+            : std::min(MAX_TIMEOUT_NS, static_cast<uint64_t>(1'000'000'000ULL / m_target_fps));
     auto wait_result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkWaitForPresentKHR(
         *m_device, *m_swapchain, present_id, timeout_ns));
     if (wait_result == vk::Result::eSuccess || wait_result == vk::Result::eTimeout) {
