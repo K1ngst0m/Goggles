@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <format>
 #include <render/chain/pass.hpp>
 #include <util/job_system.hpp>
 #include <util/logging.hpp>
@@ -32,6 +33,9 @@ constexpr std::array REQUIRED_DEVICE_EXTENSIONS = {
     VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
 };
 
+// from drm_fourcc.h (kept local to avoid adding extra headers)
+constexpr uint64_t DRM_FORMAT_MOD_INVALID = 0xffffffffffffffULL;
+
 auto find_memory_type(const vk::PhysicalDeviceMemoryProperties& mem_props, uint32_t type_bits)
     -> uint32_t {
     for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
@@ -40,6 +44,115 @@ auto find_memory_type(const vk::PhysicalDeviceMemoryProperties& mem_props, uint3
         }
     }
     return UINT32_MAX;
+}
+
+struct DmabufImageCreateChain {
+    vk::ExternalMemoryImageCreateInfo ext_mem_info;
+    vk::ImageDrmFormatModifierExplicitCreateInfoEXT modifier_info;
+    vk::SubresourceLayout plane_layout;
+    vk::ImageCreateInfo image_info;
+};
+
+static void init_dmabuf_image_create_chain(const CaptureFrame& frame, vk::Format vk_format,
+                                           DmabufImageCreateChain* chain) {
+    chain->ext_mem_info = vk::ExternalMemoryImageCreateInfo{};
+    chain->modifier_info = vk::ImageDrmFormatModifierExplicitCreateInfoEXT{};
+    chain->plane_layout = vk::SubresourceLayout{};
+    chain->image_info = vk::ImageCreateInfo{};
+
+    chain->ext_mem_info.handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT;
+
+    chain->plane_layout.offset = frame.offset;
+    chain->plane_layout.size = 0;
+    chain->plane_layout.rowPitch = frame.stride;
+    chain->plane_layout.arrayPitch = 0;
+    chain->plane_layout.depthPitch = 0;
+
+    chain->modifier_info.drmFormatModifier = frame.modifier;
+    chain->modifier_info.drmFormatModifierPlaneCount = 1;
+    chain->modifier_info.pPlaneLayouts = &chain->plane_layout;
+
+    chain->ext_mem_info.pNext = &chain->modifier_info;
+
+    chain->image_info.pNext = &chain->ext_mem_info;
+    chain->image_info.imageType = vk::ImageType::e2D;
+    chain->image_info.format = vk_format;
+    chain->image_info.extent = vk::Extent3D{frame.width, frame.height, 1};
+    chain->image_info.mipLevels = 1;
+    chain->image_info.arrayLayers = 1;
+    chain->image_info.samples = vk::SampleCountFlagBits::e1;
+    chain->image_info.tiling = vk::ImageTiling::eDrmFormatModifierEXT;
+    chain->image_info.usage =
+        vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled;
+    chain->image_info.sharingMode = vk::SharingMode::eExclusive;
+    chain->image_info.initialLayout = vk::ImageLayout::eUndefined;
+}
+
+static auto get_dmabuf_memory_type_bits(vk::Device device, int fd) -> Result<uint32_t> {
+    VkMemoryFdPropertiesKHR fd_props_raw{};
+    fd_props_raw.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR;
+
+    auto fd_props_result =
+        static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkGetMemoryFdPropertiesKHR(
+            device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, fd, &fd_props_raw));
+    if (fd_props_result != vk::Result::eSuccess) {
+        return make_error<uint32_t>(ErrorCode::vulkan_init_failed,
+                                    "Stale DMA-BUF fd, skipping frame");
+    }
+
+    return fd_props_raw.memoryTypeBits;
+}
+
+static auto allocate_imported_dmabuf_memory(vk::Device device, vk::Image image, vk::DeviceSize size,
+                                            uint32_t mem_type_index, util::UniqueFd import_fd,
+                                            const vk::MemoryDedicatedRequirements& dedicated_reqs)
+    -> Result<vk::DeviceMemory> {
+    vk::ImportMemoryFdInfoKHR import_info{};
+    import_info.handleType = vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT;
+    import_info.fd = import_fd.get();
+
+    vk::MemoryDedicatedAllocateInfo dedicated_alloc{};
+    dedicated_alloc.image = image;
+    if (dedicated_reqs.requiresDedicatedAllocation || dedicated_reqs.prefersDedicatedAllocation) {
+        import_info.pNext = &dedicated_alloc;
+    }
+
+    vk::MemoryAllocateInfo alloc_info{};
+    alloc_info.pNext = &import_info;
+    alloc_info.allocationSize = size;
+    alloc_info.memoryTypeIndex = mem_type_index;
+
+    auto [alloc_result, memory] = device.allocateMemory(alloc_info);
+    if (alloc_result != vk::Result::eSuccess) {
+        return make_error<vk::DeviceMemory>(ErrorCode::vulkan_init_failed,
+                                            "Failed to import DMA-BUF memory: " +
+                                                vk::to_string(alloc_result));
+    }
+
+    // Vulkan takes ownership of fd on success.
+    import_fd.release();
+    return memory;
+}
+
+static auto create_imported_image_view(vk::Device device, vk::Image image, vk::Format format)
+    -> Result<vk::ImageView> {
+    vk::ImageViewCreateInfo view_info{};
+    view_info.image = image;
+    view_info.viewType = vk::ImageViewType::e2D;
+    view_info.format = format;
+    view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
+
+    auto [view_result, view] = device.createImageView(view_info);
+    if (view_result != vk::Result::eSuccess) {
+        return make_error<vk::ImageView>(ErrorCode::vulkan_init_failed,
+                                         "Failed to create DMA-BUF image view: " +
+                                             vk::to_string(view_result));
+    }
+    return view;
 }
 
 } // namespace
@@ -724,51 +837,27 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Invalid DMA-BUF fd");
     }
 
+    if (frame.modifier == DRM_FORMAT_MOD_INVALID) {
+        return make_error<void>(ErrorCode::invalid_data,
+                                std::format("Invalid DMA-BUF modifier 0x{:x} "
+                                            "(DRM_FORMAT_MOD_INVALID); capture did not provide a "
+                                            "valid modifier, cannot import",
+                                            frame.modifier));
+    }
+
     VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost, "waitIdle failed before reimport");
     cleanup_imported_image();
 
-    // Set up external memory info for DMA-BUF import
-    vk::ExternalMemoryImageCreateInfo ext_mem_info{};
-    ext_mem_info.handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT;
-
-    // Set up modifier info - always use DRM format modifier tiling for proper import
-    vk::ImageDrmFormatModifierExplicitCreateInfoEXT modifier_info{};
-    vk::SubresourceLayout plane_layout{};
-
-    // For single-plane images, provide a minimal plane layout
-    // The actual layout is determined by the exporter and encoded in the modifier
-    plane_layout.offset = frame.offset;
-    plane_layout.size = 0;
-    plane_layout.rowPitch = frame.stride;
-    plane_layout.arrayPitch = 0;
-    plane_layout.depthPitch = 0;
-
-    modifier_info.drmFormatModifier = frame.modifier;
-    modifier_info.drmFormatModifierPlaneCount = 1;
-    modifier_info.pPlaneLayouts = &plane_layout;
-
-    // Chain: image_info -> ext_mem_info -> modifier_info
-    ext_mem_info.pNext = &modifier_info;
-
     auto vk_format = static_cast<vk::Format>(frame.format);
+    DmabufImageCreateChain chain{};
+    init_dmabuf_image_create_chain(frame, vk_format, &chain);
 
-    vk::ImageCreateInfo image_info{};
-    image_info.pNext = &ext_mem_info;
-    image_info.imageType = vk::ImageType::e2D;
-    image_info.format = vk_format;
-    image_info.extent = vk::Extent3D{frame.width, frame.height, 1};
-    image_info.mipLevels = 1;
-    image_info.arrayLayers = 1;
-    image_info.samples = vk::SampleCountFlagBits::e1;
-    image_info.tiling = vk::ImageTiling::eDrmFormatModifierEXT;
-    image_info.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled;
-    image_info.sharingMode = vk::SharingMode::eExclusive;
-    image_info.initialLayout = vk::ImageLayout::eUndefined;
-
-    auto [img_result, image] = m_device->createImage(image_info);
+    auto [img_result, image] = m_device->createImage(chain.image_info);
     if (img_result != vk::Result::eSuccess) {
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to create DMA-BUF image: " + vk::to_string(img_result));
+        return make_error<void>(
+            ErrorCode::vulkan_init_failed,
+            std::format("Failed to create DMA-BUF image (format={}, modifier=0x{:x}): {}",
+                        vk::to_string(vk_format), frame.modifier, vk::to_string(img_result)));
     }
     m_import.image = image;
 
@@ -782,20 +871,15 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     m_device->getImageMemoryRequirements2(&mem_reqs_info, &mem_reqs2);
     auto mem_reqs = mem_reqs2.memoryRequirements;
 
-    VkMemoryFdPropertiesKHR fd_props_raw{};
-    fd_props_raw.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR;
-    auto fd_props_result =
-        static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkGetMemoryFdPropertiesKHR(
-            *m_device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, frame.dmabuf_fd.get(),
-            &fd_props_raw));
-    if (fd_props_result != vk::Result::eSuccess) {
+    auto fd_type_bits_result = get_dmabuf_memory_type_bits(*m_device, frame.dmabuf_fd.get());
+    if (!fd_type_bits_result) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::vulkan_init_failed, "Stale DMA-BUF fd, skipping frame");
+        return make_error<void>(fd_type_bits_result.error().code,
+                                fd_type_bits_result.error().message);
     }
-    vk::MemoryFdPropertiesKHR fd_props = fd_props_raw;
 
     auto mem_props = m_physical_device.getMemoryProperties();
-    uint32_t combined_bits = mem_reqs.memoryTypeBits & fd_props.memoryTypeBits;
+    uint32_t combined_bits = mem_reqs.memoryTypeBits & fd_type_bits_result.value();
     uint32_t mem_type_index = find_memory_type(mem_props, combined_bits);
 
     if (mem_type_index == UINT32_MAX) {
@@ -811,29 +895,14 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to dup DMA-BUF fd");
     }
 
-    vk::ImportMemoryFdInfoKHR import_info{};
-    import_info.handleType = vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT;
-    import_info.fd = import_fd.get();
-
-    vk::MemoryDedicatedAllocateInfo dedicated_alloc{};
-    dedicated_alloc.image = m_import.image;
-
-    if (dedicated_reqs.requiresDedicatedAllocation || dedicated_reqs.prefersDedicatedAllocation) {
-        import_info.pNext = &dedicated_alloc;
-    }
-
-    vk::MemoryAllocateInfo alloc_info{};
-    alloc_info.pNext = &import_info;
-    alloc_info.allocationSize = mem_reqs.size;
-    alloc_info.memoryTypeIndex = mem_type_index;
-
-    auto [alloc_result, memory] = m_device->allocateMemory(alloc_info);
-    if (alloc_result != vk::Result::eSuccess) {
+    auto mem_result =
+        allocate_imported_dmabuf_memory(*m_device, m_import.image, mem_reqs.size, mem_type_index,
+                                        std::move(import_fd), dedicated_reqs);
+    if (!mem_result) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to import DMA-BUF memory: " + vk::to_string(alloc_result));
+        return make_error<void>(mem_result.error().code, mem_result.error().message);
     }
-    import_fd.release();
+    auto memory = mem_result.value();
     m_import.memory = memory;
 
     auto bind_result = m_device->bindImageMemory(m_import.image, m_import.memory, 0);
@@ -843,24 +912,12 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
                                 "Failed to bind DMA-BUF memory: " + vk::to_string(bind_result));
     }
 
-    vk::ImageViewCreateInfo view_info{};
-    view_info.image = m_import.image;
-    view_info.viewType = vk::ImageViewType::e2D;
-    view_info.format = vk_format;
-    view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    view_info.subresourceRange.baseMipLevel = 0;
-    view_info.subresourceRange.levelCount = 1;
-    view_info.subresourceRange.baseArrayLayer = 0;
-    view_info.subresourceRange.layerCount = 1;
-
-    auto [view_result, view] = m_device->createImageView(view_info);
-    if (view_result != vk::Result::eSuccess) {
+    auto view_result = create_imported_image_view(*m_device, m_import.image, vk_format);
+    if (!view_result) {
         cleanup_imported_image();
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to create DMA-BUF image view: " +
-                                    vk::to_string(view_result));
+        return make_error<void>(view_result.error().code, view_result.error().message);
     }
-    m_import.view = view;
+    m_import.view = view_result.value();
     m_import_extent = vk::Extent2D{frame.width, frame.height};
 
     GOGGLES_LOG_TRACE("DMA-BUF imported: {}x{}, format={}, modifier=0x{:x}", frame.width,

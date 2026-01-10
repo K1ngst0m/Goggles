@@ -269,6 +269,222 @@ static std::vector<ModifierInfo> query_export_modifiers(VkPhysicalDevice phys_de
     return result;
 }
 
+static auto create_swapchain_image(VkDevice device, VkDeviceData* dev_data,
+                                   const VirtualSwapchain& swap, bool use_modifier_tiling,
+                                   const std::vector<uint64_t>& modifier_list, VkImage* out_image)
+    -> VkResult {
+    auto& funcs = dev_data->funcs;
+
+    VkExternalMemoryImageCreateInfo ext_mem_info{};
+    ext_mem_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+    ext_mem_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
+    VkImageDrmFormatModifierListCreateInfoEXT modifier_list_info{};
+    if (use_modifier_tiling) {
+        modifier_list_info.sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT;
+        modifier_list_info.drmFormatModifierCount = static_cast<uint32_t>(modifier_list.size());
+        modifier_list_info.pDrmFormatModifiers = modifier_list.data();
+        ext_mem_info.pNext = &modifier_list_info;
+    }
+
+    VkImageCreateInfo img_info{};
+    img_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    img_info.pNext = &ext_mem_info;
+    img_info.imageType = VK_IMAGE_TYPE_2D;
+    img_info.format = swap.format;
+    img_info.extent = {swap.extent.width, swap.extent.height, 1};
+    img_info.mipLevels = 1;
+    img_info.arrayLayers = 1;
+    img_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    img_info.tiling =
+        use_modifier_tiling ? VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT : VK_IMAGE_TILING_LINEAR;
+    img_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    img_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    img_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    return funcs.CreateImage(device, &img_info, nullptr, out_image);
+}
+
+static auto get_image_modifier(VkDevice device, VkDeviceData* dev_data, VkImage image) -> uint64_t {
+    auto& funcs = dev_data->funcs;
+
+    if (!funcs.GetImageDrmFormatModifierPropertiesEXT) {
+        return DRM_FORMAT_MOD_INVALID;
+    }
+
+    VkImageDrmFormatModifierPropertiesEXT modifier_props{};
+    modifier_props.sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT;
+    VkResult mod_res = funcs.GetImageDrmFormatModifierPropertiesEXT(device, image, &modifier_props);
+    if (mod_res != VK_SUCCESS) {
+        LAYER_DEBUG("Virtual swapchain: failed to query DRM modifier (%d)", mod_res);
+        return DRM_FORMAT_MOD_INVALID;
+    }
+    return modifier_props.drmFormatModifier;
+}
+
+struct ImageLayout {
+    uint32_t stride;
+    uint32_t offset;
+};
+
+static auto get_image_layout(VkDevice device, VkDeviceData* dev_data, VkImage image,
+                             uint32_t image_index) -> std::optional<ImageLayout> {
+    auto& funcs = dev_data->funcs;
+
+    VkImageSubresource subres{};
+    subres.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    subres.mipLevel = 0;
+    subres.arrayLayer = 0;
+    VkSubresourceLayout layout{};
+    funcs.GetImageSubresourceLayout(device, image, &subres, &layout);
+
+    if (layout.rowPitch > UINT32_MAX) {
+        LAYER_DEBUG("Virtual swapchain image %u: stride %" PRIu64 " exceeds uint32_t max",
+                    image_index, layout.rowPitch);
+        return std::nullopt;
+    }
+    if (layout.offset > UINT32_MAX) {
+        LAYER_DEBUG("Virtual swapchain image %u: offset %" PRIu64 " exceeds uint32_t max",
+                    image_index, layout.offset);
+        return std::nullopt;
+    }
+
+    return ImageLayout{
+        .stride = static_cast<uint32_t>(layout.rowPitch),
+        .offset = static_cast<uint32_t>(layout.offset),
+    };
+}
+
+static auto export_dmabuf_fd(VkDevice device, VkDeviceData* dev_data, VkDeviceMemory memory,
+                             uint32_t image_index, int* out_fd) -> bool {
+    auto& funcs = dev_data->funcs;
+
+    VkMemoryGetFdInfoKHR fd_info{};
+    fd_info.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+    fd_info.memory = memory;
+    fd_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
+    int fd = -1;
+    if (funcs.GetMemoryFdKHR(device, &fd_info, &fd) != VK_SUCCESS || fd < 0) {
+        LAYER_DEBUG("Failed to export DMA-BUF for virtual swapchain image %u", image_index);
+        return false;
+    }
+
+    *out_fd = fd;
+    return true;
+}
+
+static auto alloc_exportable_memory(VkDevice device, VkDeviceData* dev_data,
+                                    const VkPhysicalDeviceMemoryProperties& mem_props,
+                                    VkImage image, uint32_t image_index, VkDeviceMemory* out_memory)
+    -> bool {
+    auto& funcs = dev_data->funcs;
+
+    VkMemoryRequirements mem_reqs;
+    funcs.GetImageMemoryRequirements(device, image, &mem_reqs);
+
+    uint32_t mem_type = find_memory_type(mem_props, mem_reqs.memoryTypeBits);
+    if (mem_type == UINT32_MAX) {
+        LAYER_DEBUG("No suitable memory type for virtual swapchain");
+        return false;
+    }
+
+    VkExportMemoryAllocateInfo export_info{};
+    export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+    export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.pNext = &export_info;
+    alloc_info.allocationSize = mem_reqs.size;
+    alloc_info.memoryTypeIndex = mem_type;
+
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    if (funcs.AllocateMemory(device, &alloc_info, nullptr, &memory) != VK_SUCCESS) {
+        LAYER_DEBUG("Failed to allocate memory for virtual swapchain image %u", image_index);
+        return false;
+    }
+
+    if (funcs.BindImageMemory(device, image, memory, 0) != VK_SUCCESS) {
+        funcs.FreeMemory(device, memory, nullptr);
+        LAYER_DEBUG("Failed to bind memory for virtual swapchain image %u", image_index);
+        return false;
+    }
+
+    *out_memory = memory;
+    return true;
+}
+
+static auto create_exportable_image(VirtualSwapchain& swap, VkDevice device, VkDeviceData* dev_data,
+                                    const VkPhysicalDeviceMemoryProperties& mem_props,
+                                    bool use_modifier_tiling,
+                                    const std::vector<uint64_t>& modifier_list,
+                                    uint32_t image_index) -> bool {
+    auto& funcs = dev_data->funcs;
+
+    VkImage image = VK_NULL_HANDLE;
+    VkResult create_res =
+        create_swapchain_image(device, dev_data, swap, use_modifier_tiling, modifier_list, &image);
+    if (create_res != VK_SUCCESS) {
+        LAYER_DEBUG("Failed to create virtual swapchain image %u (%d)", image_index, create_res);
+        return false;
+    }
+
+    uint64_t modifier = DRM_FORMAT_MOD_LINEAR;
+    if (use_modifier_tiling) {
+        modifier = get_image_modifier(device, dev_data, image);
+        if (modifier == DRM_FORMAT_MOD_INVALID) {
+            // We created an image using a modifier list, but couldn't query what was chosen.
+            // Falling back to LINEAR tiling avoids exporting an invalid modifier.
+            LAYER_DEBUG("Virtual swapchain: falling back to LINEAR tiling due to invalid modifier "
+                        "(0x%" PRIx64 ")",
+                        modifier);
+            funcs.DestroyImage(device, image, nullptr);
+            image = VK_NULL_HANDLE;
+
+            create_res =
+                create_swapchain_image(device, dev_data, swap, false, modifier_list, &image);
+            if (create_res != VK_SUCCESS) {
+                LAYER_DEBUG("Failed to create LINEAR fallback image %u (%d)", image_index,
+                            create_res);
+                return false;
+            }
+            modifier = DRM_FORMAT_MOD_LINEAR;
+        }
+    }
+
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    if (!alloc_exportable_memory(device, dev_data, mem_props, image, image_index, &memory)) {
+        funcs.DestroyImage(device, image, nullptr);
+        return false;
+    }
+
+    auto layout = get_image_layout(device, dev_data, image, image_index);
+    if (!layout) {
+        funcs.FreeMemory(device, memory, nullptr);
+        funcs.DestroyImage(device, image, nullptr);
+        return false;
+    }
+
+    int fd = -1;
+    if (!export_dmabuf_fd(device, dev_data, memory, image_index, &fd)) {
+        funcs.FreeMemory(device, memory, nullptr);
+        funcs.DestroyImage(device, image, nullptr);
+        return false;
+    }
+
+    swap.images.push_back(image);
+    swap.modifiers.push_back(modifier);
+    swap.memory.push_back(memory);
+    swap.strides.push_back(layout->stride);
+    swap.offsets.push_back(layout->offset);
+    swap.dmabuf_fds.push_back(fd);
+
+    LAYER_DEBUG("Virtual swapchain image %u: fd=%d, stride=%u, offset=%u, modifier=0x%" PRIx64,
+                image_index, fd, layout->stride, layout->offset, modifier);
+    return true;
+}
+
 bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice device,
                                               VkDeviceData* dev_data) {
     auto& funcs = dev_data->funcs;
@@ -285,6 +501,13 @@ bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice d
                                             &inst_data->funcs, required_features);
 
     bool use_modifier_tiling = !modifiers.empty();
+    if (use_modifier_tiling && !funcs.GetImageDrmFormatModifierPropertiesEXT) {
+        // We can create images using a modifier list, but without being able to query the chosen
+        // modifier we cannot safely export/import the DMA-BUF.
+        LAYER_DEBUG("Virtual swapchain: GetImageDrmFormatModifierPropertiesEXT unavailable; "
+                    "falling back to LINEAR tiling");
+        use_modifier_tiling = false;
+    }
     std::vector<uint64_t> modifier_list;
     if (use_modifier_tiling) {
         modifier_list.reserve(modifiers.size());
@@ -298,122 +521,10 @@ bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice d
     }
 
     for (uint32_t i = 0; i < swap.image_count; ++i) {
-        VkExternalMemoryImageCreateInfo ext_mem_info{};
-        ext_mem_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
-        ext_mem_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-
-        VkImageDrmFormatModifierListCreateInfoEXT modifier_list_info{};
-        if (use_modifier_tiling) {
-            modifier_list_info.sType =
-                VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT;
-            modifier_list_info.drmFormatModifierCount = static_cast<uint32_t>(modifier_list.size());
-            modifier_list_info.pDrmFormatModifiers = modifier_list.data();
-            ext_mem_info.pNext = &modifier_list_info;
-        }
-
-        VkImageCreateInfo img_info{};
-        img_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        img_info.pNext = &ext_mem_info;
-        img_info.imageType = VK_IMAGE_TYPE_2D;
-        img_info.format = swap.format;
-        img_info.extent = {swap.extent.width, swap.extent.height, 1};
-        img_info.mipLevels = 1;
-        img_info.arrayLayers = 1;
-        img_info.samples = VK_SAMPLE_COUNT_1_BIT;
-        img_info.tiling =
-            use_modifier_tiling ? VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT : VK_IMAGE_TILING_LINEAR;
-        img_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-        img_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        img_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-        VkImage image;
-        if (funcs.CreateImage(device, &img_info, nullptr, &image) != VK_SUCCESS) {
-            LAYER_DEBUG("Failed to create virtual swapchain image %u", i);
+        if (!create_exportable_image(swap, device, dev_data, mem_props, use_modifier_tiling,
+                                     modifier_list, i)) {
             return false;
         }
-        swap.images.push_back(image);
-
-        uint64_t modifier = DRM_FORMAT_MOD_LINEAR;
-        if (use_modifier_tiling && funcs.GetImageDrmFormatModifierPropertiesEXT) {
-            VkImageDrmFormatModifierPropertiesEXT modifier_props{};
-            modifier_props.sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT;
-            VkResult mod_res =
-                funcs.GetImageDrmFormatModifierPropertiesEXT(device, image, &modifier_props);
-            if (mod_res == VK_SUCCESS) {
-                modifier = modifier_props.drmFormatModifier;
-            } else {
-                modifier = DRM_FORMAT_MOD_INVALID;
-                LAYER_DEBUG("Virtual swapchain: failed to query DRM modifier (%d)", mod_res);
-            }
-        }
-        swap.modifiers.push_back(modifier);
-
-        VkMemoryRequirements mem_reqs;
-        funcs.GetImageMemoryRequirements(device, image, &mem_reqs);
-
-        uint32_t mem_type = find_memory_type(mem_props, mem_reqs.memoryTypeBits);
-        if (mem_type == UINT32_MAX) {
-            LAYER_DEBUG("No suitable memory type for virtual swapchain");
-            return false;
-        }
-
-        VkExportMemoryAllocateInfo export_info{};
-        export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
-        export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-
-        VkMemoryAllocateInfo alloc_info{};
-        alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        alloc_info.pNext = &export_info;
-        alloc_info.allocationSize = mem_reqs.size;
-        alloc_info.memoryTypeIndex = mem_type;
-
-        VkDeviceMemory memory;
-        if (funcs.AllocateMemory(device, &alloc_info, nullptr, &memory) != VK_SUCCESS) {
-            LAYER_DEBUG("Failed to allocate memory for virtual swapchain image %u", i);
-            return false;
-        }
-        swap.memory.push_back(memory);
-
-        if (funcs.BindImageMemory(device, image, memory, 0) != VK_SUCCESS) {
-            LAYER_DEBUG("Failed to bind memory for virtual swapchain image %u", i);
-            return false;
-        }
-
-        VkImageSubresource subres{};
-        subres.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        subres.mipLevel = 0;
-        subres.arrayLayer = 0;
-        VkSubresourceLayout layout{};
-        funcs.GetImageSubresourceLayout(device, image, &subres, &layout);
-
-        if (layout.rowPitch > UINT32_MAX) {
-            LAYER_DEBUG("Virtual swapchain image %u: stride %" PRIu64 " exceeds uint32_t max", i,
-                        layout.rowPitch);
-            return false;
-        }
-        if (layout.offset > UINT32_MAX) {
-            LAYER_DEBUG("Virtual swapchain image %u: offset %" PRIu64 " exceeds uint32_t max", i,
-                        layout.offset);
-            return false;
-        }
-
-        swap.strides.push_back(static_cast<uint32_t>(layout.rowPitch));
-        swap.offsets.push_back(static_cast<uint32_t>(layout.offset));
-
-        VkMemoryGetFdInfoKHR fd_info{};
-        fd_info.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
-        fd_info.memory = memory;
-        fd_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-
-        int fd = -1;
-        if (funcs.GetMemoryFdKHR(device, &fd_info, &fd) != VK_SUCCESS || fd < 0) {
-            LAYER_DEBUG("Failed to export DMA-BUF for virtual swapchain image %u", i);
-            return false;
-        }
-        swap.dmabuf_fds.push_back(fd);
-
-        LAYER_DEBUG("Virtual swapchain image %u: fd=%d, stride=%u, offset=%u, modifier=0x%" PRIx64,
-                    i, fd, swap.strides.back(), swap.offsets.back(), swap.modifiers.back());
     }
 
     return true;
