@@ -1,6 +1,5 @@
 #include "vk_hooks.hpp"
 
-#include "ipc_socket.hpp"
 #include "vk_capture.hpp"
 #include "vk_dispatch.hpp"
 #include "wsi_virtual.hpp"
@@ -8,6 +7,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <unistd.h>
 #include <util/profiling.hpp>
 #include <vector>
 #include <vulkan/vk_layer.h>
@@ -687,21 +687,12 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
         if (virt.is_virtual_swapchain(pPresentInfo->pSwapchains[i])) {
             uint32_t img_idx = pPresentInfo->pImageIndices[i];
             auto frame = virt.get_frame_data(pPresentInfo->pSwapchains[i], img_idx);
-            if (frame.valid) {
-                auto& socket = get_layer_socket();
-                if (!socket.is_connected()) {
-                    socket.connect();
-                }
-                if (socket.is_connected()) {
-                    CaptureTextureData tex{};
-                    tex.type = CaptureMessageType::texture_data;
-                    tex.width = frame.width;
-                    tex.height = frame.height;
-                    tex.format = frame.format;
-                    tex.stride = frame.stride;
-                    tex.offset = 0;
-                    tex.modifier = 0;
-                    socket.send_texture(tex, frame.dmabuf_fd);
+            if (frame.valid && frame.dmabuf_fd >= 0) {
+                int dup_fd = dup(frame.dmabuf_fd);
+                if (dup_fd >= 0) {
+                    VirtualFrameInfo info{frame.width, frame.height, frame.format, frame.stride,
+                                          dup_fd};
+                    get_capture_manager().enqueue_virtual_frame(info);
                 }
             }
         } else {

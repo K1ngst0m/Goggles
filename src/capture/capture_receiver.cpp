@@ -302,7 +302,6 @@ bool CaptureReceiver::process_message(const char* data, size_t len, const std::v
         if (fd_index < fds.size()) {
             int new_fd = fds[fd_index++];
             m_frame.dmabuf_fd = util::UniqueFd{new_fd};
-            GOGGLES_LOG_INFO("Received new DMA-BUF fd={}", new_fd);
         }
 
         m_frame.width = metadata->width;

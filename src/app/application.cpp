@@ -181,10 +181,15 @@ void Application::handle_event(EventRef event) {
         return;
     }
 
-    if (sdl_event->type == SDL_EVENT_KEY_DOWN && sdl_event->key.key == SDLK_F1 && m_ui_controller &&
-        m_ui_controller->enabled()) {
-        m_ui_controller->toggle_visibility();
-        return;
+    if (sdl_event->type == SDL_EVENT_KEY_DOWN && m_ui_controller && m_ui_controller->enabled()) {
+        if (sdl_event->key.key == SDLK_F1) {
+            m_ui_controller->toggle_visibility();
+            return;
+        }
+        if (sdl_event->key.key == SDLK_F2) {
+            m_ui_controller->toggle_debug_overlay();
+            return;
+        }
     }
 
     forward_input_event(event);
@@ -345,6 +350,13 @@ void Application::tick_frame() {
 
     if (m_capture_receiver && m_capture_receiver->has_frame()) {
         GOGGLES_PROFILE_SCOPE("RenderFrame");
+        auto& frame = m_capture_receiver->get_frame();
+        if (frame.frame_number != m_last_source_frame_number) {
+            m_last_source_frame_number = frame.frame_number;
+            if (m_ui_controller) {
+                m_ui_controller->notify_source_frame();
+            }
+        }
         auto render_result = (m_ui_controller && m_ui_controller->enabled())
                                  ? m_vulkan_backend->render_frame_with_ui(
                                        m_capture_receiver->get_frame(), ui_callback)

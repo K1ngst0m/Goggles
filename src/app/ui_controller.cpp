@@ -197,6 +197,12 @@ void UiController::toggle_visibility() {
     }
 }
 
+void UiController::toggle_debug_overlay() {
+    if (m_imgui_layer) {
+        m_imgui_layer->toggle_debug_overlay();
+    }
+}
+
 void UiController::apply_state(render::VulkanBackend& vulkan_backend) {
     if (!m_imgui_layer) {
         return;
@@ -256,6 +262,12 @@ void UiController::sync_from_backend(render::VulkanBackend& vulkan_backend) {
 void UiController::rebuild_for_format(vk::Format new_format) {
     if (m_imgui_layer) {
         m_imgui_layer->rebuild_for_format(new_format);
+    }
+}
+
+void UiController::notify_source_frame() {
+    if (m_imgui_layer) {
+        m_imgui_layer->notify_source_frame();
     }
 }
 

@@ -43,6 +43,7 @@ public:
     [[nodiscard]] auto wants_capture_mouse() const -> bool;
 
     void toggle_visibility();
+    void toggle_debug_overlay();
 
     void apply_state(render::VulkanBackend& vulkan_backend);
     void begin_frame();
@@ -52,6 +53,7 @@ public:
     void sync_from_backend(render::VulkanBackend& vulkan_backend);
 
     void rebuild_for_format(vk::Format new_format);
+    void notify_source_frame();
 
 private:
     UiController() = default;
