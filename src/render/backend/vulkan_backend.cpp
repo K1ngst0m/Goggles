@@ -486,14 +486,26 @@ auto VulkanBackend::create_device() -> Result<void> {
     vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{};
     vk11_features.pNext = &vk12_features;
     vk12_features.pNext = &vk13_features;
-    bool present_wait_ready = is_present_wait_ready();
-    if (present_wait_ready) {
+
+    if (m_present_wait_supported) {
         vk13_features.pNext = &present_id_features;
         present_id_features.pNext = &present_wait_features;
     }
+
     vk::PhysicalDeviceFeatures2 features2{};
     features2.pNext = &vk11_features;
     m_physical_device.getFeatures2(&features2);
+
+    const bool present_wait_features_ok = (present_id_features.presentId != VK_FALSE) &&
+                                          (present_wait_features.presentWait != VK_FALSE);
+    const bool present_wait_ready = m_present_wait_supported && present_wait_features_ok;
+    if (m_present_wait_supported && !present_wait_ready) {
+        GOGGLES_LOG_WARN(
+            "VK_KHR_present_id/VK_KHR_present_wait extensions present but features disabled; "
+            "falling back to mailbox/throttle");
+    }
+
+    m_present_wait_supported = present_wait_ready;
 
     if (!vk11_features.shaderDrawParameters) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
@@ -518,7 +530,7 @@ auto VulkanBackend::create_device() -> Result<void> {
     vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_enable{};
     vk11_enable.pNext = &vk12_enable;
     vk12_enable.pNext = &vk13_enable;
-    if (is_present_wait_ready()) {
+    if (m_present_wait_supported) {
         present_id_enable.presentId = VK_TRUE;
         present_wait_enable.presentWait = VK_TRUE;
         vk13_enable.pNext = &present_id_enable;
@@ -531,7 +543,7 @@ auto VulkanBackend::create_device() -> Result<void> {
     for (const auto* ext : REQUIRED_DEVICE_EXTENSIONS) {
         extensions[extension_count++] = ext;
     }
-    if (is_present_wait_ready()) {
+    if (m_present_wait_supported) {
         for (const auto* ext : OPTIONAL_DEVICE_EXTENSIONS) {
             extensions[extension_count++] = ext;
         }
@@ -622,7 +634,7 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
         }
     }
 
-    if (is_present_wait_ready()) {
+    if (m_present_wait_supported) {
         chosen_mode = vk::PresentModeKHR::eFifo;
     } else if (mailbox_supported) {
         chosen_mode = vk::PresentModeKHR::eMailbox;
@@ -1315,7 +1327,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 
     vk::PresentIdKHR present_id{};
     uint64_t present_value = 0;
-    if (is_present_wait_ready()) {
+    if (m_present_wait_supported) {
         present_value = ++m_present_id;
         present_id.swapchainCount = 1;
         present_id.pPresentIds = &present_value;
@@ -1333,7 +1345,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
                                 "Present failed: " + vk::to_string(present_result));
     }
 
-    if (is_present_wait_ready() && present_value > 0) {
+    if (m_present_wait_supported && present_value > 0) {
         auto wait_result = apply_present_wait(present_value);
         if (!wait_result) {
             return make_error<bool>(wait_result.error().code, wait_result.error().message);

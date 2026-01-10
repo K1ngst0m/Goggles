@@ -98,8 +98,6 @@ private:
     [[nodiscard]] auto create_surface(SDL_Window* window) -> Result<void>;
     [[nodiscard]] auto select_physical_device() -> Result<void>;
     [[nodiscard]] auto create_device() -> Result<void>;
-
-    [[nodiscard]] auto is_present_wait_ready() const -> bool { return m_present_wait_supported; }
     [[nodiscard]] auto create_swapchain(uint32_t width, uint32_t height,
                                         vk::Format preferred_format) -> Result<void>;
     [[nodiscard]] auto recreate_swapchain() -> Result<void>;
