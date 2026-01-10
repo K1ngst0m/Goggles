@@ -377,6 +377,10 @@ static auto run_app(int argc, char** argv) -> int {
         config.shader.preset = cli_opts.shader_preset;
         GOGGLES_LOG_INFO("Shader preset overridden by CLI: {}", config.shader.preset);
     }
+    if (cli_opts.target_fps.has_value()) {
+        config.render.target_fps = *cli_opts.target_fps;
+        GOGGLES_LOG_INFO("Target FPS overridden by CLI: {}", config.render.target_fps);
+    }
     if (!config.shader.preset.empty()) {
         std::filesystem::path preset_path{config.shader.preset};
         if (preset_path.is_relative()) {

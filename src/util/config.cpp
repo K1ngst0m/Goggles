@@ -61,10 +61,10 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
         }
         if (render.contains("target_fps")) {
             auto fps = toml::find<int64_t>(render, "target_fps");
-            if (fps <= 0 || fps > 1000) {
+            if (fps < 0 || fps > 1000) {
                 return make_error<Config>(ErrorCode::invalid_config,
                                           "Invalid target_fps: " + std::to_string(fps) +
-                                              " (expected: 1-1000)");
+                                              " (expected: 0-1000, 0=uncapped)");
             }
             config.render.target_fps = static_cast<uint32_t>(fps);
         }

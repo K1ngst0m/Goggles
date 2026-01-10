@@ -104,7 +104,7 @@ TEST_CASE("load_config validates target_fps values", "[config]") {
     REQUIRE(result.error().code == ErrorCode::invalid_config);
     REQUIRE(result.error().message.find("Invalid target_fps") != std::string::npos);
     REQUIRE(result.error().message.find("-10") != std::string::npos);
-    REQUIRE(result.error().message.find("1-1000") != std::string::npos);
+    REQUIRE(result.error().message.find("0-1000") != std::string::npos);
 
     // Clean up
     std::filesystem::remove(temp_config);
@@ -196,7 +196,7 @@ TEST_CASE("load_config handles TOML parse errors", "[config]") {
 }
 
 TEST_CASE("load_config handles valid target_fps range", "[config]") {
-    const std::vector<int> valid_fps_values = {1, 30, 60, 144, 240, 1000};
+    const std::vector<int> valid_fps_values = {0, 1, 30, 60, 144, 240, 1000};
 
     for (int fps : valid_fps_values) {
         const std::string temp_config = "util/test_data/fps_" + std::to_string(fps) + ".toml";
