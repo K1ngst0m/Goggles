@@ -54,6 +54,7 @@ struct Config {
     struct Logging {
         std::string level = "info";
         std::string file;
+        bool timestamp = false;
     } logging;
 };
 

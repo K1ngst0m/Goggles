@@ -18,7 +18,10 @@ target_link_libraries(goggles_input
 )
 
 # wlroots requires this define to access unstable API
-target_compile_definitions(goggles_input PRIVATE WLR_USE_UNSTABLE)
+target_compile_definitions(goggles_input PRIVATE
+    GOGGLES_LOG_TAG="input"
+    WLR_USE_UNSTABLE
+)
 
 goggles_enable_clang_tidy(goggles_input)
 goggles_enable_sanitizers(goggles_input)

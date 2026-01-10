@@ -393,6 +393,7 @@ static auto run_app(int argc, char** argv) -> int {
     }
 
     apply_log_level(config);
+    goggles::set_log_timestamp_enabled(config.logging.timestamp);
     log_config_summary(config);
 
     bool enable_input_forwarding = !cli_opts.detach;
