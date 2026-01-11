@@ -19,6 +19,11 @@
 
 namespace goggles::capture {
 
+struct Time {
+    static constexpr uint64_t one_sec = 1'000'000'000;
+    static constexpr uint64_t infinite = UINT64_MAX;
+};
+
 template <typename Handle>
 static auto handle_to_u64(Handle handle) -> uint64_t {
     if constexpr (std::is_pointer_v<Handle>) {
@@ -684,9 +689,13 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
         wait_info.pSemaphores = &sync_snapshot.frame_consumed_sem;
         wait_info.pValues = &wait_value;
 
-        constexpr uint64_t timeout_ns = 500'000'000;
+        uint32_t fps = get_fps_limit();
+        uint64_t timeout_ns =
+            fps > 0 ? Time::one_sec / fps : Time::one_sec; // fallback to 1 second if uncapped
         VkResult res = dev_data->funcs.WaitSemaphoresKHR(dev_data->device, &wait_info, timeout_ns);
-        if (res != VK_SUCCESS && res != VK_TIMEOUT) {
+        if (res == VK_TIMEOUT) {
+            LAYER_WARN("WaitSemaphoresKHR timed out, falling back to CPU limiter");
+        } else if (res != VK_SUCCESS) {
             return res;
         }
     }
