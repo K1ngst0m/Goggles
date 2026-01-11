@@ -1073,6 +1073,7 @@ auto VulkanBackend::import_sync_semaphores(util::UniqueFd frame_ready_fd,
     m_frame_consumed_sem = consumed_sem;
     m_sync_semaphores_imported = true;
     m_last_frame_number = 0;
+    m_sync_wait_succeeded = false;
 
     GOGGLES_LOG_INFO("Cross-process sync semaphores imported");
     return {};
@@ -1095,6 +1096,7 @@ void VulkanBackend::cleanup_sync_semaphores() {
     m_sync_semaphores_imported = false;
     m_last_frame_number = 0;
     m_last_signaled_frame = 0;
+    m_sync_wait_succeeded = false;
 }
 
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
@@ -1269,11 +1271,15 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
         constexpr uint64_t TIMEOUT_NS = 100'000'000;
         auto wait_result = m_device->waitSemaphores(wait_info, TIMEOUT_NS);
         if (wait_result == vk::Result::eTimeout) {
-            GOGGLES_LOG_WARN("Timeout waiting for frame_ready semaphore, layer disconnected?");
+            if (m_sync_wait_succeeded) {
+                GOGGLES_LOG_WARN("Timeout waiting for frame_ready semaphore, layer disconnected?");
+            }
             cleanup_sync_semaphores();
         } else if (wait_result != vk::Result::eSuccess) {
             return make_error<bool>(ErrorCode::vulkan_device_lost,
                                     "Semaphore wait failed: " + vk::to_string(wait_result));
+        } else {
+            m_sync_wait_succeeded = true;
         }
     }
 

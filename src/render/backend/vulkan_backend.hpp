@@ -135,6 +135,7 @@ private:
     vk::Semaphore m_frame_consumed_sem;
     uint64_t m_last_frame_number = 0;
     uint64_t m_last_signaled_frame = 0;
+    bool m_sync_wait_succeeded = false;
 
     vk::UniqueInstance m_instance;
     vk::UniqueDevice m_device;

@@ -1,6 +1,7 @@
 #include "wsi_virtual.hpp"
 
 #include "ipc_socket.hpp"
+#include "vk_capture.hpp"
 
 #include <bit>
 #include <cinttypes>
@@ -664,6 +665,30 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
     auto res_req = socket.consume_resolution_request();
     if (res_req.pending) {
         set_resolution(res_req.width, res_req.height);
+    }
+
+    auto& manager = get_capture_manager();
+    manager.ensure_device_sync(dev_data->device, dev_data);
+    bool have_viewer_sync = manager.try_send_device_semaphores(dev_data->device);
+
+    auto sync_snapshot = manager.get_device_sync_snapshot(dev_data->device);
+    bool wait_on_viewer =
+        have_viewer_sync && sync_snapshot.initialized && sync_snapshot.semaphores_sent &&
+        sync_snapshot.frame_consumed_sem != VK_NULL_HANDLE && sync_snapshot.frame_counter > 0;
+
+    if (wait_on_viewer) {
+        uint64_t wait_value = sync_snapshot.frame_counter;
+        VkSemaphoreWaitInfo wait_info{};
+        wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        wait_info.semaphoreCount = 1;
+        wait_info.pSemaphores = &sync_snapshot.frame_consumed_sem;
+        wait_info.pValues = &wait_value;
+
+        constexpr uint64_t timeout_ns = 500'000'000;
+        VkResult res = dev_data->funcs.WaitSemaphoresKHR(dev_data->device, &wait_info, timeout_ns);
+        if (res != VK_SUCCESS && res != VK_TIMEOUT) {
+            return res;
+        }
     }
 
     uint32_t fps = get_fps_limit();
