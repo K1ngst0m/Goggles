@@ -1,6 +1,7 @@
 #include "wsi_virtual.hpp"
 
 #include "ipc_socket.hpp"
+#include "vk_capture.hpp"
 
 #include <bit>
 #include <cinttypes>
@@ -17,6 +18,11 @@
 #define LAYER_WARN(fmt, ...) fprintf(stderr, "[goggles-layer] WARN: " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
+
+struct Time {
+    static constexpr uint64_t one_sec = 1'000'000'000;
+    static constexpr uint64_t infinite = UINT64_MAX;
+};
 
 template <typename Handle>
 static auto handle_to_u64(Handle handle) -> uint64_t {
@@ -664,6 +670,34 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
     auto res_req = socket.consume_resolution_request();
     if (res_req.pending) {
         set_resolution(res_req.width, res_req.height);
+    }
+
+    auto& manager = get_capture_manager();
+    manager.ensure_device_sync(dev_data->device, dev_data);
+    bool have_viewer_sync = manager.try_send_device_semaphores(dev_data->device);
+
+    auto sync_snapshot = manager.get_device_sync_snapshot(dev_data->device);
+    bool wait_on_viewer =
+        have_viewer_sync && sync_snapshot.initialized && sync_snapshot.semaphores_sent &&
+        sync_snapshot.frame_consumed_sem != VK_NULL_HANDLE && sync_snapshot.frame_counter > 0;
+
+    if (wait_on_viewer) {
+        uint64_t wait_value = sync_snapshot.frame_counter;
+        VkSemaphoreWaitInfo wait_info{};
+        wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        wait_info.semaphoreCount = 1;
+        wait_info.pSemaphores = &sync_snapshot.frame_consumed_sem;
+        wait_info.pValues = &wait_value;
+
+        uint32_t fps = get_fps_limit();
+        uint64_t timeout_ns =
+            fps > 0 ? Time::one_sec / fps : Time::one_sec; // fallback to 1 second if uncapped
+        VkResult res = dev_data->funcs.WaitSemaphoresKHR(dev_data->device, &wait_info, timeout_ns);
+        if (res == VK_TIMEOUT) {
+            LAYER_WARN("WaitSemaphoresKHR timed out, falling back to CPU limiter");
+        } else if (res != VK_SUCCESS) {
+            return res;
+        }
     }
 
     uint32_t fps = get_fps_limit();

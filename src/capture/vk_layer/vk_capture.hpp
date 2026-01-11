@@ -51,6 +51,13 @@ struct DeviceSyncState {
     bool initialized = false;
 };
 
+struct DeviceSyncSnapshot {
+    VkSemaphore frame_consumed_sem = VK_NULL_HANDLE;
+    uint64_t frame_counter = 0;
+    bool semaphores_sent = false;
+    bool initialized = false;
+};
+
 struct SwapData {
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
@@ -93,6 +100,10 @@ public:
     void on_device_destroyed(VkDevice device, VkDeviceData* dev_data);
     void on_present(VkQueue queue, const VkPresentInfoKHR* present_info, VkDeviceData* dev_data);
     SwapData* get_swap_data(VkSwapchainKHR swapchain);
+    DeviceSyncSnapshot get_device_sync_snapshot(VkDevice device);
+    bool ensure_device_sync(VkDevice device, VkDeviceData* dev_data);
+    bool try_send_device_semaphores(VkDevice device);
+    uint64_t get_virtual_frame_counter() const;
     void shutdown();
 
     void enqueue_virtual_frame(const VirtualFrameInfo& frame);

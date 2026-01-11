@@ -165,7 +165,7 @@ sequenceDiagram
 | **Window** | Real X11/Wayland displayed | No window (virtual) |
 | **Swapchain** | Real driver images | DMA-BUF exportable from creation |
 | **GPU Copy** | Required (swapchain → export) | None (direct export) |
-| **Sync** | Timeline semaphores + async worker | Inline IPC, FPS-limited |
+| **Sync** | Timeline semaphores + async worker | Timeline semaphores + acquire back-pressure + FPS cap |
 | **Use Case** | Real-time display + capture | Headless capture only |
 
 ### WSI Proxy Environment Variables
@@ -174,7 +174,14 @@ sequenceDiagram
 |----------|---------|-------------|
 | `GOGGLES_WIDTH` | 1920 | Virtual surface width |
 | `GOGGLES_HEIGHT` | 1080 | Virtual surface height |
-| `GOGGLES_FPS_LIMIT` | 60 | Frame rate limit at acquire |
+| `GOGGLES_FPS_LIMIT` | 60 | Frame rate limit at acquire (upper bound) |
+
+### WSI Proxy Pacing
+
+When viewer sync semaphores are available, `vkAcquireNextImageKHR` waits on the
+`frame_consumed` timeline value for the previously produced frame. If the viewer
+is unresponsive or semaphores are unavailable, the layer falls back to the local
+CPU-based limiter. The FPS limiter remains an upper bound in both cases.
 
 ---
 

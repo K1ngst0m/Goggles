@@ -241,6 +241,52 @@ SwapData* CaptureManager::get_swap_data(VkSwapchainKHR swapchain) {
     return it != swaps_.end() ? &it->second : nullptr;
 }
 
+DeviceSyncSnapshot CaptureManager::get_device_sync_snapshot(VkDevice device) {
+    std::lock_guard lock(mutex_);
+    auto* sync = get_device_sync(device);
+    if (!sync) {
+        return {};
+    }
+    return {
+        .frame_consumed_sem = sync->frame_consumed_sem,
+        .frame_counter = sync->frame_counter,
+        .semaphores_sent = sync->semaphores_sent,
+        .initialized = sync->initialized,
+    };
+}
+
+bool CaptureManager::ensure_device_sync(VkDevice device, VkDeviceData* dev_data) {
+    std::lock_guard lock(mutex_);
+    return init_device_sync(device, dev_data);
+}
+
+bool CaptureManager::try_send_device_semaphores(VkDevice device) {
+    std::lock_guard lock(mutex_);
+    auto* sync = get_device_sync(device);
+    if (!sync || !sync->initialized) {
+        return false;
+    }
+
+    if (sync->semaphores_sent || sync->frame_ready_fd < 0 || sync->frame_consumed_fd < 0) {
+        return sync->semaphores_sent;
+    }
+
+    auto& socket = get_layer_socket();
+    if (!socket.is_connected() && !socket.connect()) {
+        return false;
+    }
+
+    if (socket.send_semaphores(sync->frame_ready_fd, sync->frame_consumed_fd)) {
+        sync->semaphores_sent = true;
+    }
+
+    return sync->semaphores_sent;
+}
+
+uint64_t CaptureManager::get_virtual_frame_counter() const {
+    return virtual_frame_counter_.load(std::memory_order_relaxed);
+}
+
 // =============================================================================
 // Export Image Initialization
 // =============================================================================
@@ -838,7 +884,6 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     if (!sync->semaphores_sent && sync->frame_ready_fd >= 0 && sync->frame_consumed_fd >= 0) {
         if (socket.send_semaphores(sync->frame_ready_fd, sync->frame_consumed_fd)) {
             sync->semaphores_sent = true;
-            LAYER_DEBUG("Semaphore FDs sent to Goggles");
         }
     }
 
