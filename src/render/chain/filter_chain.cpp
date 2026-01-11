@@ -43,6 +43,24 @@ auto parse_feedback_alias(std::string_view name) -> std::optional<std::string> {
     return std::string(alias);
 }
 
+auto parse_pass_feedback_index(std::string_view name) -> std::optional<size_t> {
+    constexpr std::string_view PREFIX = "PassFeedback";
+    if (!name.starts_with(PREFIX)) {
+        return std::nullopt;
+    }
+    auto suffix = name.substr(PREFIX.size());
+    if (suffix.empty()) {
+        return std::nullopt;
+    }
+    size_t index = 0;
+    const auto* end = suffix.data() + suffix.size();
+    auto [ptr, ec] = std::from_chars(suffix.data(), end, index);
+    if (ptr != end) {
+        return std::nullopt;
+    }
+    return index;
+}
+
 } // namespace
 
 FilterChain::~FilterChain() {
@@ -131,6 +149,9 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
     m_framebuffers.resize(m_passes.size());
     m_texture_registry.clear();
 
+    // Reset frame history when switching presets (new preset may need different depth)
+    m_frame_history.shutdown();
+
     // Detect required frame history depth and feedback passes from shader texture bindings
     m_required_history_depth = 0;
     m_feedback_framebuffers.clear();
@@ -146,6 +167,12 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
                     feedback_pass_indices.insert(it->second);
                     GOGGLES_LOG_DEBUG("Detected feedback texture '{}' -> pass {} (alias '{}')",
                                       tex.name, it->second, *alias);
+                }
+            }
+            if (auto fb_idx = parse_pass_feedback_index(tex.name)) {
+                if (*fb_idx < m_passes.size()) {
+                    feedback_pass_indices.insert(*fb_idx);
+                    GOGGLES_LOG_DEBUG("Detected PassFeedback{} texture", *fb_idx);
                 }
             }
         }
@@ -182,12 +209,16 @@ void FilterChain::bind_pass_textures(FilterPass& pass, size_t pass_index,
     pass.set_texture_binding("OriginalHistory0", original_view, nullptr);
     pass.set_alias_size("OriginalHistory0", original_extent.width, original_extent.height);
 
-    for (uint32_t h = 0; h < m_frame_history.depth(); ++h) {
+    for (uint32_t h = 0; h < m_required_history_depth; ++h) {
+        auto name = std::format("OriginalHistory{}", h + 1);
         if (auto hist_view = m_frame_history.get(h)) {
-            auto name = std::format("OriginalHistory{}", h + 1);
             pass.set_texture_binding(name, hist_view, nullptr);
             auto ext = m_frame_history.get_extent(h);
             pass.set_alias_size(name, ext.width, ext.height);
+        } else {
+            // Fallback to original when history not yet available
+            pass.set_texture_binding(name, original_view, nullptr);
+            pass.set_alias_size(name, original_extent.width, original_extent.height);
         }
     }
 
@@ -201,11 +232,14 @@ void FilterChain::bind_pass_textures(FilterPass& pass, size_t pass_index,
     }
 
     for (const auto& [fb_idx, feedback_fb] : m_feedback_framebuffers) {
+        auto feedback_name = std::format("PassFeedback{}", fb_idx);
         if (feedback_fb) {
-            auto feedback_name = std::format("PassFeedback{}", fb_idx);
-            auto fb_extent = feedback_fb->extent();
             pass.set_texture_binding(feedback_name, feedback_fb->view(), nullptr);
+            auto fb_extent = feedback_fb->extent();
             pass.set_alias_size(feedback_name, fb_extent.width, fb_extent.height);
+        } else {
+            // Fallback to source when feedback not yet available
+            pass.set_texture_binding(feedback_name, source_view, nullptr);
         }
     }
 
