@@ -21,16 +21,24 @@
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/logging.hpp>
+#include <util/paths.hpp>
 #include <vector>
 
-static auto get_reaper_path() -> std::string {
+static auto get_exe_dir() -> std::filesystem::path {
     std::array<char, 4096> exe_path{};
     const ssize_t len = readlink("/proc/self/exe", exe_path.data(), exe_path.size() - 1);
     if (len <= 0) {
-        return "goggles-reaper";
+        return {};
     }
     exe_path[static_cast<size_t>(len)] = '\0';
-    const std::filesystem::path exe_dir = std::filesystem::path(exe_path.data()).parent_path();
+    return std::filesystem::path(exe_path.data()).parent_path();
+}
+
+static auto get_reaper_path() -> std::string {
+    const std::filesystem::path exe_dir = get_exe_dir();
+    if (exe_dir.empty()) {
+        return "goggles-reaper";
+    }
     return (exe_dir / "goggles-reaper").string();
 }
 
@@ -161,61 +169,6 @@ static auto push_quit_event() -> void {
     SDL_PushEvent(&quit);
 }
 
-static auto resolve_xdg_config_home() -> std::optional<std::filesystem::path> {
-    if (const char* xdg_config = std::getenv("XDG_CONFIG_HOME"); xdg_config && *xdg_config) {
-        return std::filesystem::path(xdg_config);
-    }
-    if (const char* home = std::getenv("HOME"); home && *home) {
-        return std::filesystem::path(home) / ".config";
-    }
-    return std::nullopt;
-}
-
-static auto resolve_default_config_path() -> std::optional<std::filesystem::path> {
-    if (auto xdg = resolve_xdg_config_home()) {
-        auto candidate = *xdg / "goggles" / "goggles.toml";
-        std::error_code ec;
-        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
-            return candidate;
-        }
-        if (ec) {
-            GOGGLES_LOG_DEBUG("Failed to stat config candidate '{}': {}", candidate.string(),
-                              ec.message());
-        }
-    }
-
-    return std::nullopt;
-}
-
-static auto resolve_user_config_path() -> std::optional<std::filesystem::path> {
-    auto xdg = resolve_xdg_config_home();
-    if (!xdg) {
-        return std::nullopt;
-    }
-    return *xdg / "goggles" / "goggles.toml";
-}
-
-static auto resolve_config_template_path() -> std::optional<std::filesystem::path> {
-    std::error_code ec;
-
-    if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
-        resource_dir && *resource_dir) {
-        auto candidate = std::filesystem::path(resource_dir) / "config" / "goggles.template.toml";
-        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
-            return candidate;
-        }
-    }
-
-    {
-        auto candidate = std::filesystem::path("config") / "goggles.template.toml";
-        if (std::filesystem::is_regular_file(candidate, ec) && !ec) {
-            return candidate;
-        }
-    }
-
-    return std::nullopt;
-}
-
 struct FileCopyPaths {
     std::filesystem::path src;
     std::filesystem::path dst;
@@ -257,70 +210,59 @@ static auto copy_file_atomic(const FileCopyPaths& paths) -> goggles::Result<std:
     return paths.dst;
 }
 
-static auto ensure_user_default_config_from_template(const std::filesystem::path& template_path)
-    -> goggles::Result<std::filesystem::path> {
-    auto user_cfg_path = resolve_user_config_path();
-    if (!user_cfg_path) {
-        return goggles::make_error<std::filesystem::path>(goggles::ErrorCode::invalid_data,
-                                                          "Unable to resolve XDG config directory");
-    }
+static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts,
+                                const goggles::util::AppDirs& bootstrap_dirs) -> goggles::Config {
+    const auto default_config_path = goggles::util::config_path(bootstrap_dirs, "goggles.toml");
+    const bool explicit_config = !cli_opts.config_path.empty();
+
+    std::filesystem::path config_path =
+        explicit_config ? cli_opts.config_path : default_config_path;
 
     std::error_code ec;
-    if (std::filesystem::exists(*user_cfg_path, ec) && !ec) {
-        if (std::filesystem::is_regular_file(*user_cfg_path, ec) && !ec) {
-            return *user_cfg_path;
-        }
-        return goggles::make_error<std::filesystem::path>(
-            goggles::ErrorCode::invalid_data,
-            "Config path exists but is not a regular file: " + user_cfg_path->string());
-    }
-
-    return copy_file_atomic(FileCopyPaths{.src = template_path, .dst = *user_cfg_path});
-}
-
-static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts)
-    -> std::optional<goggles::Config> {
-    std::optional<std::filesystem::path> config_path;
-    const bool explicit_config = !cli_opts.config_path.empty();
-    if (!cli_opts.config_path.empty()) {
-        config_path = cli_opts.config_path;
-    } else {
-        if (auto existing = resolve_default_config_path()) {
-            config_path = *existing;
-        } else if (auto template_path = resolve_config_template_path()) {
-            auto created = ensure_user_default_config_from_template(*template_path);
-            if (created) {
-                config_path = created.value();
-                GOGGLES_LOG_INFO("Wrote default configuration: {}", config_path->string());
+    const bool exists = std::filesystem::is_regular_file(config_path, ec) && !ec;
+    if (!explicit_config && !exists) {
+        const auto template_path =
+            goggles::util::resource_path(bootstrap_dirs, "config/goggles.template.toml");
+        if (std::filesystem::is_regular_file(template_path, ec) && !ec) {
+            auto copy_result =
+                copy_file_atomic(FileCopyPaths{.src = template_path, .dst = config_path});
+            if (copy_result) {
+                GOGGLES_LOG_INFO("Wrote default configuration: {}", config_path.string());
             } else {
-                const auto& error = created.error();
-                GOGGLES_LOG_WARN("Failed to write default configuration; using template: {} ({})",
-                                 error.message, goggles::error_code_name(error.code));
-                config_path = *template_path;
-                GOGGLES_LOG_INFO("Using template configuration: {}", config_path->string());
+                GOGGLES_LOG_WARN("Failed to write default configuration: {} ({})",
+                                 copy_result.error().message,
+                                 goggles::error_code_name(copy_result.error().code));
             }
         }
     }
 
-    if (!config_path) {
-        GOGGLES_LOG_WARN("No configuration file found; using defaults");
+    if (std::filesystem::is_regular_file(config_path, ec) && !ec) {
+        GOGGLES_LOG_INFO("Loading configuration: {}", config_path.string());
+        auto config_result = goggles::load_config(config_path);
+        if (config_result) {
+            return config_result.value();
+        }
+
+        const auto& error = config_result.error();
+        GOGGLES_LOG_WARN("Failed to load configuration from '{}': {} ({})", config_path.string(),
+                         error.message, goggles::error_code_name(error.code));
+        if (explicit_config) {
+            GOGGLES_LOG_WARN("Explicit config ignored; falling back to defaults");
+        }
         return goggles::default_config();
     }
 
-    GOGGLES_LOG_INFO("Loading configuration: {}", config_path->string());
-    auto config_result = goggles::load_config(*config_path);
-    if (!config_result) {
-        const auto& error = config_result.error();
-        GOGGLES_LOG_ERROR("Failed to load configuration from '{}': {} ({})", config_path->string(),
-                          error.message, goggles::error_code_name(error.code));
-        if (explicit_config) {
-            GOGGLES_LOG_CRITICAL("Config was provided explicitly; refusing to continue");
-            return std::nullopt;
-        }
-        GOGGLES_LOG_INFO("Using default configuration");
-        return goggles::default_config();
+    if (ec) {
+        GOGGLES_LOG_WARN("Failed to stat configuration file '{}': {}", config_path.string(),
+                         ec.message());
+    } else if (explicit_config) {
+        GOGGLES_LOG_WARN("Configuration file not found: {}; falling back to defaults",
+                         config_path.string());
+    } else {
+        GOGGLES_LOG_INFO("No configuration file found; using defaults");
     }
-    return config_result.value();
+
+    return goggles::default_config();
 }
 
 static auto apply_log_level(const goggles::Config& config) -> void {
@@ -367,11 +309,38 @@ static auto run_app(int argc, char** argv) -> int {
     goggles::initialize_logger("goggles");
     GOGGLES_LOG_INFO(GOGGLES_PROJECT_NAME " v" GOGGLES_VERSION " starting");
 
-    auto config_result = load_config_for_cli(cli_opts);
-    if (!config_result) {
+    const goggles::util::ResolveContext resolve_ctx{
+        .exe_dir = get_exe_dir(),
+        .cwd = []() -> std::filesystem::path {
+            try {
+                return std::filesystem::current_path();
+            } catch (...) {
+                return {};
+            }
+        }(),
+    };
+
+    auto bootstrap_dirs_result = goggles::util::resolve_app_dirs(resolve_ctx, {});
+    if (!bootstrap_dirs_result) {
+        GOGGLES_LOG_WARN("Failed to resolve app directories: {} ({})",
+                         bootstrap_dirs_result.error().message,
+                         goggles::error_code_name(bootstrap_dirs_result.error().code));
         return EXIT_FAILURE;
     }
-    goggles::Config config = config_result.value();
+    const auto& bootstrap_dirs = bootstrap_dirs_result.value();
+
+    goggles::Config config = load_config_for_cli(cli_opts, bootstrap_dirs);
+    auto final_overrides = goggles::util::overrides_from_config(config);
+    auto final_dirs_result = goggles::util::resolve_app_dirs(resolve_ctx, final_overrides);
+    goggles::util::AppDirs app_dirs = bootstrap_dirs;
+    if (!final_dirs_result) {
+        GOGGLES_LOG_WARN("Failed to resolve app directories from config overrides: {} ({})",
+                         final_dirs_result.error().message,
+                         goggles::error_code_name(final_dirs_result.error().code));
+        GOGGLES_LOG_WARN("Using bootstrap directories");
+    } else {
+        app_dirs = final_dirs_result.value();
+    }
 
     if (!cli_opts.shader_preset.empty()) {
         config.shader.preset = cli_opts.shader_preset;
@@ -384,11 +353,8 @@ static auto run_app(int argc, char** argv) -> int {
     if (!config.shader.preset.empty()) {
         std::filesystem::path preset_path{config.shader.preset};
         if (preset_path.is_relative()) {
-            if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
-                resource_dir && *resource_dir) {
-                preset_path = std::filesystem::path(resource_dir) / preset_path;
-                config.shader.preset = preset_path.lexically_normal().string();
-            }
+            preset_path = goggles::util::resource_path(app_dirs, preset_path);
+            config.shader.preset = preset_path.string();
         }
     }
 
@@ -404,7 +370,7 @@ static auto run_app(int argc, char** argv) -> int {
         GOGGLES_LOG_INFO("Detach mode: input forwarding disabled");
     }
 
-    auto app_result = goggles::app::Application::create(config, enable_input_forwarding);
+    auto app_result = goggles::app::Application::create(config, app_dirs, enable_input_forwarding);
     if (!app_result) {
         GOGGLES_LOG_CRITICAL("Failed to initialize app: {} ({})", app_result.error().message,
                              goggles::error_code_name(app_result.error().code));

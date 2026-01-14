@@ -26,11 +26,11 @@ All “where do we read/write” decisions are expressed in terms of these roots
 ### Functions
 Bootstrap helpers:
 - `resolve_config_dir(overrides) -> Result<path>`
-- `resolve_app_dirs(overrides) -> Result<AppDirs>`
+- `resolve_app_dirs(ctx, overrides) -> Result<AppDirs>`
 
 Override helpers:
 - `overrides_from_config(config) -> PathOverrides`
-- `merge_overrides(high, low) -> PathOverrides` (field-wise “first non-empty wins”)
+- `merge_overrides({high, low}) -> PathOverrides` (field-wise “first non-empty wins”)
 
 Join helpers (avoid ad-hoc concatenation at call sites):
 - `resource_path(dirs, rel) -> path`
@@ -49,11 +49,11 @@ For `config_dir`, `data_dir`, `cache_dir`, `runtime_dir`:
 4) last-resort fallback only where unavoidable (runtime may fall back to a temp location)
 
 ### Packaged Resource Root (AppImage-consistent)
-For `resource_dir`, resolution MUST NOT depend on CWD. Precedence:
+For `resource_dir`, resolution MUST NOT depend on CWD for packaged runs. Precedence:
 1) explicit override (CLI/config)
 2) `GOGGLES_RESOURCE_DIR` env override (expected in packaged wrapper)
 3) packaged/exe-derived candidates (validated by sentinel existence)
-4) optional developer fallback (CWD-relative) only in non-packaged dev workflows
+4) optional developer fallback (`cwd`) only in non-packaged dev workflows / last-resort
 
 Sentinel validation SHOULD use a small set of required paths (e.g. config template and shaders)
 to avoid accepting incorrect directories.
@@ -78,4 +78,3 @@ to avoid accepting incorrect directories.
 - All fallible operations return `Result<T>` and do not use exceptions for expected failures.
   If a third-party library throws (e.g. TOML parser), catch at the boundary and convert to `Error`.
 - Log errors once at subsystem boundaries (no cascading logs).
-

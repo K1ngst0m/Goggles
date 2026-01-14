@@ -4,9 +4,19 @@
 #include "render/shader/shader_runtime.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
 #include <fstream>
 
 using namespace goggles::render;
+
+namespace {
+auto test_cache_dir() -> std::filesystem::path {
+    auto dir = std::filesystem::temp_directory_path() / "goggles_test_cache";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    return dir;
+}
+} // namespace
 
 // Path to zfast-crt preset (relative to project root, set via CMake)
 static const std::filesystem::path ZFAST_CRT_PRESET =
@@ -94,7 +104,7 @@ TEST_CASE("zfast-crt integration - compilation", "[integration][zfast]") {
     REQUIRE(preprocess_result.has_value());
 
     // Compile
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     auto compile_result = runtime.value()->compile_retroarch_shader(
@@ -142,7 +152,7 @@ TEST_CASE("zfast-crt integration - full pipeline", "[integration][zfast]") {
     auto preprocess_result = preprocessor.preprocess(preset_result->passes[0].shader_path);
     REQUIRE(preprocess_result.has_value());
 
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     auto compile_result = runtime.value()->compile_retroarch_shader(

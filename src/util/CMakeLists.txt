@@ -4,6 +4,7 @@
 add_library(goggles_util STATIC
     logging.cpp
     config.cpp
+    paths.cpp
     job_system.cpp
 )
 

@@ -16,7 +16,8 @@ Config loading also needs a clearly defined, early validation and fallback strat
 - Add optional config-driven overrides for those five roots via `[paths]` in the TOML config.
 - Define a two-phase bootstrap flow:
   1) resolve config dir + config file candidate early
-  2) load + validate config; on failure, fall back with a warning (unless strict/explicit config rules apply)
+  2) load + validate config; on failure, fall back with a warning (including when `--config` is
+     explicitly provided)
 - Update runtime to avoid relying on CWD for shipped assets when packaged (AppImage), consistent with
   the existing `packaging` spec requirement “Packaged Assets Are Not CWD-Dependent”.
 

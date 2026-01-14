@@ -5,6 +5,7 @@
 #include <string>
 #include <util/config.hpp>
 #include <util/error.hpp>
+#include <util/paths.hpp>
 
 namespace goggles {
 
@@ -28,8 +29,8 @@ struct EventRef;
 
 class Application {
 public:
-    [[nodiscard]] static auto create(const Config& config, bool enable_input_forwarding)
-        -> ResultPtr<Application>;
+    [[nodiscard]] static auto create(const Config& config, const util::AppDirs& app_dirs,
+                                     bool enable_input_forwarding) -> ResultPtr<Application>;
 
     ~Application();
 

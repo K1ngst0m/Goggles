@@ -6,22 +6,31 @@
 
 using namespace goggles::render;
 
+namespace {
+auto test_cache_dir() -> std::filesystem::path {
+    auto dir = std::filesystem::temp_directory_path() / "goggles_test_cache";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    return dir;
+}
+} // namespace
+
 TEST_CASE("ShaderRuntime factory creation", "[shader]") {
     SECTION("Create returns valid instance") {
-        auto result = ShaderRuntime::create();
+        auto result = ShaderRuntime::create(test_cache_dir());
         REQUIRE(result.has_value());
         REQUIRE(result.value() != nullptr);
     }
 
     SECTION("Shutdown and destroy") {
-        auto runtime = ShaderRuntime::create();
+        auto runtime = ShaderRuntime::create(test_cache_dir());
         REQUIRE(runtime.has_value());
         runtime.value()->shutdown();
     }
 }
 
 TEST_CASE("ShaderRuntime GLSL compilation", "[shader][glsl]") {
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     SECTION("Compile simple GLSL vertex shader") {
@@ -106,7 +115,7 @@ void main() {
 }
 
 TEST_CASE("ShaderRuntime caching", "[shader][cache]") {
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     const std::string vert = R"(
@@ -156,7 +165,7 @@ void main() { FragColor = vec4(0.0, 1.0, 0.0, 1.0); }
 }
 
 TEST_CASE("ShaderRuntime error handling", "[shader][error]") {
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     SECTION("Invalid GLSL syntax produces error") {
@@ -180,10 +189,10 @@ void main() { FragColor = vec4(1.0); }
 
 TEST_CASE("ShaderRuntime factory failure paths", "[shader][factory][error]") {
     SECTION("Multiple create calls succeed (singleton not enforced)") {
-        auto runtime1 = ShaderRuntime::create();
+        auto runtime1 = ShaderRuntime::create(test_cache_dir());
         REQUIRE(runtime1.has_value());
 
-        auto runtime2 = ShaderRuntime::create();
+        auto runtime2 = ShaderRuntime::create(test_cache_dir());
         REQUIRE(runtime2.has_value());
 
         REQUIRE(runtime1.value().get() != runtime2.value().get());
@@ -191,7 +200,7 @@ TEST_CASE("ShaderRuntime factory failure paths", "[shader][factory][error]") {
 }
 
 TEST_CASE("ShaderRuntime error messages", "[shader][error][messages]") {
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     SECTION("Compilation error messages include shader name") {
@@ -208,7 +217,7 @@ TEST_CASE("ShaderRuntime error messages", "[shader][error][messages]") {
     }
 
     SECTION("Missing cache directory doesn't crash") {
-        auto runtime2 = ShaderRuntime::create();
+        auto runtime2 = ShaderRuntime::create(test_cache_dir());
         REQUIRE(runtime2.has_value());
 
         auto cache_dir = runtime2.value()->get_cache_dir();
@@ -218,7 +227,7 @@ TEST_CASE("ShaderRuntime error messages", "[shader][error][messages]") {
 
 TEST_CASE("ShaderRuntime cleanup behavior", "[shader][cleanup]") {
     SECTION("Shutdown is idempotent") {
-        auto runtime = ShaderRuntime::create();
+        auto runtime = ShaderRuntime::create(test_cache_dir());
         REQUIRE(runtime.has_value());
 
         runtime.value()->shutdown();
@@ -227,7 +236,7 @@ TEST_CASE("ShaderRuntime cleanup behavior", "[shader][cleanup]") {
 
     SECTION("Destructor after partial usage") {
         {
-            auto runtime = ShaderRuntime::create();
+            auto runtime = ShaderRuntime::create(test_cache_dir());
             REQUIRE(runtime.has_value());
             const std::string simple = R"(
 #version 450

@@ -7,6 +7,9 @@
 namespace goggles {
 
 struct Config;
+namespace util {
+struct AppDirs;
+}
 
 namespace ui {
 class ImGuiLayer;
@@ -24,8 +27,8 @@ struct EventRef;
 class UiController {
 public:
     [[nodiscard]] static auto create(app::WindowHandle window,
-                                     render::VulkanBackend& vulkan_backend, const Config& config)
-        -> ResultPtr<UiController>;
+                                     render::VulkanBackend& vulkan_backend, const Config& config,
+                                     const util::AppDirs& app_dirs) -> ResultPtr<UiController>;
 
     ~UiController();
 
