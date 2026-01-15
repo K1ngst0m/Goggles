@@ -1,15 +1,5 @@
 # Change: Add vk_layer Present Frame Dumping
 
-## Status: Implemented (Pending OpenSpec Validation)
-
-**13/14 tasks complete**
-
-| Section | Progress | Notes |
-|---------|----------|-------|
-| Specification | 3/3 | `vk-layer-capture`, `app-window` delta specs |
-| vk_layer Implementation | 9/9 | WSI proxy + non-WSI proxy, async disk I/O |
-| Validation | 1/2 | Unit tests run; `openspec validate` pending |
-
 ## Why
 
 Capture correctness issues (format, swizzle, alpha, sync) are hard to diagnose without attaching

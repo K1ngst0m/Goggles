@@ -964,9 +964,10 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
         src.offset = swap->dmabuf_offset;
         src.modifier = swap->dmabuf_modifier;
 
-        if (frame_dumper_->maybe_schedule_export_image_dump(
+        if (frame_dumper_->try_schedule_export_image_dump(
                 queue, dev_data, swap->export_image, swap->extent.width, swap->extent.height,
-                swap->format, current_frame, sync->frame_ready_sem, current_frame, src)) {
+                swap->format, current_frame,
+                TimelineWait{.semaphore = sync->frame_ready_sem, .value = current_frame}, src)) {
             cv_.notify_one();
         }
     }
@@ -1024,10 +1025,10 @@ uint64_t CaptureManager::enqueue_virtual_frame(const VirtualFrameInfo& frame) {
     return frame_num;
 }
 
-void CaptureManager::maybe_dump_present_image(VkQueue queue, const VkPresentInfoKHR* present_info,
-                                              VkImage image, uint32_t width, uint32_t height,
-                                              VkFormat format, const VirtualFrameInfo& frame,
-                                              uint64_t frame_number, VkDeviceData* dev_data) {
+void CaptureManager::try_dump_present_image(VkQueue queue, const VkPresentInfoKHR* present_info,
+                                            VkImage image, uint32_t width, uint32_t height,
+                                            VkFormat format, const VirtualFrameInfo& frame,
+                                            uint64_t frame_number, VkDeviceData* dev_data) {
     if (!frame_dumper_ || !present_info) {
         return;
     }
@@ -1037,7 +1038,7 @@ void CaptureManager::maybe_dump_present_image(VkQueue queue, const VkPresentInfo
     src.offset = frame.offset;
     src.modifier = frame.modifier;
 
-    if (frame_dumper_->maybe_schedule_present_image_dump(
+    if (frame_dumper_->try_schedule_present_image_dump(
             queue, dev_data, image, width, height, format, frame_number, src,
             present_info->waitSemaphoreCount, present_info->pWaitSemaphores)) {
         cv_.notify_one();

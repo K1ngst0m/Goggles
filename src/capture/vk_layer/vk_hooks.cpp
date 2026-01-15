@@ -721,7 +721,7 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
                     uint64_t frame_number = get_capture_manager().enqueue_virtual_frame(info);
 
                     VkImage image = virt.get_swapchain_image(pPresentInfo->pSwapchains[i], img_idx);
-                    get_capture_manager().maybe_dump_present_image(
+                    get_capture_manager().try_dump_present_image(
                         queue, pPresentInfo, image, frame.width, frame.height, frame.format, info,
                         frame_number, data);
                 }

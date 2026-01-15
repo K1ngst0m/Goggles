@@ -21,6 +21,14 @@ struct Time {
     static constexpr uint64_t infinite = UINT64_MAX;
 };
 
+struct DumpResources {
+    VkFence fence = VK_NULL_HANDLE;
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+};
+
 auto is_supported_dump_format(VkFormat format, bool* is_bgra) -> bool {
     switch (format) {
     case VK_FORMAT_B8G8R8A8_UNORM:
@@ -185,28 +193,25 @@ auto calc_dump_size_bytes(uint32_t width, uint32_t height) -> VkDeviceSize {
     return static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4u;
 }
 
-void cleanup_dump_resources(const VkDeviceFuncs& funcs, VkDevice device, VkFence fence,
-                            VkCommandPool pool, VkCommandBuffer cmd, VkBuffer buffer,
-                            VkDeviceMemory memory) {
-    if (fence != VK_NULL_HANDLE) {
-        funcs.DestroyFence(device, fence, nullptr);
+void cleanup_dump_resources(const VkDeviceFuncs& funcs, VkDevice device, const DumpResources& res) {
+    if (res.fence != VK_NULL_HANDLE) {
+        funcs.DestroyFence(device, res.fence, nullptr);
     }
-    if (cmd != VK_NULL_HANDLE && pool != VK_NULL_HANDLE) {
-        funcs.FreeCommandBuffers(device, pool, 1, &cmd);
+    if (res.cmd != VK_NULL_HANDLE && res.pool != VK_NULL_HANDLE) {
+        funcs.FreeCommandBuffers(device, res.pool, 1, &res.cmd);
     }
-    if (pool != VK_NULL_HANDLE) {
-        funcs.DestroyCommandPool(device, pool, nullptr);
+    if (res.pool != VK_NULL_HANDLE) {
+        funcs.DestroyCommandPool(device, res.pool, nullptr);
     }
-    if (buffer != VK_NULL_HANDLE) {
-        funcs.DestroyBuffer(device, buffer, nullptr);
+    if (res.buffer != VK_NULL_HANDLE) {
+        funcs.DestroyBuffer(device, res.buffer, nullptr);
     }
-    if (memory != VK_NULL_HANDLE) {
-        funcs.FreeMemory(device, memory, nullptr);
+    if (res.memory != VK_NULL_HANDLE) {
+        funcs.FreeMemory(device, res.memory, nullptr);
     }
 }
 
-auto create_dump_buffer(VkDeviceData* dev_data, VkDeviceSize size, VkBuffer* out_buffer,
-                        VkDeviceMemory* out_memory, bool* out_is_coherent) -> bool {
+auto create_dump_buffer(VkDeviceData* dev_data, VkDeviceSize size, DumpJob* out_job) -> bool {
     auto& funcs = dev_data->funcs;
     VkDevice device = dev_data->device;
 
@@ -257,9 +262,9 @@ auto create_dump_buffer(VkDeviceData* dev_data, VkDeviceSize size, VkBuffer* out
         return false;
     }
 
-    *out_buffer = buffer;
-    *out_memory = memory;
-    *out_is_coherent = mem_coherent;
+    out_job->buffer = buffer;
+    out_job->memory = memory;
+    out_job->memory_is_coherent = mem_coherent;
     return true;
 }
 
@@ -516,24 +521,23 @@ auto FrameDumper::should_dump_frame(uint64_t frame_number) const -> bool {
     return frame_number >= r.begin && frame_number <= r.end;
 }
 
-auto FrameDumper::maybe_schedule_export_image_dump(VkQueue queue, VkDeviceData* dev_data,
-                                                   VkImage image, uint32_t width, uint32_t height,
-                                                   VkFormat format, uint64_t frame_number,
-                                                   VkSemaphore wait_timeline_sem,
-                                                   uint64_t wait_value, const DumpSourceInfo& src)
+auto FrameDumper::try_schedule_export_image_dump(VkQueue queue, VkDeviceData* dev_data,
+                                                 VkImage image, uint32_t width, uint32_t height,
+                                                 VkFormat format, uint64_t frame_number,
+                                                 TimelineWait wait, const DumpSourceInfo& src)
     -> bool {
     if (!enabled_ || !should_dump_frame(frame_number)) {
         return false;
     }
     return schedule_dump_copy_timeline(queue, dev_data, image, width, height, format, frame_number,
-                                       src, wait_timeline_sem, wait_value);
+                                       src, wait);
 }
 
-auto FrameDumper::maybe_schedule_present_image_dump(VkQueue queue, VkDeviceData* dev_data,
-                                                    VkImage image, uint32_t width, uint32_t height,
-                                                    VkFormat format, uint64_t frame_number,
-                                                    const DumpSourceInfo& src, uint32_t wait_count,
-                                                    const VkSemaphore* wait_semaphores) -> bool {
+auto FrameDumper::try_schedule_present_image_dump(VkQueue queue, VkDeviceData* dev_data,
+                                                  VkImage image, uint32_t width, uint32_t height,
+                                                  VkFormat format, uint64_t frame_number,
+                                                  const DumpSourceInfo& src, uint32_t wait_count,
+                                                  const VkSemaphore* wait_semaphores) -> bool {
     if (!enabled_ || !should_dump_frame(frame_number)) {
         return false;
     }
@@ -546,7 +550,14 @@ auto FrameDumper::schedule_dump_copy(VkQueue queue, VkDeviceData* dev_data, VkIm
                                      uint64_t frame_number, const DumpSourceInfo& src,
                                      uint32_t wait_count, const VkSemaphore* wait_semaphores)
     -> bool {
-    if (!enabled_ || queue_.size() >= queue_.capacity() || image == VK_NULL_HANDLE) {
+    if (!enabled_ || image == VK_NULL_HANDLE) {
+        return false;
+    }
+    if (wait_count > 0 && wait_semaphores == nullptr) {
+        return false;
+    }
+    constexpr size_t MAX_WAIT_SEMAPHORES = 64;
+    if (wait_count > MAX_WAIT_SEMAPHORES) {
         return false;
     }
 
@@ -573,17 +584,19 @@ auto FrameDumper::schedule_dump_copy(VkQueue queue, VkDeviceData* dev_data, VkIm
     job.src = src;
     job.is_bgra = is_bgra;
 
-    if (!create_dump_buffer(dev_data, size, &job.buffer, &job.memory, &job.memory_is_coherent)) {
+    if (!create_dump_buffer(dev_data, size, &job)) {
         return false;
     }
     if (!create_dump_command_buffer(dev_data, &job.pool, &job.cmd)) {
-        cleanup_dump_resources(funcs, device, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE,
-                               job.buffer, job.memory);
+        cleanup_dump_resources(funcs, device,
+                               DumpResources{.buffer = job.buffer, .memory = job.memory});
         return false;
     }
     if (!create_dump_fence(funcs, device, &job.fence)) {
-        cleanup_dump_resources(funcs, device, VK_NULL_HANDLE, job.pool, job.cmd, job.buffer,
-                               job.memory);
+        cleanup_dump_resources(
+            funcs, device,
+            DumpResources{
+                .pool = job.pool, .cmd = job.cmd, .buffer = job.buffer, .memory = job.memory});
         return false;
     }
 
@@ -594,8 +607,9 @@ auto FrameDumper::schedule_dump_copy(VkQueue queue, VkDeviceData* dev_data, VkIm
     record_present_image_copy(funcs, job.cmd, image, width, height, job.buffer);
     funcs.EndCommandBuffer(job.cmd);
 
-    VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    const VkPipelineStageFlags* wait_stages = wait_count > 0 ? &wait_stage : nullptr;
+    std::array<VkPipelineStageFlags, MAX_WAIT_SEMAPHORES> wait_stage_mask{};
+    wait_stage_mask.fill(VK_PIPELINE_STAGE_TRANSFER_BIT);
+    const VkPipelineStageFlags* wait_stages = wait_count > 0 ? wait_stage_mask.data() : nullptr;
     const VkSemaphore* wait_sems = wait_count > 0 ? wait_semaphores : nullptr;
 
     VkSubmitInfo submit{};
@@ -606,26 +620,36 @@ auto FrameDumper::schedule_dump_copy(VkQueue queue, VkDeviceData* dev_data, VkIm
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &job.cmd;
 
-    if (funcs.QueueSubmit(queue, 1, &submit, job.fence) != VK_SUCCESS) {
-        cleanup_dump_resources(funcs, device, job.fence, job.pool, job.cmd, job.buffer, job.memory);
-        return false;
+    const DumpResources res{.fence = job.fence,
+                            .pool = job.pool,
+                            .cmd = job.cmd,
+                            .buffer = job.buffer,
+                            .memory = job.memory};
+
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+
+        if (queue_.size() >= queue_.capacity()) {
+            // Queue is full; do not submit.
+            // Cleanup is outside the lock to avoid blocking other producers on Vulkan teardown.
+        } else if (funcs.QueueSubmit(queue, 1, &submit, job.fence) != VK_SUCCESS) {
+            // Submit failed; nothing is in-flight.
+        } else {
+            // After a successful QueueSubmit the GPU may still be using job resources; do not
+            // destroy them on any enqueue failure from this thread.
+            return queue_.try_push(job);
+        }
     }
 
-    if (!queue_.try_push(job)) {
-        funcs.WaitForFences(device, 1, &job.fence, VK_TRUE, Time::infinite);
-        cleanup_dump_resources(funcs, device, job.fence, job.pool, job.cmd, job.buffer, job.memory);
-        return false;
-    }
-
-    return true;
+    cleanup_dump_resources(funcs, device, res);
+    return false;
 }
 
 auto FrameDumper::schedule_dump_copy_timeline(VkQueue queue, VkDeviceData* dev_data, VkImage image,
                                               uint32_t width, uint32_t height, VkFormat format,
                                               uint64_t frame_number, const DumpSourceInfo& src,
-                                              VkSemaphore wait_timeline_sem, uint64_t wait_value)
-    -> bool {
-    if (!enabled_ || queue_.size() >= queue_.capacity() || image == VK_NULL_HANDLE) {
+                                              TimelineWait wait) -> bool {
+    if (!enabled_ || image == VK_NULL_HANDLE) {
         return false;
     }
 
@@ -652,17 +676,19 @@ auto FrameDumper::schedule_dump_copy_timeline(VkQueue queue, VkDeviceData* dev_d
     job.src = src;
     job.is_bgra = is_bgra;
 
-    if (!create_dump_buffer(dev_data, size, &job.buffer, &job.memory, &job.memory_is_coherent)) {
+    if (!create_dump_buffer(dev_data, size, &job)) {
         return false;
     }
     if (!create_dump_command_buffer(dev_data, &job.pool, &job.cmd)) {
-        cleanup_dump_resources(funcs, device, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE,
-                               job.buffer, job.memory);
+        cleanup_dump_resources(funcs, device,
+                               DumpResources{.buffer = job.buffer, .memory = job.memory});
         return false;
     }
     if (!create_dump_fence(funcs, device, &job.fence)) {
-        cleanup_dump_resources(funcs, device, VK_NULL_HANDLE, job.pool, job.cmd, job.buffer,
-                               job.memory);
+        cleanup_dump_resources(
+            funcs, device,
+            DumpResources{
+                .pool = job.pool, .cmd = job.cmd, .buffer = job.buffer, .memory = job.memory});
         return false;
     }
 
@@ -677,29 +703,40 @@ auto FrameDumper::schedule_dump_copy_timeline(VkQueue queue, VkDeviceData* dev_d
     VkTimelineSemaphoreSubmitInfo timeline_submit{};
     timeline_submit.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
     timeline_submit.waitSemaphoreValueCount = 1;
-    timeline_submit.pWaitSemaphoreValues = &wait_value;
+    timeline_submit.pWaitSemaphoreValues = &wait.value;
 
     VkSubmitInfo submit{};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.pNext = &timeline_submit;
     submit.waitSemaphoreCount = 1;
-    submit.pWaitSemaphores = &wait_timeline_sem;
+    submit.pWaitSemaphores = &wait.semaphore;
     submit.pWaitDstStageMask = &wait_stage;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &job.cmd;
 
-    if (funcs.QueueSubmit(queue, 1, &submit, job.fence) != VK_SUCCESS) {
-        cleanup_dump_resources(funcs, device, job.fence, job.pool, job.cmd, job.buffer, job.memory);
-        return false;
+    const DumpResources res{.fence = job.fence,
+                            .pool = job.pool,
+                            .cmd = job.cmd,
+                            .buffer = job.buffer,
+                            .memory = job.memory};
+
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+
+        if (queue_.size() >= queue_.capacity()) {
+            // Queue is full; do not submit.
+            // Cleanup is outside the lock to avoid blocking other producers on Vulkan teardown.
+        } else if (funcs.QueueSubmit(queue, 1, &submit, job.fence) != VK_SUCCESS) {
+            // Submit failed; nothing is in-flight.
+        } else {
+            // After a successful QueueSubmit the GPU may still be using job resources; do not
+            // destroy them on any enqueue failure from this thread.
+            return queue_.try_push(job);
+        }
     }
 
-    if (!queue_.try_push(job)) {
-        funcs.WaitForFences(device, 1, &job.fence, VK_TRUE, Time::infinite);
-        cleanup_dump_resources(funcs, device, job.fence, job.pool, job.cmd, job.buffer, job.memory);
-        return false;
-    }
-
-    return true;
+    cleanup_dump_resources(funcs, device, res);
+    return false;
 }
 
 void FrameDumper::drain_job(DumpJob& job) {
@@ -708,8 +745,12 @@ void FrameDumper::drain_job(DumpJob& job) {
     }
 
     if (!mkdir_p(dump_dir_)) {
-        cleanup_dump_resources(job.funcs, job.device, job.fence, job.pool, job.cmd, job.buffer,
-                               job.memory);
+        cleanup_dump_resources(job.funcs, job.device,
+                               DumpResources{.fence = job.fence,
+                                             .pool = job.pool,
+                                             .cmd = job.cmd,
+                                             .buffer = job.buffer,
+                                             .memory = job.memory});
         return;
     }
 
@@ -721,8 +762,12 @@ void FrameDumper::drain_job(DumpJob& job) {
     if (job.funcs.MapMemory(job.device, job.memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS ||
         mapped == nullptr) {
         write_desc_file(desc_path, job, process_name_);
-        cleanup_dump_resources(job.funcs, job.device, job.fence, job.pool, job.cmd, job.buffer,
-                               job.memory);
+        cleanup_dump_resources(job.funcs, job.device,
+                               DumpResources{.fence = job.fence,
+                                             .pool = job.pool,
+                                             .cmd = job.cmd,
+                                             .buffer = job.buffer,
+                                             .memory = job.memory});
         return;
     }
 
@@ -741,8 +786,12 @@ void FrameDumper::drain_job(DumpJob& job) {
 
     job.funcs.UnmapMemory(job.device, job.memory);
 
-    cleanup_dump_resources(job.funcs, job.device, job.fence, job.pool, job.cmd, job.buffer,
-                           job.memory);
+    cleanup_dump_resources(job.funcs, job.device,
+                           DumpResources{.fence = job.fence,
+                                         .pool = job.pool,
+                                         .cmd = job.cmd,
+                                         .buffer = job.buffer,
+                                         .memory = job.memory});
 }
 
 void FrameDumper::drain() {

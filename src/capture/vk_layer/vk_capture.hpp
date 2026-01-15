@@ -130,10 +130,10 @@ public:
     uint64_t enqueue_virtual_frame(const VirtualFrameInfo& frame);
 
     /// @brief Schedules a present-image dump for WSI proxy mode when enabled.
-    void maybe_dump_present_image(VkQueue queue, const VkPresentInfoKHR* present_info,
-                                  VkImage image, uint32_t width, uint32_t height, VkFormat format,
-                                  const VirtualFrameInfo& frame, uint64_t frame_number,
-                                  VkDeviceData* dev_data);
+    void try_dump_present_image(VkQueue queue, const VkPresentInfoKHR* present_info, VkImage image,
+                                uint32_t width, uint32_t height, VkFormat format,
+                                const VirtualFrameInfo& frame, uint64_t frame_number,
+                                VkDeviceData* dev_data);
 
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);

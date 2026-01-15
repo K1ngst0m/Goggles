@@ -4,6 +4,7 @@
 #include "vk_dispatch.hpp"
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -23,6 +24,11 @@ struct DumpSourceInfo {
     uint32_t stride = 0;
     uint32_t offset = 0;
     uint64_t modifier = 0;
+};
+
+struct TimelineWait {
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+    uint64_t value = 0;
 };
 
 struct DumpJob {
@@ -47,22 +53,50 @@ struct DumpJob {
 
 class FrameDumper {
 public:
+    /// @brief Manages best-effort asynchronous frame dumping for the Vulkan capture layer.
     FrameDumper();
 
     [[nodiscard]] auto is_enabled() const -> bool { return enabled_; }
     [[nodiscard]] auto has_pending() const -> bool { return !queue_.empty(); }
 
-    [[nodiscard]] auto
-    maybe_schedule_export_image_dump(VkQueue queue, VkDeviceData* dev_data, VkImage image,
-                                     uint32_t width, uint32_t height, VkFormat format,
-                                     uint64_t frame_number, VkSemaphore wait_timeline_sem,
-                                     uint64_t wait_value, const DumpSourceInfo& src) -> bool;
+    /// @brief Schedules an async dump of an exportable swapchain image without waiting for GPU
+    /// completion in the present call.
+    /// @param queue Queue used for the transfer submission.
+    /// @param dev_data Device dispatch table and state.
+    /// @param image Image to copy from.
+    /// @param width Image width in pixels.
+    /// @param height Image height in pixels.
+    /// @param format Image format.
+    /// @param frame_number Monotonic frame identifier used for filenames.
+    /// @param wait Timeline semaphore and value to wait for before copying.
+    /// @param src Source metadata recorded alongside the dump.
+    /// @return True if a dump job was enqueued for background draining; false otherwise.
+    [[nodiscard]] auto try_schedule_export_image_dump(VkQueue queue, VkDeviceData* dev_data,
+                                                      VkImage image, uint32_t width,
+                                                      uint32_t height, VkFormat format,
+                                                      uint64_t frame_number, TimelineWait wait,
+                                                      const DumpSourceInfo& src) -> bool;
 
-    [[nodiscard]] auto maybe_schedule_present_image_dump(
+    /// @brief Schedules an async dump of a presented swapchain image without waiting for GPU
+    /// completion in the present call.
+    /// @param queue Queue used for the transfer submission.
+    /// @param dev_data Device dispatch table and state.
+    /// @param image Image to copy from.
+    /// @param width Image width in pixels.
+    /// @param height Image height in pixels.
+    /// @param format Image format.
+    /// @param frame_number Monotonic frame identifier used for filenames.
+    /// @param src Source metadata recorded alongside the dump.
+    /// @param wait_count Number of binary semaphores to wait on before copying.
+    /// @param wait_semaphores Semaphores waited before copying (may be null when wait_count == 0).
+    /// @return True if a dump job was enqueued for background draining; false otherwise.
+    [[nodiscard]] auto try_schedule_present_image_dump(
         VkQueue queue, VkDeviceData* dev_data, VkImage image, uint32_t width, uint32_t height,
         VkFormat format, uint64_t frame_number, const DumpSourceInfo& src, uint32_t wait_count,
         const VkSemaphore* wait_semaphores) -> bool;
 
+    /// @brief Drains queued dump jobs and writes outputs to disk.
+    /// @note This may block waiting for GPU fences; do not call from `vkQueuePresentKHR`.
     void drain();
 
 private:
@@ -79,9 +113,8 @@ private:
     [[nodiscard]] auto schedule_dump_copy_timeline(VkQueue queue, VkDeviceData* dev_data,
                                                    VkImage image, uint32_t width, uint32_t height,
                                                    VkFormat format, uint64_t frame_number,
-                                                   const DumpSourceInfo& src,
-                                                   VkSemaphore wait_timeline_sem,
-                                                   uint64_t wait_value) -> bool;
+                                                   const DumpSourceInfo& src, TimelineWait wait)
+        -> bool;
 
     void drain_job(DumpJob& job);
 
@@ -91,6 +124,7 @@ private:
     std::string process_name_ = "process";
     std::vector<DumpRange> ranges_;
 
+    std::mutex queue_mutex_;
     util::SPSCQueue<DumpJob> queue_{64};
 };
 
