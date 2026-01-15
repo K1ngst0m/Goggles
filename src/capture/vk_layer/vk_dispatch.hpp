@@ -11,9 +11,11 @@
 
 namespace goggles::capture {
 
+/// @brief Extracts the loader dispatch table pointer from a dispatchable Vulkan handle.
 // First pointer in dispatchable Vulkan objects is the loader dispatch table
 #define GET_LDT(x) (*(void**)(x))
 
+/// @brief Instance-level Vulkan entry points used by the layer.
 struct VkInstFuncs {
     PFN_vkGetInstanceProcAddr GetInstanceProcAddr;
     PFN_vkDestroyInstance DestroyInstance;
@@ -35,6 +37,7 @@ struct VkInstFuncs {
     PFN_vkGetPhysicalDeviceSurfaceFormats2KHR GetPhysicalDeviceSurfaceFormats2KHR;
 };
 
+/// @brief Device-level Vulkan entry points used by the layer.
 struct VkDeviceFuncs {
     PFN_vkGetDeviceProcAddr GetDeviceProcAddr;
     PFN_vkDestroyDevice DestroyDevice;
@@ -89,12 +92,14 @@ struct VkDeviceFuncs {
     PFN_vkWaitSemaphoresKHR WaitSemaphoresKHR;
 };
 
+/// @brief Tracked instance state and dispatch table.
 struct VkInstData {
     VkInstance instance;
     VkInstFuncs funcs;
     bool valid;
 };
 
+/// @brief Tracked device state and dispatch table.
 struct VkDeviceData {
     VkDevice device;
     VkPhysicalDevice physical_device;
@@ -105,21 +110,33 @@ struct VkDeviceData {
     bool valid;
 };
 
+/// @brief Tracks instances/devices/queues to look up dispatch tables during hooking.
 class ObjectTracker {
 public:
+    /// @brief Adds instance tracking data.
     void add_instance(VkInstance instance, VkInstData data);
+    /// @brief Returns instance tracking data, or null.
     VkInstData* get_instance(VkInstance instance);
+    /// @brief Returns instance tracking data for a physical device, or null.
     VkInstData* get_instance_by_physical_device(VkPhysicalDevice device);
+    /// @brief Removes instance tracking data.
     void remove_instance(VkInstance instance);
 
+    /// @brief Adds device tracking data.
     void add_device(VkDevice device, VkDeviceData data);
+    /// @brief Returns device tracking data, or null.
     VkDeviceData* get_device(VkDevice device);
+    /// @brief Returns device tracking data for a queue, or null.
     VkDeviceData* get_device_by_queue(VkQueue queue);
+    /// @brief Removes device tracking data.
     void remove_device(VkDevice device);
 
+    /// @brief Records a queue-to-device association.
     void add_queue(VkQueue queue, VkDevice device);
+    /// @brief Removes all queues associated with a device.
     void remove_queues_for_device(VkDevice device);
 
+    /// @brief Records a physical-device-to-instance association.
     void add_physical_device(VkPhysicalDevice phys, VkInstance inst);
 
 private:
@@ -130,6 +147,7 @@ private:
     std::unordered_map<void*, VkInstance> phys_to_instance_;
 };
 
+/// @brief Returns the process-wide object tracker instance.
 ObjectTracker& get_object_tracker();
 
 } // namespace goggles::capture

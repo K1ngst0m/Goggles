@@ -5,9 +5,9 @@
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 
-/// Early-return if vk::Result is not eSuccess, creating an error with the given code and message.
-/// Uses make_unexpected so return type is inferred from the calling function.
-/// Usage: VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
+/// @brief Returns an error if a Vulkan call does not return `vk::Result::eSuccess`.
+/// @note Usage:
+///   `VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");`
 // NOLINTNEXTLINE(bugprone-macro-parentheses)
 #define VK_TRY(call, code, msg)                                                                    \
     do {                                                                                           \

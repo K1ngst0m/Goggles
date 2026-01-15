@@ -11,6 +11,7 @@
 
 namespace goggles::util {
 
+/// @brief Helper for writing simple binary blobs into an in-memory buffer.
 class BinaryWriter {
 public:
     std::vector<char> buffer;
@@ -27,6 +28,9 @@ public:
         buffer.insert(buffer.end(), bytes, bytes + sizeof(T));
     }
 
+    /// @brief Writes a length-prefixed string (uint32 length + bytes).
+    /// @param str String to write.
+    /// @return Success or an error.
     auto write_str(const std::string& str) -> Result<void> {
         if (str.size() > std::numeric_limits<uint32_t>::max()) {
             return make_error<void>(ErrorCode::invalid_data, "String size exceeds uint32_t limit");
@@ -36,6 +40,10 @@ public:
         return {};
     }
 
+    /// @brief Writes a length-prefixed vector and serializes each element via `func`.
+    /// @param vec Vector to serialize.
+    /// @param func Callback invoked as `func(writer, element)`.
+    /// @return Success or an error.
     template <typename T, typename Func>
     auto write_vec(const std::vector<T>& vec, Func func) -> Result<void> {
         if (vec.size() > std::numeric_limits<uint32_t>::max()) {
@@ -49,6 +57,7 @@ public:
     }
 };
 
+/// @brief Helper for reading binary blobs from a buffer.
 class BinaryReader {
 public:
     const char* ptr;
@@ -78,6 +87,9 @@ public:
         return true;
     }
 
+    /// @brief Reads a length-prefixed string (uint32 length + bytes).
+    /// @param str Output string.
+    /// @return True on success, false on underflow/parse failure.
     bool read_str(std::string& str) {
         uint32_t len = 0;
         if (!read_pod(len)) {
@@ -92,6 +104,10 @@ public:
         return true;
     }
 
+    /// @brief Reads a length-prefixed vector and deserializes each element via `func`.
+    /// @param vec Output vector.
+    /// @param func Callback invoked as `func(reader, element)` and returning bool success.
+    /// @return True on success, false on underflow/parse failure.
     template <typename T, typename Func>
     bool read_vec(std::vector<T>& vec, Func func) {
         uint32_t count = 0;
@@ -109,6 +125,9 @@ public:
     }
 };
 
+/// @brief Reads a file into memory (binary).
+/// @param path File path to read.
+/// @return File contents or an error.
 inline auto read_file_binary(const std::filesystem::path& path) -> Result<std::vector<char>> {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {

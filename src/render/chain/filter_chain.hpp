@@ -14,6 +14,7 @@
 
 namespace goggles::render {
 
+/// @brief User-facing parameter state for UI and overrides.
 struct ParameterInfo {
     std::string name;
     std::string description;
@@ -24,18 +25,23 @@ struct ParameterInfo {
     float step;
 };
 
+/// @brief Texture plus sampler bound into a filter chain.
 struct LoadedTexture {
     TextureData data;
     vk::UniqueSampler sampler;
 };
 
+/// @brief Viewport and source extents used for framebuffer sizing.
 struct FramebufferExtents {
     vk::Extent2D viewport;
     vk::Extent2D source;
 };
 
+/// @brief Multi-pass shader pipeline configured from a preset file.
 class FilterChain {
 public:
+    /// @brief Creates a filter chain and its passes for the given swapchain format.
+    /// @return A filter chain or an error.
     [[nodiscard]] static auto create(const VulkanContext& vk_ctx, vk::Format swapchain_format,
                                      uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
                                      const std::filesystem::path& shader_dir)
@@ -48,15 +54,19 @@ public:
     FilterChain(FilterChain&&) = delete;
     FilterChain& operator=(FilterChain&&) = delete;
 
+    /// @brief Loads a preset and rebuilds passes and resources.
     [[nodiscard]] auto load_preset(const std::filesystem::path& preset_path) -> Result<void>;
 
+    /// @brief Records all passes for the current frame.
     void record(vk::CommandBuffer cmd, vk::Image original_image, vk::ImageView original_view,
                 vk::Extent2D original_extent, vk::ImageView swapchain_view,
                 vk::Extent2D viewport_extent, uint32_t frame_index,
                 ScaleMode scale_mode = ScaleMode::stretch, uint32_t integer_scale = 0);
 
+    /// @brief Handles viewport resize and resizes framebuffers as needed.
     [[nodiscard]] auto handle_resize(vk::Extent2D new_viewport_extent) -> Result<void>;
 
+    /// @brief Releases GPU resources and pass state.
     void shutdown();
 
     [[nodiscard]] auto pass_count() const -> size_t { return m_passes.size(); }
@@ -66,14 +76,19 @@ public:
         return m_bypass_enabled.load(std::memory_order_relaxed);
     }
 
+    /// @brief Computes the output extent for a pass given input sizes and scaling rules.
     [[nodiscard]] static auto calculate_pass_output_size(const ShaderPassConfig& pass_config,
                                                          vk::Extent2D source_extent,
                                                          vk::Extent2D viewport_extent)
         -> vk::Extent2D;
 
+    /// @brief Returns all parameters exposed by the chain.
     [[nodiscard]] auto get_all_parameters() const -> std::vector<ParameterInfo>;
+    /// @brief Overrides a parameter value by name.
     void set_parameter(const std::string& name, float value);
+    /// @brief Resets a parameter override by name.
     void reset_parameter(const std::string& name);
+    /// @brief Clears all parameter overrides.
     void clear_parameter_overrides();
 
 private:

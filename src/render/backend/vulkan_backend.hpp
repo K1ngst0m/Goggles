@@ -20,14 +20,18 @@
 
 namespace goggles::render {
 
+/// @brief Settings controlling viewport scaling and pacing.
 struct RenderSettings {
     ScaleMode scale_mode = ScaleMode::stretch;
     uint32_t integer_scale = 0;
     uint32_t target_fps = 60;
 };
 
+/// @brief Vulkan renderer for presenting captured frames.
 class VulkanBackend {
 public:
+    /// @brief Creates a Vulkan backend bound to an SDL window.
+    /// @return A backend or an error.
     [[nodiscard]] static auto create(SDL_Window* window, bool enable_validation = false,
                                      const std::filesystem::path& shader_dir = "shaders",
                                      const std::filesystem::path& cache_dir = {},
@@ -40,19 +44,28 @@ public:
     VulkanBackend(VulkanBackend&&) = delete;
     VulkanBackend& operator=(VulkanBackend&&) = delete;
 
+    /// @brief Releases GPU resources and stops background work.
     void shutdown();
 
+    /// @brief Renders a captured frame to the swapchain.
+    /// @return True if the frame was presented, false if skipped.
     [[nodiscard]] auto render_frame(const CaptureFrame& frame) -> Result<bool>;
+    /// @brief Clears the swapchain image.
+    /// @return True if a frame was presented, false if skipped.
     [[nodiscard]] auto render_clear() -> Result<bool>;
+    /// @brief Recreates swapchain resources after a resize event.
     [[nodiscard]] auto handle_resize() -> Result<void>;
 
+    /// @brief Loads a shader preset from disk (async rebuild).
     void load_shader_preset(const std::filesystem::path& preset_path);
+    /// @brief Reloads the current preset immediately.
     [[nodiscard]] auto reload_shader_preset(const std::filesystem::path& preset_path)
         -> Result<void>;
     [[nodiscard]] auto current_preset_path() const -> const std::filesystem::path& {
         return m_preset_path;
     }
 
+    /// @brief Enables or disables shader processing (bypass mode).
     void set_shader_enabled(bool enabled);
 
     using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
@@ -78,9 +91,12 @@ public:
     [[nodiscard]] auto gpu_index() const -> uint32_t { return m_gpu_index; }
     [[nodiscard]] auto gpu_uuid() const -> const std::string& { return m_gpu_uuid; }
 
+    /// @brief Imports sync semaphores from the capture layer.
+    /// @return Success or an error.
     [[nodiscard]] auto import_sync_semaphores(util::UniqueFd frame_ready_fd,
                                               util::UniqueFd frame_consumed_fd) -> Result<void>;
     [[nodiscard]] auto has_sync_semaphores() const -> bool { return m_sync_semaphores_imported; }
+    /// @brief Releases imported semaphores, if any.
     void cleanup_sync_semaphores();
 
     [[nodiscard]] auto consume_chain_swapped() -> bool {

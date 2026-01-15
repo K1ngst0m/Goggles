@@ -12,6 +12,7 @@
 
 namespace goggles::render {
 
+/// @brief Configuration for building a `FilterPass` from preprocessed shader sources.
 struct FilterPassConfig {
     vk::Format target_format = vk::Format::eUndefined;
     uint32_t num_sync_indices = 2;
@@ -24,6 +25,7 @@ struct FilterPassConfig {
     std::vector<ShaderParameter> parameters;
 };
 
+/// @brief Fullscreen vertex format for pass rendering.
 struct Vertex {
     std::array<float, 4> position;
     std::array<float, 2> texcoord;
@@ -34,8 +36,11 @@ struct PassTextureBinding {
     vk::Sampler sampler;
 };
 
+/// @brief A single shader pass in a filter chain.
 class FilterPass : public Pass {
 public:
+    /// @brief Creates a filter pass from compiled shader sources.
+    /// @return A pass or an error.
     [[nodiscard]] static auto create(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
                                      const FilterPassConfig& config) -> ResultPtr<FilterPass>;
 
@@ -46,7 +51,9 @@ public:
     FilterPass(FilterPass&&) = delete;
     FilterPass& operator=(FilterPass&&) = delete;
 
+    /// @brief Releases GPU resources owned by this pass.
     void shutdown() override;
+    /// @brief Records commands to render this pass.
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
 
     void set_source_size(uint32_t width, uint32_t height) {
@@ -86,7 +93,9 @@ public:
     }
     [[nodiscard]] auto get_parameter_value(const std::string& name) const -> float;
 
+    /// @brief Updates the parameter UBO for the current overrides.
     [[nodiscard]] auto update_ubo_parameters() -> Result<void>;
+    /// @brief Updates semantic UBO/push constant values.
     void update_ubo_semantics();
 
     [[nodiscard]] auto texture_bindings() const -> const std::vector<TextureBinding>& {

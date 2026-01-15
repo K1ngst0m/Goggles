@@ -3,16 +3,9 @@
 // =============================================================================
 // Profiling Macros
 // =============================================================================
-//
-// Provides compile-time toggleable profiling instrumentation via Tracy.
-// When TRACY_ENABLE is not defined, all macros expand to no-ops (zero overhead).
-//
-// Usage:
-//   GOGGLES_PROFILE_FRAME("Main")        - Mark frame boundary
-//   GOGGLES_PROFILE_FUNCTION()           - Profile entire function
-//   GOGGLES_PROFILE_SCOPE("ScopeName")   - Profile named scope
-//   GOGGLES_PROFILE_TAG("text")          - Add text annotation to current zone
-//   GOGGLES_PROFILE_VALUE("name", val)   - Plot numeric value over time
+/// @brief Tracy profiling macros.
+///
+/// When `TRACY_ENABLE` is not defined, all macros expand to no-ops (zero overhead).
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 

@@ -8,6 +8,7 @@
 
 namespace goggles {
 
+/// @brief How the output image scales to the target rectangle.
 enum class ScaleMode : uint8_t {
     fit,
     fill,
@@ -16,6 +17,9 @@ enum class ScaleMode : uint8_t {
     dynamic,
 };
 
+/// @brief Returns the config string for a `ScaleMode` value.
+/// @param mode Scale mode value.
+/// @return Stable string identifier.
 [[nodiscard]] constexpr auto to_string(ScaleMode mode) -> const char* {
     switch (mode) {
     case ScaleMode::fit:
@@ -32,6 +36,7 @@ enum class ScaleMode : uint8_t {
     return "unknown";
 }
 
+/// @brief Parsed application configuration.
 struct Config {
     struct Paths {
         std::string resource_dir;
@@ -68,7 +73,12 @@ struct Config {
     } logging;
 };
 
+/// @brief Loads a configuration file from disk.
+/// @param path Path to a TOML configuration file.
+/// @return Parsed configuration or an error.
 [[nodiscard]] auto load_config(const std::filesystem::path& path) -> Result<Config>;
+
+/// @brief Returns a default configuration.
 [[nodiscard]] auto default_config() -> Config;
 
 } // namespace goggles

@@ -10,14 +10,12 @@
 namespace goggles::render {
 
 enum class ScaleType : std::uint8_t { source, viewport, absolute };
-;
 
 enum class FilterMode : std::uint8_t { linear, nearest };
-;
 
 enum class WrapMode : std::uint8_t { clamp_to_border, clamp_to_edge, repeat, mirrored_repeat };
-;
 
+/// @brief Shader pass configuration parsed from a preset file.
 struct ShaderPassConfig {
     std::filesystem::path shader_path;
     ScaleType scale_type_x = ScaleType::source;
@@ -32,6 +30,7 @@ struct ShaderPassConfig {
     uint32_t frame_count_mod = 0; // 0 = disabled
 };
 
+/// @brief Texture configuration parsed from a preset file.
 struct TextureConfig {
     std::string name;
     std::filesystem::path path;
@@ -41,21 +40,27 @@ struct TextureConfig {
     bool linear = false;
 };
 
+/// @brief Parameter override parsed from a preset file.
 struct ParameterOverride {
     std::string name;
     float value;
 };
 
+/// @brief Parsed preset configuration.
 struct PresetConfig {
     std::vector<ShaderPassConfig> passes;
     std::vector<TextureConfig> textures;
     std::vector<ParameterOverride> parameters;
 };
 
+/// @brief Parses RetroArch-style shader preset files (.slangp).
 class PresetParser {
 public:
     static constexpr int MAX_REFERENCE_DEPTH = 8;
 
+    /// @brief Loads a preset from disk, including referenced presets.
+    /// @param preset_path Path to the preset file.
+    /// @return Parsed configuration or an error.
     [[nodiscard]] auto load(const std::filesystem::path& preset_path) -> Result<PresetConfig>;
 
 private:

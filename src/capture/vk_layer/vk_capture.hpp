@@ -15,6 +15,7 @@
 
 namespace goggles::capture {
 
+/// @brief Reusable copy command buffer state for exported swapchain images.
 struct CopyCmd {
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer cmd = VK_NULL_HANDLE;
@@ -22,6 +23,7 @@ struct CopyCmd {
     bool busy = false;
 };
 
+/// @brief Metadata for a virtual frame forwarded from a WSI proxy swapchain.
 struct VirtualFrameInfo {
     uint32_t width = 0;
     uint32_t height = 0;
@@ -32,6 +34,7 @@ struct VirtualFrameInfo {
     int dmabuf_fd = -1;
 };
 
+/// @brief Work item used by the capture worker thread.
 struct AsyncCaptureItem {
     VkDevice device = VK_NULL_HANDLE;
     VkSemaphore timeline_sem = VK_NULL_HANDLE;
@@ -40,6 +43,7 @@ struct AsyncCaptureItem {
     CaptureFrameMetadata metadata{};
 };
 
+/// @brief Device-level sync state independent of swapchain lifecycle.
 // Device-level sync state (independent of swapchain lifecycle)
 struct DeviceSyncState {
     VkSemaphore frame_ready_sem = VK_NULL_HANDLE;
@@ -51,6 +55,7 @@ struct DeviceSyncState {
     bool initialized = false;
 };
 
+/// @brief Snapshot of device sync state for lock-free reads.
 struct DeviceSyncSnapshot {
     VkSemaphore frame_consumed_sem = VK_NULL_HANDLE;
     uint64_t frame_counter = 0;
@@ -58,6 +63,7 @@ struct DeviceSyncSnapshot {
     bool initialized = false;
 };
 
+/// @brief Per-swapchain capture bookkeeping and exported DMA-BUF resources.
 struct SwapData {
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
@@ -89,23 +95,35 @@ struct SwapData {
     bool dmabuf_sent = false;
 };
 
+/// @brief Manages swapchain capture, DMA-BUF export, and IPC forwarding.
 class CaptureManager {
 public:
     CaptureManager();
     ~CaptureManager();
 
+    /// @brief Tracks a newly created swapchain and initializes capture resources as needed.
     void on_swapchain_created(VkDevice device, VkSwapchainKHR swapchain,
                               const VkSwapchainCreateInfoKHR* create_info, VkDeviceData* dev_data);
+    /// @brief Cleans up capture resources for a destroyed swapchain.
     void on_swapchain_destroyed(VkDevice device, VkSwapchainKHR swapchain);
+    /// @brief Cleans up device-level capture state.
     void on_device_destroyed(VkDevice device, VkDeviceData* dev_data);
+    /// @brief Handles a present call and schedules capture work if enabled.
     void on_present(VkQueue queue, const VkPresentInfoKHR* present_info, VkDeviceData* dev_data);
+    /// @brief Returns swapchain capture state, or null if untracked.
     SwapData* get_swap_data(VkSwapchainKHR swapchain);
+    /// @brief Returns a snapshot of device sync state.
     DeviceSyncSnapshot get_device_sync_snapshot(VkDevice device);
+    /// @brief Ensures device-level sync primitives exist for capture.
     bool ensure_device_sync(VkDevice device, VkDeviceData* dev_data);
+    /// @brief Attempts to send device sync semaphore FDs to the receiver.
     bool try_send_device_semaphores(VkDevice device);
+    /// @brief Returns a monotonically increasing counter for virtual frames.
     uint64_t get_virtual_frame_counter() const;
+    /// @brief Stops background work and disconnects any IPC state.
     void shutdown();
 
+    /// @brief Queues a virtual frame (from WSI proxy) for forwarding.
     void enqueue_virtual_frame(const VirtualFrameInfo& frame);
 
 private:
@@ -135,6 +153,7 @@ private:
     std::atomic<uint64_t> virtual_frame_counter_{0};
 };
 
+/// @brief Returns the process-wide capture manager instance.
 CaptureManager& get_capture_manager();
 
 } // namespace goggles::capture
