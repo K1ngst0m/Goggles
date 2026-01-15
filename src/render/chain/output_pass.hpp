@@ -6,14 +6,18 @@
 
 namespace goggles::render {
 
+/// @brief Configuration for creating an `OutputPass`.
 struct OutputPassConfig {
     vk::Format target_format = vk::Format::eUndefined;
     uint32_t num_sync_indices = 2;
     std::filesystem::path shader_dir;
 };
 
+/// @brief Final pass that composites into the swapchain image.
 class OutputPass : public Pass {
 public:
+    /// @brief Creates an output pass for the given swapchain format.
+    /// @return A pass or an error.
     [[nodiscard]] static auto create(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
                                      const OutputPassConfig& config) -> ResultPtr<OutputPass>;
 
@@ -24,7 +28,9 @@ public:
     OutputPass(OutputPass&&) = delete;
     OutputPass& operator=(OutputPass&&) = delete;
 
+    /// @brief Releases GPU resources owned by this pass.
     void shutdown() override;
+    /// @brief Records commands to render the final output.
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
 
 private:

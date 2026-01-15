@@ -11,6 +11,7 @@ namespace goggles::render {
 
 class ShaderRuntime;
 
+/// @brief Vulkan objects shared by render passes.
 struct VulkanContext {
     vk::Device device;
     vk::PhysicalDevice physical_device;
@@ -18,6 +19,7 @@ struct VulkanContext {
     vk::Queue graphics_queue;
 };
 
+/// @brief Per-frame context provided to each render pass.
 struct PassContext {
     uint32_t frame_index;
     vk::Extent2D output_extent;
@@ -30,6 +32,7 @@ struct PassContext {
     uint32_t integer_scale = 0;
 };
 
+/// @brief Base interface for a render pass.
 class Pass {
 public:
     virtual ~Pass() = default;
@@ -44,6 +47,7 @@ public:
     virtual void record(vk::CommandBuffer cmd, const PassContext& ctx) = 0;
 };
 
+/// @brief Output viewport rectangle computed from scaling settings.
 struct ScaledViewport {
     int32_t offset_x = 0;
     int32_t offset_y = 0;
@@ -51,6 +55,8 @@ struct ScaledViewport {
     uint32_t height = 0;
 };
 
+/// @brief Computes a viewport rectangle from source/target sizes and scaling mode.
+/// @return A rectangle in target-space pixels.
 [[nodiscard]] inline auto calculate_viewport(uint32_t source_width, uint32_t source_height,
                                              uint32_t target_width, uint32_t target_height,
                                              ScaleMode mode, uint32_t integer_scale = 0)

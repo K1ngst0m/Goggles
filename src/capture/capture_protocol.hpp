@@ -6,10 +6,12 @@
 
 namespace goggles::capture {
 
+/// @brief Abstract socket path used by the capture layer and receiver.
 // NOLINTNEXTLINE(modernize-avoid-c-arrays) - abstract socket path requires C array
 constexpr const char CAPTURE_SOCKET_PATH[] = "\0goggles/vkcapture";
 constexpr size_t CAPTURE_SOCKET_PATH_LEN = sizeof(CAPTURE_SOCKET_PATH) - 1;
 
+/// @brief Message types used on the capture IPC protocol.
 // NOLINTNEXTLINE(performance-enum-size) - uint32_t required for wire format stability
 enum class CaptureMessageType : uint32_t {
     client_hello = 1,
@@ -20,6 +22,7 @@ enum class CaptureMessageType : uint32_t {
     resolution_response = 6,
 };
 
+/// @brief Initial handshake message sent by the client.
 struct CaptureClientHello {
     CaptureMessageType type = CaptureMessageType::client_hello;
     uint32_t version = 1;
@@ -28,6 +31,7 @@ struct CaptureClientHello {
 
 static_assert(sizeof(CaptureClientHello) == 72);
 
+/// @brief Legacy texture metadata sent alongside an exported DMA-BUF FD.
 struct CaptureTextureData {
     CaptureMessageType type = CaptureMessageType::texture_data;
     uint32_t width = 0;
@@ -40,9 +44,11 @@ struct CaptureTextureData {
 
 static_assert(sizeof(CaptureTextureData) == 32);
 
+/// @brief Control flags for `CaptureControl::flags`.
 constexpr uint32_t CAPTURE_CONTROL_CAPTURING = 1u << 0;
 constexpr uint32_t CAPTURE_CONTROL_RESOLUTION_REQUEST = 1u << 1;
 
+/// @brief Control message sent from receiver to client.
 struct CaptureControl {
     CaptureMessageType type = CaptureMessageType::control;
     uint32_t flags = 0;
@@ -52,6 +58,7 @@ struct CaptureControl {
 
 static_assert(sizeof(CaptureControl) == 16);
 
+/// @brief Initializes timeline semaphore synchronization via SCM_RIGHTS FD passing.
 struct CaptureSemaphoreInit {
     CaptureMessageType type = CaptureMessageType::semaphore_init;
     uint32_t version = 1;
@@ -61,6 +68,7 @@ struct CaptureSemaphoreInit {
 
 static_assert(sizeof(CaptureSemaphoreInit) == 16);
 
+/// @brief Per-frame metadata for virtual frame forwarding.
 struct CaptureFrameMetadata {
     CaptureMessageType type = CaptureMessageType::frame_metadata;
     uint32_t width = 0;

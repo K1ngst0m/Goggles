@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <nonstd/expected.hpp>
 #include <source_location>
 #include <string>
@@ -10,6 +11,7 @@
 
 namespace goggles {
 
+/// @brief Error codes used by `goggles::Error`.
 enum class ErrorCode : std::uint8_t {
     ok,
     file_not_found,
@@ -28,8 +30,8 @@ enum class ErrorCode : std::uint8_t {
     invalid_data,
     unknown_error
 };
-;
 
+/// @brief Structured error for `Result<T>` operations.
 struct Error {
     ErrorCode code;
     std::string message;
@@ -40,9 +42,11 @@ struct Error {
         : code(error_code), message(std::move(msg)), location(loc) {}
 };
 
+/// @brief Project-wide fallible operation return type.
 template <typename T>
 using Result = nonstd::expected<T, Error>;
 
+/// @brief Convenience alias for `Result<std::unique_ptr<T>>`.
 template <typename T>
 using ResultPtr = Result<std::unique_ptr<T>>;
 
@@ -65,6 +69,7 @@ make_result_ptr_error(ErrorCode code, std::string message,
     return nonstd::make_unexpected(Error{code, std::move(message), loc});
 }
 
+/// @brief Returns a stable string name for an `ErrorCode` value.
 [[nodiscard]] constexpr auto error_code_name(ErrorCode code) -> const char* {
     switch (code) {
     case ErrorCode::ok:
@@ -107,7 +112,9 @@ make_result_ptr_error(ErrorCode code, std::string message,
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 
-/// Propagate error or return value. Expression-style like Rust's `?` operator.
+/// @brief Propagates an error or returns the contained value (expression-style).
+///
+/// Similar to Rust's `?` operator. The expression must yield a `Result<T>`.
 // NOLINTNEXTLINE(bugprone-macro-parentheses)
 #define GOGGLES_TRY(expr)                                                                          \
     ({                                                                                             \
@@ -117,7 +124,9 @@ make_result_ptr_error(ErrorCode code, std::string message,
         std::move(_try_result).value();                                                            \
     })
 
-/// Abort on error or return value. Use for internal invariants where failure is a bug.
+/// @brief Aborts on error or returns the contained value (expression-style).
+///
+/// Use for internal invariants where failure indicates a bug.
 // NOLINTNEXTLINE(bugprone-macro-parentheses)
 #define GOGGLES_MUST(expr)                                                                         \
     ({                                                                                             \

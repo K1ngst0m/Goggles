@@ -11,9 +11,15 @@
 
 namespace goggles::util {
 
+/// @brief Single-producer, single-consumer lock-free ring buffer.
+///
+/// `capacity` must be a power of two. Construction throws on invalid capacity or allocation
+/// failure.
 template <typename T>
 class SPSCQueue {
 public:
+    /// @brief Creates a queue with the given capacity (power of two).
+    /// @param capacity Max element count; must be a power of two.
     explicit SPSCQueue(size_t capacity)
         : m_capacity(capacity), m_buffer_size(capacity * 2), m_capacity_mask(m_buffer_size - 1),
           m_buffer(nullptr) {
@@ -44,6 +50,9 @@ public:
     SPSCQueue(SPSCQueue&&) = delete;
     SPSCQueue& operator=(SPSCQueue&&) = delete;
 
+    /// @brief Attempts to enqueue a copy of `item`.
+    /// @param item Item to enqueue.
+    /// @return True on success, false if the queue is full.
     auto try_push(const T& item) -> bool {
         const size_t current_head = m_head.load(std::memory_order_relaxed);
         const size_t current_tail = m_tail.load(std::memory_order_acquire);
@@ -58,6 +67,9 @@ public:
         return true;
     }
 
+    /// @brief Attempts to enqueue `item` by move.
+    /// @param item Item to enqueue.
+    /// @return True on success, false if the queue is full.
     auto try_push(T&& item) -> bool {
         const size_t current_head = m_head.load(std::memory_order_relaxed);
         const size_t current_tail = m_tail.load(std::memory_order_acquire);
@@ -72,6 +84,8 @@ public:
         return true;
     }
 
+    /// @brief Attempts to dequeue an item.
+    /// @return The item, or `std::nullopt` if the queue is empty.
     auto try_pop() -> std::optional<T> {
         const size_t current_tail = m_tail.load(std::memory_order_relaxed);
         if (current_tail == m_head.load(std::memory_order_acquire)) {
@@ -85,17 +99,20 @@ public:
         return item;
     }
 
+    /// @brief Returns the current number of queued elements.
     [[nodiscard]] auto size() const -> size_t {
         const size_t current_head = m_head.load(std::memory_order_acquire);
         const size_t current_tail = m_tail.load(std::memory_order_acquire);
         return (current_head - current_tail) & m_capacity_mask;
     }
 
+    /// @brief Returns true if the queue is empty.
     [[nodiscard]] auto empty() const -> bool {
         const size_t current_tail = m_tail.load(std::memory_order_relaxed);
         return current_tail == m_head.load(std::memory_order_acquire);
     }
 
+    /// @brief Returns the configured capacity (max elements).
     [[nodiscard]] auto capacity() const -> size_t { return m_capacity; }
 
 private:

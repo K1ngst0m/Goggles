@@ -5,6 +5,7 @@
 
 namespace goggles::render {
 
+/// @brief RAII wrapper for Vulkan debug utils messenger.
 class VulkanDebugMessenger {
 public:
     VulkanDebugMessenger() = default;
@@ -15,8 +16,11 @@ public:
     VulkanDebugMessenger(VulkanDebugMessenger&&) noexcept = default;
     VulkanDebugMessenger& operator=(VulkanDebugMessenger&&) noexcept = default;
 
+    /// @brief Creates a debug messenger for `instance`.
+    /// @return An active messenger or an error.
     [[nodiscard]] static auto create(vk::Instance instance) -> Result<VulkanDebugMessenger>;
 
+    /// @brief Returns true if the messenger was created.
     [[nodiscard]] auto is_active() const -> bool { return static_cast<bool>(m_messenger); }
 
 private:
@@ -25,6 +29,7 @@ private:
     vk::UniqueDebugUtilsMessengerEXT m_messenger;
 };
 
+/// @brief Returns true if Vulkan validation layers appear to be available.
 [[nodiscard]] auto is_validation_layer_available() -> bool;
 
 } // namespace goggles::render

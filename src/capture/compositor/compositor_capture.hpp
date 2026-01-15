@@ -1,11 +1,17 @@
-// Compositor/framebuffer capture backend - stub
 #pragma once
 
 namespace goggles::capture {
 
-// Placeholder for compositor capture
+/// @brief Compositor/framebuffer capture backend.
 class CompositorCapture {
-    // Empty stub
+public:
+    CompositorCapture() = default;
+    ~CompositorCapture() = default;
+
+    CompositorCapture(const CompositorCapture&) = delete;
+    CompositorCapture& operator=(const CompositorCapture&) = delete;
+    CompositorCapture(CompositorCapture&&) = delete;
+    CompositorCapture& operator=(CompositorCapture&&) = delete;
 };
 
 } // namespace goggles::capture

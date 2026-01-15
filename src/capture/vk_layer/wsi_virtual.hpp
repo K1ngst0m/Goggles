@@ -11,6 +11,7 @@
 
 namespace goggles::capture {
 
+/// @brief Bookkeeping for a virtual `VkSurfaceKHR` handle.
 struct VirtualSurface {
     VkSurfaceKHR handle = VK_NULL_HANDLE;
     VkInstance instance = VK_NULL_HANDLE;
@@ -19,6 +20,7 @@ struct VirtualSurface {
     bool out_of_date = false;
 };
 
+/// @brief Bookkeeping for a virtual `VkSwapchainKHR` backed by exportable images.
 struct VirtualSwapchain {
     VkSwapchainKHR handle = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
@@ -36,6 +38,7 @@ struct VirtualSwapchain {
     std::chrono::steady_clock::time_point last_acquire;
 };
 
+/// @brief Metadata describing the current contents of a virtual swapchain image.
 struct SwapchainFrameData {
     bool valid = false;
     uint32_t width = 0;
@@ -47,16 +50,24 @@ struct SwapchainFrameData {
     int dmabuf_fd = -1;
 };
 
+/// @brief Virtualizes WSI surfaces/swapchains to allow headless capture.
 class WsiVirtualizer {
 public:
+    /// @brief Returns the process-wide virtualizer instance.
     static WsiVirtualizer& instance();
 
+    /// @brief Returns true if WSI virtualization is enabled.
     bool is_enabled() const { return enabled_; }
 
+    /// @brief Creates a virtual surface handle.
     VkResult create_surface(VkInstance inst, VkSurfaceKHR* surface);
+    /// @brief Destroys a previously created virtual surface handle.
     void destroy_surface(VkInstance inst, VkSurfaceKHR surface);
+    /// @brief Returns true if `surface` is virtual.
     bool is_virtual_surface(VkSurfaceKHR surface);
+    /// @brief Returns virtual surface bookkeeping for `surface`, or null.
     VirtualSurface* get_surface(VkSurfaceKHR surface);
+    /// @brief Updates the preferred virtual resolution.
     void set_resolution(uint32_t width, uint32_t height);
 
     VkResult get_surface_capabilities(VkPhysicalDevice phys_dev, VkSurfaceKHR surface,
@@ -70,14 +81,18 @@ public:
 
     VkResult create_swapchain(VkDevice device, const VkSwapchainCreateInfoKHR* info,
                               VkSwapchainKHR* swapchain, VkDeviceData* dev_data);
+    /// @brief Destroys a previously created virtual swapchain and its resources.
     void destroy_swapchain(VkDevice device, VkSwapchainKHR swapchain, VkDeviceData* dev_data);
+    /// @brief Returns true if `swapchain` is virtual.
     bool is_virtual_swapchain(VkSwapchainKHR swapchain);
+    /// @brief Returns virtual swapchain bookkeeping for `swapchain`, or null.
     VirtualSwapchain* get_swapchain(VkSwapchainKHR swapchain);
 
     VkResult get_swapchain_images(VkSwapchainKHR swapchain, uint32_t* count, VkImage* images);
     VkResult acquire_next_image(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
                                 VkSemaphore semaphore, VkFence fence, uint32_t* index,
                                 VkDeviceData* dev_data);
+    /// @brief Returns frame metadata for a virtual swapchain image.
     SwapchainFrameData get_frame_data(VkSwapchainKHR swapchain, uint32_t image_index);
 
 private:
@@ -97,6 +112,7 @@ private:
     uint64_t next_handle_ = 0x7000000000000000ULL;
 };
 
+/// @brief Returns true if WSI proxying should be used for this process.
 bool should_use_wsi_proxy();
 
 } // namespace goggles::capture

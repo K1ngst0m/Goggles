@@ -6,11 +6,13 @@
 
 namespace goggles::render {
 
+/// @brief Width/height pair used during texture upload.
 struct ImageSize {
     uint32_t width;
     uint32_t height;
 };
 
+/// @brief Loaded GPU texture resources.
 struct TextureData {
     vk::UniqueImage image;
     vk::UniqueDeviceMemory memory;
@@ -19,16 +21,22 @@ struct TextureData {
     uint32_t mip_levels{1};
 };
 
+/// @brief Options controlling texture loading and mipmap generation.
 struct TextureLoadConfig {
     bool generate_mipmaps{false};
     bool linear{false};
 };
 
+/// @brief Loads textures from disk and uploads them to Vulkan images.
 class TextureLoader {
 public:
     TextureLoader(vk::Device device, vk::PhysicalDevice physical_device, vk::CommandPool cmd_pool,
                   vk::Queue queue);
 
+    /// @brief Loads an image file and uploads it to the GPU.
+    /// @param path Path to the image file.
+    /// @param config Loading options.
+    /// @return Texture data or an error.
     [[nodiscard]] auto load_from_file(const std::filesystem::path& path,
                                       const TextureLoadConfig& config = {}) -> Result<TextureData>;
 

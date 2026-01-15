@@ -2,7 +2,7 @@
 
 **Version:** 1.0
 **Status:** Active
-**Last Updated:** 2026-01-07
+**Last Updated:** 2026-01-15
 
 This document establishes mandatory project-wide development policies for the Goggles codebase. All contributors must follow these rules to ensure consistency, maintainability, and quality.
 
@@ -276,6 +276,16 @@ Over-commenting causes:
 2. **Visual noise** - harder to scan actual logic
 3. **False confidence** - outdated comments mislead
 4. **Crutch for bad code** - encourages unclear implementations
+
+### C.8 Docstrings (Public API)
+
+Docstrings are for API contracts, not implementation narration.
+
+- Use Doxygen line comments (`///` / `///<`) on exported/public declarations only.
+- Keep `@brief` to 1–2 sentences: active voice, start with a verb, end with a period.
+- Use `@param <name>` for each parameter; describe purpose plus units/range/constraints when relevant.
+- Use `@return` for non-`void`; describe what it represents and any special cases.
+- Do not restate types, avoid jargon, and keep one symbol per docstring.
 
 ---
 

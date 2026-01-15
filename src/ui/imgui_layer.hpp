@@ -20,11 +20,13 @@ struct AppDirs;
 
 namespace goggles::ui {
 
+/// @brief Preset catalog tree node (directory or preset file).
 struct PresetTreeNode {
     std::map<std::string, PresetTreeNode> children;
     int preset_index = -1; // -1 for directories, >= 0 for preset files
 };
 
+/// @brief Vulkan objects required to initialize ImGui rendering.
 struct ImGuiConfig {
     vk::Instance instance;
     vk::PhysicalDevice physical_device;
@@ -35,12 +37,14 @@ struct ImGuiConfig {
     uint32_t image_count;
 };
 
+/// @brief UI state for a single shader parameter.
 struct ParameterState {
     size_t pass_index;
     render::ShaderParameter info;
     float current_value;
 };
 
+/// @brief Aggregate UI state for shader controls.
 struct ShaderControlState {
     std::filesystem::path current_preset;
     std::vector<std::filesystem::path> preset_catalog;
@@ -56,8 +60,14 @@ using ParameterChangeCallback =
     std::function<void(size_t pass_index, const std::string& name, float value)>;
 using ParameterResetCallback = std::function<void()>;
 
+/// @brief ImGui overlay layer for shader control and debug widgets.
 class ImGuiLayer {
 public:
+    /// @brief Creates an ImGui overlay for `window`.
+    /// @param window SDL window receiving input events.
+    /// @param config Vulkan objects needed for ImGui rendering.
+    /// @param app_dirs Resolved app directories for ini/font and preset discovery.
+    /// @return An ImGui layer or an error.
     [[nodiscard]] static auto create(SDL_Window* window, const ImGuiConfig& config,
                                      const util::AppDirs& app_dirs) -> ResultPtr<ImGuiLayer>;
 
@@ -68,23 +78,40 @@ public:
     ImGuiLayer(ImGuiLayer&&) = delete;
     ImGuiLayer& operator=(ImGuiLayer&&) = delete;
 
+    /// @brief Releases ImGui and Vulkan resources owned by this layer.
     void shutdown();
 
+    /// @brief Feeds an SDL event into ImGui input handling.
     void process_event(const SDL_Event& event);
+    /// @brief Begins a new ImGui frame.
     void begin_frame();
+    /// @brief Ends the frame and updates internal UI state.
     void end_frame();
+    /// @brief Records ImGui draw data into `cmd`.
+    /// @param cmd Command buffer in recording state.
+    /// @param target_view Swapchain image view to render into.
+    /// @param extent Target extent in pixels.
     void record(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Extent2D extent);
 
+    /// @brief Sets the list of preset files shown in the UI.
     void set_preset_catalog(std::vector<std::filesystem::path> presets);
+    /// @brief Updates the currently selected preset path.
     void set_current_preset(const std::filesystem::path& path);
+    /// @brief Updates displayed parameter values.
     void set_parameters(std::vector<ParameterState> params);
 
+    /// @brief Sets a callback invoked when a parameter is changed by the UI.
     void set_parameter_change_callback(ParameterChangeCallback callback);
+    /// @brief Sets a callback invoked when parameters should be reset.
     void set_parameter_reset_callback(ParameterResetCallback callback);
 
+    /// @brief Returns mutable UI state (owned by this layer).
     [[nodiscard]] auto state() -> ShaderControlState& { return m_state; }
+    /// @brief Returns UI state (owned by this layer).
     [[nodiscard]] auto state() const -> const ShaderControlState& { return m_state; }
+    /// @brief Returns true if ImGui wants exclusive keyboard input.
     [[nodiscard]] auto wants_capture_keyboard() const -> bool;
+    /// @brief Returns true if ImGui wants exclusive mouse input.
     [[nodiscard]] auto wants_capture_mouse() const -> bool;
 
     void toggle_visibility() { m_visible = !m_visible; }
@@ -92,7 +119,9 @@ public:
     void toggle_debug_overlay() { m_debug_overlay_visible = !m_debug_overlay_visible; }
     [[nodiscard]] auto is_debug_overlay_visible() const -> bool { return m_debug_overlay_visible; }
 
+    /// @brief Rebuilds ImGui resources after a swapchain format change.
     void rebuild_for_format(vk::Format new_format);
+    /// @brief Records a timing sample for the source (captured) frame cadence.
     void notify_source_frame();
 
 private:

@@ -5,8 +5,11 @@
 
 namespace goggles::render {
 
+/// @brief Offscreen framebuffer backing a `vk::ImageView` for passes and history.
 class Framebuffer {
 public:
+    /// @brief Creates a framebuffer with an image, memory, and view.
+    /// @return A framebuffer or an error.
     [[nodiscard]] static auto create(vk::Device device, vk::PhysicalDevice physical_device,
                                      vk::Format format, vk::Extent2D extent)
         -> ResultPtr<Framebuffer>;
@@ -18,7 +21,9 @@ public:
     Framebuffer(Framebuffer&& other) noexcept;
     Framebuffer& operator=(Framebuffer&& other) noexcept;
 
+    /// @brief Resizes the framebuffer image and view.
     [[nodiscard]] auto resize(vk::Extent2D new_extent) -> Result<void>;
+    /// @brief Releases image and view resources.
     void shutdown();
 
     [[nodiscard]] auto view() const -> vk::ImageView { return *m_view; }

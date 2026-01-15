@@ -1,8 +1,6 @@
-// Utility functions - stub
 #pragma once
 
-namespace goggles::util {
-
-// Placeholder for utility functions
-
-} // namespace goggles::util
+/// @file util.hpp
+/// @brief Utility umbrella header.
+///
+/// Prefer including specific utility headers where possible.

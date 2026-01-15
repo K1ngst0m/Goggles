@@ -8,6 +8,7 @@
 
 namespace goggles::render {
 
+/// @brief User-facing shader parameter metadata.
 struct ShaderParameter {
     std::string name;
     std::string description;
@@ -17,11 +18,13 @@ struct ShaderParameter {
     float step;
 };
 
+/// @brief Optional shader metadata extracted from source.
 struct ShaderMetadata {
     std::optional<std::string> name_alias;
     std::optional<std::string> format;
 };
 
+/// @brief Preprocessed vertex+fragment sources plus parameters/metadata.
 struct PreprocessedShader {
     std::string vertex_source;
     std::string fragment_source;
@@ -29,11 +32,14 @@ struct PreprocessedShader {
     ShaderMetadata metadata;
 };
 
+/// @brief Preprocesses RetroArch .slangp/.slang shaders into per-stage sources.
 class RetroArchPreprocessor {
 public:
+    /// @brief Loads and preprocesses a shader file from disk.
     [[nodiscard]] auto preprocess(const std::filesystem::path& shader_path)
         -> Result<PreprocessedShader>;
 
+    /// @brief Preprocesses a shader source string using `base_path` for includes.
     [[nodiscard]] auto preprocess_source(const std::string& source,
                                          const std::filesystem::path& base_path)
         -> Result<PreprocessedShader>;
