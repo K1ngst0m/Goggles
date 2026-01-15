@@ -92,6 +92,8 @@ public:
     VkResult acquire_next_image(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
                                 VkSemaphore semaphore, VkFence fence, uint32_t* index,
                                 VkDeviceData* dev_data);
+    /// @brief Returns the underlying VkImage for a virtual swapchain index, or VK_NULL_HANDLE.
+    VkImage get_swapchain_image(VkSwapchainKHR swapchain, uint32_t image_index);
     /// @brief Returns frame metadata for a virtual swapchain image.
     SwapchainFrameData get_frame_data(VkSwapchainKHR swapchain, uint32_t image_index);
 

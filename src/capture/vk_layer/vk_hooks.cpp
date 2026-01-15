@@ -26,6 +26,24 @@ static inline bool is_device_link_info(VkLayerDeviceCreateInfo* info) {
            info->function == VK_LAYER_LINK_INFO;
 }
 
+static void load_dump_device_funcs(VkDeviceFuncs& funcs, VkDevice device,
+                                   PFN_vkGetDeviceProcAddr gdpa) {
+#define GETADDR(name) funcs.name = reinterpret_cast<PFN_vk##name>(gdpa(device, "vk" #name))
+
+    GETADDR(CreateBuffer);
+    GETADDR(DestroyBuffer);
+    GETADDR(GetBufferMemoryRequirements);
+    GETADDR(BindBufferMemory);
+    GETADDR(MapMemory);
+    GETADDR(UnmapMemory);
+    GETADDR(FlushMappedMemoryRanges);
+    GETADDR(InvalidateMappedMemoryRanges);
+    GETADDR(FreeCommandBuffers);
+    GETADDR(CmdCopyImageToBuffer);
+
+#undef GETADDR
+}
+
 // =============================================================================
 // Instance Hooks
 // =============================================================================
@@ -333,6 +351,8 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
     GETADDR(WaitSemaphoresKHR);
 
 #undef GETADDR
+
+    load_dump_device_funcs(funcs, *pDevice, gdpa);
 
     uint32_t queue_family_count = 0;
     inst_data->funcs.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queue_family_count,
@@ -698,7 +718,12 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
                     info.offset = frame.offset;
                     info.modifier = frame.modifier;
                     info.dmabuf_fd = dup_fd;
-                    get_capture_manager().enqueue_virtual_frame(info);
+                    uint64_t frame_number = get_capture_manager().enqueue_virtual_frame(info);
+
+                    VkImage image = virt.get_swapchain_image(pPresentInfo->pSwapchains[i], img_idx);
+                    get_capture_manager().maybe_dump_present_image(
+                        queue, pPresentInfo, image, frame.width, frame.height, frame.format, info,
+                        frame_number, data);
                 }
             }
         } else {

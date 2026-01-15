@@ -27,6 +27,7 @@ add_library(goggles_vklayer SHARED
     vk_dispatch.cpp
     vk_hooks.cpp
     vk_capture.cpp
+    frame_dump.cpp
     wsi_virtual.cpp
     ipc_socket.cpp
 )

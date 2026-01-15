@@ -48,6 +48,15 @@ TEST_CASE("parse_cli: detach mode rejects app width/height", "[cli]") {
     REQUIRE(result.error().code == ErrorCode::parse_error);
 }
 
+TEST_CASE("parse_cli: detach mode rejects dump options", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args({"goggles", "--config", cfg, "--detach", "--dump-frame-range", "3"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(!result);
+    REQUIRE(result.error().code == ErrorCode::parse_error);
+}
+
 TEST_CASE("parse_cli: default mode requires app command after --", "[cli]") {
     auto cfg = default_config_path();
     ArgvBuilder args({"goggles", "--config", cfg});
@@ -77,6 +86,20 @@ TEST_CASE("parse_cli: default mode parses app command and args", "[cli]") {
     REQUIRE(result->app_command[0] == "vkcube");
     REQUIRE(result->app_command[1] == "--wsi");
     REQUIRE(result->app_command[2] == "xcb");
+}
+
+TEST_CASE("parse_cli: default mode parses dump options", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args({"goggles", "--config", cfg, "--dump-dir", "/tmp/goggles_dump",
+                      "--dump-frame-range", "3,5,8-13", "--dump-frame-mode", "ppm", "--",
+                      "vkcube"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(result);
+    REQUIRE(!result->detach);
+    REQUIRE(result->dump_dir == "/tmp/goggles_dump");
+    REQUIRE(result->dump_frame_range == "3,5,8-13");
+    REQUIRE(result->dump_frame_mode == "ppm");
 }
 
 TEST_CASE("parse_cli: app args may include options that collide with viewer flags", "[cli]") {

@@ -66,15 +66,25 @@ struct VkDeviceFuncs {
     // Images
     PFN_vkCreateImage CreateImage;
     PFN_vkDestroyImage DestroyImage;
+    PFN_vkCreateBuffer CreateBuffer;
+    PFN_vkDestroyBuffer DestroyBuffer;
+    PFN_vkGetBufferMemoryRequirements GetBufferMemoryRequirements;
+    PFN_vkBindBufferMemory BindBufferMemory;
+    PFN_vkMapMemory MapMemory;
+    PFN_vkUnmapMemory UnmapMemory;
+    PFN_vkFlushMappedMemoryRanges FlushMappedMemoryRanges;
+    PFN_vkInvalidateMappedMemoryRanges InvalidateMappedMemoryRanges;
 
     // Commands
     PFN_vkCreateCommandPool CreateCommandPool;
     PFN_vkDestroyCommandPool DestroyCommandPool;
     PFN_vkResetCommandPool ResetCommandPool;
     PFN_vkAllocateCommandBuffers AllocateCommandBuffers;
+    PFN_vkFreeCommandBuffers FreeCommandBuffers;
     PFN_vkBeginCommandBuffer BeginCommandBuffer;
     PFN_vkEndCommandBuffer EndCommandBuffer;
     PFN_vkCmdCopyImage CmdCopyImage;
+    PFN_vkCmdCopyImageToBuffer CmdCopyImageToBuffer;
     PFN_vkCmdBlitImage CmdBlitImage;
     PFN_vkCmdPipelineBarrier CmdPipelineBarrier;
 

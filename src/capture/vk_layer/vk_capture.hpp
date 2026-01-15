@@ -7,6 +7,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -14,6 +15,8 @@
 #include <vulkan/vulkan.h>
 
 namespace goggles::capture {
+
+class FrameDumper;
 
 /// @brief Reusable copy command buffer state for exported swapchain images.
 struct CopyCmd {
@@ -124,7 +127,13 @@ public:
     void shutdown();
 
     /// @brief Queues a virtual frame (from WSI proxy) for forwarding.
-    void enqueue_virtual_frame(const VirtualFrameInfo& frame);
+    uint64_t enqueue_virtual_frame(const VirtualFrameInfo& frame);
+
+    /// @brief Schedules a present-image dump for WSI proxy mode when enabled.
+    void maybe_dump_present_image(VkQueue queue, const VkPresentInfoKHR* present_info,
+                                  VkImage image, uint32_t width, uint32_t height, VkFormat format,
+                                  const VirtualFrameInfo& frame, uint64_t frame_number,
+                                  VkDeviceData* dev_data);
 
 private:
     bool init_export_image(SwapData* swap, VkDeviceData* dev_data);
@@ -151,6 +160,7 @@ private:
     std::unordered_map<VkDevice, DeviceSyncState> device_sync_;
     std::atomic<bool> shutdown_{false};
     std::atomic<uint64_t> virtual_frame_counter_{0};
+    std::unique_ptr<FrameDumper> frame_dumper_;
 };
 
 /// @brief Returns the process-wide capture manager instance.

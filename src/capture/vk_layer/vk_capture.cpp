@@ -1,5 +1,6 @@
 #include "vk_capture.hpp"
 
+#include "frame_dump.hpp"
 #include "ipc_socket.hpp"
 #include "wsi_virtual.hpp"
 
@@ -40,7 +41,8 @@ void CaptureManager::worker_func() {
     while (!shutdown_.load(std::memory_order_acquire)) {
         std::unique_lock lock(cv_mutex_);
         cv_.wait(lock, [this] {
-            return shutdown_.load(std::memory_order_acquire) || !async_queue_.empty();
+            return shutdown_.load(std::memory_order_acquire) || !async_queue_.empty() ||
+                   (frame_dumper_ && frame_dumper_->has_pending());
         });
 
         while (!async_queue_.empty()) {
@@ -94,6 +96,10 @@ void CaptureManager::worker_func() {
 
             close(item.dmabuf_fd);
         }
+
+        if (frame_dumper_) {
+            frame_dumper_->drain();
+        }
     }
 
     // Drain remaining items on shutdown
@@ -124,6 +130,10 @@ void CaptureManager::worker_func() {
         }
         close(item.dmabuf_fd);
     }
+
+    if (frame_dumper_) {
+        frame_dumper_->drain();
+    }
 }
 
 // =============================================================================
@@ -136,8 +146,15 @@ CaptureManager& get_capture_manager() {
 }
 
 CaptureManager::CaptureManager() {
-    if (should_use_async_capture()) {
-        LAYER_DEBUG("Async capture mode enabled");
+    frame_dumper_ = std::make_unique<FrameDumper>();
+
+    bool need_worker = should_use_async_capture() || (frame_dumper_ && frame_dumper_->is_enabled());
+    if (need_worker) {
+        if (should_use_async_capture()) {
+            LAYER_DEBUG("Async capture mode enabled");
+        } else {
+            LAYER_DEBUG("Frame dump enabled");
+        }
         shutdown_.store(false, std::memory_order_release);
         worker_thread_ = std::thread(&CaptureManager::worker_func, this);
     } else {
@@ -435,7 +452,7 @@ bool CaptureManager::init_export_image(SwapData* swap, VkDeviceData* dev_data) {
     image_info.samples = VK_SAMPLE_COUNT_1_BIT;
     image_info.tiling =
         use_modifier_tiling ? VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT : VK_IMAGE_TILING_LINEAR;
-    image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -941,6 +958,19 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
     sync->frame_counter = current_frame;
     cmd.busy = true;
 
+    if (frame_dumper_) {
+        DumpSourceInfo src{};
+        src.stride = swap->dmabuf_stride;
+        src.offset = swap->dmabuf_offset;
+        src.modifier = swap->dmabuf_modifier;
+
+        if (frame_dumper_->maybe_schedule_export_image_dump(
+                queue, dev_data, swap->export_image, swap->extent.width, swap->extent.height,
+                swap->format, current_frame, sync->frame_ready_sem, current_frame, src)) {
+            cv_.notify_one();
+        }
+    }
+
     // Send frame metadata
     CaptureFrameMetadata metadata{};
     metadata.type = CaptureMessageType::frame_metadata;
@@ -965,7 +995,7 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
 // Cleanup
 // =============================================================================
 
-void CaptureManager::enqueue_virtual_frame(const VirtualFrameInfo& frame) {
+uint64_t CaptureManager::enqueue_virtual_frame(const VirtualFrameInfo& frame) {
     uint64_t frame_num = virtual_frame_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     CaptureFrameMetadata metadata{};
@@ -989,6 +1019,28 @@ void CaptureManager::enqueue_virtual_frame(const VirtualFrameInfo& frame) {
         cv_.notify_one();
     } else {
         close(frame.dmabuf_fd);
+    }
+
+    return frame_num;
+}
+
+void CaptureManager::maybe_dump_present_image(VkQueue queue, const VkPresentInfoKHR* present_info,
+                                              VkImage image, uint32_t width, uint32_t height,
+                                              VkFormat format, const VirtualFrameInfo& frame,
+                                              uint64_t frame_number, VkDeviceData* dev_data) {
+    if (!frame_dumper_ || !present_info) {
+        return;
+    }
+
+    DumpSourceInfo src{};
+    src.stride = frame.stride;
+    src.offset = frame.offset;
+    src.modifier = frame.modifier;
+
+    if (frame_dumper_->maybe_schedule_present_image_dump(
+            queue, dev_data, image, width, height, format, frame_number, src,
+            present_info->waitSemaphoreCount, present_info->pWaitSemaphores)) {
+        cv_.notify_one();
     }
 }
 
