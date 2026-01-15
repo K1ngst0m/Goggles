@@ -5,13 +5,13 @@
 
 #include <SDL3/SDL.h>
 #include <capture/capture_receiver.hpp>
-#include <cstdlib>
 #include <input/input_forwarder.hpp>
 #include <render/backend/vulkan_backend.hpp>
 #include <string>
 #include <string_view>
 #include <util/config.hpp>
 #include <util/logging.hpp>
+#include <util/paths.hpp>
 #include <util/profiling.hpp>
 #include <util/unique_fd.hpp>
 #include <utility>
@@ -26,21 +26,8 @@ static auto to_sdl_window(WindowHandle window) -> SDL_Window* {
     return window.ptr ? static_cast<SDL_Window*>(window.ptr) : nullptr;
 }
 
-static auto resolve_shader_base_dir() -> std::filesystem::path {
-    if (const char* shader_dir = std::getenv("GOGGLES_SHADER_DIR"); shader_dir && *shader_dir) {
-        return shader_dir;
-    }
-
-    if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
-        resource_dir && *resource_dir) {
-        return std::filesystem::path(resource_dir) / "shaders";
-    }
-
-    return "shaders";
-}
-
-auto Application::create(const Config& config, bool enable_input_forwarding)
-    -> ResultPtr<Application> {
+auto Application::create(const Config& config, const util::AppDirs& app_dirs,
+                         bool enable_input_forwarding) -> ResultPtr<Application> {
     auto app = std::unique_ptr<Application>(new Application());
 
     app->m_platform = GOGGLES_TRY(SdlPlatform::create({
@@ -62,12 +49,13 @@ auto Application::create(const Config& config, bool enable_input_forwarding)
     app->m_scale_mode = config.render.scale_mode;
     GOGGLES_LOG_INFO("Scale mode: {}", to_string(app->m_scale_mode));
     app->m_vulkan_backend = GOGGLES_TRY(render::VulkanBackend::create(
-        sdl_window, config.render.enable_validation, resolve_shader_base_dir(), render_settings));
+        sdl_window, config.render.enable_validation, util::resource_path(app_dirs, "shaders"),
+        util::cache_path(app_dirs, "shaders"), render_settings));
 
     app->m_vulkan_backend->load_shader_preset(config.shader.preset);
 
     app->m_ui_controller = GOGGLES_TRY(
-        UiController::create(app->m_platform->window(), *app->m_vulkan_backend, config));
+        UiController::create(app->m_platform->window(), *app->m_vulkan_backend, config, app_dirs));
 
     auto receiver_result = CaptureReceiver::create();
     if (!receiver_result) {

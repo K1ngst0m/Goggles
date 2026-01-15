@@ -6,6 +6,18 @@
 #   ~/.config/goggles/goggles.toml (or $XDG_CONFIG_HOME/goggles/goggles.toml)
 
 # =============================================================================
+# Path Overrides
+# =============================================================================
+# All paths must be absolute. Leave empty to follow XDG defaults.
+#
+# [paths]
+# resource_dir = ""  # Shipped assets root (AppImage typically sets this)
+# config_dir = ""    # Overrides ${XDG_CONFIG_HOME:-$HOME/.config}/goggles
+# data_dir = ""      # Overrides ${XDG_DATA_HOME:-$HOME/.local/share}/goggles
+# cache_dir = ""     # Overrides ${XDG_CACHE_HOME:-$HOME/.cache}/goggles
+# runtime_dir = ""   # Overrides ${XDG_RUNTIME_DIR}/goggles (or temp fallback)
+
+# =============================================================================
 # Capture Settings
 # =============================================================================
 [capture]

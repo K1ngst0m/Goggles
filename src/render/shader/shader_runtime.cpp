@@ -3,7 +3,6 @@
 #include "slang_reflect.hpp"
 
 #include <array>
-#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <functional>
@@ -19,7 +18,6 @@ namespace goggles::render {
 
 namespace {
 
-constexpr std::string_view CACHE_SUBDIR = "goggles/shaders";
 constexpr std::string_view CACHE_MAGIC = "GSPV";
 constexpr std::string_view RETROARCH_CACHE_MAGIC = "GRAC";
 constexpr uint32_t CACHE_VERSION = 1;
@@ -187,10 +185,11 @@ ShaderRuntime::~ShaderRuntime() {
 ShaderRuntime::ShaderRuntime(ShaderRuntime&&) noexcept = default;
 ShaderRuntime& ShaderRuntime::operator=(ShaderRuntime&&) noexcept = default;
 
-auto ShaderRuntime::create() -> ResultPtr<ShaderRuntime> {
+auto ShaderRuntime::create(const std::filesystem::path& cache_dir) -> ResultPtr<ShaderRuntime> {
     GOGGLES_PROFILE_FUNCTION();
 
     auto runtime = std::unique_ptr<ShaderRuntime>(new ShaderRuntime());
+    runtime->m_cache_dir = cache_dir;
 
     SlangGlobalSessionDesc global_desc = {};
     global_desc.enableGLSL = true;
@@ -244,15 +243,14 @@ auto ShaderRuntime::create() -> ResultPtr<ShaderRuntime> {
                                                     "Failed to create Slang GLSL session");
     }
 
-    auto cache_dir = runtime->get_cache_dir();
     std::error_code ec;
-    std::filesystem::create_directories(cache_dir, ec);
+    std::filesystem::create_directories(runtime->m_cache_dir, ec);
     if (ec) {
         GOGGLES_LOG_WARN("Failed to create shader cache directory: {}", ec.message());
     }
 
     GOGGLES_LOG_INFO("ShaderRuntime initialized (dual session: HLSL + GLSL), cache: {}",
-                     cache_dir.string());
+                     runtime->m_cache_dir.string());
     return make_result_ptr(std::move(runtime));
 }
 
@@ -300,17 +298,7 @@ auto ShaderRuntime::compile_shader(const std::filesystem::path& source_path,
 }
 
 auto ShaderRuntime::get_cache_dir() const -> std::filesystem::path {
-    const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
-    if (xdg_cache != nullptr && xdg_cache[0] != '\0') {
-        return std::filesystem::path(xdg_cache) / CACHE_SUBDIR;
-    }
-
-    const char* home = std::getenv("HOME");
-    if (home != nullptr && home[0] != '\0') {
-        return std::filesystem::path(home) / ".cache" / CACHE_SUBDIR;
-    }
-
-    return std::filesystem::temp_directory_path() / CACHE_SUBDIR;
+    return m_cache_dir;
 }
 
 auto ShaderRuntime::get_cache_path(const std::filesystem::path& source_path,

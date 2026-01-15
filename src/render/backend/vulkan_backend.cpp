@@ -168,7 +168,8 @@ VulkanBackend::~VulkanBackend() {
 }
 
 auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
-                           const std::filesystem::path& shader_dir, RenderSettings settings)
+                           const std::filesystem::path& shader_dir,
+                           const std::filesystem::path& cache_dir, RenderSettings settings)
     -> ResultPtr<VulkanBackend> {
     GOGGLES_PROFILE_FUNCTION();
 
@@ -185,6 +186,14 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     backend->m_window = window;
     backend->m_enable_validation = enable_validation;
     backend->m_shader_dir = shader_dir;
+    backend->m_cache_dir = cache_dir;
+    if (backend->m_cache_dir.empty()) {
+        try {
+            backend->m_cache_dir = std::filesystem::temp_directory_path() / "goggles" / "shaders";
+        } catch (...) {
+            backend->m_cache_dir = "/tmp/goggles/shaders";
+        }
+    }
     backend->m_scale_mode = settings.scale_mode;
     backend->m_integer_scale = settings.integer_scale;
     backend->update_target_fps(settings.target_fps);
@@ -874,7 +883,7 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
 auto VulkanBackend::init_filter_chain() -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    m_shader_runtime = GOGGLES_TRY(ShaderRuntime::create());
+    m_shader_runtime = GOGGLES_TRY(ShaderRuntime::create(m_cache_dir));
 
     VulkanContext vk_ctx{.device = *m_device,
                          .physical_device = m_physical_device,
@@ -1522,6 +1531,7 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
     // Capture values needed by the async task
     auto swapchain_format = m_swapchain_format;
     auto shader_dir = m_shader_dir;
+    auto cache_dir = m_cache_dir;
     auto device = *m_device;
     auto physical_device = m_physical_device;
     auto command_pool = *m_command_pool;
@@ -1530,7 +1540,7 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
     m_pending_load_future = util::JobSystem::submit([=, this]() -> Result<void> {
         GOGGLES_PROFILE_SCOPE("AsyncShaderLoad");
 
-        auto runtime_result = ShaderRuntime::create();
+        auto runtime_result = ShaderRuntime::create(cache_dir);
         if (!runtime_result) {
             GOGGLES_LOG_ERROR("Failed to create shader runtime: {}",
                               runtime_result.error().message);

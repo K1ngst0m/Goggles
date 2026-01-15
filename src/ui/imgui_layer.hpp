@@ -14,6 +14,10 @@
 struct SDL_Window;
 union SDL_Event;
 
+namespace goggles::util {
+struct AppDirs;
+}
+
 namespace goggles::ui {
 
 struct PresetTreeNode {
@@ -54,8 +58,8 @@ using ParameterResetCallback = std::function<void()>;
 
 class ImGuiLayer {
 public:
-    [[nodiscard]] static auto create(SDL_Window* window, const ImGuiConfig& config)
-        -> ResultPtr<ImGuiLayer>;
+    [[nodiscard]] static auto create(SDL_Window* window, const ImGuiConfig& config,
+                                     const util::AppDirs& app_dirs) -> ResultPtr<ImGuiLayer>;
 
     ~ImGuiLayer();
 

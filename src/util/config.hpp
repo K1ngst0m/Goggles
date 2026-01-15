@@ -33,6 +33,14 @@ enum class ScaleMode : uint8_t {
 }
 
 struct Config {
+    struct Paths {
+        std::string resource_dir;
+        std::string config_dir;
+        std::string data_dir;
+        std::string cache_dir;
+        std::string runtime_dir;
+    } paths;
+
     struct Capture {
         std::string backend = "vulkan_layer";
     } capture;

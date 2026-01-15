@@ -24,6 +24,7 @@ target_sources(goggles_tests PRIVATE
     util/test_queues.cpp
     util/test_unique_fd.cpp
     util/test_serializer.cpp
+    util/test_paths.cpp
 
     # Render module tests
     render/test_shader_runtime.cpp

@@ -27,7 +27,8 @@ struct RetroArchCompiledShader {
 
 class ShaderRuntime {
 public:
-    [[nodiscard]] static auto create() -> ResultPtr<ShaderRuntime>;
+    [[nodiscard]] static auto create(const std::filesystem::path& cache_dir)
+        -> ResultPtr<ShaderRuntime>;
 
     ~ShaderRuntime();
 
@@ -77,6 +78,7 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+    std::filesystem::path m_cache_dir;
 };
 
 } // namespace goggles::render

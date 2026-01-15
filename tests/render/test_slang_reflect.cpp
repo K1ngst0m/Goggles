@@ -2,11 +2,21 @@
 #include "render/shader/slang_reflect.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
 
 using namespace goggles::render;
 
+namespace {
+auto test_cache_dir() -> std::filesystem::path {
+    auto dir = std::filesystem::temp_directory_path() / "goggles_test_cache";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    return dir;
+}
+} // namespace
+
 TEST_CASE("Slang reflection - texture binding", "[reflection]") {
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     // Simple GLSL shader with texture sampler
@@ -43,7 +53,7 @@ void main() {
 }
 
 TEST_CASE("Slang reflection - push constants", "[reflection]") {
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     // GLSL shader with push constants
@@ -88,7 +98,7 @@ void main() {
 }
 
 TEST_CASE("Slang reflection - uniform buffer", "[reflection]") {
-    auto runtime = ShaderRuntime::create();
+    auto runtime = ShaderRuntime::create(test_cache_dir());
     REQUIRE(runtime.has_value());
 
     // GLSL shader with UBO

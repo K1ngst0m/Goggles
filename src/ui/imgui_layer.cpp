@@ -5,51 +5,18 @@
 #include <array>
 #include <cctype>
 #include <cmath>
-#include <cstdlib>
 #include <filesystem>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 #include <numeric>
 #include <util/logging.hpp>
+#include <util/paths.hpp>
 #include <utility>
 
 namespace goggles::ui {
 
 namespace {
-
-auto resolve_default_font_path() -> std::filesystem::path {
-    if (const char* resource_dir = std::getenv("GOGGLES_RESOURCE_DIR");
-        resource_dir && *resource_dir) {
-        return std::filesystem::path(resource_dir) / "assets" / "fonts" / "RobotoMono-Regular.ttf";
-    }
-    return std::filesystem::path("assets") / "fonts" / "RobotoMono-Regular.ttf";
-}
-
-auto resolve_imgui_ini_path() -> std::optional<std::filesystem::path> {
-    // Allow override for power users / debugging.
-    if (const char* ini = std::getenv("GOGGLES_IMGUI_INI"); ini && *ini) {
-        return std::filesystem::path(ini);
-    }
-
-    std::filesystem::path config_root;
-    if (const char* xdg_config = std::getenv("XDG_CONFIG_HOME"); xdg_config && *xdg_config) {
-        config_root = xdg_config;
-    } else if (const char* home = std::getenv("HOME"); home && *home) {
-        config_root = std::filesystem::path(home) / ".config";
-    } else {
-        return std::nullopt;
-    }
-
-    auto dir = config_root / "goggles";
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    if (ec) {
-        return std::nullopt;
-    }
-
-    return dir / "imgui.ini";
-}
 
 auto to_lower(std::string_view str) -> std::string {
     std::string result;
@@ -71,8 +38,8 @@ auto get_display_scale(SDL_Window* window) -> float {
     return scale;
 }
 
-void rebuild_fonts(ImGuiIO& io, const std::filesystem::path& font_path, float size_pixels,
-                   float display_scale) {
+void rebuild_fonts(const std::filesystem::path& font_path, float size_pixels, float display_scale) {
+    auto& io = ImGui::GetIO();
     io.Fonts->Clear();
 
     ImFontConfig cfg{};
@@ -102,7 +69,8 @@ void rebuild_fonts(ImGuiIO& io, const std::filesystem::path& font_path, float si
 
 } // namespace
 
-auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> ResultPtr<ImGuiLayer> {
+auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config,
+                        const util::AppDirs& app_dirs) -> ResultPtr<ImGuiLayer> {
     auto layer = std::unique_ptr<ImGuiLayer>(new ImGuiLayer());
     layer->m_window = window;
     layer->m_instance = config.instance;
@@ -112,7 +80,7 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
     layer->m_queue = config.queue;
     layer->m_swapchain_format = config.swapchain_format;
     layer->m_image_count = config.image_count;
-    layer->m_font_path = resolve_default_font_path();
+    layer->m_font_path = util::resource_path(app_dirs, "assets/fonts/RobotoMono-Regular.ttf");
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -120,19 +88,25 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config) -> Result
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    if (auto ini_path = resolve_imgui_ini_path()) {
-        layer->m_ini_path = ini_path->string();
-        io.IniFilename = layer->m_ini_path.c_str();
-    } else {
-        // Avoid leaking `imgui.ini` into the working directory if we can't resolve a writable path.
-        io.IniFilename = nullptr;
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(app_dirs.config_dir, ec);
+        if (!ec) {
+            const auto ini_path = app_dirs.config_dir / "imgui.ini";
+            layer->m_ini_path = ini_path.string();
+            io.IniFilename = layer->m_ini_path.c_str();
+        } else {
+            // Avoid leaking `imgui.ini` into the working directory if we can't resolve a writable
+            // path.
+            io.IniFilename = nullptr;
+        }
     }
 
     ImGui::StyleColorsDark();
 
     float display_scale = get_display_scale(window);
     layer->m_last_display_scale = display_scale;
-    rebuild_fonts(io, layer->m_font_path, layer->m_font_size_pixels, display_scale);
+    rebuild_fonts(layer->m_font_path, layer->m_font_size_pixels, display_scale);
 
     if (!ImGui_ImplSDL3_InitForVulkan(window)) {
         return make_result_ptr_error<ImGuiLayer>(ErrorCode::vulkan_init_failed,
@@ -254,8 +228,7 @@ void ImGuiLayer::begin_frame() {
                                  vk::to_string(wait_result));
             }
 
-            auto& io = ImGui::GetIO();
-            rebuild_fonts(io, m_font_path, m_font_size_pixels, display_scale);
+            rebuild_fonts(m_font_path, m_font_size_pixels, display_scale);
 
             ImGui_ImplVulkan_DestroyFontsTexture();
             if (!ImGui_ImplVulkan_CreateFontsTexture()) {
