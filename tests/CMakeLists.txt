@@ -15,6 +15,7 @@ add_executable(goggles_tests)
 target_sources(goggles_tests PRIVATE
     # App module tests
     app/test_cli.cpp
+    ${CMAKE_SOURCE_DIR}/src/app/cli.cpp
 
     # Utility module tests
     util/test_error.cpp
@@ -55,6 +56,7 @@ target_link_libraries(goggles_tests PRIVATE
     goggles_util
     goggles_render
     goggles_capture
+    CLI11::CLI11
     Catch2::Catch2WithMain
 )
 

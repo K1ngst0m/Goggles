@@ -34,8 +34,9 @@ TEST_CASE("parse_cli: detach mode accepts no app command", "[cli]") {
 
     auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
     REQUIRE(result);
-    REQUIRE(result->detach);
-    REQUIRE(result->app_command.empty());
+    REQUIRE(result->action == goggles::app::CliAction::run);
+    REQUIRE(result->options.detach);
+    REQUIRE(result->options.app_command.empty());
 }
 
 TEST_CASE("parse_cli: detach mode rejects app width/height", "[cli]") {
@@ -90,11 +91,12 @@ TEST_CASE("parse_cli: default mode parses app command and args", "[cli]") {
 
     auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
     REQUIRE(result);
-    REQUIRE(!result->detach);
-    REQUIRE(result->app_command.size() == 3);
-    REQUIRE(result->app_command[0] == "vkcube");
-    REQUIRE(result->app_command[1] == "--wsi");
-    REQUIRE(result->app_command[2] == "xcb");
+    REQUIRE(result->action == goggles::app::CliAction::run);
+    REQUIRE(!result->options.detach);
+    REQUIRE(result->options.app_command.size() == 3);
+    REQUIRE(result->options.app_command[0] == "vkcube");
+    REQUIRE(result->options.app_command[1] == "--wsi");
+    REQUIRE(result->options.app_command[2] == "xcb");
 }
 
 TEST_CASE("parse_cli: default mode parses dump options", "[cli]") {
@@ -105,10 +107,11 @@ TEST_CASE("parse_cli: default mode parses dump options", "[cli]") {
 
     auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
     REQUIRE(result);
-    REQUIRE(!result->detach);
-    REQUIRE(result->dump_dir == "/tmp/goggles_dump");
-    REQUIRE(result->dump_frame_range == "3,5,8-13");
-    REQUIRE(result->dump_frame_mode == "ppm");
+    REQUIRE(result->action == goggles::app::CliAction::run);
+    REQUIRE(!result->options.detach);
+    REQUIRE(result->options.dump_dir == "/tmp/goggles_dump");
+    REQUIRE(result->options.dump_frame_range == "3,5,8-13");
+    REQUIRE(result->options.dump_frame_mode == "ppm");
 }
 
 TEST_CASE("parse_cli: default mode parses vk-layer logging options", "[cli]") {
@@ -117,8 +120,9 @@ TEST_CASE("parse_cli: default mode parses vk-layer logging options", "[cli]") {
 
     auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
     REQUIRE(result);
-    REQUIRE(result->layer_log);
-    REQUIRE(result->layer_log_level == "debug");
+    REQUIRE(result->action == goggles::app::CliAction::run);
+    REQUIRE(result->options.layer_log);
+    REQUIRE(result->options.layer_log_level == "debug");
 }
 
 TEST_CASE("parse_cli: app args may include options that collide with viewer flags", "[cli]") {
@@ -127,8 +131,9 @@ TEST_CASE("parse_cli: app args may include options that collide with viewer flag
 
     auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
     REQUIRE(result);
-    REQUIRE(result->app_command.size() == 3);
-    REQUIRE(result->app_command[1] == "--config");
+    REQUIRE(result->action == goggles::app::CliAction::run);
+    REQUIRE(result->options.app_command.size() == 3);
+    REQUIRE(result->options.app_command[1] == "--config");
 }
 
 TEST_CASE("parse_cli: app width/height must be provided together", "[cli]") {
@@ -138,4 +143,20 @@ TEST_CASE("parse_cli: app width/height must be provided together", "[cli]") {
     auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
     REQUIRE(!result);
     REQUIRE(result.error().code == ErrorCode::parse_error);
+}
+
+TEST_CASE("parse_cli: --help returns exit_ok", "[cli]") {
+    ArgvBuilder args({"goggles", "--help"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(result);
+    REQUIRE(result->action == goggles::app::CliAction::exit_ok);
+}
+
+TEST_CASE("parse_cli: --version returns exit_ok", "[cli]") {
+    ArgvBuilder args({"goggles", "--version"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(result);
+    REQUIRE(result->action == goggles::app::CliAction::exit_ok);
 }
