@@ -1,7 +1,6 @@
 #include "vk_dispatch.hpp"
 
-#include <cstdio>
-#define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
+#include "logging.hpp"
 
 namespace goggles::capture {
 

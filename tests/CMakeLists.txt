@@ -39,6 +39,7 @@ target_sources(goggles_tests PRIVATE
     # Capture module tests
     capture/test_capture_protocol.cpp
     capture/test_capture_receiver.cpp
+    capture/test_vk_layer_logging.cpp
 
     # Future: Pipeline module tests (when implemented)
     # pipeline/graph/test_pipeline_graph.cpp

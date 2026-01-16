@@ -2,7 +2,7 @@
 
 **Version:** 1.0
 **Status:** Active
-**Last Updated:** 2026-01-15
+**Last Updated:** 2026-01-16
 
 This document establishes mandatory project-wide development policies for the Goggles codebase. All contributors must follow these rules to ensure consistency, maintainability, and quality.
 
@@ -92,16 +92,23 @@ Define project-specific macros wrapping spdlog:
 
 **Vulkan layer code (`src/capture/vk_layer/`) has strict logging limits:**
 
-- **Use only `error` and `critical` levels** (to avoid polluting host app output).
+- **Default logging is off** (implicit layers are injected into arbitrary host applications).
+- **Enable logging explicitly** with `GOGGLES_DEBUG_LOG=1`.
+- **Configure level filtering** with `GOGGLES_DEBUG_LOG_LEVEL=trace|debug|info|warn|error|critical|off`
+  (default when enabled: `info`).
 - **No file I/O** or blocking operations in hot paths.
 - **Prefix all logs** with `[goggles_vklayer]` for easy filtering.
-- **Never log in `vkQueuePresentKHR`** hot path (queue for async logging if needed).
+- **Never log in `vkQueuePresentKHR`** hot path.
+
+**Implementation note:** The Vulkan layer SHOULD use a minimal `write(2)` backend rather than the
+application’s `spdlog` logger to keep the layer build standalone and avoid `stdio` lock contention.
 
 ### B.5 Log Initialization
 
 - **One global logger** initialized at application startup.
 - **Console output** for development; file output optional.
-- **Capture layer:** Initialize logger on first `vkCreateInstance` hook (lazily).
+- **Capture layer:** Do not use the global logger; use the vk-layer `write(2)` backend and cache
+  `GOGGLES_DEBUG_LOG` / `GOGGLES_DEBUG_LOG_LEVEL` on first use.
 
 ---
 

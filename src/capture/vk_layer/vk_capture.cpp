@@ -2,6 +2,7 @@
 
 #include "frame_dump.hpp"
 #include "ipc_socket.hpp"
+#include "logging.hpp"
 #include "wsi_virtual.hpp"
 
 #include <cinttypes>
@@ -10,8 +11,6 @@
 #include <cstring>
 #include <unistd.h>
 #include <util/profiling.hpp>
-
-#define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
 
