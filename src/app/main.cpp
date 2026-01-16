@@ -317,15 +317,15 @@ static auto log_config_summary(const goggles::Config& config) -> void {
 static auto run_app(int argc, char** argv) -> int {
     auto cli_result = goggles::app::parse_cli(argc, argv);
     if (!cli_result) {
-        if (cli_result.error().code == goggles::ErrorCode::ok) {
-            return EXIT_SUCCESS;
-        }
-
         std::fprintf(stderr, "Error: %s\n", cli_result.error().message.c_str());
         std::fprintf(stderr, "Run '%s --help' for usage.\n", argv[0]);
         return EXIT_FAILURE;
     }
-    const auto& cli_opts = cli_result.value();
+    const auto& cli_outcome = cli_result.value();
+    if (cli_outcome.action == goggles::app::CliAction::exit_ok) {
+        return EXIT_SUCCESS;
+    }
+    const auto& cli_opts = cli_outcome.options;
 
     goggles::initialize_logger("goggles");
     GOGGLES_LOG_INFO(GOGGLES_PROJECT_NAME " v" GOGGLES_VERSION " starting");

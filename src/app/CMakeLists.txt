@@ -2,6 +2,7 @@
 
 add_executable(goggles
     application.cpp
+    cli.cpp
     main.cpp
     sdl_platform.cpp
     ui_controller.cpp
