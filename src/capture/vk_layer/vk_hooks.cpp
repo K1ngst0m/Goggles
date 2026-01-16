@@ -1,5 +1,6 @@
 #include "vk_hooks.hpp"
 
+#include "logging.hpp"
 #include "vk_capture.hpp"
 #include "vk_dispatch.hpp"
 #include "wsi_virtual.hpp"
@@ -11,8 +12,6 @@
 #include <util/profiling.hpp>
 #include <vector>
 #include <vulkan/vk_layer.h>
-
-#define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
 
@@ -688,15 +687,8 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
 VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
     GOGGLES_PROFILE_FRAME("Layer");
 
-    static bool first_call = true;
-    if (first_call) {
-        LAYER_DEBUG("QueuePresentKHR hook called (first frame)");
-        first_call = false;
-    }
-
     auto* data = get_object_tracker().get_device_by_queue(queue);
     if (!data) {
-        LAYER_DEBUG("QueuePresentKHR: device lookup failed!");
         return VK_ERROR_DEVICE_LOST;
     }
 

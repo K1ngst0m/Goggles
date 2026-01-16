@@ -1,6 +1,7 @@
 #include "wsi_virtual.hpp"
 
 #include "ipc_socket.hpp"
+#include "logging.hpp"
 #include "vk_capture.hpp"
 
 #include <bit>
@@ -13,9 +14,6 @@
 #include <type_traits>
 #include <unistd.h>
 #include <utility>
-
-#define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
-#define LAYER_WARN(fmt, ...) fprintf(stderr, "[goggles-layer] WARN: " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
 

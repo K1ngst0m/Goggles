@@ -1,5 +1,7 @@
 #include "ipc_socket.hpp"
 
+#include "logging.hpp"
+
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
@@ -9,8 +11,6 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <util/profiling.hpp>
-
-#define LAYER_DEBUG(fmt, ...) fprintf(stderr, "[goggles-layer] " fmt "\n", ##__VA_ARGS__)
 
 namespace goggles::capture {
 
