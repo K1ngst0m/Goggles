@@ -17,6 +17,9 @@ struct CliOptions {
     bool detach = false;
     uint32_t app_width = 0;
     uint32_t app_height = 0;
+    std::string dump_dir;
+    std::string dump_frame_range;
+    std::string dump_frame_mode;
     bool enable_input_forwarding = false;
     std::optional<uint32_t> target_fps;
     std::vector<std::string> app_command;
@@ -58,6 +61,17 @@ Notes:
            "--app-height", options.app_height,
            "Default mode only: virtual surface height (sets GOGGLES_HEIGHT for launched app)")
         ->check(CLI::Range(1u, 16384u));
+
+    app.add_option(
+        "--dump-dir", options.dump_dir,
+        "Default mode only: dump directory for target app (sets GOGGLES_DUMP_DIR; default is "
+        "/tmp/goggles_dump in layer)");
+
+    app.add_option("--dump-frame-range", options.dump_frame_range,
+                   "Default mode only: dump frames (sets GOGGLES_DUMP_FRAME_RANGE, e.g. 3,5,8-13)");
+
+    app.add_option("--dump-frame-mode", options.dump_frame_mode,
+                   "Default mode only: dump mode (sets GOGGLES_DUMP_FRAME_MODE; ppm only for now)");
 
     app.add_option("--target-fps", options.target_fps, "Override render target FPS (0 = uncapped)")
         ->check(CLI::Range(0u, 1000u));
@@ -117,6 +131,11 @@ Notes:
         if (options.app_width != 0 || options.app_height != 0) {
             return make_error<CliOptions>(
                 ErrorCode::parse_error, "--app-width/--app-height are not supported with --detach");
+        }
+        if (!options.dump_dir.empty() || !options.dump_frame_range.empty() ||
+            !options.dump_frame_mode.empty()) {
+            return make_error<CliOptions>(ErrorCode::parse_error,
+                                          "--dump-* options are not supported with --detach");
         }
         if (!options.app_command.empty()) {
             return make_error<CliOptions>(ErrorCode::parse_error,
