@@ -46,6 +46,8 @@ static PFN_vkVoidFunction VKAPI_CALL Goggles_GetDeviceProcAddr(VkDevice device, 
     if (should_use_wsi_proxy()) {
         GETPROCADDR(GetSwapchainImagesKHR);
         GETPROCADDR(AcquireNextImageKHR);
+        GETPROCADDR(AcquireNextImage2KHR);
+        GETPROCADDR(WaitForPresentKHR);
     }
 
     auto* data = get_object_tracker().get_device(device);
@@ -85,6 +87,8 @@ static PFN_vkVoidFunction VKAPI_CALL Goggles_GetInstanceProcAddr(VkInstance inst
     if (should_use_wsi_proxy()) {
         GETPROCADDR(GetSwapchainImagesKHR);
         GETPROCADDR(AcquireNextImageKHR);
+        GETPROCADDR(AcquireNextImage2KHR);
+        GETPROCADDR(WaitForPresentKHR);
     }
 
     if (instance) {

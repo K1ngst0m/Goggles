@@ -47,7 +47,8 @@ static auto spawn_target_app(const std::vector<std::string>& command,
                              uint32_t app_width, uint32_t app_height, const std::string& gpu_uuid,
                              const std::string& dump_dir, const std::string& dump_frame_range,
                              const std::string& dump_frame_mode, bool layer_log,
-                             const std::string& layer_log_level) -> goggles::Result<pid_t> {
+                             const std::string& layer_log_level, bool wsi_proxy)
+    -> goggles::Result<pid_t> {
     if (command.empty()) {
         return goggles::make_error<pid_t>(goggles::ErrorCode::invalid_config,
                                           "missing target app command");
@@ -69,7 +70,7 @@ static auto spawn_target_app(const std::vector<std::string>& command,
     std::vector<std::string> env_overrides;
     env_overrides.reserve(12);
     env_overrides.emplace_back("GOGGLES_CAPTURE=1");
-    env_overrides.emplace_back("GOGGLES_WSI_PROXY=1");
+    env_overrides.emplace_back(wsi_proxy ? "GOGGLES_WSI_PROXY=1" : "GOGGLES_WSI_PROXY=0");
     env_overrides.emplace_back("DISPLAY=" + x11_display);
     env_overrides.emplace_back("WAYLAND_DISPLAY=" + wayland_display);
     env_overrides.emplace_back("GOGGLES_GPU_UUID=" + gpu_uuid);
@@ -414,7 +415,7 @@ static auto run_app(int argc, char** argv) -> int {
                     cli_opts.app_command, x11_display, wayland_display, cli_opts.app_width,
                     cli_opts.app_height, app->gpu_uuid(), cli_opts.dump_dir,
                     cli_opts.dump_frame_range, cli_opts.dump_frame_mode, cli_opts.layer_log,
-                    cli_opts.layer_log_level);
+                    cli_opts.layer_log_level, cli_opts.wsi_proxy);
                 if (!spawn_result) {
                     GOGGLES_LOG_CRITICAL("Failed to launch target app: {} ({})",
                                          spawn_result.error().message,
