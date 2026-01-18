@@ -65,6 +65,36 @@ auto fix_compound_assign(const std::string& source) -> std::string {
     return output;
 }
 
+// Slang rejects `type[] var = type[N](...)`, transform to `const type var[] = type[](...)`
+auto fix_unsized_array_decl(const std::string& source) -> std::string {
+    // Match: type[] var = type[N]( or type[] var = type[](
+    static const std::regex UNSIZED_ARRAY(
+        R"((\b(?:int|uint|float|vec[234]|ivec[234]|uvec[234]|mat[234])\s*)\[\s*\]\s+(\w+)\s*=\s*(\w+)\s*\[\s*(\d*)\s*\]\s*\()");
+
+    std::string result;
+    std::string::const_iterator search_start = source.cbegin();
+    std::smatch match;
+    size_t last_pos = 0;
+
+    while (std::regex_search(search_start, source.cend(), match, UNSIZED_ARRAY)) {
+        auto match_pos = static_cast<size_t>(match.position() + (search_start - source.cbegin()));
+        result += source.substr(last_pos, match_pos - last_pos);
+
+        std::string type = match[1].str();
+        std::string var = match[2].str();
+        std::string ctor_type = match[3].str();
+        // Ignore explicit size in constructor, use unsized form
+
+        result.append("const ").append(type).append(var).append("[] = ");
+        result.append(ctor_type).append("[](");
+
+        last_pos = match_pos + static_cast<size_t>(match.length());
+        search_start = match.suffix().first;
+    }
+    result += source.substr(last_pos);
+    return result;
+}
+
 // Slang doesn't support mat3==mat3 in ternary (returns bmat3 instead of bool)
 auto fix_matrix_compare(const std::string& source) -> std::string {
     // Replace (m_in==m_ou) with (m_in[0]==m_ou[0] && m_in[1]==m_ou[1] && m_in[2]==m_ou[2])
@@ -101,6 +131,7 @@ auto fix_matrix_compare(const std::string& source) -> std::string {
 auto fix_slang_compat(const std::string& source) -> std::string {
     std::string result = fix_compound_assign(source);
     result = fix_matrix_compare(result);
+    result = fix_unsized_array_decl(result);
     return result;
 }
 
