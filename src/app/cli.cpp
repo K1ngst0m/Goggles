@@ -34,6 +34,9 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
         "Deprecated: default mode enables input forwarding; use --detach for viewer-only mode");
     app.add_flag("--detach", options.detach,
                  "Viewer-only mode (do not launch target app; disables input forwarding)");
+    app.add_flag("--wsi-proxy", options.wsi_proxy,
+                 "Default mode only: enable WSI proxy mode (sets GOGGLES_WSI_PROXY=1 for launched "
+                 "app; virtualizes window and swapchain)");
     app.add_option("--app-width", options.app_width,
                    "Default mode only: virtual surface width (sets GOGGLES_WIDTH for launched app)")
         ->check(CLI::Range(1u, 16384u));
@@ -62,6 +65,10 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
     if (options.enable_input_forwarding) {
         return make_error<void>(ErrorCode::parse_error,
                                 "--input-forwarding is not supported with --detach");
+    }
+    if (options.wsi_proxy) {
+        return make_error<void>(ErrorCode::parse_error,
+                                "--wsi-proxy is not supported with --detach");
     }
     if (options.app_width != 0 || options.app_height != 0) {
         return make_error<void>(ErrorCode::parse_error,

@@ -734,11 +734,17 @@ void CompositorServer::Impl::handle_xdg_surface_commit(XdgToplevelHooks* hooks) 
         return;
     }
 
-    wl_list_remove(&hooks->surface_commit.link);
-    wl_list_init(&hooks->surface_commit.link);
+    // Only do initial setup on first commit, but keep listening for all commits
+    if (!hooks->sent_configure) {
+        wlr_xdg_surface_schedule_configure(hooks->toplevel->base);
+        hooks->sent_configure = true;
+    }
 
-    wlr_xdg_surface_schedule_configure(hooks->toplevel->base);
-    hooks->sent_configure = true;
+    // Release buffer to allow swapchain image reuse
+    // Without this, Wayland clients block on vkAcquireNextImageKHR
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    wlr_surface_send_frame_done(hooks->surface, &now);
 }
 
 void CompositorServer::Impl::handle_xdg_surface_ack_configure(XdgToplevelHooks* hooks) {

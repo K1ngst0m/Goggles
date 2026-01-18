@@ -319,7 +319,9 @@ VkResult VKAPI_CALL Goggles_CreateDevice(VkPhysicalDevice physicalDevice,
     GETADDR(DestroySwapchainKHR);
     GETADDR(GetSwapchainImagesKHR);
     GETADDR(AcquireNextImageKHR);
+    GETADDR(AcquireNextImage2KHR);
     GETADDR(QueuePresentKHR);
+    GETADDR(WaitForPresentKHR);
     GETADDR(AllocateMemory);
     GETADDR(FreeMemory);
     GETADDR(GetImageMemoryRequirements);
@@ -680,6 +682,38 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
                                            pImageIndex);
 }
 
+VkResult VKAPI_CALL Goggles_AcquireNextImage2KHR(VkDevice device,
+                                                 const VkAcquireNextImageInfoKHR* pAcquireInfo,
+                                                 uint32_t* pImageIndex) {
+    if (!pAcquireInfo) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    auto* data = get_object_tracker().get_device(device);
+    if (!data) {
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    auto& virt = WsiVirtualizer::instance();
+    if (virt.is_virtual_swapchain(pAcquireInfo->swapchain)) {
+        return virt.acquire_next_image(device, pAcquireInfo->swapchain, pAcquireInfo->timeout,
+                                       pAcquireInfo->semaphore, pAcquireInfo->fence, pImageIndex,
+                                       data);
+    }
+
+    if (data->funcs.AcquireNextImage2KHR) {
+        return data->funcs.AcquireNextImage2KHR(device, pAcquireInfo, pImageIndex);
+    }
+
+    if (!data->funcs.AcquireNextImageKHR) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    return data->funcs.AcquireNextImageKHR(device, pAcquireInfo->swapchain, pAcquireInfo->timeout,
+                                           pAcquireInfo->semaphore, pAcquireInfo->fence,
+                                           pImageIndex);
+}
+
 // =============================================================================
 // Present Hook
 // =============================================================================
@@ -735,6 +769,27 @@ VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKH
     get_capture_manager().on_present(queue, &modified_present, data);
 
     return data->funcs.QueuePresentKHR(queue, &modified_present);
+}
+
+VkResult VKAPI_CALL Goggles_WaitForPresentKHR(VkDevice device, VkSwapchainKHR swapchain,
+                                              uint64_t present_id, uint64_t timeout_ns) {
+    auto* data = get_object_tracker().get_device(device);
+    if (!data) {
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    auto& virt = WsiVirtualizer::instance();
+    if (virt.is_virtual_swapchain(swapchain)) {
+        (void)present_id;
+        (void)timeout_ns;
+        return VK_SUCCESS;
+    }
+
+    if (data->funcs.WaitForPresentKHR) {
+        return data->funcs.WaitForPresentKHR(device, swapchain, present_id, timeout_ns);
+    }
+
+    return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
 } // namespace goggles::capture

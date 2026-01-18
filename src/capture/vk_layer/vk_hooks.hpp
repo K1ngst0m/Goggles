@@ -118,11 +118,18 @@ VkResult VKAPI_CALL Goggles_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR 
                                                 uint64_t timeout, VkSemaphore semaphore,
                                                 VkFence fence, uint32_t* pImageIndex);
 
+VkResult VKAPI_CALL Goggles_AcquireNextImage2KHR(VkDevice device,
+                                                 const VkAcquireNextImageInfoKHR* pAcquireInfo,
+                                                 uint32_t* pImageIndex);
+
 // =============================================================================
 // Present Hook
 // =============================================================================
 
 /// @brief Layer entry point for `vkQueuePresentKHR` (no logging; hot path).
 VkResult VKAPI_CALL Goggles_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo);
+
+VkResult VKAPI_CALL Goggles_WaitForPresentKHR(VkDevice device, VkSwapchainKHR swapchain,
+                                              uint64_t present_id, uint64_t timeout_ns);
 
 } // namespace goggles::capture

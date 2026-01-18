@@ -47,7 +47,9 @@ struct VkDeviceFuncs {
     PFN_vkDestroySwapchainKHR DestroySwapchainKHR;
     PFN_vkGetSwapchainImagesKHR GetSwapchainImagesKHR;
     PFN_vkAcquireNextImageKHR AcquireNextImageKHR;
+    PFN_vkAcquireNextImage2KHR AcquireNextImage2KHR;
     PFN_vkQueuePresentKHR QueuePresentKHR;
+    PFN_vkWaitForPresentKHR WaitForPresentKHR;
 
     // Memory
     PFN_vkAllocateMemory AllocateMemory;
