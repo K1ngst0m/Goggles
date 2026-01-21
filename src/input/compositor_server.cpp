@@ -110,6 +110,7 @@ struct CompositorServer::Impl {
         Impl* impl = nullptr;
         wlr_xwayland_surface* xsurface = nullptr;
         wl_listener associate{};
+        wl_listener commit{};
         wl_listener destroy{};
     };
 
@@ -185,6 +186,7 @@ struct CompositorServer::Impl {
     void handle_xdg_surface_ack_configure(XdgToplevelHooks* hooks);
     void handle_new_xwayland_surface(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface);
+    void handle_xwayland_surface_commit(XWaylandSurfaceHooks* hooks);
     void handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface);
     void focus_surface(wlr_surface* surface);
     void focus_xwayland_surface(wlr_xwayland_surface* xsurface);
@@ -741,7 +743,6 @@ void CompositorServer::Impl::handle_xdg_surface_commit(XdgToplevelHooks* hooks) 
     }
 
     // Release buffer to allow swapchain image reuse
-    // Without this, Wayland clients block on vkAcquireNextImageKHR
     timespec now{};
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_surface_send_frame_done(hooks->surface, &now);
@@ -815,19 +816,34 @@ void CompositorServer::Impl::handle_new_xwayland_surface(wlr_xwayland_surface* x
     hooks->xsurface = xsurface;
 
     wl_list_init(&hooks->associate.link);
+    wl_list_init(&hooks->commit.link);
+    wl_list_init(&hooks->destroy.link);
+
     hooks->associate.notify = [](wl_listener* listener, void* /*data*/) {
         auto* h = reinterpret_cast<XWaylandSurfaceHooks*>(
             reinterpret_cast<char*>(listener) - offsetof(XWaylandSurfaceHooks, associate));
         h->impl->handle_xwayland_surface_associate(h->xsurface);
+
+        // Register commit listener now that surface is available
+        if (h->xsurface->surface && h->commit.link.next == &h->commit.link) {
+            h->commit.notify = [](wl_listener* l, void* /*data*/) {
+                auto* hk = reinterpret_cast<XWaylandSurfaceHooks*>(
+                    reinterpret_cast<char*>(l) - offsetof(XWaylandSurfaceHooks, commit));
+                hk->impl->handle_xwayland_surface_commit(hk);
+            };
+            wl_signal_add(&h->xsurface->surface->events.commit, &h->commit);
+        }
     };
     wl_signal_add(&xsurface->events.associate, &hooks->associate);
 
-    wl_list_init(&hooks->destroy.link);
     hooks->destroy.notify = [](wl_listener* listener, void* /*data*/) {
         auto* h = reinterpret_cast<XWaylandSurfaceHooks*>(reinterpret_cast<char*>(listener) -
                                                           offsetof(XWaylandSurfaceHooks, destroy));
         h->impl->handle_xwayland_surface_destroy(h->xsurface);
         wl_list_remove(&h->associate.link);
+        if (h->commit.link.next != nullptr && h->commit.link.next != &h->commit.link) {
+            wl_list_remove(&h->commit.link);
+        }
         wl_list_remove(&h->destroy.link);
         delete h;
     };
@@ -861,6 +877,18 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
     if (!focused_surface || focused_xsurface) {
         focus_xwayland_surface(xsurface);
     }
+}
+
+void CompositorServer::Impl::handle_xwayland_surface_commit(XWaylandSurfaceHooks* hooks) {
+    if (!hooks->xsurface || !hooks->xsurface->surface) {
+        return;
+    }
+
+    // Release buffer to allow swapchain image reuse
+    // Without this, X11 clients block on vkQueuePresentKHR
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    wlr_surface_send_frame_done(hooks->xsurface->surface, &now);
 }
 
 void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface) {
