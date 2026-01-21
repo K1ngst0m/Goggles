@@ -136,13 +136,24 @@ TEST_CASE("parse_cli: app args may include options that collide with viewer flag
     REQUIRE(result->options.app_command[1] == "--config");
 }
 
-TEST_CASE("parse_cli: app width/height must be provided together", "[cli]") {
+TEST_CASE("parse_cli: single-dimension app width/height is allowed", "[cli]") {
     auto cfg = default_config_path();
-    ArgvBuilder args({"goggles", "--config", cfg, "--app-width", "640", "--", "vkcube"});
 
-    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
-    REQUIRE(!result);
-    REQUIRE(result.error().code == ErrorCode::parse_error);
+    SECTION("width only") {
+        ArgvBuilder args({"goggles", "--config", cfg, "--app-width", "640", "--", "vkcube"});
+        auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+        REQUIRE(result);
+        REQUIRE(result->options.app_width == 640);
+        REQUIRE(result->options.app_height == 0);
+    }
+
+    SECTION("height only") {
+        ArgvBuilder args({"goggles", "--config", cfg, "--app-height", "480", "--", "vkcube"});
+        auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+        REQUIRE(result);
+        REQUIRE(result->options.app_width == 0);
+        REQUIRE(result->options.app_height == 480);
+    }
 }
 
 TEST_CASE("parse_cli: --help returns exit_ok", "[cli]") {

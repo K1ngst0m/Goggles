@@ -82,8 +82,8 @@ The `--app-width` and `--app-height` CLI options SHALL configure the downsample 
 - **GIVEN** user specifies `--app-height 480` without `--app-width`
 - **AND** captured frame is 1920x1080 (16:9 aspect ratio)
 - **WHEN** first frame is processed
-- **THEN** width SHALL be computed as `round(480 * 1920 / 1080) = 854`
-- **AND** downsample pass target SHALL be 854x480
+- **THEN** width SHALL be computed as `round(480 * 1920 / 1080) = 853`
+- **AND** downsample pass target SHALL be 853x480
 
 #### Scenario: Options still set environment variables
 
