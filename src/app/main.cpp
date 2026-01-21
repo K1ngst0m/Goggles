@@ -372,6 +372,12 @@ static auto run_app(int argc, char** argv) -> int {
         config.render.target_fps = *cli_opts.target_fps;
         GOGGLES_LOG_INFO("Target FPS overridden by CLI: {}", config.render.target_fps);
     }
+    if (cli_opts.app_width != 0 || cli_opts.app_height != 0) {
+        config.render.source_width = cli_opts.app_width;
+        config.render.source_height = cli_opts.app_height;
+        GOGGLES_LOG_INFO("Source resolution: {}x{}", config.render.source_width,
+                         config.render.source_height);
+    }
     if (!config.shader.preset.empty()) {
         std::filesystem::path preset_path{config.shader.preset};
         if (preset_path.is_relative()) {

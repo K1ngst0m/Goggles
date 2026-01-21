@@ -1,5 +1,7 @@
 #include "filter_chain.hpp"
 
+#include "downsample_pass.hpp"
+
 #include <charconv>
 #include <cmath>
 #include <render/backend/vulkan_error.hpp>
@@ -69,7 +71,8 @@ FilterChain::~FilterChain() {
 
 auto FilterChain::create(const VulkanContext& vk_ctx, vk::Format swapchain_format,
                          uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
-                         const std::filesystem::path& shader_dir) -> ResultPtr<FilterChain> {
+                         const std::filesystem::path& shader_dir, vk::Extent2D source_resolution)
+    -> ResultPtr<FilterChain> {
     GOGGLES_PROFILE_FUNCTION();
 
     auto chain = std::unique_ptr<FilterChain>(new FilterChain());
@@ -79,6 +82,7 @@ auto FilterChain::create(const VulkanContext& vk_ctx, vk::Format swapchain_forma
     chain->m_num_sync_indices = num_sync_indices;
     chain->m_shader_runtime = &shader_runtime;
     chain->m_shader_dir = shader_dir;
+    chain->m_source_resolution = source_resolution;
 
     OutputPassConfig output_config{
         .target_format = swapchain_format,
@@ -89,6 +93,25 @@ auto FilterChain::create(const VulkanContext& vk_ctx, vk::Format swapchain_forma
 
     chain->m_texture_loader = std::make_unique<TextureLoader>(
         vk_ctx.device, vk_ctx.physical_device, vk_ctx.command_pool, vk_ctx.graphics_queue);
+
+    if (source_resolution.width > 0 && source_resolution.height > 0) {
+        DownsamplePassConfig downsample_config{
+            .target_format = vk::Format::eR8G8B8A8Unorm,
+            .num_sync_indices = num_sync_indices,
+            .shader_dir = shader_dir,
+        };
+        chain->m_prechain_passes.push_back(
+            GOGGLES_TRY(DownsamplePass::create(vk_ctx, shader_runtime, downsample_config)));
+
+        chain->m_prechain_framebuffers.push_back(GOGGLES_TRY(Framebuffer::create(
+            vk_ctx.device, vk_ctx.physical_device, vk::Format::eR8G8B8A8Unorm, source_resolution)));
+
+        GOGGLES_LOG_INFO("FilterChain pre-chain enabled: {}x{}", source_resolution.width,
+                         source_resolution.height);
+    } else if (source_resolution.width > 0 || source_resolution.height > 0) {
+        GOGGLES_LOG_INFO("FilterChain pre-chain pending: width={}, height={}",
+                         source_resolution.width, source_resolution.height);
+    }
 
     GOGGLES_LOG_DEBUG("FilterChain initialized (passthrough mode)");
     return make_result_ptr(std::move(chain));
@@ -322,6 +345,71 @@ void FilterChain::copy_feedback_framebuffers(vk::CommandBuffer cmd) {
     }
 }
 
+auto FilterChain::record_prechain(vk::CommandBuffer cmd, vk::ImageView original_view,
+                                  vk::Extent2D original_extent, uint32_t frame_index)
+    -> PreChainResult {
+    if (m_prechain_passes.empty() || m_prechain_framebuffers.empty()) {
+        return {.view = original_view, .extent = original_extent};
+    }
+
+    vk::ImageView current_view = original_view;
+    vk::Extent2D current_extent = original_extent;
+
+    for (size_t i = 0; i < m_prechain_passes.size(); ++i) {
+        auto& pass = m_prechain_passes[i];
+        auto& framebuffer = m_prechain_framebuffers[i];
+        auto output_extent = framebuffer->extent();
+
+        vk::ImageMemoryBarrier pre_barrier{};
+        pre_barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+        pre_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        pre_barrier.oldLayout = vk::ImageLayout::eUndefined;
+        pre_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+        pre_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre_barrier.image = framebuffer->image();
+        pre_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                            vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
+                            pre_barrier);
+
+        PassContext ctx{};
+        ctx.frame_index = frame_index;
+        ctx.source_extent = current_extent;
+        ctx.output_extent = output_extent;
+        ctx.target_image_view = framebuffer->view();
+        ctx.target_format = framebuffer->format();
+        ctx.source_texture = current_view;
+        ctx.original_texture = original_view;
+        ctx.scale_mode = ScaleMode::stretch;
+        ctx.integer_scale = 0;
+
+        pass->record(cmd, ctx);
+
+        vk::ImageMemoryBarrier post_barrier{};
+        post_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        post_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        post_barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+        post_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        post_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post_barrier.image = framebuffer->image();
+        post_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, post_barrier);
+
+        GOGGLES_LOG_TRACE("Pre-chain pass {}: {}x{} -> {}x{}", i, current_extent.width,
+                          current_extent.height, output_extent.width, output_extent.height);
+
+        current_view = framebuffer->view();
+        current_extent = output_extent;
+    }
+
+    return {.view = current_view, .extent = current_extent};
+}
+
 void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
                          vk::ImageView original_view, vk::Extent2D original_extent,
                          vk::ImageView swapchain_view, vk::Extent2D viewport_extent,
@@ -332,17 +420,22 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
     m_last_integer_scale = integer_scale;
     m_last_source_extent = original_extent;
 
-    GOGGLES_MUST(ensure_frame_history(original_extent));
+    GOGGLES_MUST(ensure_prechain_passes(original_extent));
+
+    auto [effective_original_view, effective_original_extent] =
+        record_prechain(cmd, original_view, original_extent, frame_index);
+
+    GOGGLES_MUST(ensure_frame_history(effective_original_extent));
 
     if (m_passes.empty() || m_bypass_enabled.load(std::memory_order_relaxed)) {
         PassContext ctx{};
         ctx.frame_index = frame_index;
         ctx.output_extent = viewport_extent;
-        ctx.source_extent = original_extent;
+        ctx.source_extent = effective_original_extent;
         ctx.target_image_view = swapchain_view;
         ctx.target_format = m_swapchain_format;
-        ctx.source_texture = original_view;
-        ctx.original_texture = original_view;
+        ctx.source_texture = effective_original_view;
+        ctx.original_texture = effective_original_view;
         ctx.scale_mode = scale_mode;
         ctx.integer_scale = integer_scale;
 
@@ -351,11 +444,11 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         return;
     }
 
-    auto vp =
-        calculate_viewport(original_extent.width, original_extent.height, viewport_extent.width,
-                           viewport_extent.height, scale_mode, integer_scale);
-    GOGGLES_MUST(ensure_framebuffers({.viewport = viewport_extent, .source = original_extent},
-                                     {vp.width, vp.height}));
+    auto vp = calculate_viewport(effective_original_extent.width, effective_original_extent.height,
+                                 viewport_extent.width, viewport_extent.height, scale_mode,
+                                 integer_scale);
+    GOGGLES_MUST(ensure_framebuffers(
+        {.viewport = viewport_extent, .source = effective_original_extent}, {vp.width, vp.height}));
 
     for (auto& [pass_idx, feedback_fb] : m_feedback_framebuffers) {
         if (feedback_fb && m_frame_count == 0) {
@@ -374,8 +467,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         }
     }
 
-    vk::ImageView source_view = original_view;
-    vk::Extent2D source_extent = original_extent;
+    vk::ImageView source_view = effective_original_view;
+    vk::Extent2D source_extent = effective_original_extent;
 
     for (size_t i = 0; i < m_passes.size(); ++i) {
         auto& pass = m_passes[i];
@@ -404,12 +497,13 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
 
         pass->set_source_size(source_extent.width, source_extent.height);
         pass->set_output_size(target_extent.width, target_extent.height);
-        pass->set_original_size(original_extent.width, original_extent.height);
+        pass->set_original_size(effective_original_extent.width, effective_original_extent.height);
         pass->set_frame_count(m_frame_count, m_preset.passes[i].frame_count_mod);
         pass->set_final_viewport_size(vp.width, vp.height);
         pass->set_rotation(0);
 
-        bind_pass_textures(*pass, i, original_view, original_extent, source_view);
+        bind_pass_textures(*pass, i, effective_original_view, effective_original_extent,
+                           source_view);
 
         PassContext ctx{};
         ctx.frame_index = frame_index;
@@ -418,7 +512,7 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         ctx.target_image_view = target_view;
         ctx.target_format = target_format;
         ctx.source_texture = source_view;
-        ctx.original_texture = original_view;
+        ctx.original_texture = effective_original_view;
         ctx.scale_mode = scale_mode;
         ctx.integer_scale = integer_scale;
 
@@ -448,18 +542,21 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
     PassContext output_ctx{};
     output_ctx.frame_index = frame_index;
     output_ctx.output_extent = viewport_extent;
-    output_ctx.source_extent = original_extent;
+    output_ctx.source_extent = effective_original_extent;
     output_ctx.target_image_view = swapchain_view;
     output_ctx.target_format = m_swapchain_format;
     output_ctx.source_texture = source_view;
-    output_ctx.original_texture = original_view;
+    output_ctx.original_texture = effective_original_view;
     output_ctx.scale_mode = scale_mode;
     output_ctx.integer_scale = integer_scale;
 
     m_output_pass->record(cmd, output_ctx);
 
     if (m_frame_history.is_initialized()) {
-        m_frame_history.push(cmd, original_image, original_extent);
+        auto history_image = !m_prechain_framebuffers.empty()
+                                 ? m_prechain_framebuffers.back()->image()
+                                 : original_image;
+        m_frame_history.push(cmd, history_image, effective_original_extent);
     }
 
     copy_feedback_framebuffers(cmd);
@@ -518,6 +615,13 @@ void FilterChain::shutdown() {
     m_preset = PresetConfig{};
     m_frame_count = 0;
     m_required_history_depth = 0;
+
+    // Cleanup pre-chain resources
+    for (auto& pass : m_prechain_passes) {
+        pass->shutdown();
+    }
+    m_prechain_passes.clear();
+    m_prechain_framebuffers.clear();
 }
 
 auto FilterChain::get_all_parameters() const -> std::vector<ParameterInfo> {
@@ -628,6 +732,49 @@ auto FilterChain::ensure_frame_history(vk::Extent2D extent) -> Result<void> {
                                          vk::Format::eR8G8B8A8Unorm, extent,
                                          m_required_history_depth));
     }
+    return {};
+}
+
+auto FilterChain::ensure_prechain_passes(vk::Extent2D captured_extent) -> Result<void> {
+    if (!m_prechain_passes.empty() && !m_prechain_framebuffers.empty()) {
+        return {};
+    }
+
+    if (m_source_resolution.width == 0 && m_source_resolution.height == 0) {
+        return {};
+    }
+
+    vk::Extent2D target_resolution = m_source_resolution;
+    if (target_resolution.width == 0) {
+        target_resolution.width =
+            static_cast<uint32_t>(std::round(static_cast<float>(target_resolution.height) *
+                                             static_cast<float>(captured_extent.width) /
+                                             static_cast<float>(captured_extent.height)));
+        target_resolution.width = std::max(1U, target_resolution.width);
+    } else if (target_resolution.height == 0) {
+        target_resolution.height =
+            static_cast<uint32_t>(std::round(static_cast<float>(target_resolution.width) *
+                                             static_cast<float>(captured_extent.height) /
+                                             static_cast<float>(captured_extent.width)));
+        target_resolution.height = std::max(1U, target_resolution.height);
+    }
+
+    m_source_resolution = target_resolution;
+
+    DownsamplePassConfig downsample_config{
+        .target_format = vk::Format::eR8G8B8A8Unorm,
+        .num_sync_indices = m_num_sync_indices,
+        .shader_dir = m_shader_dir,
+    };
+    m_prechain_passes.push_back(
+        GOGGLES_TRY(DownsamplePass::create(m_vk_ctx, *m_shader_runtime, downsample_config)));
+
+    m_prechain_framebuffers.push_back(GOGGLES_TRY(Framebuffer::create(
+        m_vk_ctx.device, m_vk_ctx.physical_device, vk::Format::eR8G8B8A8Unorm, target_resolution)));
+
+    GOGGLES_LOG_INFO("FilterChain pre-chain initialized (aspect-ratio): {}x{} (from {}x{})",
+                     target_resolution.width, target_resolution.height, captured_extent.width,
+                     captured_extent.height);
     return {};
 }
 

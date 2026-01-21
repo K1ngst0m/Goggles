@@ -4,6 +4,7 @@
 #include "frame_history.hpp"
 #include "framebuffer.hpp"
 #include "output_pass.hpp"
+#include "pass.hpp"
 #include "preset_parser.hpp"
 
 #include <atomic>
@@ -41,10 +42,12 @@ struct FramebufferExtents {
 class FilterChain {
 public:
     /// @brief Creates a filter chain and its passes for the given swapchain format.
+    /// @param source_resolution Optional pre-chain target resolution (0,0 = disabled).
     /// @return A filter chain or an error.
     [[nodiscard]] static auto create(const VulkanContext& vk_ctx, vk::Format swapchain_format,
                                      uint32_t num_sync_indices, ShaderRuntime& shader_runtime,
-                                     const std::filesystem::path& shader_dir)
+                                     const std::filesystem::path& shader_dir,
+                                     vk::Extent2D source_resolution = {0, 0})
         -> ResultPtr<FilterChain>;
 
     ~FilterChain();
@@ -105,6 +108,15 @@ private:
                             vk::Extent2D original_extent, vk::ImageView source_view);
     void copy_feedback_framebuffers(vk::CommandBuffer cmd);
 
+    [[nodiscard]] auto ensure_prechain_passes(vk::Extent2D captured_extent) -> Result<void>;
+
+    struct PreChainResult {
+        vk::ImageView view;
+        vk::Extent2D extent;
+    };
+    auto record_prechain(vk::CommandBuffer cmd, vk::ImageView original_view,
+                         vk::Extent2D original_extent, uint32_t frame_index) -> PreChainResult;
+
     VulkanContext m_vk_ctx;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
     uint32_t m_num_sync_indices = 0;
@@ -130,6 +142,11 @@ private:
     FrameHistory m_frame_history;
     uint32_t m_required_history_depth = 0;
     std::atomic<bool> m_bypass_enabled{false};
+
+    // Pre-chain stage (generic, extensible)
+    vk::Extent2D m_source_resolution; // 0,0 = disabled
+    std::vector<std::unique_ptr<Pass>> m_prechain_passes;
+    std::vector<std::unique_ptr<Framebuffer>> m_prechain_framebuffers;
 };
 
 } // namespace goggles::render

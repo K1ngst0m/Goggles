@@ -45,6 +45,8 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
     render_settings.scale_mode = config.render.scale_mode;
     render_settings.integer_scale = config.render.integer_scale;
     render_settings.target_fps = config.render.target_fps;
+    render_settings.source_width = config.render.source_width;
+    render_settings.source_height = config.render.source_height;
 
     app->m_scale_mode = config.render.scale_mode;
     GOGGLES_LOG_INFO("Scale mode: {}", to_string(app->m_scale_mode));
