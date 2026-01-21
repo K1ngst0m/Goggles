@@ -63,6 +63,37 @@ auto parse_pass_feedback_index(std::string_view name) -> std::optional<size_t> {
     return index;
 }
 
+struct LayoutTransition {
+    vk::ImageLayout from;
+    vk::ImageLayout to;
+};
+
+void transition_image_layout(vk::CommandBuffer cmd, vk::Image image, LayoutTransition transition) {
+    vk::ImageMemoryBarrier barrier{};
+    barrier.oldLayout = transition.from;
+    barrier.newLayout = transition.to;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+    vk::PipelineStageFlags src_stage;
+    vk::PipelineStageFlags dst_stage;
+    if (transition.to == vk::ImageLayout::eColorAttachmentOptimal) {
+        barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+        barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        src_stage = vk::PipelineStageFlagBits::eFragmentShader;
+        dst_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    } else {
+        barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        src_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        dst_stage = vk::PipelineStageFlagBits::eFragmentShader;
+    }
+
+    cmd.pipelineBarrier(src_stage, dst_stage, {}, {}, {}, barrier);
+}
+
 } // namespace
 
 FilterChain::~FilterChain() {
@@ -361,19 +392,9 @@ auto FilterChain::record_prechain(vk::CommandBuffer cmd, vk::ImageView original_
         auto& framebuffer = m_prechain_framebuffers[i];
         auto output_extent = framebuffer->extent();
 
-        vk::ImageMemoryBarrier pre_barrier{};
-        pre_barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
-        pre_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        pre_barrier.oldLayout = vk::ImageLayout::eUndefined;
-        pre_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-        pre_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre_barrier.image = framebuffer->image();
-        pre_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                            vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
-                            pre_barrier);
+        transition_image_layout(
+            cmd, framebuffer->image(),
+            {.from = vk::ImageLayout::eUndefined, .to = vk::ImageLayout::eColorAttachmentOptimal});
 
         PassContext ctx{};
         ctx.frame_index = frame_index;
@@ -388,18 +409,9 @@ auto FilterChain::record_prechain(vk::CommandBuffer cmd, vk::ImageView original_
 
         pass->record(cmd, ctx);
 
-        vk::ImageMemoryBarrier post_barrier{};
-        post_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        post_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        post_barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-        post_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        post_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post_barrier.image = framebuffer->image();
-        post_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, post_barrier);
+        transition_image_layout(cmd, framebuffer->image(),
+                                {.from = vk::ImageLayout::eColorAttachmentOptimal,
+                                 .to = vk::ImageLayout::eShaderReadOnlyOptimal});
 
         GOGGLES_LOG_TRACE("Pre-chain pass {}: {}x{} -> {}x{}", i, current_extent.width,
                           current_extent.height, output_extent.width, output_extent.height);
@@ -440,19 +452,9 @@ void FilterChain::record_postchain(vk::CommandBuffer cmd, vk::ImageView source_v
             pass_output_extent = framebuffer->extent();
             pass_format = framebuffer->format();
 
-            vk::ImageMemoryBarrier pre_barrier{};
-            pre_barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
-            pre_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-            pre_barrier.oldLayout = vk::ImageLayout::eUndefined;
-            pre_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-            pre_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            pre_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            pre_barrier.image = framebuffer->image();
-            pre_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-
-            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                                vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
-                                pre_barrier);
+            transition_image_layout(cmd, framebuffer->image(),
+                                    {.from = vk::ImageLayout::eUndefined,
+                                     .to = vk::ImageLayout::eColorAttachmentOptimal});
         }
 
         PassContext ctx{};
@@ -471,19 +473,9 @@ void FilterChain::record_postchain(vk::CommandBuffer cmd, vk::ImageView source_v
         if (!is_final) {
             auto& framebuffer = m_postchain_framebuffers[i];
 
-            vk::ImageMemoryBarrier post_barrier{};
-            post_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-            post_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-            post_barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-            post_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-            post_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            post_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            post_barrier.image = framebuffer->image();
-            post_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-
-            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                                vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
-                                post_barrier);
+            transition_image_layout(cmd, framebuffer->image(),
+                                    {.from = vk::ImageLayout::eColorAttachmentOptimal,
+                                     .to = vk::ImageLayout::eShaderReadOnlyOptimal});
 
             current_view = framebuffer->view();
             current_extent = pass_output_extent;
@@ -548,23 +540,9 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         vk::Extent2D target_extent = m_framebuffers[i]->extent();
         vk::Format target_format = m_framebuffers[i]->format();
 
-        vk::ImageMemoryBarrier pre_barrier{};
-        pre_barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
-        pre_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        pre_barrier.oldLayout = vk::ImageLayout::eUndefined;
-        pre_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-        pre_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre_barrier.image = m_framebuffers[i]->image();
-        pre_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        pre_barrier.subresourceRange.baseMipLevel = 0;
-        pre_barrier.subresourceRange.levelCount = 1;
-        pre_barrier.subresourceRange.baseArrayLayer = 0;
-        pre_barrier.subresourceRange.layerCount = 1;
-
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                            vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
-                            pre_barrier);
+        transition_image_layout(
+            cmd, m_framebuffers[i]->image(),
+            {.from = vk::ImageLayout::eUndefined, .to = vk::ImageLayout::eColorAttachmentOptimal});
 
         pass->set_source_size(source_extent.width, source_extent.height);
         pass->set_output_size(target_extent.width, target_extent.height);
@@ -589,22 +567,9 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
 
         pass->record(cmd, ctx);
 
-        vk::ImageMemoryBarrier barrier{};
-        barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-        barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = m_framebuffers[i]->image();
-        barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+        transition_image_layout(cmd, m_framebuffers[i]->image(),
+                                {.from = vk::ImageLayout::eColorAttachmentOptimal,
+                                 .to = vk::ImageLayout::eShaderReadOnlyOptimal});
 
         source_view = m_framebuffers[i]->view();
         source_extent = m_framebuffers[i]->extent();
