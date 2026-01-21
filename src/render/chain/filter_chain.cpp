@@ -89,7 +89,8 @@ auto FilterChain::create(const VulkanContext& vk_ctx, vk::Format swapchain_forma
         .num_sync_indices = num_sync_indices,
         .shader_dir = shader_dir,
     };
-    chain->m_output_pass = GOGGLES_TRY(OutputPass::create(vk_ctx, shader_runtime, output_config));
+    chain->m_postchain_passes.push_back(
+        GOGGLES_TRY(OutputPass::create(vk_ctx, shader_runtime, output_config)));
 
     chain->m_texture_loader = std::make_unique<TextureLoader>(
         vk_ctx.device, vk_ctx.physical_device, vk_ctx.command_pool, vk_ctx.graphics_queue);
@@ -347,7 +348,7 @@ void FilterChain::copy_feedback_framebuffers(vk::CommandBuffer cmd) {
 
 auto FilterChain::record_prechain(vk::CommandBuffer cmd, vk::ImageView original_view,
                                   vk::Extent2D original_extent, uint32_t frame_index)
-    -> PreChainResult {
+    -> ChainResult {
     if (m_prechain_passes.empty() || m_prechain_framebuffers.empty()) {
         return {.view = original_view, .extent = original_extent};
     }
@@ -410,6 +411,86 @@ auto FilterChain::record_prechain(vk::CommandBuffer cmd, vk::ImageView original_
     return {.view = current_view, .extent = current_extent};
 }
 
+void FilterChain::record_postchain(vk::CommandBuffer cmd, vk::ImageView source_view,
+                                   vk::Extent2D source_extent, vk::ImageView target_view,
+                                   vk::Extent2D target_extent, uint32_t frame_index,
+                                   ScaleMode scale_mode, uint32_t integer_scale) {
+    if (m_postchain_passes.empty()) {
+        return;
+    }
+
+    vk::ImageView current_view = source_view;
+    vk::Extent2D current_extent = source_extent;
+
+    for (size_t i = 0; i < m_postchain_passes.size(); ++i) {
+        auto& pass = m_postchain_passes[i];
+        bool is_final = (i == m_postchain_passes.size() - 1);
+
+        vk::ImageView pass_target;
+        vk::Extent2D pass_output_extent;
+        vk::Format pass_format;
+
+        if (is_final) {
+            pass_target = target_view;
+            pass_output_extent = target_extent;
+            pass_format = m_swapchain_format;
+        } else {
+            auto& framebuffer = m_postchain_framebuffers[i];
+            pass_target = framebuffer->view();
+            pass_output_extent = framebuffer->extent();
+            pass_format = framebuffer->format();
+
+            vk::ImageMemoryBarrier pre_barrier{};
+            pre_barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+            pre_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+            pre_barrier.oldLayout = vk::ImageLayout::eUndefined;
+            pre_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            pre_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            pre_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            pre_barrier.image = framebuffer->image();
+            pre_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
+                                pre_barrier);
+        }
+
+        PassContext ctx{};
+        ctx.frame_index = frame_index;
+        ctx.source_extent = current_extent;
+        ctx.output_extent = pass_output_extent;
+        ctx.target_image_view = pass_target;
+        ctx.target_format = pass_format;
+        ctx.source_texture = current_view;
+        ctx.original_texture = source_view;
+        ctx.scale_mode = scale_mode;
+        ctx.integer_scale = integer_scale;
+
+        pass->record(cmd, ctx);
+
+        if (!is_final) {
+            auto& framebuffer = m_postchain_framebuffers[i];
+
+            vk::ImageMemoryBarrier post_barrier{};
+            post_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+            post_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+            post_barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            post_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            post_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            post_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            post_barrier.image = framebuffer->image();
+            post_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                                vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
+                                post_barrier);
+
+            current_view = framebuffer->view();
+            current_extent = pass_output_extent;
+        }
+    }
+}
+
 void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
                          vk::ImageView original_view, vk::Extent2D original_extent,
                          vk::ImageView swapchain_view, vk::Extent2D viewport_extent,
@@ -428,18 +509,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
     GOGGLES_MUST(ensure_frame_history(effective_original_extent));
 
     if (m_passes.empty() || m_bypass_enabled.load(std::memory_order_relaxed)) {
-        PassContext ctx{};
-        ctx.frame_index = frame_index;
-        ctx.output_extent = viewport_extent;
-        ctx.source_extent = effective_original_extent;
-        ctx.target_image_view = swapchain_view;
-        ctx.target_format = m_swapchain_format;
-        ctx.source_texture = effective_original_view;
-        ctx.original_texture = effective_original_view;
-        ctx.scale_mode = scale_mode;
-        ctx.integer_scale = integer_scale;
-
-        m_output_pass->record(cmd, ctx);
+        record_postchain(cmd, effective_original_view, effective_original_extent, swapchain_view,
+                         viewport_extent, frame_index, scale_mode, integer_scale);
         m_frame_count++;
         return;
     }
@@ -539,18 +610,8 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
         source_extent = m_framebuffers[i]->extent();
     }
 
-    PassContext output_ctx{};
-    output_ctx.frame_index = frame_index;
-    output_ctx.output_extent = viewport_extent;
-    output_ctx.source_extent = effective_original_extent;
-    output_ctx.target_image_view = swapchain_view;
-    output_ctx.target_format = m_swapchain_format;
-    output_ctx.source_texture = source_view;
-    output_ctx.original_texture = effective_original_view;
-    output_ctx.scale_mode = scale_mode;
-    output_ctx.integer_scale = integer_scale;
-
-    m_output_pass->record(cmd, output_ctx);
+    record_postchain(cmd, source_view, source_extent, swapchain_view, viewport_extent, frame_index,
+                     scale_mode, integer_scale);
 
     if (m_frame_history.is_initialized()) {
         auto history_image = !m_prechain_framebuffers.empty()
@@ -611,7 +672,6 @@ void FilterChain::shutdown() {
     m_texture_registry.clear();
     m_alias_to_pass_index.clear();
     m_frame_history.shutdown();
-    m_output_pass->shutdown();
     m_preset = PresetConfig{};
     m_frame_count = 0;
     m_required_history_depth = 0;
@@ -622,6 +682,13 @@ void FilterChain::shutdown() {
     }
     m_prechain_passes.clear();
     m_prechain_framebuffers.clear();
+
+    // Cleanup post-chain resources
+    for (auto& pass : m_postchain_passes) {
+        pass->shutdown();
+    }
+    m_postchain_passes.clear();
+    m_postchain_framebuffers.clear();
 }
 
 auto FilterChain::get_all_parameters() const -> std::vector<ParameterInfo> {

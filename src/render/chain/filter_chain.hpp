@@ -110,12 +110,16 @@ private:
 
     [[nodiscard]] auto ensure_prechain_passes(vk::Extent2D captured_extent) -> Result<void>;
 
-    struct PreChainResult {
+    struct ChainResult {
         vk::ImageView view;
         vk::Extent2D extent;
     };
     auto record_prechain(vk::CommandBuffer cmd, vk::ImageView original_view,
-                         vk::Extent2D original_extent, uint32_t frame_index) -> PreChainResult;
+                         vk::Extent2D original_extent, uint32_t frame_index) -> ChainResult;
+    void record_postchain(vk::CommandBuffer cmd, vk::ImageView source_view,
+                          vk::Extent2D source_extent, vk::ImageView target_view,
+                          vk::Extent2D target_extent, uint32_t frame_index, ScaleMode scale_mode,
+                          uint32_t integer_scale);
 
     VulkanContext m_vk_ctx;
     vk::Format m_swapchain_format = vk::Format::eUndefined;
@@ -125,7 +129,6 @@ private:
 
     std::vector<std::unique_ptr<FilterPass>> m_passes;
     std::vector<std::unique_ptr<Framebuffer>> m_framebuffers;
-    std::unique_ptr<OutputPass> m_output_pass;
 
     PresetConfig m_preset;
     uint32_t m_frame_count = 0;
@@ -143,10 +146,14 @@ private:
     uint32_t m_required_history_depth = 0;
     std::atomic<bool> m_bypass_enabled{false};
 
-    // Pre-chain stage (generic, extensible)
+    // Pre-chain stage
     vk::Extent2D m_source_resolution; // 0,0 = disabled
     std::vector<std::unique_ptr<Pass>> m_prechain_passes;
     std::vector<std::unique_ptr<Framebuffer>> m_prechain_framebuffers;
+
+    // Post-chain stage
+    std::vector<std::unique_ptr<Pass>> m_postchain_passes;
+    std::vector<std::unique_ptr<Framebuffer>> m_postchain_framebuffers;
 };
 
 } // namespace goggles::render
