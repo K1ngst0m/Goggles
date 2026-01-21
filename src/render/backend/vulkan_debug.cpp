@@ -19,13 +19,13 @@ debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
     const char* message = callback_data->pMessage != nullptr ? callback_data->pMessage : "";
 
     if (message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
-        GOGGLES_LOG_ERROR("[Vulkan] {}", message);
+        GOGGLES_LOG_ERROR("[VVL] {}", message);
     } else if (message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning) {
-        GOGGLES_LOG_WARN("[Vulkan] {}", message);
+        GOGGLES_LOG_WARN("[VVL] {}", message);
     } else if (message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo) {
-        GOGGLES_LOG_DEBUG("[Vulkan] {}", message);
+        GOGGLES_LOG_DEBUG("[VVL] {}", message);
     } else {
-        GOGGLES_LOG_TRACE("[Vulkan] {}", message);
+        GOGGLES_LOG_TRACE("[VVL] {}", message);
     }
 
     return VK_FALSE;

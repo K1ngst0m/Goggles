@@ -2,23 +2,37 @@
 
 ## Why
 
-The `--app-width` / `--app-height` CLI options currently only work with WSI proxy mode. Users need a way to control the source resolution fed into the RetroArch filter chain regardless of capture mode. A pre-chain downsampling stage enables resolution control for shader effects that benefit from lower-res input (CRT simulation, pixel art upscalers) without requiring WSI proxy overhead.
+The `--app-width` / `--app-height` CLI options currently only work with WSI proxy mode. Users need a way to control the source resolution fed into the RetroArch filter chain regardless of capture mode. A pre-chain stage enables resolution control and other preprocessing for shader effects that benefit from modified input (CRT simulation, pixel art upscalers) without requiring WSI proxy overhead.
 
 ## What Changes
 
-- Add `downsample.frag.slang` shader in `shaders/internal/` using area filtering for high-quality downsampling
-- Introduce `PreChain` infrastructure in `FilterChain` to run internal passes before RetroArch shader passes
-- Add `DownsamplePass` as the first pre-chain pass when `--app-width`/`--app-height` are specified
-- Reuse existing `FilterPass`/`Framebuffer` infrastructure for pre-chain passes
-- Change `--app-width`/`--app-height` semantics: these options now set the source resolution for the filter chain input (applies to all capture modes, not just WSI proxy)
-- Store configured source resolution in `Config::Capture` for use by `FilterChain`
+### Pre-Chain Infrastructure (generic, extensible)
+
+- Introduce pre-chain as a **vector of passes** (`m_prechain_passes`) in `FilterChain`, analogous to `m_passes` for RetroArch
+- Add corresponding **vector of framebuffers** (`m_prechain_framebuffers`) for intermediate results
+- Pre-chain executes before RetroArch passes; its final output becomes `original_view` for the RetroArch chain
+- Pre-chain passes can be added/configured independently (future: sharpening, color correction, etc.)
+
+### Downsample Pass (first pre-chain pass)
+
+- Add `downsample.frag.slang` shader in `shaders/internal/` using area filtering
+- Create `DownsamplePass` class implementing the pass interface
+- Add `DownsamplePass` to pre-chain when `--app-width`/`--app-height` are specified
+- Support single-dimension specification with aspect-ratio preservation
+
+### CLI Semantics
+
+- Change `--app-width`/`--app-height` semantics: set source resolution for filter chain input (all capture modes)
+- Support single-dimension: other dimension calculated from captured frame's aspect ratio
+- Store configured resolution in `Config::Render`
 
 ## Impact
 
 - Affected specs: render-pipeline
 - Affected code:
   - `shaders/internal/downsample.frag.slang` (new)
-  - `src/render/chain/filter_chain.hpp` - add pre-chain pass storage
-  - `src/render/chain/filter_chain.cpp` - implement pre-chain recording
+  - `src/render/chain/downsample_pass.hpp/cpp` (new)
+  - `src/render/chain/filter_chain.hpp` - add pre-chain vectors
+  - `src/render/chain/filter_chain.cpp` - implement generic pre-chain recording
   - `src/app/cli.cpp` - update option descriptions
   - `src/util/config.hpp` - add source resolution fields

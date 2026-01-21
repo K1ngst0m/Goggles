@@ -2,76 +2,92 @@
 
 ### Requirement: Pre-Chain Stage Infrastructure
 
-The filter chain SHALL support an optional pre-chain stage that processes captured frames before the RetroArch shader passes. Pre-chain passes use the same infrastructure as filter passes (Framebuffer, shader compilation) for code reuse.
+The filter chain SHALL support a generic pre-chain stage that processes captured frames before the RetroArch shader passes. The pre-chain is a vector of passes, analogous to the RetroArch pass vector, allowing multiple preprocessing steps.
+
+#### Scenario: Pre-chain as extensible pass vector
+
+- **GIVEN** `FilterChain` is initialized
+- **WHEN** pre-chain passes are configured
+- **THEN** `m_prechain_passes` SHALL be a vector capable of holding multiple passes
+- **AND** `m_prechain_framebuffers` SHALL be a vector of corresponding framebuffers
+- **AND** passes SHALL execute in vector order
 
 #### Scenario: Pre-chain disabled by default
 
-- **GIVEN** no source resolution is configured via CLI
-- **WHEN** `FilterChain` is created
-- **THEN** no pre-chain passes SHALL be created
-- **AND** captured frames SHALL pass directly to RetroArch passes (or OutputPass in passthrough mode)
-
-#### Scenario: Pre-chain enabled when source resolution configured
-
-- **GIVEN** source resolution is configured via `--app-width` and `--app-height`
-- **WHEN** `FilterChain` is created
-- **THEN** a pre-chain downsample pass SHALL be initialized
-- **AND** the pre-chain framebuffer SHALL be sized to the configured resolution
+- **GIVEN** no pre-chain passes are configured
+- **WHEN** `FilterChain::record()` executes
+- **THEN** captured frames SHALL pass directly to RetroArch passes (or OutputPass in passthrough mode)
 
 #### Scenario: Pre-chain output becomes Original for RetroArch chain
 
-- **GIVEN** pre-chain stage is active
+- **GIVEN** pre-chain contains one or more passes
 - **WHEN** `FilterChain::record()` executes
-- **THEN** pre-chain passes SHALL execute first
-- **AND** the pre-chain output SHALL be used as `original_view` for RetroArch passes
-- **AND** `OriginalSize` semantic SHALL reflect pre-chain output dimensions
+- **THEN** pre-chain passes SHALL execute first in vector order
+- **AND** the final pre-chain output SHALL be used as `original_view` for RetroArch passes
+- **AND** `OriginalSize` semantic SHALL reflect final pre-chain output dimensions
 
-### Requirement: Area Downsample Shader
+#### Scenario: Generic pre-chain recording
 
-The internal shader library SHALL include an area filter downsampling shader for high-quality resolution reduction.
+- **GIVEN** pre-chain contains N passes
+- **WHEN** `record_prechain()` executes
+- **THEN** each pass SHALL receive the previous pass's output as input
+- **AND** image barriers SHALL be inserted between passes
+- **AND** the loop SHALL NOT be hardcoded to a specific pass type
+
+### Requirement: Downsample Pass
+
+The internal pass library SHALL include an area-filter downsampling pass that can be added to the pre-chain.
 
 #### Scenario: Area filter downsampling
 
 - **GIVEN** source image at 1920x1080 and target resolution 640x480
-- **WHEN** downsample shader executes
+- **WHEN** downsample pass executes
 - **THEN** each output pixel SHALL be computed as a weighted average of covered source pixels
 - **AND** the result SHALL exhibit minimal aliasing compared to point sampling
 
-#### Scenario: Shader uses push constants for dimensions
+#### Scenario: Downsample added to pre-chain when configured
 
-- **GIVEN** the downsample shader
-- **WHEN** `DownsamplePass` records commands
-- **THEN** source and target dimensions SHALL be passed via push constants
-- **AND** the shader SHALL compute sample weights dynamically
+- **GIVEN** source resolution is configured via `--app-width` and/or `--app-height`
+- **WHEN** `FilterChain` is created
+- **THEN** a `DownsamplePass` SHALL be added to `m_prechain_passes`
+- **AND** a framebuffer sized to target resolution SHALL be added to `m_prechain_framebuffers`
 
 #### Scenario: Identity passthrough at same resolution
 
 - **GIVEN** source and target resolution are identical
-- **WHEN** downsample shader executes
+- **WHEN** downsample pass executes
 - **THEN** output SHALL exactly match input
 - **AND** no blurring or aliasing SHALL occur
 
 ### Requirement: Source Resolution CLI Semantics
 
-The `--app-width` and `--app-height` CLI options SHALL set the source resolution for the filter chain input, independent of capture mode.
+The `--app-width` and `--app-height` CLI options SHALL configure the downsample pass in the pre-chain. Either option may be specified alone, with the other dimension calculated to preserve aspect ratio.
 
-#### Scenario: Options set pre-chain resolution
+#### Scenario: Both dimensions specified
 
 - **GIVEN** user specifies `--app-width 640 --app-height 480`
 - **WHEN** Goggles starts
-- **THEN** `FilterChain` SHALL be configured with source resolution 640x480
-- **AND** pre-chain downsample pass SHALL be created
+- **THEN** `DownsamplePass` SHALL be added to pre-chain with target 640x480
 
-#### Scenario: Options work without WSI proxy
+#### Scenario: Only width specified preserves aspect ratio
 
-- **GIVEN** user specifies `--app-width 320 --app-height 240` without `--wsi-proxy`
-- **WHEN** Goggles captures frames from target app
-- **THEN** captured frames at native resolution SHALL be downsampled to 320x240
-- **AND** the 320x240 image SHALL be the input to RetroArch shader passes
+- **GIVEN** user specifies `--app-width 640` without `--app-height`
+- **AND** captured frame is 1920x1080 (16:9 aspect ratio)
+- **WHEN** first frame is processed
+- **THEN** height SHALL be computed as `round(640 * 1080 / 1920) = 360`
+- **AND** downsample pass target SHALL be 640x360
+
+#### Scenario: Only height specified preserves aspect ratio
+
+- **GIVEN** user specifies `--app-height 480` without `--app-width`
+- **AND** captured frame is 1920x1080 (16:9 aspect ratio)
+- **WHEN** first frame is processed
+- **THEN** width SHALL be computed as `round(480 * 1920 / 1080) = 854`
+- **AND** downsample pass target SHALL be 854x480
 
 #### Scenario: Options still set environment variables
 
-- **GIVEN** user specifies `--app-width` and `--app-height`
+- **GIVEN** user specifies `--app-width` and/or `--app-height`
 - **WHEN** target app is launched
-- **THEN** `GOGGLES_WIDTH` and `GOGGLES_HEIGHT` environment variables SHALL still be set
+- **THEN** `GOGGLES_WIDTH` and `GOGGLES_HEIGHT` environment variables SHALL be set for specified dimensions
 - **AND** WSI proxy (if enabled) SHALL use these values for virtual surface sizing

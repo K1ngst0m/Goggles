@@ -38,11 +38,10 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
                  "Default mode only: enable WSI proxy mode (sets GOGGLES_WSI_PROXY=1 for launched "
                  "app; virtualizes window and swapchain)");
     app.add_option("--app-width", options.app_width,
-                   "Default mode only: virtual surface width (sets GOGGLES_WIDTH for launched app)")
+                   "Source resolution width (also sets GOGGLES_WIDTH for launched app)")
         ->check(CLI::Range(1u, 16384u));
-    app.add_option(
-           "--app-height", options.app_height,
-           "Default mode only: virtual surface height (sets GOGGLES_HEIGHT for launched app)")
+    app.add_option("--app-height", options.app_height,
+                   "Source resolution height (also sets GOGGLES_HEIGHT for launched app)")
         ->check(CLI::Range(1u, 16384u));
     app.add_option(
         "--dump-dir", options.dump_dir,
@@ -103,12 +102,6 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
                                 "for viewer-only mode)");
     }
 
-    if (options.app_width != 0 || options.app_height != 0) {
-        if (options.app_width == 0 || options.app_height == 0) {
-            return make_error<void>(ErrorCode::parse_error,
-                                    "--app-width and --app-height must be provided together");
-        }
-    }
     if (options.app_command.empty()) {
         return make_error<void>(ErrorCode::parse_error,
                                 "missing target app command (use '--detach' for viewer-only mode, "
@@ -134,8 +127,7 @@ auto parse_cli(int argc, char** argv) -> CliResult {
 
 Notes:
   - Default mode (no --detach) launches the target app with capture + input forwarding enabled.
-  - '--' is required before <app> to avoid app args (e.g. '--config') being parsed as Goggles options.
-  - --app-width/--app-height apply only in default mode.)");
+  - '--' is required before <app> to avoid app args (e.g. '--config') being parsed as Goggles options.)");
 
     CliOptions options;
     register_options(app, options);

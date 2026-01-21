@@ -196,6 +196,7 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     }
     backend->m_scale_mode = settings.scale_mode;
     backend->m_integer_scale = settings.integer_scale;
+    backend->m_source_resolution = vk::Extent2D{settings.source_width, settings.source_height};
     backend->update_target_fps(settings.target_fps);
 
     int width = 0;
@@ -889,8 +890,9 @@ auto VulkanBackend::init_filter_chain() -> Result<void> {
                          .physical_device = m_physical_device,
                          .command_pool = *m_command_pool,
                          .graphics_queue = m_graphics_queue};
-    m_filter_chain = GOGGLES_TRY(FilterChain::create(
-        vk_ctx, m_swapchain_format, MAX_FRAMES_IN_FLIGHT, *m_shader_runtime, m_shader_dir));
+    m_filter_chain =
+        GOGGLES_TRY(FilterChain::create(vk_ctx, m_swapchain_format, MAX_FRAMES_IN_FLIGHT,
+                                        *m_shader_runtime, m_shader_dir, m_source_resolution));
     return {};
 }
 
@@ -1536,6 +1538,7 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
     auto physical_device = m_physical_device;
     auto command_pool = *m_command_pool;
     auto graphics_queue = m_graphics_queue;
+    auto source_resolution = m_source_resolution;
 
     m_pending_load_future = util::JobSystem::submit([=, this]() -> Result<void> {
         GOGGLES_PROFILE_SCOPE("AsyncShaderLoad");
@@ -1554,8 +1557,9 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
             .graphics_queue = graphics_queue,
         };
 
-        auto chain_result = FilterChain::create(vk_ctx, swapchain_format, MAX_FRAMES_IN_FLIGHT,
-                                                *runtime_result.value(), shader_dir);
+        auto chain_result =
+            FilterChain::create(vk_ctx, swapchain_format, MAX_FRAMES_IN_FLIGHT,
+                                *runtime_result.value(), shader_dir, source_resolution);
         if (!chain_result) {
             GOGGLES_LOG_ERROR("Failed to create filter chain: {}", chain_result.error().message);
             return make_error<void>(chain_result.error().code, chain_result.error().message);

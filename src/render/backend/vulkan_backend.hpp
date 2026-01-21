@@ -25,6 +25,8 @@ struct RenderSettings {
     ScaleMode scale_mode = ScaleMode::stretch;
     uint32_t integer_scale = 0;
     uint32_t target_fps = 60;
+    uint32_t source_width = 0;
+    uint32_t source_height = 0;
 };
 
 /// @brief Vulkan renderer for presenting captured frames.
@@ -194,6 +196,7 @@ private:
     uint32_t m_integer_scale = 0;
     vk::Extent2D m_swapchain_extent;
     vk::Extent2D m_import_extent;
+    vk::Extent2D m_source_resolution;
     bool m_enable_validation = false;
     ScaleMode m_scale_mode = ScaleMode::stretch;
     bool m_needs_resize = false;

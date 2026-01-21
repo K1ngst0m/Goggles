@@ -7,6 +7,7 @@ add_library(goggles_render_chain_obj OBJECT
     framebuffer.cpp
     filter_chain.cpp
     frame_history.cpp
+    downsample_pass.cpp
 )
 
 target_include_directories(goggles_render_chain_obj PUBLIC
