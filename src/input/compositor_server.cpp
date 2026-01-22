@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdio>
 #include <ctime>
@@ -160,6 +161,7 @@ struct CompositorServer::Impl {
     wlr_relative_pointer_manager_v1* relative_pointer_manager = nullptr;
     wlr_pointer_constraints_v1* pointer_constraints = nullptr;
     wlr_pointer_constraint_v1* active_constraint = nullptr;
+    std::atomic<bool> pointer_locked{false};
     UniqueKeyboard keyboard;
     xkb_context* xkb_ctx = nullptr;
     wlr_output_layout* output_layout = nullptr;
@@ -547,8 +549,7 @@ auto CompositorServer::inject_event(const InputEvent& event) -> bool {
 }
 
 auto CompositorServer::is_pointer_locked() const -> bool {
-    return m_impl->active_constraint != nullptr &&
-           m_impl->active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED;
+    return m_impl->pointer_locked.load(std::memory_order_acquire);
 }
 
 void CompositorServer::Impl::process_input_events() {
@@ -970,6 +971,7 @@ void CompositorServer::Impl::handle_new_pointer_constraint(wlr_pointer_constrain
 void CompositorServer::Impl::handle_constraint_destroy(ConstraintHooks* hooks) {
     if (active_constraint == hooks->constraint) {
         active_constraint = nullptr;
+        pointer_locked.store(false, std::memory_order_release);
     }
     wl_list_remove(&hooks->destroy.link);
     delete hooks;
@@ -981,6 +983,8 @@ void CompositorServer::Impl::activate_constraint(wlr_pointer_constraint_v1* cons
     }
     deactivate_constraint();
     active_constraint = constraint;
+    pointer_locked.store(constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED,
+                         std::memory_order_release);
     wlr_pointer_constraint_v1_send_activated(constraint);
     GOGGLES_LOG_DEBUG("Pointer constraint activated: type={}",
                       constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED ? "locked" : "confined");
@@ -993,6 +997,7 @@ void CompositorServer::Impl::deactivate_constraint() {
     wlr_pointer_constraint_v1_send_deactivated(active_constraint);
     GOGGLES_LOG_DEBUG("Pointer constraint deactivated");
     active_constraint = nullptr;
+    pointer_locked.store(false, std::memory_order_release);
 }
 
 void CompositorServer::Impl::focus_surface(wlr_surface* surface) {

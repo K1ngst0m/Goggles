@@ -266,11 +266,6 @@ void Application::handle_event(const SDL_Event& event) {
     case SDL_EVENT_KEY_DOWN:
         if (event.key.key == SDLK_F1) {
             m_imgui_layer->toggle_visibility();
-            // Auto-release pointer lock when showing ImGui
-            if (m_imgui_layer->is_visible()) {
-                m_pointer_lock_override = true;
-                update_pointer_lock_mirror();
-            }
             return;
         }
         if (event.key.key == SDLK_F2) {
@@ -542,7 +537,10 @@ void Application::update_pointer_lock_mirror() {
         return;
     }
 
-    bool should_lock = m_input_forwarder->is_pointer_locked() && !m_pointer_lock_override;
+    bool should_lock = m_pointer_lock_override || m_input_forwarder->is_pointer_locked();
+    if (m_imgui_layer && m_imgui_layer->is_visible()) {
+        should_lock = false;
+    }
     if (should_lock != m_pointer_lock_mirrored) {
         SDL_SetWindowRelativeMouseMode(m_window, should_lock);
         m_pointer_lock_mirrored = should_lock;
