@@ -4,8 +4,6 @@ add_executable(goggles
     application.cpp
     cli.cpp
     main.cpp
-    sdl_platform.cpp
-    ui_controller.cpp
 )
 
 target_include_directories(goggles PRIVATE
