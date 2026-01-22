@@ -7,6 +7,9 @@
 #include <util/error.hpp>
 #include <util/paths.hpp>
 
+struct SDL_Window;
+union SDL_Event;
+
 namespace goggles {
 
 class CaptureReceiver;
@@ -20,12 +23,11 @@ namespace render {
 class VulkanBackend;
 }
 
-namespace app {
+namespace ui {
+class ImGuiLayer;
+}
 
-class SdlPlatform;
-class UiController;
-struct WindowHandle;
-struct EventRef;
+namespace app {
 
 class Application {
 public:
@@ -43,7 +45,7 @@ public:
 
     void run();
     void pump_events();
-    void handle_event(EventRef event);
+    void handle_event(const SDL_Event& event);
     void tick_frame();
 
     [[nodiscard]] auto is_running() const -> bool { return m_running; }
@@ -55,18 +57,20 @@ public:
 private:
     Application() = default;
 
-    void forward_input_event(EventRef event);
+    void forward_input_event(const SDL_Event& event);
     void handle_sync_semaphores();
 
-    std::unique_ptr<SdlPlatform> m_platform;
+    SDL_Window* m_window = nullptr;
+    bool m_sdl_initialized = false;
     std::unique_ptr<render::VulkanBackend> m_vulkan_backend;
-    std::unique_ptr<UiController> m_ui_controller;
+    std::unique_ptr<ui::ImGuiLayer> m_imgui_layer;
     std::unique_ptr<CaptureReceiver> m_capture_receiver;
     std::unique_ptr<input::InputForwarder> m_input_forwarder;
 
     bool m_running = true;
     bool m_window_resized = false;
     bool m_initial_resolution_sent = false;
+    bool m_last_shader_enabled = false;
     uint32_t m_pending_format = 0;
     uint64_t m_last_source_frame_number = UINT64_MAX;
     ScaleMode m_scale_mode = ScaleMode::fill;
