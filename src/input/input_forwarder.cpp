@@ -182,7 +182,11 @@ auto InputForwarder::forward_key(const SDL_KeyboardEvent& event) -> Result<void>
 
     GOGGLES_LOG_TRACE("Forward key scancode={}, down={} -> linux_keycode={}",
                       static_cast<int>(event.scancode), event.down, linux_keycode);
-    if (!m_impl->server.inject_key(linux_keycode, event.down)) {
+    InputEvent input_event{};
+    input_event.type = InputEventType::key;
+    input_event.code = linux_keycode;
+    input_event.pressed = event.down;
+    if (!m_impl->server.inject_event(input_event)) {
         GOGGLES_LOG_DEBUG("Input queue full, dropped key event");
     }
     return {};
@@ -195,16 +199,24 @@ auto InputForwarder::forward_mouse_button(const SDL_MouseButtonEvent& event) -> 
         return {};
     }
 
-    if (!m_impl->server.inject_pointer_button(button, event.down)) {
+    InputEvent input_event{};
+    input_event.type = InputEventType::pointer_button;
+    input_event.code = button;
+    input_event.pressed = event.down;
+    if (!m_impl->server.inject_event(input_event)) {
         GOGGLES_LOG_DEBUG("Input queue full, dropped button event");
     }
     return {};
 }
 
 auto InputForwarder::forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void> {
-    if (!m_impl->server.inject_pointer_motion(
-            static_cast<double>(event.x), static_cast<double>(event.y),
-            static_cast<double>(event.xrel), static_cast<double>(event.yrel))) {
+    InputEvent input_event{};
+    input_event.type = InputEventType::pointer_motion;
+    input_event.x = static_cast<double>(event.x);
+    input_event.y = static_cast<double>(event.y);
+    input_event.dx = static_cast<double>(event.xrel);
+    input_event.dy = static_cast<double>(event.yrel);
+    if (!m_impl->server.inject_event(input_event)) {
         GOGGLES_LOG_DEBUG("Input queue full, dropped motion event");
     }
     return {};
@@ -213,15 +225,21 @@ auto InputForwarder::forward_mouse_motion(const SDL_MouseMotionEvent& event) -> 
 auto InputForwarder::forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> Result<void> {
     if (event.y != 0) {
         // SDL: positive = up, Wayland: positive = down; negate to match
-        double value = static_cast<double>(-event.y) * 15.0;
-        if (!m_impl->server.inject_pointer_axis(value, false)) {
+        InputEvent input_event{};
+        input_event.type = InputEventType::pointer_axis;
+        input_event.value = static_cast<double>(-event.y) * 15.0;
+        input_event.horizontal = false;
+        if (!m_impl->server.inject_event(input_event)) {
             GOGGLES_LOG_DEBUG("Input queue full, dropped axis event");
         }
     }
 
     if (event.x != 0) {
-        double value = static_cast<double>(event.x) * 15.0;
-        if (!m_impl->server.inject_pointer_axis(value, true)) {
+        InputEvent input_event{};
+        input_event.type = InputEventType::pointer_axis;
+        input_event.value = static_cast<double>(event.x) * 15.0;
+        input_event.horizontal = true;
+        if (!m_impl->server.inject_event(input_event)) {
             GOGGLES_LOG_DEBUG("Input queue full, dropped axis event");
         }
     }

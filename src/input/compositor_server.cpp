@@ -192,6 +192,10 @@ struct CompositorServer::Impl {
     void start_compositor_thread();
 
     void process_input_events();
+    void handle_key_event(const InputEvent& event, uint32_t time);
+    void handle_pointer_motion_event(const InputEvent& event, uint32_t time);
+    void handle_pointer_button_event(const InputEvent& event, uint32_t time);
+    void handle_pointer_axis_event(const InputEvent& event, uint32_t time);
     void handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel);
     void handle_xdg_surface_commit(XdgToplevelHooks* hooks);
     void handle_xdg_surface_map(XdgToplevelHooks* hooks);
@@ -533,56 +537,7 @@ void CompositorServer::stop() {
     impl.wayland_socket_name.clear();
 }
 
-auto CompositorServer::inject_key(uint32_t linux_keycode, bool pressed) -> bool {
-    InputEvent event{};
-    event.type = InputEventType::key;
-    event.code = linux_keycode;
-    event.pressed = pressed;
-
-    if (m_impl->event_queue.try_push(event)) {
-        uint64_t val = 1;
-        auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
-        return ret == sizeof(val);
-    }
-    return false;
-}
-
-auto CompositorServer::inject_pointer_motion(double sx, double sy, double dx, double dy) -> bool {
-    InputEvent event{};
-    event.type = InputEventType::pointer_motion;
-    event.x = sx;
-    event.y = sy;
-    event.dx = dx;
-    event.dy = dy;
-
-    if (m_impl->event_queue.try_push(event)) {
-        uint64_t val = 1;
-        auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
-        return ret == sizeof(val);
-    }
-    return false;
-}
-
-auto CompositorServer::inject_pointer_button(uint32_t button, bool pressed) -> bool {
-    InputEvent event{};
-    event.type = InputEventType::pointer_button;
-    event.code = button;
-    event.pressed = pressed;
-
-    if (m_impl->event_queue.try_push(event)) {
-        uint64_t val = 1;
-        auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
-        return ret == sizeof(val);
-    }
-    return false;
-}
-
-auto CompositorServer::inject_pointer_axis(double value, bool horizontal) -> bool {
-    InputEvent event{};
-    event.type = InputEventType::pointer_axis;
-    event.value = value;
-    event.horizontal = horizontal;
-
+auto CompositorServer::inject_event(const InputEvent& event) -> bool {
     if (m_impl->event_queue.try_push(event)) {
         uint64_t val = 1;
         auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
@@ -602,152 +557,162 @@ void CompositorServer::Impl::process_input_events() {
         uint32_t time = get_time_msec();
 
         switch (event.type) {
-        case InputEventType::key: {
-            wlr_surface* target_surface = focused_surface;
-            if (focused_xsurface) {
-                target_surface = focused_xsurface->surface;
-                if (!target_surface) {
-                    if (!xwayland_surface_detached) {
-                        GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
-                                          "(surface=null)");
-                        xwayland_surface_detached = true;
-                    }
-                    break;
-                }
-                xwayland_surface_detached = false;
-            }
-            if (!target_surface) {
-                break;
-            }
-            // XWayland quirk: wlr_xwm requires re-activation and keyboard re-entry before each
-            // key event. Without this, X11 clients silently drop input after the first event.
-            // Native Wayland clients maintain focus state correctly and only need enter on change.
-            if (focused_xsurface) {
-                wlr_xwayland_surface_activate(focused_xsurface, true);
-                wlr_seat_set_keyboard(seat, keyboard.get());
-                wlr_seat_keyboard_notify_enter(seat, target_surface, keyboard->keycodes,
-                                               keyboard->num_keycodes, &keyboard->modifiers);
-            } else if (keyboard_entered_surface != target_surface) {
-                wlr_seat_set_keyboard(seat, keyboard.get());
-                wlr_seat_keyboard_notify_enter(seat, target_surface, keyboard->keycodes,
-                                               keyboard->num_keycodes, &keyboard->modifiers);
-                keyboard_entered_surface = target_surface;
-            }
-            auto state =
-                event.pressed ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED;
-            wlr_seat_keyboard_notify_key(seat, time, event.code, state);
+        case InputEventType::key:
+            handle_key_event(event, time);
             break;
-        }
-        case InputEventType::pointer_motion: {
-            wlr_surface* target_surface = focused_surface;
-            if (focused_xsurface) {
-                target_surface = focused_xsurface->surface;
-                if (!target_surface) {
-                    if (!xwayland_surface_detached) {
-                        GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
-                                          "(surface=null)");
-                        xwayland_surface_detached = true;
-                    }
-                    break;
-                }
-                xwayland_surface_detached = false;
-            }
-            if (!target_surface) {
-                break;
-            }
-
-            // Send relative motion (always, regardless of constraint)
-            if (relative_pointer_manager && (event.dx != 0.0 || event.dy != 0.0)) {
-                wlr_relative_pointer_manager_v1_send_relative_motion(
-                    relative_pointer_manager, seat, static_cast<uint64_t>(time) * 1000, event.dx,
-                    event.dy, event.dx, event.dy);
-            }
-
-            // For locked constraints, skip absolute motion update
-            if (active_constraint && active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED) {
-                wlr_seat_pointer_notify_frame(seat);
-                break;
-            }
-
-            // XWayland quirk: requires re-activation and pointer re-entry before each event
-            if (focused_xsurface) {
-                wlr_xwayland_surface_activate(focused_xsurface, true);
-                wlr_seat_pointer_notify_enter(seat, target_surface, event.x, event.y);
-            } else if (pointer_entered_surface != target_surface) {
-                wlr_seat_pointer_notify_enter(seat, target_surface, event.x, event.y);
-                pointer_entered_surface = target_surface;
-            }
-            wlr_seat_pointer_notify_motion(seat, time, event.x, event.y);
-            wlr_seat_pointer_notify_frame(seat);
-            last_pointer_x = event.x;
-            last_pointer_y = event.y;
+        case InputEventType::pointer_motion:
+            handle_pointer_motion_event(event, time);
             break;
-        }
-        case InputEventType::pointer_button: {
-            wlr_surface* target_surface = focused_surface;
-            if (focused_xsurface) {
-                target_surface = focused_xsurface->surface;
-                if (!target_surface) {
-                    if (!xwayland_surface_detached) {
-                        GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
-                                          "(surface=null)");
-                        xwayland_surface_detached = true;
-                    }
-                    break;
-                }
-                xwayland_surface_detached = false;
-            }
-            if (!target_surface) {
-                break;
-            }
-            if (focused_xsurface) {
-                wlr_xwayland_surface_activate(focused_xsurface, true);
-                wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
-            } else if (pointer_entered_surface != target_surface) {
-                wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
-                pointer_entered_surface = target_surface;
-            }
-            auto state =
-                event.pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED;
-            wlr_seat_pointer_notify_button(seat, time, event.code, state);
-            wlr_seat_pointer_notify_frame(seat);
+        case InputEventType::pointer_button:
+            handle_pointer_button_event(event, time);
             break;
-        }
-        case InputEventType::pointer_axis: {
-            wlr_surface* target_surface = focused_surface;
-            if (focused_xsurface) {
-                target_surface = focused_xsurface->surface;
-                if (!target_surface) {
-                    if (!xwayland_surface_detached) {
-                        GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
-                                          "(surface=null)");
-                        xwayland_surface_detached = true;
-                    }
-                    break;
-                }
-                xwayland_surface_detached = false;
-            }
-            if (!target_surface) {
-                break;
-            }
-            if (focused_xsurface) {
-                wlr_xwayland_surface_activate(focused_xsurface, true);
-                wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
-            } else if (pointer_entered_surface != target_surface) {
-                wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
-                pointer_entered_surface = target_surface;
-            }
-            auto orientation = event.horizontal ? WL_POINTER_AXIS_HORIZONTAL_SCROLL
-                                                : WL_POINTER_AXIS_VERTICAL_SCROLL;
-            wlr_seat_pointer_notify_axis(seat, time, orientation, event.value,
-                                         0, // value_discrete (legacy)
-                                         WL_POINTER_AXIS_SOURCE_WHEEL,
-                                         WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
-            wlr_seat_pointer_notify_frame(seat);
+        case InputEventType::pointer_axis:
+            handle_pointer_axis_event(event, time);
             break;
-        }
         }
     }
+}
+
+void CompositorServer::Impl::handle_key_event(const InputEvent& event, uint32_t time) {
+    wlr_surface* target_surface = focused_surface;
+    if (focused_xsurface) {
+        target_surface = focused_xsurface->surface;
+        if (!target_surface) {
+            if (!xwayland_surface_detached) {
+                GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
+                                  "(surface=null)");
+                xwayland_surface_detached = true;
+            }
+            return;
+        }
+        xwayland_surface_detached = false;
+    }
+    if (!target_surface) {
+        return;
+    }
+    // XWayland quirk: wlr_xwm requires re-activation and keyboard re-entry before each
+    // key event. Without this, X11 clients silently drop input after the first event.
+    // Native Wayland clients maintain focus state correctly and only need enter on change.
+    if (focused_xsurface) {
+        wlr_xwayland_surface_activate(focused_xsurface, true);
+        wlr_seat_set_keyboard(seat, keyboard.get());
+        wlr_seat_keyboard_notify_enter(seat, target_surface, keyboard->keycodes,
+                                       keyboard->num_keycodes, &keyboard->modifiers);
+    } else if (keyboard_entered_surface != target_surface) {
+        wlr_seat_set_keyboard(seat, keyboard.get());
+        wlr_seat_keyboard_notify_enter(seat, target_surface, keyboard->keycodes,
+                                       keyboard->num_keycodes, &keyboard->modifiers);
+        keyboard_entered_surface = target_surface;
+    }
+    auto state = event.pressed ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED;
+    wlr_seat_keyboard_notify_key(seat, time, event.code, state);
+}
+
+void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event, uint32_t time) {
+    wlr_surface* target_surface = focused_surface;
+    if (focused_xsurface) {
+        target_surface = focused_xsurface->surface;
+        if (!target_surface) {
+            if (!xwayland_surface_detached) {
+                GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
+                                  "(surface=null)");
+                xwayland_surface_detached = true;
+            }
+            return;
+        }
+        xwayland_surface_detached = false;
+    }
+    if (!target_surface) {
+        return;
+    }
+
+    // Send relative motion (always, regardless of constraint)
+    if (relative_pointer_manager && (event.dx != 0.0 || event.dy != 0.0)) {
+        wlr_relative_pointer_manager_v1_send_relative_motion(
+            relative_pointer_manager, seat, static_cast<uint64_t>(time) * 1000, event.dx, event.dy,
+            event.dx, event.dy);
+    }
+
+    // For locked constraints, skip absolute motion update
+    if (active_constraint && active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED) {
+        wlr_seat_pointer_notify_frame(seat);
+        return;
+    }
+
+    // XWayland quirk: requires re-activation and pointer re-entry before each event
+    if (focused_xsurface) {
+        wlr_xwayland_surface_activate(focused_xsurface, true);
+        wlr_seat_pointer_notify_enter(seat, target_surface, event.x, event.y);
+    } else if (pointer_entered_surface != target_surface) {
+        wlr_seat_pointer_notify_enter(seat, target_surface, event.x, event.y);
+        pointer_entered_surface = target_surface;
+    }
+    wlr_seat_pointer_notify_motion(seat, time, event.x, event.y);
+    wlr_seat_pointer_notify_frame(seat);
+    last_pointer_x = event.x;
+    last_pointer_y = event.y;
+}
+
+void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event, uint32_t time) {
+    wlr_surface* target_surface = focused_surface;
+    if (focused_xsurface) {
+        target_surface = focused_xsurface->surface;
+        if (!target_surface) {
+            if (!xwayland_surface_detached) {
+                GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
+                                  "(surface=null)");
+                xwayland_surface_detached = true;
+            }
+            return;
+        }
+        xwayland_surface_detached = false;
+    }
+    if (!target_surface) {
+        return;
+    }
+    if (focused_xsurface) {
+        wlr_xwayland_surface_activate(focused_xsurface, true);
+        wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
+    } else if (pointer_entered_surface != target_surface) {
+        wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
+        pointer_entered_surface = target_surface;
+    }
+    auto state = event.pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED;
+    wlr_seat_pointer_notify_button(seat, time, event.code, state);
+    wlr_seat_pointer_notify_frame(seat);
+}
+
+void CompositorServer::Impl::handle_pointer_axis_event(const InputEvent& event, uint32_t time) {
+    wlr_surface* target_surface = focused_surface;
+    if (focused_xsurface) {
+        target_surface = focused_xsurface->surface;
+        if (!target_surface) {
+            if (!xwayland_surface_detached) {
+                GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
+                                  "(surface=null)");
+                xwayland_surface_detached = true;
+            }
+            return;
+        }
+        xwayland_surface_detached = false;
+    }
+    if (!target_surface) {
+        return;
+    }
+    if (focused_xsurface) {
+        wlr_xwayland_surface_activate(focused_xsurface, true);
+        wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
+    } else if (pointer_entered_surface != target_surface) {
+        wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
+        pointer_entered_surface = target_surface;
+    }
+    auto orientation =
+        event.horizontal ? WL_POINTER_AXIS_HORIZONTAL_SCROLL : WL_POINTER_AXIS_VERTICAL_SCROLL;
+    wlr_seat_pointer_notify_axis(seat, time, orientation, event.value,
+                                 0, // value_discrete (legacy)
+                                 WL_POINTER_AXIS_SOURCE_WHEEL,
+                                 WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
+    wlr_seat_pointer_notify_frame(seat);
 }
 
 void CompositorServer::Impl::handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel) {

@@ -44,28 +44,10 @@ public:
     /// @brief Returns the Wayland socket name, or an empty string if not started.
     [[nodiscard]] auto wayland_display() const -> std::string;
 
-    /// @brief Queues a Linux key event for the focused surface.
-    /// @param linux_keycode Linux input keycode (see `linux/input-event-codes.h`).
-    /// @param pressed True for press, false for release.
+    /// @brief Queues an input event for the focused surface.
+    /// @param event The input event to queue.
     /// @return True if the event was queued and the compositor was notified.
-    [[nodiscard]] auto inject_key(uint32_t linux_keycode, bool pressed) -> bool;
-    /// @brief Queues a pointer motion event for the focused surface.
-    /// @param sx Surface-local x coordinate.
-    /// @param sy Surface-local y coordinate.
-    /// @param dx Relative x delta (unaccelerated).
-    /// @param dy Relative y delta (unaccelerated).
-    /// @return True if the event was queued and the compositor was notified.
-    [[nodiscard]] auto inject_pointer_motion(double sx, double sy, double dx, double dy) -> bool;
-    /// @brief Queues a pointer button event for the focused surface.
-    /// @param button Linux button code (see `linux/input-event-codes.h`).
-    /// @param pressed True for press, false for release.
-    /// @return True if the event was queued and the compositor was notified.
-    [[nodiscard]] auto inject_pointer_button(uint32_t button, bool pressed) -> bool;
-    /// @brief Queues a pointer scroll event for the focused surface.
-    /// @param value Scroll delta in compositor units.
-    /// @param horizontal True for horizontal scroll, false for vertical.
-    /// @return True if the event was queued and the compositor was notified.
-    [[nodiscard]] auto inject_pointer_axis(double value, bool horizontal) -> bool;
+    [[nodiscard]] auto inject_event(const InputEvent& event) -> bool;
     /// @brief Returns true if pointer is currently locked (not confined) by target app.
     [[nodiscard]] auto is_pointer_locked() const -> bool;
 
