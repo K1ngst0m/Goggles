@@ -131,6 +131,21 @@ auto sdl_to_linux_button(uint8_t sdl_button) -> uint32_t {
     case SDL_BUTTON_X2:
         return BTN_EXTRA;
     default:
+        // SDL buttons beyond X2: map to BTN_FORWARD, BTN_BACK, BTN_TASK
+        if (sdl_button == 6) {
+            return BTN_FORWARD;
+        }
+        if (sdl_button == 7) {
+            return BTN_BACK;
+        }
+        if (sdl_button == 8) {
+            return BTN_TASK;
+        }
+        // Fallback: BTN_MISC + offset for unknown buttons
+        if (sdl_button > 8) {
+            GOGGLES_LOG_TRACE("Unmapped SDL button {} -> BTN_MISC+{}", sdl_button, sdl_button - 8);
+            return BTN_MISC + (sdl_button - 8);
+        }
         return 0;
     }
 }
@@ -176,6 +191,7 @@ auto InputForwarder::forward_key(const SDL_KeyboardEvent& event) -> Result<void>
 auto InputForwarder::forward_mouse_button(const SDL_MouseButtonEvent& event) -> Result<void> {
     uint32_t button = sdl_to_linux_button(event.button);
     if (button == 0) {
+        GOGGLES_LOG_TRACE("Unmapped mouse button {}", event.button);
         return {};
     }
 
@@ -186,9 +202,9 @@ auto InputForwarder::forward_mouse_button(const SDL_MouseButtonEvent& event) -> 
 }
 
 auto InputForwarder::forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void> {
-    // TODO: coordinate mapping for different window sizes
-    if (!m_impl->server.inject_pointer_motion(static_cast<double>(event.x),
-                                              static_cast<double>(event.y))) {
+    if (!m_impl->server.inject_pointer_motion(
+            static_cast<double>(event.x), static_cast<double>(event.y),
+            static_cast<double>(event.xrel), static_cast<double>(event.yrel))) {
         GOGGLES_LOG_DEBUG("Input queue full, dropped motion event");
     }
     return {};

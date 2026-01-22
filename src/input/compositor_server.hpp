@@ -16,6 +16,7 @@ struct InputEvent {
     uint32_t code;
     bool pressed;
     double x, y;
+    double dx, dy;
     double value;
     bool horizontal;
 };
@@ -51,8 +52,10 @@ public:
     /// @brief Queues a pointer motion event for the focused surface.
     /// @param sx Surface-local x coordinate.
     /// @param sy Surface-local y coordinate.
+    /// @param dx Relative x delta (unaccelerated).
+    /// @param dy Relative y delta (unaccelerated).
     /// @return True if the event was queued and the compositor was notified.
-    [[nodiscard]] auto inject_pointer_motion(double sx, double sy) -> bool;
+    [[nodiscard]] auto inject_pointer_motion(double sx, double sy, double dx, double dy) -> bool;
     /// @brief Queues a pointer button event for the focused surface.
     /// @param button Linux button code (see `linux/input-event-codes.h`).
     /// @param pressed True for press, false for release.
