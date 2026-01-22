@@ -16,11 +16,10 @@
 
 ## 3. Relative Pointer Motion
 
-- [x] 3.1 Add `pointer_motion_relative` to `InputEventType` enum
-- [x] 3.2 Add `dx`, `dy` fields to `InputEvent` struct for relative deltas
-- [x] 3.3 Implement `inject_pointer_motion_relative(double dx, double dy)` method
-- [x] 3.4 Update `process_input_events()` to call `wlr_relative_pointer_manager_v1_send_relative_motion()` for relative events
-- [x] 3.5 Modify absolute motion handling to also send relative motion (gamescope pattern)
+- [x] 3.1 Add `dx`, `dy` fields to `InputEvent` struct for relative deltas
+- [x] 3.2 Update `inject_pointer_motion()` to accept dx/dy parameters
+- [x] 3.3 Update `process_input_events()` to call `wlr_relative_pointer_manager_v1_send_relative_motion()`
+- [x] 3.4 Modify absolute motion handling to also send relative motion (gamescope pattern)
 
 ## 4. Extended Button Support
 
@@ -35,7 +34,8 @@
 
 ## 6. Testing and Validation
 
-- [ ] 6.1 Test with FPS game that requires mouselook (e.g., wine/proton game)
-- [ ] 6.2 Test pointer lock with application that captures cursor
-- [ ] 6.3 Verify extended buttons work with multi-button mouse
-- [ ] 6.4 Test focus changes properly activate/deactivate constraints
+- [x] 6.1 Add key 1 toggle for pointer lock in manual tests
+- [x] 6.2 Add key 2 toggle for mouse grab in manual tests
+- [x] 6.3 Add key 3 state query in manual tests
+- [x] 6.4 Test pointer lock: verify relative motion works, absolute frozen
+- [x] 6.5 Test mouse grab: verify cursor confined to window

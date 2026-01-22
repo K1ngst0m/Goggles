@@ -15,9 +15,8 @@ Games require relative pointer motion (mouselook), pointer constraints (cursor l
 
 - Affected specs: `input-forwarding`
 - Affected code:
-  - `src/input/compositor_server.hpp` - new wlroots protocol managers, extended InputEvent enum
+  - `src/input/compositor_server.hpp` - new wlroots protocol managers, extended InputEvent struct
   - `src/input/compositor_server.cpp` - relative pointer, pointer constraints, constraint handling
-  - `src/input/input_forwarder.hpp` - new `forward_mouse_motion_relative()` method
   - `src/input/input_forwarder.cpp` - use SDL xrel/yrel, extend button mapping
 
 ## Design Rationale
@@ -29,3 +28,16 @@ Pointer constraints are handled by:
 2. Listening for `new_constraint` signals
 3. Activating constraints on the focused surface
 4. Applying lock/confine logic during motion processing
+
+## Testing
+
+Manual test binaries (`goggles_manual_input_wayland`, `goggles_manual_input_x11`) support:
+
+- **1**: Toggle pointer lock - tests `zwp_pointer_constraints_v1` LOCKED mode
+- **2**: Toggle mouse grab - tests `zwp_pointer_constraints_v1` CONFINED mode
+- **3**: Query current state
+
+Expected behavior:
+- Lock ON: cursor hidden, xrel/yrel arrive, x/y frozen
+- Grab ON: cursor confined to window, x/y update normally
+- Extended buttons (6-8+): logged with Linux button codes
