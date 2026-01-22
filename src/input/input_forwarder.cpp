@@ -131,6 +131,21 @@ auto sdl_to_linux_button(uint8_t sdl_button) -> uint32_t {
     case SDL_BUTTON_X2:
         return BTN_EXTRA;
     default:
+        // SDL buttons beyond X2: map to BTN_FORWARD, BTN_BACK, BTN_TASK
+        if (sdl_button == 6) {
+            return BTN_FORWARD;
+        }
+        if (sdl_button == 7) {
+            return BTN_BACK;
+        }
+        if (sdl_button == 8) {
+            return BTN_TASK;
+        }
+        // Fallback: BTN_MISC + offset for unknown buttons
+        if (sdl_button > 8) {
+            GOGGLES_LOG_TRACE("Unmapped SDL button {} -> BTN_MISC+{}", sdl_button, sdl_button - 8);
+            return BTN_MISC + (sdl_button - 8);
+        }
         return 0;
     }
 }
@@ -167,7 +182,11 @@ auto InputForwarder::forward_key(const SDL_KeyboardEvent& event) -> Result<void>
 
     GOGGLES_LOG_TRACE("Forward key scancode={}, down={} -> linux_keycode={}",
                       static_cast<int>(event.scancode), event.down, linux_keycode);
-    if (!m_impl->server.inject_key(linux_keycode, event.down)) {
+    InputEvent input_event{};
+    input_event.type = InputEventType::key;
+    input_event.code = linux_keycode;
+    input_event.pressed = event.down;
+    if (!m_impl->server.inject_event(input_event)) {
         GOGGLES_LOG_DEBUG("Input queue full, dropped key event");
     }
     return {};
@@ -176,19 +195,28 @@ auto InputForwarder::forward_key(const SDL_KeyboardEvent& event) -> Result<void>
 auto InputForwarder::forward_mouse_button(const SDL_MouseButtonEvent& event) -> Result<void> {
     uint32_t button = sdl_to_linux_button(event.button);
     if (button == 0) {
+        GOGGLES_LOG_TRACE("Unmapped mouse button {}", event.button);
         return {};
     }
 
-    if (!m_impl->server.inject_pointer_button(button, event.down)) {
+    InputEvent input_event{};
+    input_event.type = InputEventType::pointer_button;
+    input_event.code = button;
+    input_event.pressed = event.down;
+    if (!m_impl->server.inject_event(input_event)) {
         GOGGLES_LOG_DEBUG("Input queue full, dropped button event");
     }
     return {};
 }
 
 auto InputForwarder::forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void> {
-    // TODO: coordinate mapping for different window sizes
-    if (!m_impl->server.inject_pointer_motion(static_cast<double>(event.x),
-                                              static_cast<double>(event.y))) {
+    InputEvent input_event{};
+    input_event.type = InputEventType::pointer_motion;
+    input_event.x = static_cast<double>(event.x);
+    input_event.y = static_cast<double>(event.y);
+    input_event.dx = static_cast<double>(event.xrel);
+    input_event.dy = static_cast<double>(event.yrel);
+    if (!m_impl->server.inject_event(input_event)) {
         GOGGLES_LOG_DEBUG("Input queue full, dropped motion event");
     }
     return {};
@@ -197,15 +225,21 @@ auto InputForwarder::forward_mouse_motion(const SDL_MouseMotionEvent& event) -> 
 auto InputForwarder::forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> Result<void> {
     if (event.y != 0) {
         // SDL: positive = up, Wayland: positive = down; negate to match
-        double value = static_cast<double>(-event.y) * 15.0;
-        if (!m_impl->server.inject_pointer_axis(value, false)) {
+        InputEvent input_event{};
+        input_event.type = InputEventType::pointer_axis;
+        input_event.value = static_cast<double>(-event.y) * 15.0;
+        input_event.horizontal = false;
+        if (!m_impl->server.inject_event(input_event)) {
             GOGGLES_LOG_DEBUG("Input queue full, dropped axis event");
         }
     }
 
     if (event.x != 0) {
-        double value = static_cast<double>(event.x) * 15.0;
-        if (!m_impl->server.inject_pointer_axis(value, true)) {
+        InputEvent input_event{};
+        input_event.type = InputEventType::pointer_axis;
+        input_event.value = static_cast<double>(event.x) * 15.0;
+        input_event.horizontal = true;
+        if (!m_impl->server.inject_event(input_event)) {
             GOGGLES_LOG_DEBUG("Input queue full, dropped axis event");
         }
     }
@@ -219,6 +253,10 @@ auto InputForwarder::x11_display() const -> std::string {
 
 auto InputForwarder::wayland_display() const -> std::string {
     return m_impl->server.wayland_display();
+}
+
+auto InputForwarder::is_pointer_locked() const -> bool {
+    return m_impl->server.is_pointer_locked();
 }
 
 } // namespace goggles::input

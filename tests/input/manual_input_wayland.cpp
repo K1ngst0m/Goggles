@@ -146,6 +146,27 @@ static auto init_sdl() -> SDLContext {
     return sdl;
 }
 
+static void toggle_pointer_lock(SDL_Window* window) {
+    bool current = SDL_GetWindowRelativeMouseMode(window);
+    SDL_SetWindowRelativeMouseMode(window, !current);
+    printf("[Mode] Pointer lock: %s\n", !current ? "ON" : "OFF");
+    fflush(stdout);
+}
+
+static void toggle_mouse_grab(SDL_Window* window) {
+    bool current = SDL_GetWindowMouseGrab(window);
+    SDL_SetWindowMouseGrab(window, !current);
+    printf("[Mode] Mouse grab: %s\n", !current ? "ON" : "OFF");
+    fflush(stdout);
+}
+
+static void print_state(SDL_Window* window) {
+    printf("[State] Pointer lock: %s, Mouse grab: %s\n",
+           SDL_GetWindowRelativeMouseMode(window) ? "ON" : "OFF",
+           SDL_GetWindowMouseGrab(window) ? "ON" : "OFF");
+    fflush(stdout);
+}
+
 static void print_event_info(const SDL_Event& event) {
     switch (event.type) {
     case SDL_EVENT_KEY_DOWN:
@@ -180,13 +201,15 @@ static void print_event_info(const SDL_Event& event) {
     fflush(stdout);
 }
 
-static void run_input_loop([[maybe_unused]] SDL_Window* window,
-                           [[maybe_unused]] SDL_Renderer* renderer) {
+static void run_input_loop(SDL_Window* window, [[maybe_unused]] SDL_Renderer* renderer) {
     printf("===========================================\n");
     printf("Goggles Manual Input (Wayland Backend)\n");
-    printf("Tests native Wayland input forwarding\n");
-    printf("Press keys or move mouse to test\n");
-    printf("Press ESC to quit\n");
+    printf("Tests pointer constraints and input forwarding\n");
+    printf("===========================================\n");
+    printf("1   - Toggle pointer lock (relative mode)\n");
+    printf("2   - Toggle mouse grab (confine)\n");
+    printf("3   - Print current state\n");
+    printf("ESC - Quit\n");
     printf("===========================================\n");
     fflush(stdout);
 
@@ -197,10 +220,19 @@ static void run_input_loop([[maybe_unused]] SDL_Window* window,
             if (event.type == SDL_EVENT_QUIT) {
                 printf("[Input] Quit event received\n");
                 running = false;
-            } else if (event.type == SDL_EVENT_KEY_DOWN &&
-                       event.key.scancode == SDL_SCANCODE_ESCAPE) {
-                printf("[Input] ESC pressed, exiting\n");
-                running = false;
+            } else if (event.type == SDL_EVENT_KEY_DOWN) {
+                if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
+                    printf("[Input] ESC pressed, exiting\n");
+                    running = false;
+                } else if (event.key.scancode == SDL_SCANCODE_1) {
+                    toggle_pointer_lock(window);
+                } else if (event.key.scancode == SDL_SCANCODE_2) {
+                    toggle_mouse_grab(window);
+                } else if (event.key.scancode == SDL_SCANCODE_3) {
+                    print_state(window);
+                } else {
+                    print_event_info(event);
+                }
             } else {
                 print_event_info(event);
             }

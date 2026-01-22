@@ -239,6 +239,9 @@ void Application::pump_events() {
     while (SDL_PollEvent(&event)) {
         handle_event(event);
     }
+
+    // Poll compositor for pointer lock state changes
+    update_pointer_lock_mirror();
 }
 
 // =============================================================================
@@ -267,6 +270,11 @@ void Application::handle_event(const SDL_Event& event) {
         }
         if (event.key.key == SDLK_F2) {
             m_imgui_layer->toggle_debug_overlay();
+            return;
+        }
+        if (event.key.key == SDLK_F3 && m_input_forwarder) {
+            m_pointer_lock_override = !m_pointer_lock_override;
+            update_pointer_lock_mirror();
             return;
         }
         break;
@@ -522,6 +530,22 @@ auto Application::gpu_index() const -> uint32_t {
 
 auto Application::gpu_uuid() const -> std::string {
     return m_vulkan_backend ? m_vulkan_backend->gpu_uuid() : "";
+}
+
+void Application::update_pointer_lock_mirror() {
+    if (!m_input_forwarder) {
+        return;
+    }
+
+    bool should_lock = m_pointer_lock_override || m_input_forwarder->is_pointer_locked();
+    if (m_imgui_layer && m_imgui_layer->is_visible()) {
+        should_lock = false;
+    }
+    if (should_lock != m_pointer_lock_mirrored) {
+        SDL_SetWindowRelativeMouseMode(m_window, should_lock);
+        m_pointer_lock_mirrored = should_lock;
+        GOGGLES_LOG_DEBUG("Pointer lock mirror: {}", should_lock ? "ON" : "OFF");
+    }
 }
 
 } // namespace goggles::app
