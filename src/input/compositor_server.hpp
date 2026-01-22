@@ -66,6 +66,8 @@ public:
     /// @param horizontal True for horizontal scroll, false for vertical.
     /// @return True if the event was queued and the compositor was notified.
     [[nodiscard]] auto inject_pointer_axis(double value, bool horizontal) -> bool;
+    /// @brief Returns true if pointer is currently locked (not confined) by target app.
+    [[nodiscard]] auto is_pointer_locked() const -> bool;
 
 private:
     struct Impl;

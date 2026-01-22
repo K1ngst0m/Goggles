@@ -591,6 +591,11 @@ auto CompositorServer::inject_pointer_axis(double value, bool horizontal) -> boo
     return false;
 }
 
+auto CompositorServer::is_pointer_locked() const -> bool {
+    return m_impl->active_constraint != nullptr &&
+           m_impl->active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED;
+}
+
 void CompositorServer::Impl::process_input_events() {
     while (auto event_opt = event_queue.try_pop()) {
         auto& event = *event_opt;

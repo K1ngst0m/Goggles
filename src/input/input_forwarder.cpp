@@ -237,4 +237,8 @@ auto InputForwarder::wayland_display() const -> std::string {
     return m_impl->server.wayland_display();
 }
 
+auto InputForwarder::is_pointer_locked() const -> bool {
+    return m_impl->server.is_pointer_locked();
+}
+
 } // namespace goggles::input

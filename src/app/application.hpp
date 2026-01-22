@@ -59,6 +59,7 @@ private:
 
     void forward_input_event(const SDL_Event& event);
     void handle_sync_semaphores();
+    void update_pointer_lock_mirror();
 
     SDL_Window* m_window = nullptr;
     bool m_sdl_initialized = false;
@@ -71,6 +72,8 @@ private:
     bool m_window_resized = false;
     bool m_initial_resolution_sent = false;
     bool m_last_shader_enabled = false;
+    bool m_pointer_lock_override = false;
+    bool m_pointer_lock_mirrored = false;
     uint32_t m_pending_format = 0;
     uint64_t m_last_source_frame_number = UINT64_MAX;
     ScaleMode m_scale_mode = ScaleMode::fill;

@@ -17,7 +17,9 @@ Games require relative pointer motion (mouselook), pointer constraints (cursor l
 - Affected code:
   - `src/input/compositor_server.hpp` - new wlroots protocol managers, extended InputEvent struct
   - `src/input/compositor_server.cpp` - relative pointer, pointer constraints, constraint handling
+  - `src/input/input_forwarder.hpp` - expose `is_pointer_locked()` for viewer mirror
   - `src/input/input_forwarder.cpp` - use SDL xrel/yrel, extend button mapping
+  - `src/app/application.cpp` - pointer lock mirroring to viewer window
 
 ## Design Rationale
 
@@ -41,3 +43,11 @@ Expected behavior:
 - Lock ON: cursor hidden, xrel/yrel arrive, x/y frozen
 - Grab ON: cursor confined to window, x/y update normally
 - Extended buttons (6-8+): logged with Linux button codes
+
+## Viewer Pointer Lock Mirror
+
+When target app requests pointer lock, goggles mirrors the lock to the viewer window:
+- Cursor hidden and confined to viewer
+- **F3** toggles override to temporarily release lock (for ImGui access)
+- **F1** (ImGui toggle) auto-releases lock when showing UI
+- Lock automatically restores when override is cleared and target still has lock

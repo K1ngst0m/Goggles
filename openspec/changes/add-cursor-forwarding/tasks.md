@@ -39,3 +39,12 @@
 - [x] 6.3 Add key 3 state query in manual tests
 - [x] 6.4 Test pointer lock: verify relative motion works, absolute frozen
 - [x] 6.5 Test mouse grab: verify cursor confined to window
+
+## 7. Viewer Pointer Lock Mirror
+
+- [x] 7.1 Add `is_pointer_locked()` to CompositorServer
+- [x] 7.2 Expose `is_pointer_locked()` through InputForwarder
+- [x] 7.3 Add F3 toggle for pointer lock override in Application
+- [x] 7.4 Poll and mirror pointer lock state each frame
+- [x] 7.5 Auto-release lock when ImGui is shown (F1)
+- [x] 7.6 Test pointer lock mirroring with captured app

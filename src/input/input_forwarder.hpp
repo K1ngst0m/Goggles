@@ -41,6 +41,8 @@ public:
     [[nodiscard]] auto x11_display() const -> std::string;
     /// @brief Returns the Wayland socket name for the internal compositor.
     [[nodiscard]] auto wayland_display() const -> std::string;
+    /// @brief Returns true if pointer is currently locked by target app.
+    [[nodiscard]] auto is_pointer_locked() const -> bool;
 
 private:
     InputForwarder();
