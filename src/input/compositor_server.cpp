@@ -8,6 +8,7 @@
 #include <ctime>
 #include <fcntl.h>
 #include <linux/input-event-codes.h>
+#include <optional>
 #include <sys/eventfd.h>
 #include <thread>
 #include <unistd.h>
@@ -112,6 +113,9 @@ struct CompositorServer::Impl {
     struct XWaylandSurfaceHooks {
         Impl* impl = nullptr;
         wlr_xwayland_surface* xsurface = nullptr;
+        uint32_t id = 0;
+        std::string title;
+        std::string class_name;
         wl_listener associate{};
         wl_listener commit{};
         wl_listener destroy{};
@@ -121,6 +125,7 @@ struct CompositorServer::Impl {
         Impl* impl = nullptr;
         wlr_xdg_toplevel* toplevel = nullptr;
         wlr_surface* surface = nullptr;
+        uint32_t id = 0;
         bool sent_configure = false;
         bool acked_configure = false;
         bool mapped = false;
@@ -175,9 +180,13 @@ struct CompositorServer::Impl {
     bool xwayland_surface_detached = false;
     std::jthread compositor_thread;
     std::vector<wlr_surface*> surfaces;
+    std::vector<XdgToplevelHooks*> xdg_hooks;
+    std::vector<XWaylandSurfaceHooks*> xwayland_hooks;
     Listeners listeners;
     util::UniqueFd event_fd;
     std::string wayland_socket_name;
+    uint32_t next_surface_id = 1;
+    std::optional<uint32_t> manual_input_target;
 
     Impl() { listeners.impl = this; }
 
@@ -213,6 +222,13 @@ struct CompositorServer::Impl {
     void deactivate_constraint();
     void focus_surface(wlr_surface* surface);
     void focus_xwayland_surface(wlr_xwayland_surface* xsurface);
+
+    // Helper to get input target surface respecting manual override
+    struct InputTarget {
+        wlr_surface* surface = nullptr;
+        wlr_xwayland_surface* xsurface = nullptr;
+    };
+    [[nodiscard]] auto get_input_target() -> InputTarget;
 };
 
 CompositorServer::CompositorServer() : m_impl(std::make_unique<Impl>()) {}
@@ -575,27 +591,19 @@ void CompositorServer::Impl::process_input_events() {
 }
 
 void CompositorServer::Impl::handle_key_event(const InputEvent& event, uint32_t time) {
-    wlr_surface* target_surface = focused_surface;
-    if (focused_xsurface) {
-        target_surface = focused_xsurface->surface;
-        if (!target_surface) {
-            if (!xwayland_surface_detached) {
-                GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
-                                  "(surface=null)");
-                xwayland_surface_detached = true;
-            }
-            return;
-        }
-        xwayland_surface_detached = false;
-    }
+    auto target = get_input_target();
+    wlr_surface* target_surface = target.surface;
+    wlr_xwayland_surface* target_xsurface = target.xsurface;
+
     if (!target_surface) {
         return;
     }
+
     // XWayland quirk: wlr_xwm requires re-activation and keyboard re-entry before each
     // key event. Without this, X11 clients silently drop input after the first event.
     // Native Wayland clients maintain focus state correctly and only need enter on change.
-    if (focused_xsurface) {
-        wlr_xwayland_surface_activate(focused_xsurface, true);
+    if (target_xsurface) {
+        wlr_xwayland_surface_activate(target_xsurface, true);
         wlr_seat_set_keyboard(seat, keyboard.get());
         wlr_seat_keyboard_notify_enter(seat, target_surface, keyboard->keycodes,
                                        keyboard->num_keycodes, &keyboard->modifiers);
@@ -610,19 +618,10 @@ void CompositorServer::Impl::handle_key_event(const InputEvent& event, uint32_t 
 }
 
 void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event, uint32_t time) {
-    wlr_surface* target_surface = focused_surface;
-    if (focused_xsurface) {
-        target_surface = focused_xsurface->surface;
-        if (!target_surface) {
-            if (!xwayland_surface_detached) {
-                GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
-                                  "(surface=null)");
-                xwayland_surface_detached = true;
-            }
-            return;
-        }
-        xwayland_surface_detached = false;
-    }
+    auto target = get_input_target();
+    wlr_surface* target_surface = target.surface;
+    wlr_xwayland_surface* target_xsurface = target.xsurface;
+
     if (!target_surface) {
         return;
     }
@@ -641,8 +640,8 @@ void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event
     }
 
     // XWayland quirk: requires re-activation and pointer re-entry before each event
-    if (focused_xsurface) {
-        wlr_xwayland_surface_activate(focused_xsurface, true);
+    if (target_xsurface) {
+        wlr_xwayland_surface_activate(target_xsurface, true);
         wlr_seat_pointer_notify_enter(seat, target_surface, event.x, event.y);
     } else if (pointer_entered_surface != target_surface) {
         wlr_seat_pointer_notify_enter(seat, target_surface, event.x, event.y);
@@ -655,24 +654,16 @@ void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event
 }
 
 void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event, uint32_t time) {
-    wlr_surface* target_surface = focused_surface;
-    if (focused_xsurface) {
-        target_surface = focused_xsurface->surface;
-        if (!target_surface) {
-            if (!xwayland_surface_detached) {
-                GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
-                                  "(surface=null)");
-                xwayland_surface_detached = true;
-            }
-            return;
-        }
-        xwayland_surface_detached = false;
-    }
+    auto target = get_input_target();
+    wlr_surface* target_surface = target.surface;
+    wlr_xwayland_surface* target_xsurface = target.xsurface;
+
     if (!target_surface) {
         return;
     }
-    if (focused_xsurface) {
-        wlr_xwayland_surface_activate(focused_xsurface, true);
+
+    if (target_xsurface) {
+        wlr_xwayland_surface_activate(target_xsurface, true);
         wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
     } else if (pointer_entered_surface != target_surface) {
         wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
@@ -684,24 +675,16 @@ void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event
 }
 
 void CompositorServer::Impl::handle_pointer_axis_event(const InputEvent& event, uint32_t time) {
-    wlr_surface* target_surface = focused_surface;
-    if (focused_xsurface) {
-        target_surface = focused_xsurface->surface;
-        if (!target_surface) {
-            if (!xwayland_surface_detached) {
-                GOGGLES_LOG_DEBUG("Dropping input: focused XWayland surface is dissociated "
-                                  "(surface=null)");
-                xwayland_surface_detached = true;
-            }
-            return;
-        }
-        xwayland_surface_detached = false;
-    }
+    auto target = get_input_target();
+    wlr_surface* target_surface = target.surface;
+    wlr_xwayland_surface* target_xsurface = target.xsurface;
+
     if (!target_surface) {
         return;
     }
-    if (focused_xsurface) {
-        wlr_xwayland_surface_activate(focused_xsurface, true);
+
+    if (target_xsurface) {
+        wlr_xwayland_surface_activate(target_xsurface, true);
         wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
     } else if (pointer_entered_surface != target_surface) {
         wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
@@ -721,6 +704,8 @@ void CompositorServer::Impl::handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel)
     hooks->impl = this;
     hooks->toplevel = toplevel;
     hooks->surface = toplevel->base->surface;
+    hooks->id = next_surface_id++;
+    xdg_hooks.push_back(hooks);
 
     wl_list_init(&hooks->surface_commit.link);
     hooks->surface_commit.notify = [](wl_listener* listener, void* /*data*/) {
@@ -837,9 +822,19 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
         wlr_seat_pointer_clear_focus(seat);
     }
 
+    // Clear manual target if this surface was selected
+    if (manual_input_target && *manual_input_target == hooks->id) {
+        manual_input_target.reset();
+    }
+
     auto it = std::find(surfaces.begin(), surfaces.end(), hooks->surface);
     if (it != surfaces.end()) {
         surfaces.erase(it);
+    }
+
+    auto hook_it = std::find(xdg_hooks.begin(), xdg_hooks.end(), hooks);
+    if (hook_it != xdg_hooks.end()) {
+        xdg_hooks.erase(hook_it);
     }
 
     delete hooks;
@@ -852,6 +847,8 @@ void CompositorServer::Impl::handle_new_xwayland_surface(wlr_xwayland_surface* x
     auto* hooks = new XWaylandSurfaceHooks{};
     hooks->impl = this;
     hooks->xsurface = xsurface;
+    hooks->id = next_surface_id++;
+    xwayland_hooks.push_back(hooks);
 
     wl_list_init(&hooks->associate.link);
     wl_list_init(&hooks->commit.link);
@@ -893,6 +890,14 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
         return;
     }
 
+    auto hook_it =
+        std::find_if(xwayland_hooks.begin(), xwayland_hooks.end(),
+                     [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
+    if (hook_it != xwayland_hooks.end()) {
+        (*hook_it)->title = xsurface->title ? xsurface->title : "";
+        (*hook_it)->class_name = xsurface->class_ ? xsurface->class_ : "";
+    }
+
     GOGGLES_LOG_DEBUG("XWayland surface associated: window_id={} ptr={} surface={} title='{}'",
                       static_cast<uint32_t>(xsurface->window_id), static_cast<void*>(xsurface),
                       static_cast<void*>(xsurface->surface),
@@ -930,6 +935,16 @@ void CompositorServer::Impl::handle_xwayland_surface_commit(XWaylandSurfaceHooks
 }
 
 void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface) {
+    auto hook_it =
+        std::find_if(xwayland_hooks.begin(), xwayland_hooks.end(),
+                     [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
+    if (hook_it != xwayland_hooks.end()) {
+        if (manual_input_target && *manual_input_target == (*hook_it)->id) {
+            manual_input_target.reset();
+        }
+        xwayland_hooks.erase(hook_it);
+    }
+
     if (focused_xsurface != xsurface) {
         return;
     }
@@ -1075,6 +1090,109 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
             activate_constraint(constraint);
         }
     }
+}
+
+auto CompositorServer::Impl::get_input_target() -> InputTarget {
+    InputTarget target{};
+
+    if (manual_input_target) {
+        for (const auto* hooks : xwayland_hooks) {
+            if (hooks->id == *manual_input_target && hooks->xsurface && hooks->xsurface->surface) {
+                target.xsurface = hooks->xsurface;
+                target.surface = hooks->xsurface->surface;
+                return target;
+            }
+        }
+        for (const auto* hooks : xdg_hooks) {
+            if (hooks->id == *manual_input_target && hooks->surface) {
+                target.surface = hooks->surface;
+                return target;
+            }
+        }
+        // Manual target not found (surface may have been destroyed), fall through to auto
+    }
+
+    if (focused_xsurface && focused_xsurface->surface) {
+        target.xsurface = focused_xsurface;
+        target.surface = focused_xsurface->surface;
+    } else if (focused_surface) {
+        target.surface = focused_surface;
+    }
+
+    return target;
+}
+
+auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
+    std::vector<SurfaceInfo> result;
+
+    uint32_t target_id = 0;
+    if (m_impl->manual_input_target) {
+        target_id = *m_impl->manual_input_target;
+    } else {
+        // Auto-select: first XWayland surface if available, else first XDG surface
+        if (!m_impl->xwayland_hooks.empty()) {
+            target_id = m_impl->xwayland_hooks.front()->id;
+        } else if (!m_impl->xdg_hooks.empty()) {
+            target_id = m_impl->xdg_hooks.front()->id;
+        }
+    }
+
+    for (const auto* hooks : m_impl->xwayland_hooks) {
+        if (!hooks->xsurface || !hooks->xsurface->surface) {
+            continue;
+        }
+        SurfaceInfo info{};
+        info.id = hooks->id;
+        info.title = hooks->title;
+        info.class_name = hooks->class_name;
+        info.width = hooks->xsurface->width;
+        info.height = hooks->xsurface->height;
+        info.is_xwayland = true;
+        info.is_input_target = (info.id == target_id);
+        result.push_back(std::move(info));
+    }
+
+    for (const auto* hooks : m_impl->xdg_hooks) {
+        if (!hooks->surface || !hooks->toplevel) {
+            continue;
+        }
+        SurfaceInfo info{};
+        info.id = hooks->id;
+        info.title = hooks->toplevel->title ? hooks->toplevel->title : "";
+        info.class_name = hooks->toplevel->app_id ? hooks->toplevel->app_id : "";
+        info.width = hooks->toplevel->current.width;
+        info.height = hooks->toplevel->current.height;
+        info.is_xwayland = false;
+        info.is_input_target = (info.id == target_id);
+        result.push_back(std::move(info));
+    }
+
+    return result;
+}
+
+void CompositorServer::set_input_target(uint32_t surface_id) {
+    bool found = false;
+    for (const auto* hooks : m_impl->xwayland_hooks) {
+        if (hooks->id == surface_id) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        for (const auto* hooks : m_impl->xdg_hooks) {
+            if (hooks->id == surface_id) {
+                found = true;
+                break;
+            }
+        }
+    }
+    if (found) {
+        m_impl->manual_input_target = surface_id;
+    }
+}
+
+void CompositorServer::clear_input_override() {
+    m_impl->manual_input_target.reset();
 }
 
 } // namespace goggles::input

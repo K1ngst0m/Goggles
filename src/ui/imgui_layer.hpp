@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -16,6 +17,10 @@ union SDL_Event;
 
 namespace goggles::util {
 struct AppDirs;
+}
+
+namespace goggles::input {
+struct SurfaceInfo;
 }
 
 namespace goggles::ui {
@@ -59,6 +64,8 @@ struct ShaderControlState {
 using ParameterChangeCallback =
     std::function<void(size_t pass_index, const std::string& name, float value)>;
 using ParameterResetCallback = std::function<void()>;
+using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
+using SurfaceResetCallback = std::function<void()>;
 
 /// @brief ImGui overlay layer for shader control and debug widgets.
 class ImGuiLayer {
@@ -119,6 +126,17 @@ public:
     void toggle_debug_overlay() { m_debug_overlay_visible = !m_debug_overlay_visible; }
     [[nodiscard]] auto is_debug_overlay_visible() const -> bool { return m_debug_overlay_visible; }
 
+    void toggle_surface_selector() { m_surface_selector_visible = !m_surface_selector_visible; }
+    [[nodiscard]] auto is_surface_selector_visible() const -> bool {
+        return m_surface_selector_visible;
+    }
+    /// @brief Updates the displayed surface list.
+    void set_surfaces(std::vector<input::SurfaceInfo> surfaces);
+    /// @brief Sets the callback invoked when a surface is selected.
+    void set_surface_select_callback(SurfaceSelectCallback callback);
+    /// @brief Sets the callback invoked when "Reset to Auto" is clicked.
+    void set_surface_reset_callback(SurfaceResetCallback callback);
+
     /// @brief Rebuilds ImGui resources after a swapchain format change.
     void rebuild_for_format(vk::Format new_format);
     /// @brief Records a timing sample for the source (captured) frame cadence.
@@ -131,6 +149,7 @@ private:
     void draw_preset_tree(const PresetTreeNode& node);
     void draw_filtered_presets();
     void draw_debug_overlay();
+    void draw_surface_selector();
     void rebuild_preset_tree();
     [[nodiscard]] auto matches_filter(const std::filesystem::path& path) const -> bool;
 
@@ -151,9 +170,13 @@ private:
     PresetTreeNode m_preset_tree;
     ParameterChangeCallback m_on_parameter_change;
     ParameterResetCallback m_on_parameter_reset;
+    SurfaceSelectCallback m_on_surface_select;
+    SurfaceResetCallback m_on_surface_reset;
+    std::vector<input::SurfaceInfo> m_surfaces;
     float m_last_display_scale = 1.0F;
     bool m_visible = true;
     bool m_debug_overlay_visible = true;
+    bool m_surface_selector_visible = false;
     bool m_initialized = false;
 
     static constexpr size_t K_FRAME_HISTORY_SIZE = 120;
