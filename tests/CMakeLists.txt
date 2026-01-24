@@ -128,6 +128,32 @@ target_compile_definitions(goggles_manual_input_wayland PRIVATE
 
 goggles_enable_sanitizers(goggles_manual_input_wayland)
 
+# Manual test: multi-surface selector testing (X11)
+add_executable(goggles_manual_surface_selector_x11
+    input/manual_surface_selector_x11.cpp
+)
+
+target_link_libraries(goggles_manual_surface_selector_x11 PRIVATE
+    SDL3::SDL3
+    Vulkan::Vulkan
+    goggles_util
+)
+
+goggles_enable_sanitizers(goggles_manual_surface_selector_x11)
+
+# Manual test: multi-surface selector testing (Wayland)
+add_executable(goggles_manual_surface_selector_wayland
+    input/manual_surface_selector_wayland.cpp
+)
+
+target_link_libraries(goggles_manual_surface_selector_wayland PRIVATE
+    SDL3::SDL3
+    Vulkan::Vulkan
+    goggles_util
+)
+
+goggles_enable_sanitizers(goggles_manual_surface_selector_wayland)
+
 # Integration test: validates CompositorServer -> XWayland -> SDL (X11) input forwarding
 add_executable(goggles_auto_input_forwarding_x11
     input/auto_input_forwarding_x11.cpp

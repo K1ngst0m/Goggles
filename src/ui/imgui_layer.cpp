@@ -9,6 +9,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+#include <input/compositor_server.hpp>
 #include <numeric>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
@@ -251,6 +252,9 @@ void ImGuiLayer::begin_frame() {
     if (m_debug_overlay_visible) {
         draw_debug_overlay();
     }
+    if (m_surface_selector_visible) {
+        draw_surface_selector();
+    }
 }
 
 void ImGuiLayer::end_frame() {
@@ -357,6 +361,22 @@ void ImGuiLayer::set_parameter_change_callback(ParameterChangeCallback callback)
 
 void ImGuiLayer::set_parameter_reset_callback(ParameterResetCallback callback) {
     m_on_parameter_reset = std::move(callback);
+}
+
+void ImGuiLayer::set_surfaces(std::vector<input::SurfaceInfo> surfaces) {
+    m_surfaces = std::move(surfaces);
+}
+
+void ImGuiLayer::set_manual_override_active(bool active) {
+    m_manual_override_active = active;
+}
+
+void ImGuiLayer::set_surface_select_callback(SurfaceSelectCallback callback) {
+    m_on_surface_select = std::move(callback);
+}
+
+void ImGuiLayer::set_surface_reset_callback(SurfaceResetCallback callback) {
+    m_on_surface_reset = std::move(callback);
 }
 
 auto ImGuiLayer::wants_capture_keyboard() const -> bool {
@@ -517,6 +537,65 @@ void ImGuiLayer::draw_debug_overlay() {
         ImGui::PlotLines("##source_ft", m_source_frame_times.data(),
                          static_cast<int>(K_FRAME_HISTORY_SIZE),
                          static_cast<int>(m_source_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 40));
+    }
+    ImGui::End();
+}
+
+void ImGuiLayer::draw_surface_selector() {
+    ImGui::SetNextWindowPos(ImVec2(10, 420), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Surfaces (F4 to toggle)")) {
+        if (m_surfaces.empty()) {
+            ImGui::TextDisabled("No surfaces connected");
+        } else {
+            ImGui::Text("Mode: %s", m_manual_override_active ? "Manual" : "Auto");
+            ImGui::Separator();
+
+            for (const auto& surface : m_surfaces) {
+                ImGui::PushID(static_cast<int>(surface.id));
+
+                bool is_selected = surface.is_input_target;
+                std::string label;
+                if (!surface.title.empty()) {
+                    label = surface.title;
+                } else if (!surface.class_name.empty()) {
+                    label = surface.class_name;
+                } else {
+                    label = surface.is_xwayland ? "XWayland Surface" : "Wayland Surface";
+                }
+
+                std::string full_label = std::string(is_selected ? "> " : "  ") + label + " [" +
+                                         std::to_string(surface.width) + "x" +
+                                         std::to_string(surface.height) + "]";
+
+                if (ImGui::Selectable(full_label.c_str(), is_selected)) {
+                    if (m_on_surface_select) {
+                        m_on_surface_select(surface.id);
+                    }
+                }
+
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("ID: %u", surface.id);
+                    ImGui::Text("Title: %s",
+                                surface.title.empty() ? "(none)" : surface.title.c_str());
+                    ImGui::Text("Class: %s",
+                                surface.class_name.empty() ? "(none)" : surface.class_name.c_str());
+                    ImGui::Text("Size: %dx%d", surface.width, surface.height);
+                    ImGui::Text("Type: %s", surface.is_xwayland ? "XWayland" : "Wayland");
+                    ImGui::EndTooltip();
+                }
+
+                ImGui::PopID();
+            }
+
+            ImGui::Separator();
+            if (ImGui::Button("Reset to Auto")) {
+                if (m_on_surface_reset) {
+                    m_on_surface_reset();
+                }
+            }
+        }
     }
     ImGui::End();
 }

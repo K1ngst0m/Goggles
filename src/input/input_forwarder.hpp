@@ -1,8 +1,11 @@
 #pragma once
 
+#include "compositor_server.hpp"
+
 #include <SDL3/SDL_events.h>
 #include <memory>
 #include <util/error.hpp>
+#include <vector>
 
 namespace goggles::input {
 
@@ -43,6 +46,14 @@ public:
     [[nodiscard]] auto wayland_display() const -> std::string;
     /// @brief Returns true if pointer is currently locked by target app.
     [[nodiscard]] auto is_pointer_locked() const -> bool;
+    /// @brief Returns a snapshot of all connected surfaces.
+    [[nodiscard]] auto get_surfaces() const -> std::vector<SurfaceInfo>;
+    /// @brief Returns true if a manual input target is set.
+    [[nodiscard]] auto is_manual_override_active() const -> bool;
+    /// @brief Sets a manual input target by surface ID.
+    void set_input_target(uint32_t surface_id);
+    /// @brief Clears manual override, reverting to auto-selection (first surface).
+    void clear_input_override();
 
 private:
     InputForwarder();

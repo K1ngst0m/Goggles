@@ -192,6 +192,15 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
             GOGGLES_LOG_INFO("Input forwarding: DISPLAY={} WAYLAND_DISPLAY={}",
                              app->m_input_forwarder->x11_display(),
                              app->m_input_forwarder->wayland_display());
+
+            app->m_imgui_layer->set_surface_select_callback(
+                [forwarder = app->m_input_forwarder.get()](uint32_t surface_id) {
+                    forwarder->set_input_target(surface_id);
+                });
+            app->m_imgui_layer->set_surface_reset_callback(
+                [forwarder = app->m_input_forwarder.get()]() {
+                    forwarder->clear_input_override();
+                });
         }
     } else {
         GOGGLES_LOG_INFO("Input forwarding disabled");
@@ -275,6 +284,10 @@ void Application::handle_event(const SDL_Event& event) {
         if (event.key.key == SDLK_F3 && m_input_forwarder) {
             m_pointer_lock_override = !m_pointer_lock_override;
             update_pointer_lock_mirror();
+            return;
+        }
+        if (event.key.key == SDLK_F4 && m_input_forwarder) {
+            m_imgui_layer->toggle_surface_selector();
             return;
         }
         break;
@@ -442,7 +455,7 @@ void Application::tick_frame() {
         }
     }
 
-    // UI state sync (shader enable/disable, preset reload)
+    // UI state sync (shader enable/disable, preset reload, surface selector)
     {
         auto& state = m_imgui_layer->state();
         if (state.shader_enabled != m_last_shader_enabled) {
@@ -460,6 +473,11 @@ void Application::tick_frame() {
                                       result.error().message);
                 }
             }
+        }
+        if (m_imgui_layer->is_surface_selector_visible() && m_input_forwarder) {
+            m_imgui_layer->set_surfaces(m_input_forwarder->get_surfaces());
+            m_imgui_layer->set_manual_override_active(
+                m_input_forwarder->is_manual_override_active());
         }
         m_imgui_layer->begin_frame();
     }
