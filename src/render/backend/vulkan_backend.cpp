@@ -1110,6 +1110,17 @@ void VulkanBackend::cleanup_sync_semaphores() {
     m_sync_wait_succeeded = false;
 }
 
+void VulkanBackend::set_prechain_resolution(uint32_t width, uint32_t height) {
+    m_source_resolution = vk::Extent2D{width, height};
+    if (m_filter_chain) {
+        m_filter_chain->set_prechain_resolution(width, height);
+    }
+}
+
+auto VulkanBackend::get_prechain_resolution() const -> vk::Extent2D {
+    return m_source_resolution;
+}
+
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     GOGGLES_PROFILE_SCOPE("AcquireImage");
 

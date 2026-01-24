@@ -164,6 +164,16 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
                     update_ui_parameters(backend, *layer);
                 }
             });
+        app->m_imgui_layer->set_prechain_change_callback(
+            [&backend = *app->m_vulkan_backend](uint32_t width, uint32_t height) {
+                backend.set_prechain_resolution(width, height);
+            });
+
+        // Initialize pre-chain UI state from backend
+        {
+            auto prechain_res = app->m_vulkan_backend->get_prechain_resolution();
+            app->m_imgui_layer->set_prechain_state(prechain_res);
+        }
 
         update_ui_parameters(*app->m_vulkan_backend, *app->m_imgui_layer);
     }
@@ -503,6 +513,15 @@ void Application::tick_frame() {
                 GOGGLES_LOG_ERROR("Render failed: {}", render_result.error().message);
             } else {
                 needs_resize = !*render_result;
+            }
+
+            // Update pre-chain UI with captured dimensions if not yet set
+            auto& prechain = m_imgui_layer->state().prechain;
+            if (prechain.target_width == 0 && prechain.target_height == 0) {
+                auto captured = m_vulkan_backend->get_captured_extent();
+                if (captured.width > 0 && captured.height > 0) {
+                    m_imgui_layer->set_prechain_state(captured);
+                }
             }
         } else {
             GOGGLES_PROFILE_SCOPE("RenderClear");

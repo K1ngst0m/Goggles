@@ -720,6 +720,21 @@ void FilterChain::clear_parameter_overrides() {
     }
 }
 
+void FilterChain::set_prechain_resolution(uint32_t width, uint32_t height) {
+    m_source_resolution = vk::Extent2D{width, height};
+
+    // Clear existing prechain passes/framebuffers to force rebuild on next frame
+    for (auto& pass : m_prechain_passes) {
+        pass->shutdown();
+    }
+    m_prechain_passes.clear();
+    m_prechain_framebuffers.clear();
+}
+
+auto FilterChain::get_prechain_resolution() const -> vk::Extent2D {
+    return m_source_resolution;
+}
+
 auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents,
                                       vk::Extent2D viewport_extent) -> Result<void> {
     GOGGLES_PROFILE_SCOPE("EnsureFramebuffers");

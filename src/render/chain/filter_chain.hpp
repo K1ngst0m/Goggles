@@ -94,6 +94,13 @@ public:
     /// @brief Clears all parameter overrides.
     void clear_parameter_overrides();
 
+    /// @brief Updates the pre-chain target resolution at runtime.
+    /// @param width Target width (0 = aspect-preserve from height).
+    /// @param height Target height (0 = aspect-preserve from width).
+    void set_prechain_resolution(uint32_t width, uint32_t height);
+    /// @brief Returns the current pre-chain target resolution.
+    [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
+
 private:
     FilterChain() = default;
     [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents,

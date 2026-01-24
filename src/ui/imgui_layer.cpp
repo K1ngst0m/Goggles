@@ -363,6 +363,16 @@ void ImGuiLayer::set_parameter_reset_callback(ParameterResetCallback callback) {
     m_on_parameter_reset = std::move(callback);
 }
 
+void ImGuiLayer::set_prechain_change_callback(PreChainChangeCallback callback) {
+    m_on_prechain_change = std::move(callback);
+}
+
+void ImGuiLayer::set_prechain_state(vk::Extent2D resolution) {
+    m_state.prechain.target_width = resolution.width;
+    m_state.prechain.target_height = resolution.height;
+    m_state.prechain.dirty = false;
+}
+
 void ImGuiLayer::set_surfaces(std::vector<input::SurfaceInfo> surfaces) {
     m_surfaces = std::move(surfaces);
 }
@@ -436,12 +446,54 @@ void ImGuiLayer::draw_preset_tree(const PresetTreeNode& node) {
 
 void ImGuiLayer::draw_shader_controls() {
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 500), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("Shader Controls")) {
-        ImGui::Checkbox("Enable Shader", &m_state.shader_enabled);
-
+        draw_prechain_stage_controls();
         ImGui::Separator();
+        draw_effect_stage_controls();
+        ImGui::Separator();
+        draw_postchain_stage_controls();
+    }
+    ImGui::End();
+}
+
+void ImGuiLayer::draw_prechain_stage_controls() {
+    if (ImGui::CollapsingHeader("Pre-Chain Stage")) {
+        auto& prechain = m_state.prechain;
+
+        ImGui::Text("Target Resolution:");
+        ImGui::SetNextItemWidth(100);
+        int width = static_cast<int>(prechain.target_width);
+        if (ImGui::InputInt("##width", &width, 0, 0)) {
+            prechain.target_width = static_cast<uint32_t>(std::max(0, width));
+            prechain.dirty = true;
+        }
+        ImGui::SameLine();
+        ImGui::Text("x");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(100);
+        int height = static_cast<int>(prechain.target_height);
+        if (ImGui::InputInt("##height", &height, 0, 0)) {
+            prechain.target_height = static_cast<uint32_t>(std::max(0, height));
+            prechain.dirty = true;
+        }
+
+        if (prechain.dirty) {
+            ImGui::SameLine();
+            if (ImGui::Button("Apply")) {
+                if (m_on_prechain_change) {
+                    m_on_prechain_change(prechain.target_width, prechain.target_height);
+                }
+                prechain.dirty = false;
+            }
+        }
+    }
+}
+
+void ImGuiLayer::draw_effect_stage_controls() {
+    if (ImGui::CollapsingHeader("Effect Stage (RetroArch)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Enable Shader", &m_state.shader_enabled);
 
         if (!m_state.current_preset.empty()) {
             ImGui::Text("Current: %s", m_state.current_preset.filename().string().c_str());
@@ -451,12 +503,12 @@ void ImGuiLayer::draw_shader_controls() {
 
         ImGui::Separator();
 
-        if (ImGui::CollapsingHeader("Available Presets", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::TreeNode("Available Presets")) {
             ImGui::SetNextItemWidth(-FLT_MIN);
             ImGui::InputTextWithHint("##search", "Search...", m_state.search_filter.data(),
                                      m_state.search_filter.size());
 
-            ImGui::BeginChild("##preset_tree", ImVec2(0, 200), ImGuiChildFlags_Borders);
+            ImGui::BeginChild("##preset_tree", ImVec2(0, 150), ImGuiChildFlags_Borders);
             if (m_state.search_filter[0] == '\0') {
                 draw_preset_tree(m_preset_tree);
             } else {
@@ -472,18 +524,24 @@ void ImGuiLayer::draw_shader_controls() {
             if (ImGui::Button("Reload Current")) {
                 m_state.reload_requested = true;
             }
+            ImGui::TreePop();
         }
 
         if (!m_state.parameters.empty()) {
-            ImGui::Separator();
             draw_parameter_controls();
         }
     }
-    ImGui::End();
+}
+
+void ImGuiLayer::draw_postchain_stage_controls() {
+    if (ImGui::CollapsingHeader("Post-Chain Stage")) {
+        ImGui::TextDisabled("Output Blit");
+        ImGui::TextDisabled("(No configurable options)");
+    }
 }
 
 void ImGuiLayer::draw_parameter_controls() {
-    if (ImGui::CollapsingHeader("Shader Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::TreeNode("Shader Parameters")) {
         if (ImGui::Button("Reset to Defaults")) {
             if (m_on_parameter_reset) {
                 m_on_parameter_reset();
@@ -508,6 +566,7 @@ void ImGuiLayer::draw_parameter_controls() {
                 ImGui::SetTooltip("%s", param.info.description.c_str());
             }
         }
+        ImGui::TreePop();
     }
 }
 
