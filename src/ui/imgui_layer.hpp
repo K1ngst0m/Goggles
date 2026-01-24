@@ -49,6 +49,13 @@ struct ParameterState {
     float current_value;
 };
 
+/// @brief UI state for pre-chain pipeline configuration.
+struct PreChainState {
+    uint32_t target_width = 0;
+    uint32_t target_height = 0;
+    bool dirty = false;
+};
+
 /// @brief Aggregate UI state for shader controls.
 struct ShaderControlState {
     std::filesystem::path current_preset;
@@ -59,11 +66,13 @@ struct ShaderControlState {
     int selected_preset_index = -1;
     bool reload_requested = false;
     bool parameters_dirty = false;
+    PreChainState prechain;
 };
 
 using ParameterChangeCallback =
     std::function<void(size_t pass_index, const std::string& name, float value)>;
 using ParameterResetCallback = std::function<void()>;
+using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t height)>;
 using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
 using SurfaceResetCallback = std::function<void()>;
 
@@ -111,6 +120,10 @@ public:
     void set_parameter_change_callback(ParameterChangeCallback callback);
     /// @brief Sets a callback invoked when parameters should be reset.
     void set_parameter_reset_callback(ParameterResetCallback callback);
+    /// @brief Sets a callback invoked when pre-chain resolution is changed.
+    void set_prechain_change_callback(PreChainChangeCallback callback);
+    /// @brief Initializes pre-chain UI state from backend values.
+    void set_prechain_state(vk::Extent2D resolution);
 
     /// @brief Returns mutable UI state (owned by this layer).
     [[nodiscard]] auto state() -> ShaderControlState& { return m_state; }
@@ -147,6 +160,9 @@ public:
 private:
     ImGuiLayer() = default;
     void draw_shader_controls();
+    void draw_prechain_stage_controls();
+    void draw_effect_stage_controls();
+    void draw_postchain_stage_controls();
     void draw_parameter_controls();
     void draw_preset_tree(const PresetTreeNode& node);
     void draw_filtered_presets();
@@ -172,6 +188,7 @@ private:
     PresetTreeNode m_preset_tree;
     ParameterChangeCallback m_on_parameter_change;
     ParameterResetCallback m_on_parameter_reset;
+    PreChainChangeCallback m_on_prechain_change;
     SurfaceSelectCallback m_on_surface_select;
     SurfaceResetCallback m_on_surface_reset;
     std::vector<input::SurfaceInfo> m_surfaces;
