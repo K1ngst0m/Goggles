@@ -48,6 +48,8 @@ public:
     [[nodiscard]] auto is_pointer_locked() const -> bool;
     /// @brief Returns a snapshot of all connected surfaces.
     [[nodiscard]] auto get_surfaces() const -> std::vector<SurfaceInfo>;
+    /// @brief Returns true if a manual input target is set.
+    [[nodiscard]] auto is_manual_override_active() const -> bool;
     /// @brief Sets a manual input target by surface ID.
     void set_input_target(uint32_t surface_id);
     /// @brief Clears manual override, reverting to auto-selection (first surface).

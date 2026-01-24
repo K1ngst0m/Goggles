@@ -476,6 +476,8 @@ void Application::tick_frame() {
         }
         if (m_imgui_layer->is_surface_selector_visible() && m_input_forwarder) {
             m_imgui_layer->set_surfaces(m_input_forwarder->get_surfaces());
+            m_imgui_layer->set_manual_override_active(
+                m_input_forwarder->is_manual_override_active());
         }
         m_imgui_layer->begin_frame();
     }

@@ -367,6 +367,10 @@ void ImGuiLayer::set_surfaces(std::vector<input::SurfaceInfo> surfaces) {
     m_surfaces = std::move(surfaces);
 }
 
+void ImGuiLayer::set_manual_override_active(bool active) {
+    m_manual_override_active = active;
+}
+
 void ImGuiLayer::set_surface_select_callback(SurfaceSelectCallback callback) {
     m_on_surface_select = std::move(callback);
 }
@@ -544,19 +548,7 @@ void ImGuiLayer::draw_surface_selector() {
         if (m_surfaces.empty()) {
             ImGui::TextDisabled("No surfaces connected");
         } else {
-            // Check if any surface has is_input_target true without manual override
-            bool has_manual_override = false;
-            for (const auto& s : m_surfaces) {
-                if (s.is_input_target) {
-                    has_manual_override = true;
-                    break;
-                }
-            }
-            // This is a simplification - we check if any is marked as target
-            // The actual "auto" vs "manual" is tracked in CompositorServer
-
-            ImGui::Text("Mode: %s",
-                        has_manual_override ? "Manual selection" : "Auto (first surface)");
+            ImGui::Text("Mode: %s", m_manual_override_active ? "Manual" : "Auto");
             ImGui::Separator();
 
             for (const auto& surface : m_surfaces) {

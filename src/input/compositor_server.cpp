@@ -1170,6 +1170,10 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
     return result;
 }
 
+auto CompositorServer::is_manual_override_active() const -> bool {
+    return m_impl->manual_input_target.has_value();
+}
+
 void CompositorServer::set_input_target(uint32_t surface_id) {
     bool found = false;
     for (const auto* hooks : m_impl->xwayland_hooks) {

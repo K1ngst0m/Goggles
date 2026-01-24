@@ -132,6 +132,8 @@ public:
     }
     /// @brief Updates the displayed surface list.
     void set_surfaces(std::vector<input::SurfaceInfo> surfaces);
+    /// @brief Updates whether manual override is active.
+    void set_manual_override_active(bool active);
     /// @brief Sets the callback invoked when a surface is selected.
     void set_surface_select_callback(SurfaceSelectCallback callback);
     /// @brief Sets the callback invoked when "Reset to Auto" is clicked.
@@ -177,6 +179,7 @@ private:
     bool m_visible = true;
     bool m_debug_overlay_visible = true;
     bool m_surface_selector_visible = false;
+    bool m_manual_override_active = false;
     bool m_initialized = false;
 
     static constexpr size_t K_FRAME_HISTORY_SIZE = 120;

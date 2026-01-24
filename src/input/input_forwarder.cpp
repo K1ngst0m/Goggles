@@ -263,6 +263,10 @@ auto InputForwarder::get_surfaces() const -> std::vector<SurfaceInfo> {
     return m_impl->server.get_surfaces();
 }
 
+auto InputForwarder::is_manual_override_active() const -> bool {
+    return m_impl->server.is_manual_override_active();
+}
+
 void InputForwarder::set_input_target(uint32_t surface_id) {
     m_impl->server.set_input_target(surface_id);
 }
