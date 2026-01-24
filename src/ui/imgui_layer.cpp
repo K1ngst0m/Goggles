@@ -246,14 +246,15 @@ void ImGuiLayer::begin_frame() {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    if (m_visible) {
+    if (!m_global_visible) {
+        return;
+    }
+
+    if (m_shader_controls_visible) {
         draw_shader_controls();
     }
-    if (m_debug_overlay_visible) {
-        draw_debug_overlay();
-    }
-    if (m_surface_selector_visible) {
-        draw_surface_selector();
+    if (m_app_management_visible) {
+        draw_app_management();
     }
 }
 
@@ -414,6 +415,14 @@ void ImGuiLayer::set_surface_reset_callback(SurfaceResetCallback callback) {
     m_on_surface_reset = std::move(callback);
 }
 
+void ImGuiLayer::set_pointer_lock_override(bool override_active) {
+    m_pointer_lock_override = override_active;
+}
+
+void ImGuiLayer::set_pointer_lock_override_callback(PointerLockOverrideCallback callback) {
+    m_on_pointer_lock_override = std::move(callback);
+}
+
 auto ImGuiLayer::wants_capture_keyboard() const -> bool {
     return ImGui::GetIO().WantCaptureKeyboard;
 }
@@ -472,7 +481,6 @@ void ImGuiLayer::draw_preset_tree(const PresetTreeNode& node) {
 void ImGuiLayer::draw_shader_controls() {
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 500), ImGuiCond_FirstUseEver);
-
     if (ImGui::Begin("Shader Controls")) {
         draw_prechain_stage_controls();
         ImGui::Separator();
@@ -672,88 +680,96 @@ void ImGuiLayer::draw_parameter_controls() {
     }
 }
 
-void ImGuiLayer::draw_debug_overlay() {
-    auto& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 170, 10), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowBgAlpha(0.5F);
+void ImGuiLayer::draw_app_management() {
+    ImGui::SetNextWindowPos(ImVec2(370, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 350), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Application")) {
+        if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
+            float avg_ms = std::accumulate(m_frame_times.begin(), m_frame_times.end(), 0.F) /
+                           static_cast<float>(K_FRAME_HISTORY_SIZE);
+            float fps = avg_ms > 0.F ? 1000.F / avg_ms : 0.F;
 
-    constexpr auto K_FLAGS = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-                             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+            float src_avg_ms =
+                std::accumulate(m_source_frame_times.begin(), m_source_frame_times.end(), 0.F) /
+                static_cast<float>(K_FRAME_HISTORY_SIZE);
+            float src_fps = src_avg_ms > 0.F ? 1000.F / src_avg_ms : 0.F;
 
-    if (ImGui::Begin("##debug_overlay", nullptr, K_FLAGS)) {
-        float avg_ms = std::accumulate(m_frame_times.begin(), m_frame_times.end(), 0.F) /
-                       static_cast<float>(K_FRAME_HISTORY_SIZE);
-        float fps = avg_ms > 0.F ? 1000.F / avg_ms : 0.F;
+            ImGui::Text("Render: %.1f FPS (%.2f ms)", fps, avg_ms);
+            ImGui::PlotLines("##render_ft", m_frame_times.data(),
+                             static_cast<int>(K_FRAME_HISTORY_SIZE), static_cast<int>(m_frame_idx),
+                             nullptr, 0.F, 33.F, ImVec2(150, 40));
+            ImGui::Text("Source: %.1f FPS (%.2f ms)", src_fps, src_avg_ms);
+            ImGui::PlotLines(
+                "##source_ft", m_source_frame_times.data(), static_cast<int>(K_FRAME_HISTORY_SIZE),
+                static_cast<int>(m_source_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 40));
+        }
 
-        float src_avg_ms =
-            std::accumulate(m_source_frame_times.begin(), m_source_frame_times.end(), 0.F) /
-            static_cast<float>(K_FRAME_HISTORY_SIZE);
-        float src_fps = src_avg_ms > 0.F ? 1000.F / src_avg_ms : 0.F;
-
-        ImGui::Text("Render: %.1f FPS (%.2f ms)", fps, avg_ms);
-        ImGui::PlotLines("##render_ft", m_frame_times.data(),
-                         static_cast<int>(K_FRAME_HISTORY_SIZE), static_cast<int>(m_frame_idx),
-                         nullptr, 0.F, 33.F, ImVec2(150, 40));
-        ImGui::Text("Source: %.1f FPS (%.2f ms)", src_fps, src_avg_ms);
-        ImGui::PlotLines("##source_ft", m_source_frame_times.data(),
-                         static_cast<int>(K_FRAME_HISTORY_SIZE),
-                         static_cast<int>(m_source_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 40));
-    }
-    ImGui::End();
-}
-
-void ImGuiLayer::draw_surface_selector() {
-    ImGui::SetNextWindowPos(ImVec2(10, 420), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Surfaces (F4 to toggle)")) {
-        if (m_surfaces.empty()) {
-            ImGui::TextDisabled("No surfaces connected");
-        } else {
-            ImGui::Text("Mode: %s", m_manual_override_active ? "Manual" : "Auto");
-            ImGui::Separator();
-
-            for (const auto& surface : m_surfaces) {
-                ImGui::PushID(static_cast<int>(surface.id));
-
-                bool is_selected = surface.is_input_target;
-                std::string label;
-                if (!surface.title.empty()) {
-                    label = surface.title;
-                } else if (!surface.class_name.empty()) {
-                    label = surface.class_name;
-                } else {
-                    label = surface.is_xwayland ? "XWayland Surface" : "Wayland Surface";
+        if (ImGui::CollapsingHeader("Input", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::Checkbox("Force Enable Pointer Lock", &m_pointer_lock_override)) {
+                if (m_on_pointer_lock_override) {
+                    m_on_pointer_lock_override(m_pointer_lock_override);
                 }
-
-                std::string full_label = std::string(is_selected ? "> " : "  ") + label + " [" +
-                                         std::to_string(surface.width) + "x" +
-                                         std::to_string(surface.height) + "]";
-
-                if (ImGui::Selectable(full_label.c_str(), is_selected)) {
-                    if (m_on_surface_select) {
-                        m_on_surface_select(surface.id);
-                    }
-                }
-
-                if (ImGui::IsItemHovered()) {
-                    ImGui::BeginTooltip();
-                    ImGui::Text("ID: %u", surface.id);
-                    ImGui::Text("Title: %s",
-                                surface.title.empty() ? "(none)" : surface.title.c_str());
-                    ImGui::Text("Class: %s",
-                                surface.class_name.empty() ? "(none)" : surface.class_name.c_str());
-                    ImGui::Text("Size: %dx%d", surface.width, surface.height);
-                    ImGui::Text("Type: %s", surface.is_xwayland ? "XWayland" : "Wayland");
-                    ImGui::EndTooltip();
-                }
-
-                ImGui::PopID();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Force pointer lock even when target app doesn't request it");
+            }
+            if (m_pointer_lock_override) {
+                ImGui::TextColored(ImVec4(1.0F, 0.8F, 0.2F, 1.0F),
+                                   "Press Ctrl+Alt+Shift+Q to toggle overlay");
             }
 
             ImGui::Separator();
-            if (ImGui::Button("Reset to Auto")) {
-                if (m_on_surface_reset) {
-                    m_on_surface_reset();
+
+            ImGui::Text("Input Target");
+            if (m_surfaces.empty()) {
+                ImGui::TextDisabled("No surfaces connected");
+            } else {
+                ImGui::Text("Mode: %s", m_manual_override_active ? "Manual" : "Auto");
+
+                for (const auto& surface : m_surfaces) {
+                    ImGui::PushID(static_cast<int>(surface.id));
+
+                    bool is_selected = surface.is_input_target;
+                    std::string label;
+                    if (!surface.title.empty()) {
+                        label = surface.title;
+                    } else if (!surface.class_name.empty()) {
+                        label = surface.class_name;
+                    } else {
+                        label = surface.is_xwayland ? "XWayland Surface" : "Wayland Surface";
+                    }
+
+                    std::string full_label = std::string(is_selected ? "> " : "  ") + label + " [" +
+                                             std::to_string(surface.width) + "x" +
+                                             std::to_string(surface.height) + "]";
+
+                    if (ImGui::Selectable(full_label.c_str(), is_selected)) {
+                        if (m_on_surface_select) {
+                            m_on_surface_select(surface.id);
+                        }
+                    }
+
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("ID: %u", surface.id);
+                        ImGui::Text("Title: %s",
+                                    surface.title.empty() ? "(none)" : surface.title.c_str());
+                        ImGui::Text("Class: %s", surface.class_name.empty()
+                                                     ? "(none)"
+                                                     : surface.class_name.c_str());
+                        ImGui::Text("Size: %dx%d", surface.width, surface.height);
+                        ImGui::Text("Type: %s", surface.is_xwayland ? "XWayland" : "Wayland");
+                        ImGui::EndTooltip();
+                    }
+
+                    ImGui::PopID();
+                }
+
+                ImGui::Separator();
+                if (ImGui::Button("Reset to Auto")) {
+                    if (m_on_surface_reset) {
+                        m_on_surface_reset();
+                    }
                 }
             }
         }

@@ -90,6 +90,7 @@ using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t heigh
 using PreChainParameterCallback = std::function<void(const std::string& name, float value)>;
 using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
 using SurfaceResetCallback = std::function<void()>;
+using PointerLockOverrideCallback = std::function<void(bool override_active)>;
 
 /// @brief ImGui overlay layer for shader control and debug widgets.
 class ImGuiLayer {
@@ -153,14 +154,11 @@ public:
     /// @brief Returns true if ImGui wants exclusive mouse input.
     [[nodiscard]] auto wants_capture_mouse() const -> bool;
 
-    void toggle_visibility() { m_visible = !m_visible; }
-    [[nodiscard]] auto is_visible() const -> bool { return m_visible; }
-    void toggle_debug_overlay() { m_debug_overlay_visible = !m_debug_overlay_visible; }
-    [[nodiscard]] auto is_debug_overlay_visible() const -> bool { return m_debug_overlay_visible; }
+    void toggle_global_visibility() { m_global_visible = !m_global_visible; }
+    [[nodiscard]] auto is_globally_visible() const -> bool { return m_global_visible; }
 
-    void toggle_surface_selector() { m_surface_selector_visible = !m_surface_selector_visible; }
-    [[nodiscard]] auto is_surface_selector_visible() const -> bool {
-        return m_surface_selector_visible;
+    [[nodiscard]] auto is_app_management_visible() const -> bool {
+        return m_app_management_visible;
     }
     /// @brief Updates the displayed surface list.
     void set_surfaces(std::vector<input::SurfaceInfo> surfaces);
@@ -170,6 +168,10 @@ public:
     void set_surface_select_callback(SurfaceSelectCallback callback);
     /// @brief Sets the callback invoked when "Reset to Auto" is clicked.
     void set_surface_reset_callback(SurfaceResetCallback callback);
+    /// @brief Sets the pointer lock override state from application.
+    void set_pointer_lock_override(bool override_active);
+    /// @brief Sets the callback invoked when pointer lock override is toggled.
+    void set_pointer_lock_override_callback(PointerLockOverrideCallback callback);
 
     /// @brief Rebuilds ImGui resources after a swapchain format change.
     void rebuild_for_format(vk::Format new_format);
@@ -185,8 +187,7 @@ private:
     void draw_parameter_controls();
     void draw_preset_tree(const PresetTreeNode& node);
     void draw_filtered_presets();
-    void draw_debug_overlay();
-    void draw_surface_selector();
+    void draw_app_management();
     void rebuild_preset_tree();
     [[nodiscard]] auto matches_filter(const std::filesystem::path& path) const -> bool;
 
@@ -211,12 +212,14 @@ private:
     PreChainParameterCallback m_on_prechain_parameter;
     SurfaceSelectCallback m_on_surface_select;
     SurfaceResetCallback m_on_surface_reset;
+    PointerLockOverrideCallback m_on_pointer_lock_override;
     std::vector<input::SurfaceInfo> m_surfaces;
     float m_last_display_scale = 1.0F;
-    bool m_visible = true;
-    bool m_debug_overlay_visible = true;
-    bool m_surface_selector_visible = false;
+    bool m_global_visible = true;
+    bool m_shader_controls_visible = true;
+    bool m_app_management_visible = true;
     bool m_manual_override_active = false;
+    bool m_pointer_lock_override = false;
     bool m_initialized = false;
 
     static constexpr size_t K_FRAME_HISTORY_SIZE = 120;

@@ -134,7 +134,7 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
 
         app->m_imgui_layer =
             GOGGLES_TRY(ui::ImGuiLayer::create(app->m_window, imgui_config, app_dirs));
-        GOGGLES_LOG_INFO("ImGui layer initialized (F1 to toggle)");
+        GOGGLES_LOG_INFO("ImGui layer initialized");
     }
 
     // Shader preset catalog
@@ -173,13 +173,10 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
                 backend.set_prechain_parameter(name, value);
             });
 
-        // Initialize pre-chain UI state from backend
-        {
-            auto prechain_res = app->m_vulkan_backend->get_prechain_resolution();
-            app->m_imgui_layer->set_prechain_state(prechain_res);
-            app->m_imgui_layer->set_prechain_parameters(
-                app->m_vulkan_backend->get_prechain_parameters());
-        }
+        auto prechain_res = app->m_vulkan_backend->get_prechain_resolution();
+        app->m_imgui_layer->set_prechain_state(prechain_res);
+        app->m_imgui_layer->set_prechain_parameters(
+            app->m_vulkan_backend->get_prechain_parameters());
 
         update_ui_parameters(*app->m_vulkan_backend, *app->m_imgui_layer);
     }
@@ -216,6 +213,11 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
             app->m_imgui_layer->set_surface_reset_callback(
                 [forwarder = app->m_input_forwarder.get()]() {
                     forwarder->clear_input_override();
+                });
+            app->m_imgui_layer->set_pointer_lock_override_callback(
+                [app_ptr = app.get()](bool override_active) {
+                    app_ptr->m_pointer_lock_override = override_active;
+                    app_ptr->update_pointer_lock_mirror();
                 });
         }
     } else {
@@ -288,25 +290,16 @@ void Application::handle_event(const SDL_Event& event) {
         m_window_resized = true;
         return;
 
-    case SDL_EVENT_KEY_DOWN:
-        if (event.key.key == SDLK_F1) {
-            m_imgui_layer->toggle_visibility();
-            return;
-        }
-        if (event.key.key == SDLK_F2) {
-            m_imgui_layer->toggle_debug_overlay();
-            return;
-        }
-        if (event.key.key == SDLK_F3 && m_input_forwarder) {
-            m_pointer_lock_override = !m_pointer_lock_override;
-            update_pointer_lock_mirror();
-            return;
-        }
-        if (event.key.key == SDLK_F4 && m_input_forwarder) {
-            m_imgui_layer->toggle_surface_selector();
+    case SDL_EVENT_KEY_DOWN: {
+        bool has_ctrl = (event.key.mod & SDL_KMOD_CTRL) != 0;
+        bool has_alt = (event.key.mod & SDL_KMOD_ALT) != 0;
+        bool has_shift = (event.key.mod & SDL_KMOD_SHIFT) != 0;
+        if (has_ctrl && has_alt && has_shift && event.key.key == SDLK_Q) {
+            m_imgui_layer->toggle_global_visibility();
             return;
         }
         break;
+    }
 
     default:
         break;
@@ -508,7 +501,7 @@ void Application::tick_frame() {
                 }
             }
         }
-        if (m_imgui_layer->is_surface_selector_visible() && m_input_forwarder) {
+        if (m_imgui_layer->is_app_management_visible() && m_input_forwarder) {
             m_imgui_layer->set_surfaces(m_input_forwarder->get_surfaces());
             m_imgui_layer->set_manual_override_active(
                 m_input_forwarder->is_manual_override_active());
@@ -592,7 +585,7 @@ void Application::update_pointer_lock_mirror() {
     }
 
     bool should_lock = m_pointer_lock_override || m_input_forwarder->is_pointer_locked();
-    if (m_imgui_layer && m_imgui_layer->is_visible()) {
+    if (m_imgui_layer && m_imgui_layer->is_globally_visible()) {
         should_lock = false;
     }
     if (should_lock != m_pointer_lock_mirrored) {
