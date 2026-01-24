@@ -65,4 +65,9 @@
 - [x] 9.2 Manual test: launch app, verify surface appears in list
 - [x] 9.3 Manual test: click surface to select, verify input routes correctly
 - [x] 9.4 Manual test: "Reset to Auto" restores first-surface behavior
-- [ ] 9.5 Manual test with Steam: verify overlay surfaces appear when invoked
+- [x] 9.5 Manual test with Steam: verify overlay surfaces appear when invoked
+- [x] 9.6 Multi-surface test: Run `pixi run start -- goggles_manual_surface_selector_x11`, verify 3 windows appear in F4 selector
+- [x] 9.7 Multi-surface test: Select each surface in F4 UI, verify input routes to correct window
+- [x] 9.8 Multi-surface test: Click "Reset to Auto", verify first-surface behavior restored
+- [x] 9.9 Multi-surface test: Close one window, verify selector updates correctly
+- [x] 9.10 Repeat 9.6-9.9 with `goggles_manual_surface_selector_wayland`
