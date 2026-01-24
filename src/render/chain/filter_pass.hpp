@@ -56,6 +56,9 @@ public:
     /// @brief Records commands to render this pass.
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
 
+    [[nodiscard]] auto get_shader_parameters() const -> std::vector<ShaderParameter> override;
+    void set_shader_parameter(const std::string& name, float value) override;
+
     void set_source_size(uint32_t width, uint32_t height) {
         m_binder.set_source_size(width, height);
     }

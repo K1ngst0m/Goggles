@@ -65,6 +65,39 @@ The `Pass` base class SHALL provide virtual methods for exposing tunable shader 
 - **THEN** it SHALL return the parameters extracted from the shader
 - **AND** `set_shader_parameter()` SHALL update the parameter override map
 
+### Requirement: Downsample Filter Type Selection
+
+The DownsamplePass SHALL support runtime selection of downsampling filter algorithm via the shader parameter interface.
+
+#### Scenario: Area filter (default)
+
+- **GIVEN** DownsamplePass with filter_type = 0
+- **WHEN** downsampling is performed
+- **THEN** weighted box filter SHALL be used
+- **AND** each source pixel SHALL be weighted by coverage overlap
+
+#### Scenario: Gaussian filter
+
+- **GIVEN** DownsamplePass with filter_type = 1
+- **WHEN** downsampling is performed
+- **THEN** Gaussian-weighted bilinear sampling SHALL be used
+- **AND** 4 bilinear taps SHALL approximate a Gaussian kernel
+- **AND** effective sampling SHALL cover 16 source texels
+
+#### Scenario: Filter type exposed as parameter
+
+- **GIVEN** a DownsamplePass instance
+- **WHEN** `get_shader_parameters()` is called
+- **THEN** a parameter named "filter_type" SHALL be returned
+- **AND** min SHALL be 0, max SHALL be 1, step SHALL be 1
+
+#### Scenario: Filter type runtime change
+
+- **GIVEN** DownsamplePass is actively rendering
+- **WHEN** `set_shader_parameter("filter_type", 1.0)` is called
+- **THEN** the next frame SHALL use Gaussian filter
+- **AND** no pipeline rebuild SHALL occur
+
 ### Requirement: Unified Pass Parameter UI
 
 The ImGui layer SHALL provide a reusable helper for rendering pass parameter controls.
@@ -77,6 +110,13 @@ The ImGui layer SHALL provide a reusable helper for rendering pass parameter con
 - **AND** slider range SHALL use min/max from parameter metadata
 - **AND** slider step SHALL use step from parameter metadata
 
+#### Scenario: Enum-style parameter rendered as combo box
+
+- **GIVEN** a parameter with step = 1 and integer min/max range
+- **WHEN** the parameter UI helper is invoked
+- **THEN** a combo box MAY be rendered instead of a slider
+- **AND** values SHALL map to descriptive labels
+
 #### Scenario: No UI rendered for pass without parameters
 
 - **GIVEN** a Pass with empty `get_shader_parameters()` result
@@ -85,7 +125,7 @@ The ImGui layer SHALL provide a reusable helper for rendering pass parameter con
 
 #### Scenario: Parameter changes propagate to pass
 
-- **GIVEN** a parameter slider is displayed
-- **WHEN** the user adjusts the slider value
+- **GIVEN** a parameter control is displayed
+- **WHEN** the user adjusts the value
 - **THEN** `set_shader_parameter(name, value)` SHALL be called on the pass
 - **AND** the change SHALL be reflected in the next rendered frame
