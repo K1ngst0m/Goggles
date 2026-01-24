@@ -8,6 +8,7 @@
 #include <ctime>
 #include <fcntl.h>
 #include <linux/input-event-codes.h>
+#include <mutex>
 #include <optional>
 #include <sys/eventfd.h>
 #include <thread>
@@ -166,7 +167,6 @@ struct CompositorServer::Impl {
     wlr_relative_pointer_manager_v1* relative_pointer_manager = nullptr;
     wlr_pointer_constraints_v1* pointer_constraints = nullptr;
     wlr_pointer_constraint_v1* active_constraint = nullptr;
-    std::atomic<bool> pointer_locked{false};
     UniqueKeyboard keyboard;
     xkb_context* xkb_ctx = nullptr;
     wlr_output_layout* output_layout = nullptr;
@@ -177,16 +177,18 @@ struct CompositorServer::Impl {
     wlr_surface* pointer_entered_surface = nullptr;
     double last_pointer_x = 0.0;
     double last_pointer_y = 0.0;
-    bool xwayland_surface_detached = false;
     std::jthread compositor_thread;
     std::vector<wlr_surface*> surfaces;
     std::vector<XdgToplevelHooks*> xdg_hooks;
     std::vector<XWaylandSurfaceHooks*> xwayland_hooks;
+    std::string wayland_socket_name;
+    mutable std::mutex hooks_mutex;
     Listeners listeners;
     util::UniqueFd event_fd;
-    std::string wayland_socket_name;
     uint32_t next_surface_id = 1;
     std::optional<uint32_t> manual_input_target;
+    std::atomic<bool> pointer_locked{false};
+    bool xwayland_surface_detached = false;
 
     Impl() { listeners.impl = this; }
 
@@ -705,7 +707,10 @@ void CompositorServer::Impl::handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel)
     hooks->toplevel = toplevel;
     hooks->surface = toplevel->base->surface;
     hooks->id = next_surface_id++;
-    xdg_hooks.push_back(hooks);
+    {
+        std::scoped_lock lock(hooks_mutex);
+        xdg_hooks.push_back(hooks);
+    }
 
     wl_list_init(&hooks->surface_commit.link);
     hooks->surface_commit.notify = [](wl_listener* listener, void* /*data*/) {
@@ -822,19 +827,21 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
         wlr_seat_pointer_clear_focus(seat);
     }
 
-    // Clear manual target if this surface was selected
-    if (manual_input_target && *manual_input_target == hooks->id) {
-        manual_input_target.reset();
+    {
+        std::scoped_lock lock(hooks_mutex);
+        if (manual_input_target && *manual_input_target == hooks->id) {
+            manual_input_target.reset();
+        }
+
+        auto hook_it = std::find(xdg_hooks.begin(), xdg_hooks.end(), hooks);
+        if (hook_it != xdg_hooks.end()) {
+            xdg_hooks.erase(hook_it);
+        }
     }
 
     auto it = std::find(surfaces.begin(), surfaces.end(), hooks->surface);
     if (it != surfaces.end()) {
         surfaces.erase(it);
-    }
-
-    auto hook_it = std::find(xdg_hooks.begin(), xdg_hooks.end(), hooks);
-    if (hook_it != xdg_hooks.end()) {
-        xdg_hooks.erase(hook_it);
     }
 
     delete hooks;
@@ -848,7 +855,10 @@ void CompositorServer::Impl::handle_new_xwayland_surface(wlr_xwayland_surface* x
     hooks->impl = this;
     hooks->xsurface = xsurface;
     hooks->id = next_surface_id++;
-    xwayland_hooks.push_back(hooks);
+    {
+        std::scoped_lock lock(hooks_mutex);
+        xwayland_hooks.push_back(hooks);
+    }
 
     wl_list_init(&hooks->associate.link);
     wl_list_init(&hooks->commit.link);
@@ -890,12 +900,15 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
         return;
     }
 
-    auto hook_it =
-        std::find_if(xwayland_hooks.begin(), xwayland_hooks.end(),
-                     [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
-    if (hook_it != xwayland_hooks.end()) {
-        (*hook_it)->title = xsurface->title ? xsurface->title : "";
-        (*hook_it)->class_name = xsurface->class_ ? xsurface->class_ : "";
+    {
+        std::scoped_lock lock(hooks_mutex);
+        auto hook_it = std::find_if(
+            xwayland_hooks.begin(), xwayland_hooks.end(),
+            [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
+        if (hook_it != xwayland_hooks.end()) {
+            (*hook_it)->title = xsurface->title ? xsurface->title : "";
+            (*hook_it)->class_name = xsurface->class_ ? xsurface->class_ : "";
+        }
     }
 
     GOGGLES_LOG_DEBUG("XWayland surface associated: window_id={} ptr={} surface={} title='{}'",
@@ -935,14 +948,17 @@ void CompositorServer::Impl::handle_xwayland_surface_commit(XWaylandSurfaceHooks
 }
 
 void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface) {
-    auto hook_it =
-        std::find_if(xwayland_hooks.begin(), xwayland_hooks.end(),
-                     [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
-    if (hook_it != xwayland_hooks.end()) {
-        if (manual_input_target && *manual_input_target == (*hook_it)->id) {
-            manual_input_target.reset();
+    {
+        std::scoped_lock lock(hooks_mutex);
+        auto hook_it = std::find_if(
+            xwayland_hooks.begin(), xwayland_hooks.end(),
+            [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
+        if (hook_it != xwayland_hooks.end()) {
+            if (manual_input_target && *manual_input_target == (*hook_it)->id) {
+                manual_input_target.reset();
+            }
+            xwayland_hooks.erase(hook_it);
         }
-        xwayland_hooks.erase(hook_it);
     }
 
     if (focused_xsurface != xsurface) {
@@ -1095,21 +1111,25 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
 auto CompositorServer::Impl::get_input_target() -> InputTarget {
     InputTarget target{};
 
-    if (manual_input_target) {
-        for (const auto* hooks : xwayland_hooks) {
-            if (hooks->id == *manual_input_target && hooks->xsurface && hooks->xsurface->surface) {
-                target.xsurface = hooks->xsurface;
-                target.surface = hooks->xsurface->surface;
-                return target;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        if (manual_input_target) {
+            for (const auto* hooks : xwayland_hooks) {
+                if (hooks->id == *manual_input_target && hooks->xsurface &&
+                    hooks->xsurface->surface) {
+                    target.xsurface = hooks->xsurface;
+                    target.surface = hooks->xsurface->surface;
+                    return target;
+                }
             }
-        }
-        for (const auto* hooks : xdg_hooks) {
-            if (hooks->id == *manual_input_target && hooks->surface) {
-                target.surface = hooks->surface;
-                return target;
+            for (const auto* hooks : xdg_hooks) {
+                if (hooks->id == *manual_input_target && hooks->surface) {
+                    target.surface = hooks->surface;
+                    return target;
+                }
             }
+            // Manual target not found (surface may have been destroyed), fall through to auto
         }
-        // Manual target not found (surface may have been destroyed), fall through to auto
     }
 
     if (focused_xsurface && focused_xsurface->surface) {
@@ -1123,6 +1143,7 @@ auto CompositorServer::Impl::get_input_target() -> InputTarget {
 }
 
 auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
+    std::scoped_lock lock(m_impl->hooks_mutex);
     std::vector<SurfaceInfo> result;
 
     uint32_t target_id = 0;
@@ -1171,10 +1192,12 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
 }
 
 auto CompositorServer::is_manual_override_active() const -> bool {
+    std::scoped_lock lock(m_impl->hooks_mutex);
     return m_impl->manual_input_target.has_value();
 }
 
 void CompositorServer::set_input_target(uint32_t surface_id) {
+    std::scoped_lock lock(m_impl->hooks_mutex);
     bool found = false;
     for (const auto* hooks : m_impl->xwayland_hooks) {
         if (hooks->id == surface_id) {
@@ -1196,6 +1219,7 @@ void CompositorServer::set_input_target(uint32_t surface_id) {
 }
 
 void CompositorServer::clear_input_override() {
+    std::scoped_lock lock(m_impl->hooks_mutex);
     m_impl->manual_input_target.reset();
 }
 
