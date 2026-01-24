@@ -168,11 +168,17 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
             [&backend = *app->m_vulkan_backend](uint32_t width, uint32_t height) {
                 backend.set_prechain_resolution(width, height);
             });
+        app->m_imgui_layer->set_prechain_parameter_callback(
+            [&backend = *app->m_vulkan_backend](const std::string& name, float value) {
+                backend.set_prechain_parameter(name, value);
+            });
 
         // Initialize pre-chain UI state from backend
         {
             auto prechain_res = app->m_vulkan_backend->get_prechain_resolution();
             app->m_imgui_layer->set_prechain_state(prechain_res);
+            app->m_imgui_layer->set_prechain_parameters(
+                app->m_vulkan_backend->get_prechain_parameters());
         }
 
         update_ui_parameters(*app->m_vulkan_backend, *app->m_imgui_layer);
@@ -400,6 +406,24 @@ void Application::handle_sync_semaphores() {
     m_capture_receiver->clear_semaphores_updated();
 }
 
+void Application::sync_prechain_ui() {
+    auto& prechain = m_imgui_layer->state().prechain;
+    if (prechain.target_width == 0 && prechain.target_height == 0) {
+        auto captured = m_vulkan_backend->get_captured_extent();
+        if (captured.width > 0 && captured.height > 0) {
+            m_imgui_layer->set_prechain_state(captured);
+            m_vulkan_backend->set_prechain_resolution(captured.width, captured.height);
+        }
+    }
+
+    if (prechain.pass_parameters.empty()) {
+        auto params = m_vulkan_backend->get_prechain_parameters();
+        if (!params.empty()) {
+            m_imgui_layer->set_prechain_parameters(std::move(params));
+        }
+    }
+}
+
 void Application::tick_frame() {
     if (!m_vulkan_backend) {
         return;
@@ -515,14 +539,7 @@ void Application::tick_frame() {
                 needs_resize = !*render_result;
             }
 
-            // Update pre-chain UI with captured dimensions if not yet set
-            auto& prechain = m_imgui_layer->state().prechain;
-            if (prechain.target_width == 0 && prechain.target_height == 0) {
-                auto captured = m_vulkan_backend->get_captured_extent();
-                if (captured.width > 0 && captured.height > 0) {
-                    m_imgui_layer->set_prechain_state(captured);
-                }
-            }
+            sync_prechain_ui();
         } else {
             GOGGLES_PROFILE_SCOPE("RenderClear");
             auto render_result = m_vulkan_backend->render_clear_with_ui(ui_callback);

@@ -101,6 +101,11 @@ public:
     /// @brief Returns the current pre-chain target resolution.
     [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
 
+    /// @brief Returns parameters exposed by pre-chain passes.
+    [[nodiscard]] auto get_prechain_parameters() const -> std::vector<ShaderParameter>;
+    /// @brief Sets a pre-chain pass parameter value.
+    void set_prechain_parameter(const std::string& name, float value);
+
 private:
     FilterChain() = default;
     [[nodiscard]] auto ensure_framebuffers(const FramebufferExtents& extents,

@@ -92,6 +92,8 @@ public:
     [[nodiscard]] auto filter_chain() -> FilterChain* { return m_filter_chain.get(); }
     void set_prechain_resolution(uint32_t width, uint32_t height);
     [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
+    [[nodiscard]] auto get_prechain_parameters() const -> std::vector<render::ShaderParameter>;
+    void set_prechain_parameter(const std::string& name, float value);
     [[nodiscard]] auto get_captured_extent() const -> vk::Extent2D { return m_import_extent; }
     [[nodiscard]] auto gpu_index() const -> uint32_t { return m_gpu_index; }
     [[nodiscard]] auto gpu_uuid() const -> const std::string& { return m_gpu_uuid; }

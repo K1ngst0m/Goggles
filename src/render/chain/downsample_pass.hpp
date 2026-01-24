@@ -34,6 +34,9 @@ public:
     /// @brief Records commands to downsample the source texture.
     void record(vk::CommandBuffer cmd, const PassContext& ctx) override;
 
+    [[nodiscard]] auto get_shader_parameters() const -> std::vector<ShaderParameter> override;
+    void set_shader_parameter(const std::string& name, float value) override;
+
 private:
     DownsamplePass() = default;
     [[nodiscard]] auto create_descriptor_resources() -> Result<void>;
@@ -56,6 +59,8 @@ private:
     std::vector<vk::DescriptorSet> m_descriptor_sets;
 
     vk::UniqueSampler m_sampler;
+
+    float m_filter_type = 0.0F;
 };
 
 } // namespace goggles::render

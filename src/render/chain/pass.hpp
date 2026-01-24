@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <render/shader/retroarch_preprocessor.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <vulkan/vulkan.hpp>
@@ -45,6 +46,14 @@ public:
 
     virtual void shutdown() = 0;
     virtual void record(vk::CommandBuffer cmd, const PassContext& ctx) = 0;
+
+    /// @brief Returns tunable shader parameters for this pass.
+    [[nodiscard]] virtual auto get_shader_parameters() const -> std::vector<ShaderParameter> {
+        return {};
+    }
+
+    /// @brief Updates a shader parameter value.
+    virtual void set_shader_parameter(const std::string& /*name*/, float /*value*/) {}
 };
 
 /// @brief Output viewport rectangle computed from scaling settings.

@@ -1121,6 +1121,19 @@ auto VulkanBackend::get_prechain_resolution() const -> vk::Extent2D {
     return m_source_resolution;
 }
 
+auto VulkanBackend::get_prechain_parameters() const -> std::vector<render::ShaderParameter> {
+    if (m_filter_chain) {
+        return m_filter_chain->get_prechain_parameters();
+    }
+    return {};
+}
+
+void VulkanBackend::set_prechain_parameter(const std::string& name, float value) {
+    if (m_filter_chain) {
+        m_filter_chain->set_prechain_parameter(name, value);
+    }
+}
+
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     GOGGLES_PROFILE_SCOPE("AcquireImage");
 

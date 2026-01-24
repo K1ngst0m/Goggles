@@ -735,6 +735,21 @@ auto FilterChain::get_prechain_resolution() const -> vk::Extent2D {
     return m_source_resolution;
 }
 
+auto FilterChain::get_prechain_parameters() const -> std::vector<ShaderParameter> {
+    std::vector<ShaderParameter> result;
+    for (const auto& pass : m_prechain_passes) {
+        auto params = pass->get_shader_parameters();
+        result.insert(result.end(), params.begin(), params.end());
+    }
+    return result;
+}
+
+void FilterChain::set_prechain_parameter(const std::string& name, float value) {
+    for (auto& pass : m_prechain_passes) {
+        pass->set_shader_parameter(name, value);
+    }
+}
+
 auto FilterChain::ensure_framebuffers(const FramebufferExtents& extents,
                                       vk::Extent2D viewport_extent) -> Result<void> {
     GOGGLES_PROFILE_SCOPE("EnsureFramebuffers");

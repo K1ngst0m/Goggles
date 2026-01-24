@@ -49,11 +49,25 @@ struct ParameterState {
     float current_value;
 };
 
+/// @brief Predefined resolution profiles for pre-chain downsampling.
+enum class ResolutionProfile : std::uint8_t {
+    disabled = 0, // Pre-chain disabled (pass-through)
+    p240 = 1,     // NES, SNES, Genesis, N64, PS1, Saturn
+    p288 = 2,     // PS2 240p mode, Wii VC
+    p480 = 3,     // Dreamcast, GameCube, PS2, Xbox, Wii
+    i480 = 4,     // Interlaced variant
+    p720 = 5,     // Xbox 360, PS3, Wii U era
+    p1080 = 6,    // PS3/360+, modern HD
+    custom = 7,   // User-defined resolution
+};
+
 /// @brief UI state for pre-chain pipeline configuration.
 struct PreChainState {
+    ResolutionProfile profile = ResolutionProfile::disabled;
     uint32_t target_width = 0;
     uint32_t target_height = 0;
     bool dirty = false;
+    std::vector<render::ShaderParameter> pass_parameters;
 };
 
 /// @brief Aggregate UI state for shader controls.
@@ -73,6 +87,7 @@ using ParameterChangeCallback =
     std::function<void(size_t pass_index, const std::string& name, float value)>;
 using ParameterResetCallback = std::function<void()>;
 using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t height)>;
+using PreChainParameterCallback = std::function<void(const std::string& name, float value)>;
 using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
 using SurfaceResetCallback = std::function<void()>;
 
@@ -124,6 +139,10 @@ public:
     void set_prechain_change_callback(PreChainChangeCallback callback);
     /// @brief Initializes pre-chain UI state from backend values.
     void set_prechain_state(vk::Extent2D resolution);
+    /// @brief Updates pre-chain pass parameters for UI display.
+    void set_prechain_parameters(std::vector<render::ShaderParameter> params);
+    /// @brief Sets a callback invoked when a pre-chain pass parameter is changed.
+    void set_prechain_parameter_callback(PreChainParameterCallback callback);
 
     /// @brief Returns mutable UI state (owned by this layer).
     [[nodiscard]] auto state() -> ShaderControlState& { return m_state; }
@@ -189,6 +208,7 @@ private:
     ParameterChangeCallback m_on_parameter_change;
     ParameterResetCallback m_on_parameter_reset;
     PreChainChangeCallback m_on_prechain_change;
+    PreChainParameterCallback m_on_prechain_parameter;
     SurfaceSelectCallback m_on_surface_select;
     SurfaceResetCallback m_on_surface_reset;
     std::vector<input::SurfaceInfo> m_surfaces;

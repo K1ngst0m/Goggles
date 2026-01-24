@@ -19,6 +19,7 @@ struct DownsamplePushConstants {
     float target_height;
     float target_inv_width;
     float target_inv_height;
+    float filter_type;
 };
 
 } // namespace
@@ -60,6 +61,23 @@ void DownsamplePass::shutdown() {
     GOGGLES_LOG_DEBUG("DownsamplePass shutdown");
 }
 
+auto DownsamplePass::get_shader_parameters() const -> std::vector<ShaderParameter> {
+    return {{
+        .name = "filter_type",
+        .description = "Filter Type",
+        .default_value = m_filter_type,
+        .min_value = 0.0F,
+        .max_value = 1.0F,
+        .step = 1.0F,
+    }};
+}
+
+void DownsamplePass::set_shader_parameter(const std::string& name, float value) {
+    if (name == "filter_type") {
+        m_filter_type = value;
+    }
+}
+
 void DownsamplePass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
     vk::DescriptorImageInfo image_info{};
     image_info.sampler = *m_sampler;
@@ -91,6 +109,7 @@ void DownsamplePass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     pc.target_height = static_cast<float>(ctx.output_extent.height);
     pc.target_inv_width = 1.0F / pc.target_width;
     pc.target_inv_height = 1.0F / pc.target_height;
+    pc.filter_type = m_filter_type;
 
     GOGGLES_LOG_TRACE("DownsamplePass: source={}x{} -> target={}x{}", ctx.source_extent.width,
                       ctx.source_extent.height, ctx.output_extent.width, ctx.output_extent.height);

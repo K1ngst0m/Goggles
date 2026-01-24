@@ -139,6 +139,21 @@ auto FilterPass::get_parameter_value(const std::string& name) const -> float {
     return 0.0F;
 }
 
+auto FilterPass::get_shader_parameters() const -> std::vector<ShaderParameter> {
+    std::vector<ShaderParameter> result;
+    result.reserve(m_parameters.size());
+    for (const auto& param : m_parameters) {
+        ShaderParameter p = param;
+        p.default_value = get_parameter_value(param.name);
+        result.push_back(std::move(p));
+    }
+    return result;
+}
+
+void FilterPass::set_shader_parameter(const std::string& name, float value) {
+    set_parameter_override(name, value);
+}
+
 void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
     GOGGLES_PROFILE_SCOPE("UpdateDescriptor");
 

@@ -60,6 +60,7 @@ private:
     void forward_input_event(const SDL_Event& event);
     void handle_sync_semaphores();
     void update_pointer_lock_mirror();
+    void sync_prechain_ui();
 
     SDL_Window* m_window = nullptr;
     bool m_sdl_initialized = false;
