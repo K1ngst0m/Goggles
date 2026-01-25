@@ -13,6 +13,7 @@
 #include <string_view>
 #include <ui/imgui_layer.hpp>
 #include <util/config.hpp>
+#include <util/drm_format.hpp>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
 #include <util/profiling.hpp>
@@ -75,6 +76,7 @@ static void update_ui_parameters(render::VulkanBackend& vulkan_backend,
 // Lifecycle
 // =============================================================================
 
+// NOLINTNEXTLINE(readability-function-size) TODO(kingstom): refactor to smaller units.
 auto Application::create(const Config& config, const util::AppDirs& app_dirs,
                          bool enable_input_forwarding) -> ResultPtr<Application> {
     auto app = std::unique_ptr<Application>(new Application());
@@ -207,12 +209,19 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
                              app->m_input_forwarder->wayland_display());
 
             app->m_imgui_layer->set_surface_select_callback(
-                [forwarder = app->m_input_forwarder.get()](uint32_t surface_id) {
+                [app_ptr = app.get(),
+                 forwarder = app->m_input_forwarder.get()](uint32_t surface_id) {
                     forwarder->set_input_target(surface_id);
+                    app_ptr->m_surface_frame.reset();
+                    app_ptr->m_last_surface_frame_number = 0;
+                    app_ptr->m_last_source_frame_number = UINT64_MAX;
                 });
             app->m_imgui_layer->set_surface_reset_callback(
-                [forwarder = app->m_input_forwarder.get()]() {
+                [app_ptr = app.get(), forwarder = app->m_input_forwarder.get()]() {
                     forwarder->clear_input_override();
+                    app_ptr->m_surface_frame.reset();
+                    app_ptr->m_last_surface_frame_number = 0;
+                    app_ptr->m_last_source_frame_number = UINT64_MAX;
                 });
             app->m_imgui_layer->set_pointer_lock_override_callback(
                 [app_ptr = app.get()](bool override_active) {
@@ -417,6 +426,7 @@ void Application::sync_prechain_ui() {
     }
 }
 
+// NOLINTNEXTLINE(readability-function-size) TODO(kingstom): refactor to smaller units.
 void Application::tick_frame() {
     if (!m_vulkan_backend) {
         return;
@@ -472,6 +482,14 @@ void Application::tick_frame() {
 
     handle_sync_semaphores();
 
+    if ((!m_capture_receiver || !m_capture_receiver->has_frame()) && m_input_forwarder) {
+        auto surface_frame = m_input_forwarder->get_presented_frame(m_last_surface_frame_number);
+        if (surface_frame) {
+            m_surface_frame = std::move(*surface_frame);
+            m_last_surface_frame_number = m_surface_frame->frame_number;
+        }
+    }
+
     // Check if captured frame requires format rebuild
     if (m_capture_receiver && m_capture_receiver->has_frame()) {
         auto& frame = m_capture_receiver->get_frame();
@@ -479,6 +497,14 @@ void Application::tick_frame() {
         if (m_vulkan_backend->needs_format_rebuild(source_format)) {
             m_pending_format = frame.format;
             return;
+        }
+    } else if (m_surface_frame) {
+        auto vk_format = util::drm_to_vk_format(m_surface_frame->format);
+        if (vk_format != vk::Format::eUndefined) {
+            if (m_vulkan_backend->needs_format_rebuild(vk_format)) {
+                m_pending_format = static_cast<uint32_t>(vk_format);
+                return;
+            }
         }
     }
 
@@ -517,22 +543,53 @@ void Application::tick_frame() {
             m_imgui_layer->record(cmd, view, extent);
         };
 
+        const ::goggles::CaptureFrame* source_frame = nullptr;
+        ::goggles::CaptureFrame surface_capture{};
+        bool using_capture_receiver = false;
+        uint64_t source_frame_number = 0;
+
         if (m_capture_receiver && m_capture_receiver->has_frame()) {
+            source_frame = &m_capture_receiver->get_frame();
+            using_capture_receiver = true;
+            source_frame_number = source_frame->frame_number;
+        } else if (m_surface_frame) {
+            auto vk_format = util::drm_to_vk_format(m_surface_frame->format);
+            if (vk_format == vk::Format::eUndefined) {
+                GOGGLES_LOG_DEBUG("Skipping surface frame with unsupported DRM format");
+            } else if (m_surface_frame->modifier == util::DRM_FORMAT_MOD_INVALID) {
+                GOGGLES_LOG_DEBUG("Skipping surface frame with invalid DMA-BUF modifier");
+            } else {
+                surface_capture.width = m_surface_frame->width;
+                surface_capture.height = m_surface_frame->height;
+                surface_capture.stride = m_surface_frame->stride;
+                surface_capture.offset = m_surface_frame->offset;
+                surface_capture.format = static_cast<uint32_t>(vk_format);
+                surface_capture.modifier = m_surface_frame->modifier;
+                surface_capture.frame_number = m_surface_frame->frame_number;
+                surface_capture.dmabuf_fd = m_surface_frame->dmabuf_fd.dup();
+                if (surface_capture.dmabuf_fd) {
+                    source_frame = &surface_capture;
+                    source_frame_number = m_surface_frame->frame_number;
+                }
+            }
+        }
+
+        if (source_frame) {
             GOGGLES_PROFILE_SCOPE("RenderFrame");
-            auto& frame = m_capture_receiver->get_frame();
-            if (frame.frame_number != m_last_source_frame_number) {
-                m_last_source_frame_number = frame.frame_number;
+            if (source_frame_number != m_last_source_frame_number) {
+                m_last_source_frame_number = source_frame_number;
                 m_imgui_layer->notify_source_frame();
             }
-            auto render_result = m_vulkan_backend->render_frame_with_ui(
-                m_capture_receiver->get_frame(), ui_callback);
+            auto render_result = m_vulkan_backend->render_frame_with_ui(*source_frame, ui_callback);
             if (!render_result) {
                 GOGGLES_LOG_ERROR("Render failed: {}", render_result.error().message);
             } else {
                 needs_resize = !*render_result;
             }
 
-            sync_prechain_ui();
+            if (using_capture_receiver) {
+                sync_prechain_ui();
+            }
         } else {
             GOGGLES_PROFILE_SCOPE("RenderClear");
             auto render_result = m_vulkan_backend->render_clear_with_ui(ui_callback);

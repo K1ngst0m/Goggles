@@ -259,6 +259,11 @@ auto InputForwarder::is_pointer_locked() const -> bool {
     return m_impl->server.is_pointer_locked();
 }
 
+auto InputForwarder::get_presented_frame(uint64_t after_frame_number) const
+    -> std::optional<SurfaceFrame> {
+    return m_impl->server.get_presented_frame(after_frame_number);
+}
+
 auto InputForwarder::get_surfaces() const -> std::vector<SurfaceInfo> {
     return m_impl->server.get_surfaces();
 }

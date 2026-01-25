@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <util/error.hpp>
+#include <util/unique_fd.hpp>
 #include <vector>
 
 namespace goggles::input {
@@ -31,6 +33,18 @@ struct InputEvent {
     double dx, dy;
     double value;
     bool horizontal;
+};
+
+/// @brief Metadata for a compositor-presented surface frame.
+struct SurfaceFrame {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t stride = 0;
+    uint32_t offset = 0;
+    uint32_t format = 0; // DRM FourCC
+    util::UniqueFd dmabuf_fd;
+    uint64_t modifier = 0;
+    uint64_t frame_number = 0;
 };
 
 /// @brief Runs a headless Wayland/XWayland compositor for input injection.
@@ -62,6 +76,11 @@ public:
     [[nodiscard]] auto inject_event(const InputEvent& event) -> bool;
     /// @brief Returns true if pointer is currently locked (not confined) by target app.
     [[nodiscard]] auto is_pointer_locked() const -> bool;
+
+    /// @brief Returns the latest compositor-presented frame (DMA-BUF), if available.
+    /// @param after_frame_number Return a frame only if newer than this number.
+    [[nodiscard]] auto get_presented_frame(uint64_t after_frame_number) const
+        -> std::optional<SurfaceFrame>;
 
     /// @brief Returns a snapshot of all connected surfaces.
     [[nodiscard]] auto get_surfaces() const -> std::vector<SurfaceInfo>;

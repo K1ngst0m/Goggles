@@ -13,9 +13,6 @@
 #include <sys/eventfd.h>
 #include <thread>
 #include <unistd.h>
-#include <util/logging.hpp>
-#include <util/queues.hpp>
-#include <util/unique_fd.hpp>
 #include <vector>
 
 extern "C" {
@@ -24,7 +21,12 @@ extern "C" {
 #include <wlr/backend/headless.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/render/allocator.h>
+#include <wlr/render/drm_format_set.h>
+#include <wlr/render/pass.h>
+#include <wlr/render/swapchain.h>
 #include <wlr/render/wlr_renderer.h>
+#include <wlr/render/wlr_texture.h>
+#include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_output.h>
@@ -41,6 +43,11 @@ extern "C" {
 
 #include <wlr/types/wlr_xdg_shell.h>
 }
+
+#include <util/drm_fourcc.hpp>
+#include <util/logging.hpp>
+#include <util/queues.hpp>
+#include <util/unique_fd.hpp>
 
 namespace goggles::input {
 
@@ -175,6 +182,9 @@ struct CompositorServer::Impl {
     wlr_xwayland_surface* focused_xsurface = nullptr;
     wlr_surface* keyboard_entered_surface = nullptr;
     wlr_surface* pointer_entered_surface = nullptr;
+    wlr_swapchain* present_swapchain = nullptr;
+    wlr_drm_format present_format{};
+    std::array<uint64_t, 1> present_modifiers{};
     double last_pointer_x = 0.0;
     double last_pointer_y = 0.0;
     std::jthread compositor_thread;
@@ -189,6 +199,12 @@ struct CompositorServer::Impl {
     std::optional<uint32_t> manual_input_target;
     std::atomic<bool> pointer_locked{false};
     bool xwayland_surface_detached = false;
+    std::optional<SurfaceFrame> presented_frame;
+    wlr_buffer* presented_buffer = nullptr;
+    wlr_surface* presented_surface = nullptr;
+    uint64_t presented_frame_number = 0;
+    std::atomic<bool> present_reset_requested{false};
+    mutable std::mutex present_mutex;
 
     Impl() { listeners.impl = this; }
 
@@ -224,6 +240,10 @@ struct CompositorServer::Impl {
     void deactivate_constraint();
     void focus_surface(wlr_surface* surface);
     void focus_xwayland_surface(wlr_xwayland_surface* xsurface);
+    void update_presented_frame(wlr_surface* surface);
+    void clear_presented_frame();
+    void request_present_reset();
+    void render_surface_to_frame(wlr_surface* surface);
 
     // Helper to get input target surface respecting manual override
     struct InputTarget {
@@ -439,6 +459,19 @@ auto CompositorServer::Impl::setup_output() -> Result<void> {
     wlr_output_commit_state(output, &state);
     wlr_output_state_finish(&state);
 
+    present_modifiers = {util::DRM_FORMAT_MOD_LINEAR};
+    present_format.format = util::DRM_FORMAT_XRGB8888;
+    present_format.len = present_modifiers.size();
+    present_format.capacity = present_modifiers.size();
+    present_format.modifiers = present_modifiers.data();
+
+    present_swapchain =
+        wlr_swapchain_create(allocator, output->width, output->height, &present_format);
+    if (!present_swapchain) {
+        GOGGLES_LOG_WARN("Compositor present swapchain unavailable; non-Vulkan presentation "
+                         "disabled");
+    }
+
     return {};
 }
 
@@ -503,6 +536,7 @@ void CompositorServer::stop() {
     impl.focused_xsurface = nullptr;
     impl.keyboard_entered_surface = nullptr;
     impl.pointer_entered_surface = nullptr;
+    impl.clear_presented_frame();
 
     // Destruction order: xwayland before compositor, seat before display
     if (impl.xwayland) {
@@ -527,6 +561,10 @@ void CompositorServer::stop() {
     impl.xdg_shell = nullptr;
     impl.compositor = nullptr;
     impl.output = nullptr;
+    if (impl.present_swapchain) {
+        wlr_swapchain_destroy(impl.present_swapchain);
+        impl.present_swapchain = nullptr;
+    }
 
     if (impl.output_layout) {
         wlr_output_layout_destroy(impl.output_layout);
@@ -570,7 +608,37 @@ auto CompositorServer::is_pointer_locked() const -> bool {
     return m_impl->pointer_locked.load(std::memory_order_acquire);
 }
 
+auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
+    -> std::optional<SurfaceFrame> {
+    std::scoped_lock lock(m_impl->present_mutex);
+    if (!m_impl->presented_frame) {
+        return std::nullopt;
+    }
+    const auto& stored = *m_impl->presented_frame;
+    if (stored.frame_number <= after_frame_number) {
+        return std::nullopt;
+    }
+
+    SurfaceFrame frame{};
+    frame.width = stored.width;
+    frame.height = stored.height;
+    frame.stride = stored.stride;
+    frame.offset = stored.offset;
+    frame.format = stored.format;
+    frame.modifier = stored.modifier;
+    frame.frame_number = stored.frame_number;
+    frame.dmabuf_fd = stored.dmabuf_fd.dup();
+    if (!frame.dmabuf_fd) {
+        return std::nullopt;
+    }
+    return frame;
+}
+
 void CompositorServer::Impl::process_input_events() {
+    if (present_reset_requested.exchange(false, std::memory_order_acq_rel)) {
+        clear_presented_frame();
+    }
+
     while (auto event_opt = event_queue.try_pop()) {
         auto& event = *event_opt;
         uint32_t time = get_time_msec();
@@ -772,6 +840,8 @@ void CompositorServer::Impl::handle_xdg_surface_commit(XdgToplevelHooks* hooks) 
     timespec now{};
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_surface_send_frame_done(hooks->surface, &now);
+
+    update_presented_frame(hooks->surface);
 }
 
 void CompositorServer::Impl::handle_xdg_surface_ack_configure(XdgToplevelHooks* hooks) {
@@ -825,6 +895,9 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
         pointer_entered_surface = nullptr;
         wlr_seat_keyboard_clear_focus(seat);
         wlr_seat_pointer_clear_focus(seat);
+    }
+    if (presented_surface == hooks->surface) {
+        clear_presented_frame();
     }
 
     {
@@ -945,6 +1018,8 @@ void CompositorServer::Impl::handle_xwayland_surface_commit(XWaylandSurfaceHooks
     timespec now{};
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_surface_send_frame_done(hooks->xsurface->surface, &now);
+
+    update_presented_frame(hooks->xsurface->surface);
 }
 
 void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface) {
@@ -959,6 +1034,10 @@ void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surfac
             }
             xwayland_hooks.erase(hook_it);
         }
+    }
+
+    if (presented_surface == xsurface->surface) {
+        clear_presented_frame();
     }
 
     if (focused_xsurface != xsurface) {
@@ -1108,6 +1187,120 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
     }
 }
 
+void CompositorServer::Impl::clear_presented_frame() {
+    std::scoped_lock lock(present_mutex);
+    if (presented_buffer) {
+        wlr_buffer_unlock(presented_buffer);
+        presented_buffer = nullptr;
+    }
+    presented_frame.reset();
+    presented_surface = nullptr;
+}
+
+void CompositorServer::Impl::request_present_reset() {
+    present_reset_requested.store(true, std::memory_order_release);
+    if (event_fd.valid()) {
+        uint64_t val = 1;
+        static_cast<void>(write(event_fd.get(), &val, sizeof(val)));
+    }
+}
+
+void CompositorServer::Impl::update_presented_frame(wlr_surface* surface) {
+    auto target = get_input_target();
+    if (target.surface != surface) {
+        return;
+    }
+
+    render_surface_to_frame(surface);
+}
+
+void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
+    if (!present_swapchain || !surface) {
+        return;
+    }
+
+    wlr_texture* texture = wlr_surface_get_texture(surface);
+    if (!texture) {
+        return;
+    }
+
+    int age = 0;
+    wlr_buffer* buffer = wlr_swapchain_acquire(present_swapchain, &age);
+    if (!buffer) {
+        return;
+    }
+
+    wlr_render_pass* pass = wlr_renderer_begin_buffer_pass(renderer, buffer, nullptr);
+    if (!pass) {
+        wlr_buffer_unlock(buffer);
+        return;
+    }
+
+    wlr_render_texture_options tex_opts{};
+    tex_opts.texture = texture;
+    tex_opts.src_box = wlr_fbox{
+        .x = 0.0,
+        .y = 0.0,
+        .width = static_cast<double>(texture->width),
+        .height = static_cast<double>(texture->height),
+    };
+    tex_opts.dst_box = wlr_box{
+        .x = 0,
+        .y = 0,
+        .width = output->width,
+        .height = output->height,
+    };
+    tex_opts.filter_mode = WLR_SCALE_FILTER_BILINEAR;
+    tex_opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
+    wlr_render_pass_add_texture(pass, &tex_opts);
+
+    if (!wlr_render_pass_submit(pass)) {
+        wlr_buffer_unlock(buffer);
+        return;
+    }
+
+    wlr_swapchain_set_buffer_submitted(present_swapchain, buffer);
+
+    wlr_dmabuf_attributes attribs{};
+    if (!wlr_buffer_get_dmabuf(buffer, &attribs)) {
+        wlr_buffer_unlock(buffer);
+        return;
+    }
+
+    if (attribs.n_planes != 1) {
+        GOGGLES_LOG_DEBUG("Skipping multi-plane DMA-BUF output (planes={})", attribs.n_planes);
+        wlr_buffer_unlock(buffer);
+        return;
+    }
+
+    auto dup_fd = util::UniqueFd::dup_from(attribs.fd[0]);
+    if (!dup_fd) {
+        wlr_buffer_unlock(buffer);
+        return;
+    }
+
+    std::scoped_lock lock(present_mutex);
+    if (presented_buffer) {
+        wlr_buffer_unlock(presented_buffer);
+        presented_buffer = nullptr;
+    }
+
+    presented_buffer = buffer;
+
+    SurfaceFrame frame{};
+    frame.width = static_cast<uint32_t>(attribs.width);
+    frame.height = static_cast<uint32_t>(attribs.height);
+    frame.stride = attribs.stride[0];
+    frame.offset = attribs.offset[0];
+    frame.format = attribs.format;
+    frame.modifier = attribs.modifier;
+    frame.dmabuf_fd = std::move(dup_fd);
+    frame.frame_number = ++presented_frame_number;
+
+    presented_frame = std::move(frame);
+    presented_surface = surface;
+}
+
 auto CompositorServer::Impl::get_input_target() -> InputTarget {
     InputTarget target{};
 
@@ -1216,11 +1409,13 @@ void CompositorServer::set_input_target(uint32_t surface_id) {
     if (found) {
         m_impl->manual_input_target = surface_id;
     }
+    m_impl->request_present_reset();
 }
 
 void CompositorServer::clear_input_override() {
     std::scoped_lock lock(m_impl->hooks_mutex);
     m_impl->manual_input_target.reset();
+    m_impl->request_present_reset();
 }
 
 } // namespace goggles::input
