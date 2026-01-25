@@ -4,9 +4,9 @@
 
 #include <SDL3/SDL_events.h>
 #include <memory>
+#include <optional>
 #include <util/error.hpp>
 #include <vector>
-
 namespace goggles::input {
 
 /// @brief Forwards SDL input events into a headless compositor.
@@ -46,6 +46,9 @@ public:
     [[nodiscard]] auto wayland_display() const -> std::string;
     /// @brief Returns true if pointer is currently locked by target app.
     [[nodiscard]] auto is_pointer_locked() const -> bool;
+    /// @brief Returns the latest presented surface frame, if any.
+    [[nodiscard]] auto get_presented_frame(uint64_t after_frame_number) const
+        -> std::optional<SurfaceFrame>;
     /// @brief Returns a snapshot of all connected surfaces.
     [[nodiscard]] auto get_surfaces() const -> std::vector<SurfaceInfo>;
     /// @brief Returns true if a manual input target is set.

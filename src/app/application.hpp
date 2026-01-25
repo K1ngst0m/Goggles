@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <input/compositor_server.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <util/config.hpp>
 #include <util/error.hpp>
@@ -68,6 +70,7 @@ private:
     std::unique_ptr<ui::ImGuiLayer> m_imgui_layer;
     std::unique_ptr<CaptureReceiver> m_capture_receiver;
     std::unique_ptr<input::InputForwarder> m_input_forwarder;
+    std::optional<input::SurfaceFrame> m_surface_frame;
 
     bool m_running = true;
     bool m_window_resized = false;
@@ -77,6 +80,7 @@ private:
     bool m_pointer_lock_mirrored = false;
     uint32_t m_pending_format = 0;
     uint64_t m_last_source_frame_number = UINT64_MAX;
+    uint64_t m_last_surface_frame_number = 0;
     ScaleMode m_scale_mode = ScaleMode::fill;
 };
 
