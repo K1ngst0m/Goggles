@@ -500,9 +500,8 @@ void Application::tick_frame() {
         }
     } else if (m_surface_frame) {
         auto vk_format = util::drm_to_vk_format(m_surface_frame->format);
-        if (vk_format != VK_FORMAT_UNDEFINED) {
-            auto source_format = static_cast<vk::Format>(vk_format);
-            if (m_vulkan_backend->needs_format_rebuild(source_format)) {
+        if (vk_format != vk::Format::eUndefined) {
+            if (m_vulkan_backend->needs_format_rebuild(vk_format)) {
                 m_pending_format = static_cast<uint32_t>(vk_format);
                 return;
             }
@@ -555,7 +554,7 @@ void Application::tick_frame() {
             source_frame_number = source_frame->frame_number;
         } else if (m_surface_frame) {
             auto vk_format = util::drm_to_vk_format(m_surface_frame->format);
-            if (vk_format == VK_FORMAT_UNDEFINED) {
+            if (vk_format == vk::Format::eUndefined) {
                 GOGGLES_LOG_DEBUG("Skipping surface frame with unsupported DRM format");
             } else if (m_surface_frame->modifier == util::DRM_FORMAT_MOD_INVALID) {
                 GOGGLES_LOG_DEBUG("Skipping surface frame with invalid DMA-BUF modifier");
@@ -566,7 +565,7 @@ void Application::tick_frame() {
                 surface_capture.offset = m_surface_frame->offset;
                 surface_capture.format = static_cast<uint32_t>(vk_format);
                 surface_capture.modifier = m_surface_frame->modifier;
-                surface_capture.frame_number = 0;
+                surface_capture.frame_number = m_surface_frame->frame_number;
                 surface_capture.dmabuf_fd = m_surface_frame->dmabuf_fd.dup();
                 if (surface_capture.dmabuf_fd) {
                     source_frame = &surface_capture;
