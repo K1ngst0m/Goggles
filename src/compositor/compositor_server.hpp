@@ -1,5 +1,6 @@
 #pragma once
 
+#include <SDL3/SDL_events.h>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -47,7 +48,7 @@ struct SurfaceFrame {
     uint64_t frame_number = 0;
 };
 
-/// @brief Runs a headless Wayland/XWayland compositor for input injection.
+/// @brief Runs a headless Wayland/XWayland compositor for input forwarding and surface capture.
 ///
 /// `start()` spawns a compositor thread. Input injection methods queue events for that thread.
 class CompositorServer {
@@ -60,6 +61,9 @@ public:
     CompositorServer(CompositorServer&&) = delete;
     CompositorServer& operator=(CompositorServer&&) = delete;
 
+    /// @brief Creates and starts a compositor server.
+    /// @return A ready compositor server or an error.
+    [[nodiscard]] static auto create() -> ResultPtr<CompositorServer>;
     /// @brief Starts the compositor thread and binds a Wayland socket.
     /// @return Success or an error.
     [[nodiscard]] auto start() -> Result<void>;
@@ -69,6 +73,23 @@ public:
     [[nodiscard]] auto x11_display() const -> std::string;
     /// @brief Returns the Wayland socket name, or an empty string if not started.
     [[nodiscard]] auto wayland_display() const -> std::string;
+
+    /// @brief Forwards an SDL keyboard event.
+    /// @param event SDL keyboard event.
+    /// @return Success. The event may be dropped if the internal queue is full.
+    [[nodiscard]] auto forward_key(const SDL_KeyboardEvent& event) -> Result<void>;
+    /// @brief Forwards an SDL mouse button event.
+    /// @param event SDL mouse button event.
+    /// @return Success. The event may be dropped if the internal queue is full.
+    [[nodiscard]] auto forward_mouse_button(const SDL_MouseButtonEvent& event) -> Result<void>;
+    /// @brief Forwards an SDL mouse motion event.
+    /// @param event SDL mouse motion event.
+    /// @return Success. The event may be dropped if the internal queue is full.
+    [[nodiscard]] auto forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void>;
+    /// @brief Forwards an SDL mouse wheel event.
+    /// @param event SDL mouse wheel event.
+    /// @return Success. The event may be dropped if the internal queue is full.
+    [[nodiscard]] auto forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> Result<void>;
 
     /// @brief Queues an input event for the focused surface.
     /// @param event The input event to queue.

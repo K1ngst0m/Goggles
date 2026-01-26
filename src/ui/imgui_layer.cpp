@@ -5,11 +5,11 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <compositor/compositor_server.hpp>
 #include <filesystem>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
-#include <input/compositor_server.hpp>
 #include <numeric>
 #include <util/logging.hpp>
 #include <util/paths.hpp>

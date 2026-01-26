@@ -161,7 +161,7 @@ add_executable(goggles_auto_input_forwarding_x11
 
 target_link_libraries(goggles_auto_input_forwarding_x11 PRIVATE
     SDL3::SDL3
-    goggles_input
+    goggles_compositor
 )
 
 goggles_enable_sanitizers(goggles_auto_input_forwarding_x11)
@@ -185,7 +185,7 @@ add_executable(goggles_auto_input_forwarding_wayland
 
 target_link_libraries(goggles_auto_input_forwarding_wayland PRIVATE
     SDL3::SDL3
-    goggles_input
+    goggles_compositor
 )
 
 goggles_enable_sanitizers(goggles_auto_input_forwarding_wayland)

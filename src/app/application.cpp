@@ -3,9 +3,9 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <capture/capture_receiver.hpp>
+#include <compositor/compositor_server.hpp>
 #include <cstdlib>
 #include <filesystem>
-#include <input/input_forwarder.hpp>
 #include <ranges>
 #include <render/backend/vulkan_backend.hpp>
 #include <render/chain/filter_chain.hpp>
@@ -197,28 +197,27 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs,
     // Input forwarding (optional)
     if (enable_input_forwarding) {
         GOGGLES_LOG_INFO("Initializing input forwarding...");
-        auto input_forwarder_result = input::InputForwarder::create();
+        auto compositor_result = input::CompositorServer::create();
 
-        if (!input_forwarder_result) {
-            GOGGLES_LOG_WARN("Input forwarding disabled: {}",
-                             input_forwarder_result.error().message);
+        if (!compositor_result) {
+            GOGGLES_LOG_WARN("Input forwarding disabled: {}", compositor_result.error().message);
         } else {
-            app->m_input_forwarder = std::move(input_forwarder_result.value());
+            app->m_compositor_server = std::move(compositor_result.value());
             GOGGLES_LOG_INFO("Input forwarding: DISPLAY={} WAYLAND_DISPLAY={}",
-                             app->m_input_forwarder->x11_display(),
-                             app->m_input_forwarder->wayland_display());
+                             app->m_compositor_server->x11_display(),
+                             app->m_compositor_server->wayland_display());
 
             app->m_imgui_layer->set_surface_select_callback(
                 [app_ptr = app.get(),
-                 forwarder = app->m_input_forwarder.get()](uint32_t surface_id) {
-                    forwarder->set_input_target(surface_id);
+                 compositor = app->m_compositor_server.get()](uint32_t surface_id) {
+                    compositor->set_input_target(surface_id);
                     app_ptr->m_surface_frame.reset();
                     app_ptr->m_last_surface_frame_number = 0;
                     app_ptr->m_last_source_frame_number = UINT64_MAX;
                 });
             app->m_imgui_layer->set_surface_reset_callback(
-                [app_ptr = app.get(), forwarder = app->m_input_forwarder.get()]() {
-                    forwarder->clear_input_override();
+                [app_ptr = app.get(), compositor = app->m_compositor_server.get()]() {
+                    compositor->clear_input_override();
                     app_ptr->m_surface_frame.reset();
                     app_ptr->m_last_surface_frame_number = 0;
                     app_ptr->m_last_source_frame_number = UINT64_MAX;
@@ -244,7 +243,7 @@ void Application::shutdown() {
     // Destroy in reverse order of creation
     m_imgui_layer.reset();
     m_capture_receiver.reset();
-    m_input_forwarder.reset();
+    m_compositor_server.reset();
     m_vulkan_backend.reset();
 
     if (m_window != nullptr) {
@@ -318,7 +317,7 @@ void Application::handle_event(const SDL_Event& event) {
 }
 
 void Application::forward_input_event(const SDL_Event& event) {
-    if (!m_input_forwarder) {
+    if (!m_compositor_server) {
         return;
     }
 
@@ -332,7 +331,7 @@ void Application::forward_input_event(const SDL_Event& event) {
         if (capture_kb) {
             return;
         }
-        auto result = m_input_forwarder->forward_key(event.key);
+        auto result = m_compositor_server->forward_key(event.key);
         if (!result) {
             GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
         }
@@ -343,7 +342,7 @@ void Application::forward_input_event(const SDL_Event& event) {
         if (capture_mouse) {
             return;
         }
-        auto result = m_input_forwarder->forward_mouse_button(event.button);
+        auto result = m_compositor_server->forward_mouse_button(event.button);
         if (!result) {
             GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
         }
@@ -353,7 +352,7 @@ void Application::forward_input_event(const SDL_Event& event) {
         if (capture_mouse) {
             return;
         }
-        auto result = m_input_forwarder->forward_mouse_motion(event.motion);
+        auto result = m_compositor_server->forward_mouse_motion(event.motion);
         if (!result) {
             GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
         }
@@ -363,7 +362,7 @@ void Application::forward_input_event(const SDL_Event& event) {
         if (capture_mouse) {
             return;
         }
-        auto result = m_input_forwarder->forward_mouse_wheel(event.wheel);
+        auto result = m_compositor_server->forward_mouse_wheel(event.wheel);
         if (!result) {
             GOGGLES_LOG_ERROR("Failed to forward input: {}", result.error().message);
         }
@@ -482,8 +481,8 @@ void Application::tick_frame() {
 
     handle_sync_semaphores();
 
-    if ((!m_capture_receiver || !m_capture_receiver->has_frame()) && m_input_forwarder) {
-        auto surface_frame = m_input_forwarder->get_presented_frame(m_last_surface_frame_number);
+    if ((!m_capture_receiver || !m_capture_receiver->has_frame()) && m_compositor_server) {
+        auto surface_frame = m_compositor_server->get_presented_frame(m_last_surface_frame_number);
         if (surface_frame) {
             m_surface_frame = std::move(*surface_frame);
             m_last_surface_frame_number = m_surface_frame->frame_number;
@@ -527,10 +526,10 @@ void Application::tick_frame() {
                 }
             }
         }
-        if (m_imgui_layer->is_app_management_visible() && m_input_forwarder) {
-            m_imgui_layer->set_surfaces(m_input_forwarder->get_surfaces());
+        if (m_imgui_layer->is_app_management_visible() && m_compositor_server) {
+            m_imgui_layer->set_surfaces(m_compositor_server->get_surfaces());
             m_imgui_layer->set_manual_override_active(
-                m_input_forwarder->is_manual_override_active());
+                m_compositor_server->is_manual_override_active());
         }
         m_imgui_layer->begin_frame();
     }
@@ -621,11 +620,11 @@ void Application::tick_frame() {
 // =============================================================================
 
 auto Application::x11_display() const -> std::string {
-    return m_input_forwarder ? m_input_forwarder->x11_display() : "";
+    return m_compositor_server ? m_compositor_server->x11_display() : "";
 }
 
 auto Application::wayland_display() const -> std::string {
-    return m_input_forwarder ? m_input_forwarder->wayland_display() : "";
+    return m_compositor_server ? m_compositor_server->wayland_display() : "";
 }
 
 auto Application::gpu_index() const -> uint32_t {
@@ -637,11 +636,11 @@ auto Application::gpu_uuid() const -> std::string {
 }
 
 void Application::update_pointer_lock_mirror() {
-    if (!m_input_forwarder) {
+    if (!m_compositor_server) {
         return;
     }
 
-    bool should_lock = m_pointer_lock_override || m_input_forwarder->is_pointer_locked();
+    bool should_lock = m_pointer_lock_override || m_compositor_server->is_pointer_locked();
     if (m_imgui_layer && m_imgui_layer->is_globally_visible()) {
         should_lock = false;
     }
