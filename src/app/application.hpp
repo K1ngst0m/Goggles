@@ -1,7 +1,7 @@
 #pragma once
 
+#include <compositor/compositor_server.hpp>
 #include <cstdint>
-#include <input/compositor_server.hpp>
 #include <memory>
 #include <optional>
 #include <string>
@@ -16,10 +16,6 @@ namespace goggles {
 
 class CaptureReceiver;
 struct Config;
-
-namespace input {
-class InputForwarder;
-}
 
 namespace render {
 class VulkanBackend;
@@ -69,7 +65,7 @@ private:
     std::unique_ptr<render::VulkanBackend> m_vulkan_backend;
     std::unique_ptr<ui::ImGuiLayer> m_imgui_layer;
     std::unique_ptr<CaptureReceiver> m_capture_receiver;
-    std::unique_ptr<input::InputForwarder> m_input_forwarder;
+    std::unique_ptr<input::CompositorServer> m_compositor_server;
     std::optional<input::SurfaceFrame> m_surface_frame;
 
     bool m_running = true;

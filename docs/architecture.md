@@ -35,8 +35,8 @@ flowchart TB
   Layer --> Sync --> Render
 
   subgraph Input["Optional: input forwarding"]
-    Window -->|"keyboard/mouse"| Forwarder["InputForwarder"]
-    Forwarder --> Nested["Nested compositor (wlroots headless + XWayland)"]
+    Window -->|"keyboard/mouse"| Compositor["CompositorServer"]
+    Compositor --> Nested["Nested compositor (wlroots headless + XWayland)"]
     App <-->|"client connection"| Nested
   end
 ```

@@ -1,4 +1,4 @@
-#include "input/input_forwarder.hpp"
+#include "compositor/compositor_server.hpp"
 
 #include <SDL3/SDL.h>
 #include <chrono>
@@ -63,17 +63,17 @@ auto main() -> int {
 
     setenv("XDG_RUNTIME_DIR", runtime_dir.c_str(), 1);
 
-    auto forwarder_result = goggles::input::InputForwarder::create();
-    if (!forwarder_result) {
-        std::fprintf(stderr, "[FAIL] InputForwarder::create failed: %s\n",
-                     forwarder_result.error().message.c_str());
+    auto compositor_result = goggles::input::CompositorServer::create();
+    if (!compositor_result) {
+        std::fprintf(stderr, "[FAIL] CompositorServer::create failed: %s\n",
+                     compositor_result.error().message.c_str());
         return 1;
     }
-    auto forwarder = std::move(forwarder_result.value());
+    auto compositor = std::move(compositor_result.value());
 
-    auto display = forwarder->x11_display();
+    auto display = compositor->x11_display();
     if (display.empty()) {
-        std::fprintf(stderr, "[FAIL] InputForwarder returned empty DISPLAY\n");
+        std::fprintf(stderr, "[FAIL] CompositorServer returned empty DISPLAY\n");
         return 1;
     }
 
@@ -106,9 +106,9 @@ auto main() -> int {
         SDL_KeyboardEvent key{};
         key.scancode = SDL_SCANCODE_A;
         key.down = true;
-        (void)forwarder->forward_key(key);
+        (void)compositor->forward_key(key);
         key.down = false;
-        (void)forwarder->forward_key(key);
+        (void)compositor->forward_key(key);
 
         SDL_Event event;
         while (SDL_PollEvent(&event)) {

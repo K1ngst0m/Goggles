@@ -20,9 +20,8 @@ When capturing frames from a Vulkan application via the layer, the app typically
 flowchart TB
   subgraph Goggles["Goggles viewer process"]
     SDL["Viewer window (SDL)"]
-    Forwarder["InputForwarder"]
-    Wlroots["CompositorServer<br/>(wlroots headless + XWayland)"]
-    SDL -->|"keyboard/mouse"| Forwarder --> Wlroots
+    Compositor["CompositorServer<br/>(wlroots headless + XWayland)"]
+    SDL -->|"keyboard/mouse"| Compositor
   end
 
   subgraph Clients["Captured app connects to the nested session"]
@@ -30,8 +29,8 @@ flowchart TB
     X11Client["X11 client (XWayland)<br/>(DISPLAY=:N)"]
   end
 
-  Wlroots -->|"Wayland socket"| WaylandClient
-  Wlroots -->|"XWayland display"| X11Client
+  Compositor -->|"Wayland socket"| WaylandClient
+  Compositor -->|"XWayland display"| X11Client
 ```
 
 ### Unified Input via wlr_seat
@@ -57,7 +56,7 @@ The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 
 ### Initialization
 
-1. **Goggles starts** → `goggles::input::InputForwarder::create()`
+1. **Goggles starts** → `goggles::input::CompositorServer::create()`
 2. **Create headless Wayland compositor** on `goggles-N` socket
 3. **Create seat** with keyboard and pointer capabilities
 4. **Start XWayland** on DISPLAY=:N
@@ -68,7 +67,7 @@ The nested Wayland compositor uses `wlr_headless_backend_create()` which:
 
 1. **User presses W key** in Goggles SDL window
 2. **SDL generates SDL_EVENT_KEY_DOWN** with scancode
-3. **InputForwarder receives event** via SDL event loop
+3. **CompositorServer receives event** via SDL event loop
 4. **Translate scancode** to Linux keycode (evdev)
 5. **Push event to SPSCQueue** + write to eventfd
 6. **Compositor thread wakes**, drains queue
