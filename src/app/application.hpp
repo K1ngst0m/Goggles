@@ -7,6 +7,7 @@
 #include <string>
 #include <util/config.hpp>
 #include <util/error.hpp>
+#include <util/external_image.hpp>
 #include <util/paths.hpp>
 
 struct SDL_Window;
@@ -66,7 +67,7 @@ private:
     std::unique_ptr<ui::ImGuiLayer> m_imgui_layer;
     std::unique_ptr<CaptureReceiver> m_capture_receiver;
     std::unique_ptr<input::CompositorServer> m_compositor_server;
-    std::optional<input::SurfaceFrame> m_surface_frame;
+    std::optional<util::ExternalImageFrame> m_surface_frame;
 
     bool m_running = true;
     bool m_window_resized = false;

@@ -59,7 +59,7 @@ struct DmabufImageCreateChain {
     vk::ImageCreateInfo image_info;
 };
 
-static void init_dmabuf_image_create_chain(const CaptureFrame& frame, vk::Format vk_format,
+static void init_dmabuf_image_create_chain(const util::ExternalImage& frame, vk::Format vk_format,
                                            DmabufImageCreateChain* chain) {
     chain->ext_mem_info = vk::ExternalMemoryImageCreateInfo{};
     chain->modifier_info = vk::ImageDrmFormatModifierExplicitCreateInfoEXT{};
@@ -918,10 +918,10 @@ void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path)
     }
 }
 
-auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
+auto VulkanBackend::import_dmabuf(const util::ExternalImage& frame) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (!frame.dmabuf_fd.valid()) {
+    if (!frame.handle.valid()) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Invalid DMA-BUF fd");
     }
 
@@ -936,7 +936,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost, "waitIdle failed before reimport");
     cleanup_imported_image();
 
-    auto vk_format = static_cast<vk::Format>(frame.format);
+    auto vk_format = frame.format;
     DmabufImageCreateChain chain{};
     init_dmabuf_image_create_chain(frame, vk_format, &chain);
 
@@ -959,7 +959,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     m_device->getImageMemoryRequirements2(&mem_reqs_info, &mem_reqs2);
     auto mem_reqs = mem_reqs2.memoryRequirements;
 
-    auto fd_type_bits_result = get_dmabuf_memory_type_bits(*m_device, frame.dmabuf_fd.get());
+    auto fd_type_bits_result = get_dmabuf_memory_type_bits(*m_device, frame.handle.get());
     if (!fd_type_bits_result) {
         cleanup_imported_image();
         return make_error<void>(fd_type_bits_result.error().code,
@@ -977,7 +977,7 @@ auto VulkanBackend::import_dmabuf(const CaptureFrame& frame) -> Result<void> {
     }
 
     // Vulkan takes ownership of fd on success
-    auto import_fd = frame.dmabuf_fd.dup();
+    auto import_fd = frame.handle.dup();
     if (!import_fd) {
         cleanup_imported_image();
         return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to dup DMA-BUF fd");
@@ -1447,7 +1447,7 @@ void VulkanBackend::throttle_present() {
     }
 }
 
-auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
+auto VulkanBackend::render_frame(const util::ExternalImageFrame& frame) -> Result<bool> {
     GOGGLES_PROFILE_FUNCTION();
 
     if (!m_device) {
@@ -1460,7 +1460,7 @@ auto VulkanBackend::render_frame(const CaptureFrame& frame) -> Result<bool> {
 
     m_last_frame_number = frame.frame_number;
 
-    GOGGLES_TRY(import_dmabuf(frame));
+    GOGGLES_TRY(import_dmabuf(frame.image));
 
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
 
@@ -1491,7 +1491,7 @@ auto VulkanBackend::handle_resize() -> Result<void> {
     return recreate_swapchain();
 }
 
-auto VulkanBackend::render_frame_with_ui(const CaptureFrame& frame,
+auto VulkanBackend::render_frame_with_ui(const util::ExternalImageFrame& frame,
                                          const UiRenderCallback& ui_callback) -> Result<bool> {
     GOGGLES_PROFILE_FUNCTION();
 
@@ -1505,7 +1505,7 @@ auto VulkanBackend::render_frame_with_ui(const CaptureFrame& frame,
 
     m_last_frame_number = frame.frame_number;
 
-    GOGGLES_TRY(import_dmabuf(frame));
+    GOGGLES_TRY(import_dmabuf(frame.image));
 
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
 

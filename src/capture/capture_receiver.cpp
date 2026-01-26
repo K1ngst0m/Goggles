@@ -275,21 +275,23 @@ bool CaptureReceiver::process_message(const char* data, size_t len, const std::v
              tex_data->offset != m_last_texture.offset ||
              tex_data->modifier != m_last_texture.modifier);
 
-        m_frame.dmabuf_fd = util::UniqueFd{new_fd};
-        m_frame.width = tex_data->width;
-        m_frame.height = tex_data->height;
-        m_frame.stride = tex_data->stride;
-        m_frame.offset = tex_data->offset;
-        m_frame.format = static_cast<uint32_t>(tex_data->format);
-        m_frame.modifier = tex_data->modifier;
+        m_frame.image.handle = util::UniqueFd{new_fd};
+        m_frame.image.width = tex_data->width;
+        m_frame.image.height = tex_data->height;
+        m_frame.image.stride = tex_data->stride;
+        m_frame.image.offset = tex_data->offset;
+        m_frame.image.format = static_cast<vk::Format>(tex_data->format);
+        m_frame.image.modifier = tex_data->modifier;
+        m_frame.image.handle_type = util::ExternalHandleType::dmabuf;
         m_last_texture = *tex_data;
 
         if (texture_changed) {
-            GOGGLES_LOG_INFO("Capture texture: {}x{}, format={}, modifier=0x{:x}", m_frame.width,
-                             m_frame.height, m_frame.format, m_frame.modifier);
+            GOGGLES_LOG_INFO("Capture texture: {}x{}, format={}, modifier=0x{:x}",
+                             m_frame.image.width, m_frame.image.height,
+                             static_cast<uint32_t>(m_frame.image.format), m_frame.image.modifier);
         }
 
-        return m_frame.dmabuf_fd.valid();
+        return m_frame.image.handle.valid();
     }
 
     if (msg_type == CaptureMessageType::semaphore_init) {
@@ -306,7 +308,7 @@ bool CaptureReceiver::process_message(const char* data, size_t len, const std::v
         int consumed_fd = fds[fd_index++];
 
         clear_sync_semaphores();
-        m_frame.dmabuf_fd = util::UniqueFd{};
+        m_frame.image.handle = util::UniqueFd{};
         m_frame_ready_fd = ready_fd;
         m_frame_consumed_fd = consumed_fd;
         m_semaphores_updated = true;
@@ -324,18 +326,19 @@ bool CaptureReceiver::process_message(const char* data, size_t len, const std::v
 
         if (fd_index < fds.size()) {
             int new_fd = fds[fd_index++];
-            m_frame.dmabuf_fd = util::UniqueFd{new_fd};
+            m_frame.image.handle = util::UniqueFd{new_fd};
         }
 
-        m_frame.width = metadata->width;
-        m_frame.height = metadata->height;
-        m_frame.stride = metadata->stride;
-        m_frame.offset = metadata->offset;
-        m_frame.format = static_cast<uint32_t>(metadata->format);
-        m_frame.modifier = metadata->modifier;
+        m_frame.image.width = metadata->width;
+        m_frame.image.height = metadata->height;
+        m_frame.image.stride = metadata->stride;
+        m_frame.image.offset = metadata->offset;
+        m_frame.image.format = static_cast<vk::Format>(metadata->format);
+        m_frame.image.modifier = metadata->modifier;
+        m_frame.image.handle_type = util::ExternalHandleType::dmabuf;
         m_frame.frame_number = metadata->frame_number;
 
-        return m_frame.dmabuf_fd.valid();
+        return m_frame.image.handle.valid();
     }
 
     return false;

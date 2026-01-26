@@ -4,22 +4,10 @@
 
 #include <cstdint>
 #include <util/error.hpp>
-#include <util/unique_fd.hpp>
+#include <util/external_image.hpp>
 #include <vector>
 
 namespace goggles {
-
-/// @brief Latest captured frame metadata plus DMA-BUF handle.
-struct CaptureFrame {
-    uint32_t width = 0;
-    uint32_t height = 0;
-    uint32_t stride = 0;
-    uint32_t offset = 0;
-    uint32_t format = 0;
-    util::UniqueFd dmabuf_fd;
-    uint64_t modifier = 0;
-    uint64_t frame_number = 0;
-};
 
 /// @brief Receives capture frames over the local IPC protocol.
 class CaptureReceiver {
@@ -45,11 +33,11 @@ public:
     void request_resolution(uint32_t width, uint32_t height);
 
     /// @brief Returns the most recent frame metadata.
-    [[nodiscard]] const CaptureFrame& get_frame() const { return m_frame; }
+    [[nodiscard]] const util::ExternalImageFrame& get_frame() const { return m_frame; }
     /// @brief Returns true if a client is connected.
     [[nodiscard]] bool is_connected() const { return m_client_fd >= 0; }
     /// @brief Returns true if a frame DMA-BUF FD is available.
-    [[nodiscard]] bool has_frame() const { return m_frame.dmabuf_fd.valid(); }
+    [[nodiscard]] bool has_frame() const { return m_frame.image.handle.valid(); }
 
     /// @brief Returns the "frame ready" semaphore FD, or `-1` if unavailable.
     [[nodiscard]] int get_frame_ready_fd() const { return m_frame_ready_fd; }
@@ -78,7 +66,7 @@ private:
 
     int m_listen_fd = -1;
     int m_client_fd = -1;
-    CaptureFrame m_frame{};
+    util::ExternalImageFrame m_frame{};
     capture::CaptureTextureData m_last_texture{};
     int m_frame_ready_fd = -1;
     int m_frame_consumed_fd = -1;

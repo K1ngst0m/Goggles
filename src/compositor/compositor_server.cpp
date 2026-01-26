@@ -44,6 +44,7 @@ extern "C" {
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
+#include <util/drm_format.hpp>
 #include <util/drm_fourcc.hpp>
 #include <util/logging.hpp>
 #include <util/queues.hpp>
@@ -340,7 +341,7 @@ struct CompositorServer::Impl {
     std::optional<uint32_t> manual_input_target;
     std::atomic<bool> pointer_locked{false};
     bool xwayland_surface_detached = false;
-    std::optional<SurfaceFrame> presented_frame;
+    std::optional<util::ExternalImageFrame> presented_frame;
     wlr_buffer* presented_buffer = nullptr;
     wlr_surface* presented_surface = nullptr;
     uint64_t presented_frame_number = 0;
@@ -837,7 +838,7 @@ auto CompositorServer::is_pointer_locked() const -> bool {
 }
 
 auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
-    -> std::optional<SurfaceFrame> {
+    -> std::optional<util::ExternalImageFrame> {
     std::scoped_lock lock(m_impl->present_mutex);
     if (!m_impl->presented_frame) {
         return std::nullopt;
@@ -847,16 +848,17 @@ auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
         return std::nullopt;
     }
 
-    SurfaceFrame frame{};
-    frame.width = stored.width;
-    frame.height = stored.height;
-    frame.stride = stored.stride;
-    frame.offset = stored.offset;
-    frame.format = stored.format;
-    frame.modifier = stored.modifier;
+    util::ExternalImageFrame frame{};
+    frame.image.width = stored.image.width;
+    frame.image.height = stored.image.height;
+    frame.image.stride = stored.image.stride;
+    frame.image.offset = stored.image.offset;
+    frame.image.format = stored.image.format;
+    frame.image.modifier = stored.image.modifier;
+    frame.image.handle_type = stored.image.handle_type;
     frame.frame_number = stored.frame_number;
-    frame.dmabuf_fd = stored.dmabuf_fd.dup();
-    if (!frame.dmabuf_fd) {
+    frame.image.handle = stored.image.handle.dup();
+    if (!frame.image.handle) {
         return std::nullopt;
     }
     return frame;
@@ -1515,14 +1517,15 @@ void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
 
     presented_buffer = buffer;
 
-    SurfaceFrame frame{};
-    frame.width = static_cast<uint32_t>(attribs.width);
-    frame.height = static_cast<uint32_t>(attribs.height);
-    frame.stride = attribs.stride[0];
-    frame.offset = attribs.offset[0];
-    frame.format = attribs.format;
-    frame.modifier = attribs.modifier;
-    frame.dmabuf_fd = std::move(dup_fd);
+    util::ExternalImageFrame frame{};
+    frame.image.width = static_cast<uint32_t>(attribs.width);
+    frame.image.height = static_cast<uint32_t>(attribs.height);
+    frame.image.stride = attribs.stride[0];
+    frame.image.offset = attribs.offset[0];
+    frame.image.format = util::drm_to_vk_format(attribs.format);
+    frame.image.modifier = attribs.modifier;
+    frame.image.handle = std::move(dup_fd);
+    frame.image.handle_type = util::ExternalHandleType::dmabuf;
     frame.frame_number = ++presented_frame_number;
 
     presented_frame = std::move(frame);
