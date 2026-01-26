@@ -13,7 +13,7 @@
 #include <string_view>
 #include <ui/imgui_layer.hpp>
 #include <util/config.hpp>
-#include <util/drm_format.hpp>
+#include <util/drm_fourcc.hpp>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
 #include <util/profiling.hpp>
@@ -492,16 +492,14 @@ void Application::tick_frame() {
     // Check if captured frame requires format rebuild
     if (m_capture_receiver && m_capture_receiver->has_frame()) {
         auto& frame = m_capture_receiver->get_frame();
-        auto source_format = static_cast<vk::Format>(frame.format);
-        if (m_vulkan_backend->needs_format_rebuild(source_format)) {
-            m_pending_format = frame.format;
+        if (m_vulkan_backend->needs_format_rebuild(frame.image.format)) {
+            m_pending_format = static_cast<uint32_t>(frame.image.format);
             return;
         }
     } else if (m_surface_frame) {
-        auto vk_format = util::drm_to_vk_format(m_surface_frame->format);
-        if (vk_format != vk::Format::eUndefined) {
-            if (m_vulkan_backend->needs_format_rebuild(vk_format)) {
-                m_pending_format = static_cast<uint32_t>(vk_format);
+        if (m_surface_frame->image.format != vk::Format::eUndefined) {
+            if (m_vulkan_backend->needs_format_rebuild(m_surface_frame->image.format)) {
+                m_pending_format = static_cast<uint32_t>(m_surface_frame->image.format);
                 return;
             }
         }
@@ -542,8 +540,8 @@ void Application::tick_frame() {
             m_imgui_layer->record(cmd, view, extent);
         };
 
-        const ::goggles::CaptureFrame* source_frame = nullptr;
-        ::goggles::CaptureFrame surface_capture{};
+        const util::ExternalImageFrame* source_frame = nullptr;
+        util::ExternalImageFrame surface_capture{};
         bool using_capture_receiver = false;
         uint64_t source_frame_number = 0;
 
@@ -552,21 +550,21 @@ void Application::tick_frame() {
             using_capture_receiver = true;
             source_frame_number = source_frame->frame_number;
         } else if (m_surface_frame) {
-            auto vk_format = util::drm_to_vk_format(m_surface_frame->format);
-            if (vk_format == vk::Format::eUndefined) {
+            if (m_surface_frame->image.format == vk::Format::eUndefined) {
                 GOGGLES_LOG_DEBUG("Skipping surface frame with unsupported DRM format");
-            } else if (m_surface_frame->modifier == util::DRM_FORMAT_MOD_INVALID) {
+            } else if (m_surface_frame->image.modifier == util::DRM_FORMAT_MOD_INVALID) {
                 GOGGLES_LOG_DEBUG("Skipping surface frame with invalid DMA-BUF modifier");
             } else {
-                surface_capture.width = m_surface_frame->width;
-                surface_capture.height = m_surface_frame->height;
-                surface_capture.stride = m_surface_frame->stride;
-                surface_capture.offset = m_surface_frame->offset;
-                surface_capture.format = static_cast<uint32_t>(vk_format);
-                surface_capture.modifier = m_surface_frame->modifier;
+                surface_capture.image.width = m_surface_frame->image.width;
+                surface_capture.image.height = m_surface_frame->image.height;
+                surface_capture.image.stride = m_surface_frame->image.stride;
+                surface_capture.image.offset = m_surface_frame->image.offset;
+                surface_capture.image.format = m_surface_frame->image.format;
+                surface_capture.image.modifier = m_surface_frame->image.modifier;
+                surface_capture.image.handle_type = m_surface_frame->image.handle_type;
+                surface_capture.image.handle = m_surface_frame->image.handle.dup();
                 surface_capture.frame_number = m_surface_frame->frame_number;
-                surface_capture.dmabuf_fd = m_surface_frame->dmabuf_fd.dup();
-                if (surface_capture.dmabuf_fd) {
+                if (surface_capture.image.handle) {
                     source_frame = &surface_capture;
                     source_frame_number = m_surface_frame->frame_number;
                 }

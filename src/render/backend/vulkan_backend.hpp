@@ -5,7 +5,6 @@
 #include <SDL3/SDL.h>
 #include <array>
 #include <atomic>
-#include <capture/capture_receiver.hpp>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -16,6 +15,7 @@
 #include <render/shader/shader_runtime.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
+#include <util/external_image.hpp>
 #include <vector>
 
 namespace goggles::render {
@@ -51,7 +51,7 @@ public:
 
     /// @brief Renders a captured frame to the swapchain.
     /// @return True if the frame was presented, false if skipped.
-    [[nodiscard]] auto render_frame(const CaptureFrame& frame) -> Result<bool>;
+    [[nodiscard]] auto render_frame(const util::ExternalImageFrame& frame) -> Result<bool>;
     /// @brief Clears the swapchain image.
     /// @return True if a frame was presented, false if skipped.
     [[nodiscard]] auto render_clear() -> Result<bool>;
@@ -71,7 +71,7 @@ public:
     void set_shader_enabled(bool enabled);
 
     using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
-    [[nodiscard]] auto render_frame_with_ui(const CaptureFrame& frame,
+    [[nodiscard]] auto render_frame_with_ui(const util::ExternalImageFrame& frame,
                                             const UiRenderCallback& ui_callback) -> Result<bool>;
     [[nodiscard]] auto render_clear_with_ui(const UiRenderCallback& ui_callback) -> Result<bool>;
 
@@ -132,7 +132,7 @@ private:
     [[nodiscard]] auto create_sync_objects() -> Result<void>;
     [[nodiscard]] auto init_filter_chain() -> Result<void>;
 
-    [[nodiscard]] auto import_dmabuf(const CaptureFrame& frame) -> Result<void>;
+    [[nodiscard]] auto import_dmabuf(const util::ExternalImage& frame) -> Result<void>;
     void cleanup_imported_image();
 
     [[nodiscard]] auto acquire_next_image() -> Result<uint32_t>;
