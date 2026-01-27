@@ -183,7 +183,6 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     }
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vk_get_instance_proc_addr);
 
-    backend->m_window = window;
     backend->m_enable_validation = enable_validation;
     backend->m_shader_dir = shader_dir;
     backend->m_cache_dir = cache_dir;
@@ -702,83 +701,55 @@ void VulkanBackend::cleanup_swapchain() {
     m_swapchain.reset();
 }
 
-auto VulkanBackend::recreate_swapchain() -> Result<void> {
+auto VulkanBackend::recreate_swapchain(uint32_t width, uint32_t height, vk::Format source_format)
+    -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    int width = 0;
-    int height = 0;
-    if (!SDL_GetWindowSizeInPixels(m_window, &width, &height)) {
-        return make_error<void>(ErrorCode::unknown_error,
-                                "SDL_GetWindowSizeInPixels failed: " + std::string(SDL_GetError()));
+    if (width == 0 || height == 0) {
+        return make_error<void>(ErrorCode::unknown_error, "Swapchain size is zero");
     }
 
-    while (width == 0 || height == 0) {
-        if (!SDL_GetWindowSizeInPixels(m_window, &width, &height)) {
-            return make_error<void>(ErrorCode::unknown_error, "SDL_GetWindowSizeInPixels failed: " +
-                                                                  std::string(SDL_GetError()));
+    vk::Format target_format = m_swapchain_format;
+    bool recreate_filter_chain = false;
+    if (source_format != vk::Format::eUndefined) {
+        target_format = get_matching_swapchain_format(source_format);
+        recreate_filter_chain = target_format != m_swapchain_format;
+        if (recreate_filter_chain) {
+            GOGGLES_LOG_INFO("Source format changed to {}, recreating swapchain with {}",
+                             vk::to_string(source_format), vk::to_string(target_format));
         }
-        SDL_WaitEvent(nullptr);
     }
 
     VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost,
            "waitIdle failed before swapchain recreation");
-    cleanup_swapchain();
 
-    GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                 m_swapchain_format));
-    GOGGLES_TRY(m_filter_chain->handle_resize(m_swapchain_extent));
-
-    m_needs_resize = false;
-    GOGGLES_LOG_DEBUG("Swapchain recreated: {}x{}", width, height);
-    return {};
-}
-
-auto VulkanBackend::recreate_swapchain_for_format(vk::Format source_format) -> Result<void> {
-    vk::Format target_format = get_matching_swapchain_format(source_format);
-    if (target_format == m_swapchain_format) {
-        return {};
-    }
-
-    GOGGLES_LOG_INFO("Source format changed to {}, recreating swapchain with {}",
-                     vk::to_string(source_format), vk::to_string(target_format));
-
-    int width = 0;
-    int height = 0;
-    if (!SDL_GetWindowSizeInPixels(m_window, &width, &height)) {
-        return make_error<void>(ErrorCode::unknown_error,
-                                "SDL_GetWindowSizeInPixels failed: " + std::string(SDL_GetError()));
-    }
-
-    if (m_filter_chain) {
+    if (recreate_filter_chain) {
         m_filter_chain->shutdown();
     }
     cleanup_swapchain();
 
-    GOGGLES_TRY(create_swapchain(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                                 target_format));
+    GOGGLES_TRY(create_swapchain(width, height, target_format));
 
-    GOGGLES_TRY(init_filter_chain());
+    if (recreate_filter_chain) {
+        GOGGLES_TRY(init_filter_chain());
 
-    if (!m_preset_path.empty()) {
-        auto result = m_filter_chain->load_preset(m_preset_path);
-        if (!result) {
-            GOGGLES_LOG_WARN("Failed to reload shader preset after format change: {}",
-                             result.error().message);
+        if (!m_preset_path.empty()) {
+            auto result = m_filter_chain->load_preset(m_preset_path);
+            if (!result) {
+                GOGGLES_LOG_WARN("Failed to reload shader preset after format change: {}",
+                                 result.error().message);
+            }
         }
+
+        m_source_format = source_format;
+        m_format_changed.store(true, std::memory_order_release);
+    } else {
+        GOGGLES_TRY(m_filter_chain->handle_resize(m_swapchain_extent));
     }
 
-    m_source_format = source_format;
-    m_format_changed.store(true, std::memory_order_release);
+    m_needs_resize = false;
+    GOGGLES_LOG_DEBUG("Swapchain recreated: {}x{}", width, height);
     return {};
-}
-
-auto VulkanBackend::needs_format_rebuild(vk::Format source_format) const -> bool {
-    vk::Format target_format = get_matching_swapchain_format(source_format);
-    return target_format != m_swapchain_format;
-}
-
-auto VulkanBackend::rebuild_for_format(vk::Format source_format) -> Result<void> {
-    return recreate_swapchain_for_format(source_format);
 }
 
 void VulkanBackend::wait_all_frames() {
@@ -899,11 +870,6 @@ auto VulkanBackend::init_filter_chain() -> Result<void> {
 void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path) {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (!m_filter_chain) {
-        GOGGLES_LOG_WARN("Cannot load shader preset: VulkanBackend not initialized");
-        return;
-    }
-
     m_preset_path = preset_path;
 
     if (preset_path.empty()) {
@@ -918,7 +884,7 @@ void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path)
     }
 }
 
-auto VulkanBackend::import_dmabuf(const util::ExternalImage& frame) -> Result<void> {
+auto VulkanBackend::import_external_image(const util::ExternalImage& frame) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
     if (!frame.handle.valid()) {
@@ -1110,28 +1076,8 @@ void VulkanBackend::cleanup_sync_semaphores() {
     m_sync_wait_succeeded = false;
 }
 
-void VulkanBackend::set_prechain_resolution(uint32_t width, uint32_t height) {
-    m_source_resolution = vk::Extent2D{width, height};
-    if (m_filter_chain) {
-        m_filter_chain->set_prechain_resolution(width, height);
-    }
-}
-
 auto VulkanBackend::get_prechain_resolution() const -> vk::Extent2D {
     return m_source_resolution;
-}
-
-auto VulkanBackend::get_prechain_parameters() const -> std::vector<render::ShaderParameter> {
-    if (m_filter_chain) {
-        return m_filter_chain->get_prechain_parameters();
-    }
-    return {};
-}
-
-void VulkanBackend::set_prechain_parameter(const std::string& name, float value) {
-    if (m_filter_chain) {
-        m_filter_chain->set_prechain_parameter(name, value);
-    }
 }
 
 auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
@@ -1291,7 +1237,7 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     return {};
 }
 
-auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
+auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<void> {
     GOGGLES_PROFILE_SCOPE("SubmitPresent");
 
     auto& frame = m_frames[m_current_frame];
@@ -1311,7 +1257,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
             }
             cleanup_sync_semaphores();
         } else if (wait_result != vk::Result::eSuccess) {
-            return make_error<bool>(ErrorCode::vulkan_device_lost,
+            return make_error<void>(ErrorCode::vulkan_device_lost,
                                     "Semaphore wait failed: " + vk::to_string(wait_result));
         } else {
             m_sync_wait_succeeded = true;
@@ -1351,7 +1297,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
 
     auto submit_result = m_graphics_queue.submit(submit_info, frame.in_flight_fence);
     if (submit_result != vk::Result::eSuccess) {
-        return make_error<bool>(ErrorCode::vulkan_device_lost,
+        return make_error<void>(ErrorCode::vulkan_device_lost,
                                 "Queue submit failed: " + vk::to_string(submit_result));
     }
 
@@ -1379,10 +1325,8 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     if (present_result == vk::Result::eErrorOutOfDateKHR ||
         present_result == vk::Result::eSuboptimalKHR) {
         m_needs_resize = true;
-    }
-    if (present_result != vk::Result::eSuccess && present_result != vk::Result::eSuboptimalKHR &&
-        present_result != vk::Result::eErrorOutOfDateKHR) {
-        return make_error<bool>(ErrorCode::vulkan_device_lost,
+    } else if (present_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_device_lost,
                                 "Present failed: " + vk::to_string(present_result));
     }
 
@@ -1391,14 +1335,14 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<bool> {
     } else if (m_present_wait_supported && present_value > 0) {
         auto wait_result = apply_present_wait(present_value);
         if (!wait_result) {
-            return make_error<bool>(wait_result.error().code, wait_result.error().message);
+            return make_error<void>(wait_result.error().code, wait_result.error().message);
         }
     } else {
         throttle_present();
     }
 
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-    return !m_needs_resize;
+    return {};
 }
 
 auto VulkanBackend::apply_present_wait(uint64_t present_id) -> Result<void> {
@@ -1447,89 +1391,29 @@ void VulkanBackend::throttle_present() {
     }
 }
 
-auto VulkanBackend::render_frame(const util::ExternalImageFrame& frame) -> Result<bool> {
+auto VulkanBackend::render(const util::ExternalImageFrame* frame,
+                           const UiRenderCallback& ui_callback) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (!m_device) {
-        return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
-    }
-
-    ++m_frame_count;
-    check_pending_chain_swap();
-    cleanup_deferred_destroys();
-
-    m_last_frame_number = frame.frame_number;
-
-    GOGGLES_TRY(import_dmabuf(frame.image));
-
-    uint32_t image_index = GOGGLES_TRY(acquire_next_image());
-
-    GOGGLES_TRY(record_render_commands(m_frames[m_current_frame].command_buffer, image_index));
-
-    return submit_and_present(image_index);
-}
-
-auto VulkanBackend::render_clear() -> Result<bool> {
-    GOGGLES_PROFILE_FUNCTION();
-
-    if (!m_device) {
-        return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
-    }
-
-    uint32_t image_index = GOGGLES_TRY(acquire_next_image());
-
-    GOGGLES_TRY(record_clear_commands(m_frames[m_current_frame].command_buffer, image_index));
-
-    return submit_and_present(image_index);
-}
-
-auto VulkanBackend::handle_resize() -> Result<void> {
     if (!m_device) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
-    return recreate_swapchain();
-}
-
-auto VulkanBackend::render_frame_with_ui(const util::ExternalImageFrame& frame,
-                                         const UiRenderCallback& ui_callback) -> Result<bool> {
-    GOGGLES_PROFILE_FUNCTION();
-
-    if (!m_device) {
-        return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
-    }
-
-    ++m_frame_count;
-    check_pending_chain_swap();
-    cleanup_deferred_destroys();
-
-    m_last_frame_number = frame.frame_number;
-
-    GOGGLES_TRY(import_dmabuf(frame.image));
-
-    uint32_t image_index = GOGGLES_TRY(acquire_next_image());
-
-    GOGGLES_TRY(
-        record_render_commands(m_frames[m_current_frame].command_buffer, image_index, ui_callback));
-
-    return submit_and_present(image_index);
-}
-
-auto VulkanBackend::render_clear_with_ui(const UiRenderCallback& ui_callback) -> Result<bool> {
-    GOGGLES_PROFILE_FUNCTION();
-
-    if (!m_device) {
-        return make_error<bool>(ErrorCode::vulkan_init_failed, "Backend not initialized");
-    }
-
     ++m_frame_count;
     check_pending_chain_swap();
     cleanup_deferred_destroys();
 
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
 
-    GOGGLES_TRY(
-        record_clear_commands(m_frames[m_current_frame].command_buffer, image_index, ui_callback));
+    if (frame) {
+        m_last_frame_number = frame->frame_number;
+        GOGGLES_TRY(import_external_image(frame->image));
+        GOGGLES_TRY(record_render_commands(m_frames[m_current_frame].command_buffer, image_index,
+                                           ui_callback));
+    } else {
+        GOGGLES_TRY(record_clear_commands(m_frames[m_current_frame].command_buffer, image_index,
+                                          ui_callback));
+    }
 
     return submit_and_present(image_index);
 }
@@ -1537,7 +1421,7 @@ auto VulkanBackend::render_clear_with_ui(const UiRenderCallback& ui_callback) ->
 auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_path) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    if (!m_device || !m_filter_chain) {
+    if (!m_device) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
@@ -1668,9 +1552,7 @@ void VulkanBackend::cleanup_deferred_destroys() {
 }
 
 void VulkanBackend::set_shader_enabled(bool enabled) {
-    if (m_filter_chain) {
-        m_filter_chain->set_bypass(!enabled);
-    }
+    m_filter_chain->set_bypass(!enabled);
 }
 
 } // namespace goggles::render

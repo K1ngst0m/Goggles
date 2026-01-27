@@ -157,9 +157,6 @@ public:
     void toggle_global_visibility() { m_global_visible = !m_global_visible; }
     [[nodiscard]] auto is_globally_visible() const -> bool { return m_global_visible; }
 
-    [[nodiscard]] auto is_app_management_visible() const -> bool {
-        return m_app_management_visible;
-    }
     /// @brief Updates the displayed surface list.
     void set_surfaces(std::vector<input::SurfaceInfo> surfaces);
     /// @brief Updates whether manual override is active.
@@ -216,8 +213,6 @@ private:
     std::vector<input::SurfaceInfo> m_surfaces;
     float m_last_display_scale = 1.0F;
     bool m_global_visible = true;
-    bool m_shader_controls_visible = true;
-    bool m_app_management_visible = true;
     bool m_manual_override_active = false;
     bool m_pointer_lock_override = false;
     bool m_initialized = false;

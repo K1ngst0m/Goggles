@@ -22,7 +22,6 @@ struct CliOptions {
     std::string dump_frame_mode;
     bool layer_log = false;
     std::string layer_log_level;
-    bool enable_input_forwarding = false;
     std::optional<uint32_t> target_fps;
     std::vector<std::string> app_command;
 };

@@ -250,12 +250,8 @@ void ImGuiLayer::begin_frame() {
         return;
     }
 
-    if (m_shader_controls_visible) {
-        draw_shader_controls();
-    }
-    if (m_app_management_visible) {
-        draw_app_management();
-    }
+    draw_shader_controls();
+    draw_app_management();
 }
 
 void ImGuiLayer::end_frame() {

@@ -49,15 +49,6 @@ public:
     /// @brief Releases GPU resources and stops background work.
     void shutdown();
 
-    /// @brief Renders a captured frame to the swapchain.
-    /// @return True if the frame was presented, false if skipped.
-    [[nodiscard]] auto render_frame(const util::ExternalImageFrame& frame) -> Result<bool>;
-    /// @brief Clears the swapchain image.
-    /// @return True if a frame was presented, false if skipped.
-    [[nodiscard]] auto render_clear() -> Result<bool>;
-    /// @brief Recreates swapchain resources after a resize event.
-    [[nodiscard]] auto handle_resize() -> Result<void>;
-
     /// @brief Loads a shader preset from disk (async rebuild).
     void load_shader_preset(const std::filesystem::path& preset_path);
     /// @brief Reloads the current preset immediately.
@@ -71,12 +62,25 @@ public:
     void set_shader_enabled(bool enabled);
 
     using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
-    [[nodiscard]] auto render_frame_with_ui(const util::ExternalImageFrame& frame,
-                                            const UiRenderCallback& ui_callback) -> Result<bool>;
-    [[nodiscard]] auto render_clear_with_ui(const UiRenderCallback& ui_callback) -> Result<bool>;
+    /// @brief Renders a captured frame or clears the swapchain when no frame is provided.
+    [[nodiscard]] auto render(const util::ExternalImageFrame* frame,
+                              const UiRenderCallback& ui_callback = nullptr) -> Result<void>;
 
-    [[nodiscard]] auto needs_format_rebuild(vk::Format source_format) const -> bool;
-    [[nodiscard]] auto rebuild_for_format(vk::Format source_format) -> Result<void>;
+    [[nodiscard]] auto needs_resize() const -> bool { return m_needs_resize; }
+
+    /// @brief Maps a source image format to a swapchain format.
+    /// @param source_format Source image format to map.
+    /// @return Swapchain format for presenting the source format.
+    [[nodiscard]] static auto get_matching_swapchain_format(vk::Format source_format) -> vk::Format;
+
+    /// @brief Recreates swapchain resources for the given size and optional source format.
+    /// @param width Swapchain width in pixels.
+    /// @param height Swapchain height in pixels.
+    /// @param source_format Source image format or vk::Format::eUndefined for resize-only.
+    /// @return Success or an error.
+    [[nodiscard]] auto recreate_swapchain(uint32_t width, uint32_t height,
+                                          vk::Format source_format = vk::Format::eUndefined)
+        -> Result<void>;
     void wait_all_frames();
 
     [[nodiscard]] auto instance() const -> vk::Instance { return *m_instance; }
@@ -90,10 +94,7 @@ public:
         return static_cast<uint32_t>(m_swapchain_images.size());
     }
     [[nodiscard]] auto filter_chain() -> FilterChain* { return m_filter_chain.get(); }
-    void set_prechain_resolution(uint32_t width, uint32_t height);
     [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
-    [[nodiscard]] auto get_prechain_parameters() const -> std::vector<render::ShaderParameter>;
-    void set_prechain_parameter(const std::string& name, float value);
     [[nodiscard]] auto get_captured_extent() const -> vk::Extent2D { return m_import_extent; }
     [[nodiscard]] auto gpu_index() const -> uint32_t { return m_gpu_index; }
     [[nodiscard]] auto gpu_uuid() const -> const std::string& { return m_gpu_uuid; }
@@ -102,7 +103,6 @@ public:
     /// @return Success or an error.
     [[nodiscard]] auto import_sync_semaphores(util::UniqueFd frame_ready_fd,
                                               util::UniqueFd frame_consumed_fd) -> Result<void>;
-    [[nodiscard]] auto has_sync_semaphores() const -> bool { return m_sync_semaphores_imported; }
     /// @brief Releases imported semaphores, if any.
     void cleanup_sync_semaphores();
 
@@ -125,14 +125,12 @@ private:
     [[nodiscard]] auto create_device() -> Result<void>;
     [[nodiscard]] auto create_swapchain(uint32_t width, uint32_t height,
                                         vk::Format preferred_format) -> Result<void>;
-    [[nodiscard]] auto recreate_swapchain() -> Result<void>;
-    [[nodiscard]] auto recreate_swapchain_for_format(vk::Format source_format) -> Result<void>;
     void cleanup_swapchain();
     [[nodiscard]] auto create_command_resources() -> Result<void>;
     [[nodiscard]] auto create_sync_objects() -> Result<void>;
     [[nodiscard]] auto init_filter_chain() -> Result<void>;
 
-    [[nodiscard]] auto import_dmabuf(const util::ExternalImage& frame) -> Result<void>;
+    [[nodiscard]] auto import_external_image(const util::ExternalImage& frame) -> Result<void>;
     void cleanup_imported_image();
 
     [[nodiscard]] auto acquire_next_image() -> Result<uint32_t>;
@@ -142,9 +140,8 @@ private:
     [[nodiscard]] auto record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index,
                                              const UiRenderCallback& ui_callback = nullptr)
         -> Result<void>;
-    [[nodiscard]] auto submit_and_present(uint32_t image_index) -> Result<bool>;
+    [[nodiscard]] auto submit_and_present(uint32_t image_index) -> Result<void>;
 
-    [[nodiscard]] static auto get_matching_swapchain_format(vk::Format source_format) -> vk::Format;
     [[nodiscard]] static auto is_srgb_format(vk::Format format) -> bool;
 
     [[nodiscard]] auto apply_present_wait(uint64_t present_id) -> Result<void>;
@@ -154,7 +151,6 @@ private:
     vk::Queue m_graphics_queue;
     std::unique_ptr<ShaderRuntime> m_shader_runtime;
     std::unique_ptr<FilterChain> m_filter_chain;
-    SDL_Window* m_window = nullptr;
     vk::Semaphore m_frame_ready_sem;
     vk::Semaphore m_frame_consumed_sem;
     uint64_t m_last_frame_number = 0;
