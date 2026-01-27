@@ -169,7 +169,7 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
 }
 
 auto Application::init_capture_receiver() -> Result<void> {
-    m_capture_receiver = GOGGLES_MUST(CaptureReceiver::create());
+    m_capture_receiver = GOGGLES_TRY(CaptureReceiver::create());
     return Result<void>{};
 }
 
@@ -421,8 +421,10 @@ void Application::handle_swapchain_changes() {
 
         auto result = m_vulkan_backend->recreate_swapchain(static_cast<uint32_t>(width),
                                                            static_cast<uint32_t>(height), fmt);
-        if (result && fmt != vk::Format::eUndefined) {
-            m_imgui_layer->rebuild_for_format(m_vulkan_backend->swapchain_format());
+        if (result) {
+            if (fmt != vk::Format::eUndefined) {
+                m_imgui_layer->rebuild_for_format(m_vulkan_backend->swapchain_format());
+            }
         } else {
             GOGGLES_LOG_ERROR("Swapchain rebuild failed: {}", result.error().message);
         }

@@ -236,7 +236,9 @@ void VulkanBackend::shutdown() {
         }
     }
 
-    m_filter_chain->shutdown();
+    if (m_filter_chain) {
+        m_filter_chain->shutdown();
+    }
     if (m_shader_runtime) {
         m_shader_runtime->shutdown();
     }
@@ -1401,14 +1403,11 @@ auto VulkanBackend::render(const util::ExternalImageFrame* frame,
     check_pending_chain_swap();
     cleanup_deferred_destroys();
 
-    if (frame) {
-        m_last_frame_number = frame->frame_number;
-        GOGGLES_TRY(import_external_image(frame->image));
-    }
-
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
 
     if (frame) {
+        m_last_frame_number = frame->frame_number;
+        GOGGLES_TRY(import_external_image(frame->image));
         GOGGLES_TRY(record_render_commands(m_frames[m_current_frame].command_buffer, image_index,
                                            ui_callback));
     } else {
