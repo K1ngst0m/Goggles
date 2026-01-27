@@ -78,22 +78,6 @@ auto parse_capture(const toml::value& data, Config& config) -> Result<void> {
     }
 }
 
-auto parse_input(const toml::value& data, Config& config) -> Result<void> {
-    try {
-        if (!data.contains("input")) {
-            return {};
-        }
-        const auto input = toml::find(data, "input");
-        if (input.contains("forwarding")) {
-            config.input.forwarding = toml::find<bool>(input, "forwarding");
-        }
-        return {};
-    } catch (const std::exception& e) {
-        return make_error<void>(ErrorCode::invalid_config,
-                                "Invalid [input] configuration: " + std::string(e.what()));
-    }
-}
-
 auto parse_shader(const toml::value& data, Config& config) -> Result<void> {
     try {
         if (!data.contains("shader")) {
@@ -227,7 +211,6 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
 
     GOGGLES_TRY(parse_paths(data, config));
     GOGGLES_TRY(parse_capture(data, config));
-    GOGGLES_TRY(parse_input(data, config));
     GOGGLES_TRY(parse_shader(data, config));
     GOGGLES_TRY(parse_render(data, config));
     GOGGLES_TRY(parse_logging(data, config));

@@ -30,8 +30,8 @@ namespace app {
 
 class Application {
 public:
-    [[nodiscard]] static auto create(const Config& config, const util::AppDirs& app_dirs,
-                                     bool enable_input_forwarding) -> ResultPtr<Application>;
+    [[nodiscard]] static auto create(const Config& config, const util::AppDirs& app_dirs)
+        -> ResultPtr<Application>;
 
     ~Application();
 
@@ -43,8 +43,7 @@ public:
     void shutdown();
 
     void run();
-    void pump_events();
-    void handle_event(const SDL_Event& event);
+    void process_event();
     void tick_frame();
 
     [[nodiscard]] auto is_running() const -> bool { return m_running; }
@@ -57,6 +56,18 @@ private:
     Application() = default;
 
     void forward_input_event(const SDL_Event& event);
+    [[nodiscard]] auto init_sdl() -> Result<void>;
+    [[nodiscard]] auto init_vulkan_backend(const Config& config, const util::AppDirs& app_dirs)
+        -> Result<void>;
+    [[nodiscard]] auto init_imgui_layer(const util::AppDirs& app_dirs) -> Result<void>;
+    [[nodiscard]] auto init_shader_system(const Config& config, const util::AppDirs& app_dirs)
+        -> Result<void>;
+    [[nodiscard]] auto init_capture_receiver() -> Result<void>;
+    [[nodiscard]] auto init_compositor_server() -> Result<void>;
+    void handle_swapchain_changes();
+    void update_frame_sources();
+    void sync_ui_state();
+    void render_frame();
     void handle_sync_semaphores();
     void update_pointer_lock_mirror();
     void sync_prechain_ui();
@@ -72,12 +83,11 @@ private:
     bool m_running = true;
     bool m_window_resized = false;
     bool m_initial_resolution_sent = false;
-    bool m_last_shader_enabled = false;
     bool m_pointer_lock_override = false;
     bool m_pointer_lock_mirrored = false;
+    bool m_skip_frame = false;
     uint32_t m_pending_format = 0;
     uint64_t m_last_source_frame_number = UINT64_MAX;
-    uint64_t m_last_surface_frame_number = 0;
     ScaleMode m_scale_mode = ScaleMode::fill;
 };
 

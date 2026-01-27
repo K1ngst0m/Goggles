@@ -56,7 +56,7 @@ static auto spawn_target_app(const std::vector<std::string>& command,
 
     if (x11_display.empty() || wayland_display.empty()) {
         return goggles::make_error<pid_t>(goggles::ErrorCode::input_init_failed,
-                                          "input forwarding display information unavailable");
+                                          "display information unavailable");
     }
 
     auto is_override_key = [](std::string_view key) -> bool {
@@ -306,7 +306,6 @@ static auto apply_log_level(const goggles::Config& config) -> void {
 static auto log_config_summary(const goggles::Config& config) -> void {
     GOGGLES_LOG_DEBUG("Configuration loaded:");
     GOGGLES_LOG_DEBUG("  Capture backend: {}", config.capture.backend);
-    GOGGLES_LOG_DEBUG("  Input forwarding: {}", config.input.forwarding);
     GOGGLES_LOG_DEBUG("  Render vsync: {}", config.render.vsync);
     GOGGLES_LOG_DEBUG("  Render target_fps: {}", config.render.target_fps);
     GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
@@ -390,15 +389,7 @@ static auto run_app(int argc, char** argv) -> int {
     goggles::set_log_timestamp_enabled(config.logging.timestamp);
     log_config_summary(config);
 
-    bool enable_input_forwarding = !cli_opts.detach;
-    if (!cli_opts.detach && !config.input.forwarding) {
-        GOGGLES_LOG_INFO("Default mode: input forwarding enabled");
-    }
-    if (cli_opts.detach && config.input.forwarding) {
-        GOGGLES_LOG_INFO("Detach mode: input forwarding disabled");
-    }
-
-    auto app_result = goggles::app::Application::create(config, app_dirs, enable_input_forwarding);
+    auto app_result = goggles::app::Application::create(config, app_dirs);
     if (!app_result) {
         GOGGLES_LOG_CRITICAL("Failed to initialize app: {} ({})", app_result.error().message,
                              goggles::error_code_name(app_result.error().code));
@@ -413,27 +404,25 @@ static auto run_app(int argc, char** argv) -> int {
         bool child_exited = false;
 
         if (!cli_opts.detach) {
-            if (enable_input_forwarding) {
-                const auto x11_display = app->x11_display();
-                const auto wayland_display = app->wayland_display();
+            const auto x11_display = app->x11_display();
+            const auto wayland_display = app->wayland_display();
 
-                auto spawn_result = spawn_target_app(
-                    cli_opts.app_command, x11_display, wayland_display, cli_opts.app_width,
-                    cli_opts.app_height, app->gpu_uuid(), cli_opts.dump_dir,
-                    cli_opts.dump_frame_range, cli_opts.dump_frame_mode, cli_opts.layer_log,
-                    cli_opts.layer_log_level, cli_opts.wsi_proxy);
-                if (!spawn_result) {
-                    GOGGLES_LOG_CRITICAL("Failed to launch target app: {} ({})",
-                                         spawn_result.error().message,
-                                         goggles::error_code_name(spawn_result.error().code));
-                    return EXIT_FAILURE;
-                }
-                child_pid = spawn_result.value();
-                GOGGLES_LOG_INFO("Launched target app (pid={})", child_pid);
+            auto spawn_result = spawn_target_app(
+                cli_opts.app_command, x11_display, wayland_display, cli_opts.app_width,
+                cli_opts.app_height, app->gpu_uuid(), cli_opts.dump_dir, cli_opts.dump_frame_range,
+                cli_opts.dump_frame_mode, cli_opts.layer_log, cli_opts.layer_log_level,
+                cli_opts.wsi_proxy);
+            if (!spawn_result) {
+                GOGGLES_LOG_CRITICAL("Failed to launch target app: {} ({})",
+                                     spawn_result.error().message,
+                                     goggles::error_code_name(spawn_result.error().code));
+                return EXIT_FAILURE;
             }
+            child_pid = spawn_result.value();
+            GOGGLES_LOG_INFO("Launched target app (pid={})", child_pid);
 
             while (app->is_running()) {
-                app->pump_events();
+                app->process_event();
                 app->tick_frame();
 
                 if (child_pid > 0 && !child_exited) {

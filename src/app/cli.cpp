@@ -29,11 +29,7 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
     app.add_option("-c,--config", options.config_path, "Path to configuration file");
     app.add_option("-s,--shader", options.shader_preset, "Override shader preset (path to .slangp)")
         ->check(CLI::ExistingFile);
-    app.add_flag(
-        "--input-forwarding", options.enable_input_forwarding,
-        "Deprecated: default mode enables input forwarding; use --detach for viewer-only mode");
-    app.add_flag("--detach", options.detach,
-                 "Viewer-only mode (do not launch target app; disables input forwarding)");
+    app.add_flag("--detach", options.detach, "Viewer-only mode (do not launch target app)");
     app.add_flag("--wsi-proxy", options.wsi_proxy,
                  "Default mode only: enable WSI proxy mode (sets GOGGLES_WSI_PROXY=1 for launched "
                  "app; virtualizes window and swapchain)");
@@ -61,10 +57,6 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
 }
 
 [[nodiscard]] auto validate_detach_mode(const CliOptions& options) -> Result<void> {
-    if (options.enable_input_forwarding) {
-        return make_error<void>(ErrorCode::parse_error,
-                                "--input-forwarding is not supported with --detach");
-    }
     if (options.wsi_proxy) {
         return make_error<void>(ErrorCode::parse_error,
                                 "--wsi-proxy is not supported with --detach");
@@ -126,7 +118,7 @@ auto parse_cli(int argc, char** argv) -> CliResult {
   goggles [options] -- <app> [app_args...]
 
 Notes:
-  - Default mode (no --detach) launches the target app with capture + input forwarding enabled.
+  - Default mode (no --detach) launches the target app with capture enabled.
   - '--' is required before <app> to avoid app args (e.g. '--config') being parsed as Goggles options.)");
 
     CliOptions options;
