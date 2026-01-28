@@ -364,9 +364,12 @@ void ImGuiLayer::set_prechain_change_callback(PreChainChangeCallback callback) {
     m_on_prechain_change = std::move(callback);
 }
 
-void ImGuiLayer::set_prechain_state(vk::Extent2D resolution) {
+void ImGuiLayer::set_prechain_state(vk::Extent2D resolution, ScaleMode scale_mode,
+                                    uint32_t integer_scale) {
     m_state.prechain.target_width = resolution.width;
     m_state.prechain.target_height = resolution.height;
+    m_state.prechain.scale_mode = scale_mode;
+    m_state.prechain.integer_scale = integer_scale;
     m_state.prechain.dirty = false;
 
     // Determine profile from height (width=0 means aspect-preserve)
@@ -393,6 +396,10 @@ void ImGuiLayer::set_prechain_parameters(std::vector<render::ShaderParameter> pa
 
 void ImGuiLayer::set_prechain_parameter_callback(PreChainParameterCallback callback) {
     m_on_prechain_parameter = std::move(callback);
+}
+
+void ImGuiLayer::set_prechain_scale_mode_callback(PreChainScaleModeCallback callback) {
+    m_on_prechain_scale_mode = std::move(callback);
 }
 
 void ImGuiLayer::set_surfaces(std::vector<input::SurfaceInfo> surfaces) {
@@ -490,6 +497,43 @@ void ImGuiLayer::draw_shader_controls() {
 void ImGuiLayer::draw_prechain_stage_controls() {
     if (ImGui::CollapsingHeader("Pre-Chain Stage", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& prechain = m_state.prechain;
+
+        static constexpr std::array<const char*, 5> SCALE_MODE_LABELS = {
+            "Fit", "Fill", "Stretch", "Integer", "Dynamic",
+        };
+        static constexpr std::array<ScaleMode, 5> SCALE_MODE_VALUES = {
+            ScaleMode::fit,     ScaleMode::fill,    ScaleMode::stretch,
+            ScaleMode::integer, ScaleMode::dynamic,
+        };
+
+        ImGui::Text("Scale Mode:");
+        ImGui::SetNextItemWidth(150);
+        int mode_index = 0;
+        for (size_t i = 0; i < SCALE_MODE_VALUES.size(); ++i) {
+            if (SCALE_MODE_VALUES[i] == prechain.scale_mode) {
+                mode_index = static_cast<int>(i);
+                break;
+            }
+        }
+        if (ImGui::Combo("##scale_mode", &mode_index, SCALE_MODE_LABELS.data(),
+                         static_cast<int>(SCALE_MODE_LABELS.size()))) {
+            prechain.scale_mode = SCALE_MODE_VALUES[static_cast<size_t>(mode_index)];
+            if (m_on_prechain_scale_mode) {
+                m_on_prechain_scale_mode(prechain.scale_mode, prechain.integer_scale);
+            }
+        }
+
+        if (prechain.scale_mode == ScaleMode::integer) {
+            ImGui::Text("Integer Scale:");
+            ImGui::SetNextItemWidth(120);
+            int integer_scale = static_cast<int>(prechain.integer_scale);
+            if (ImGui::SliderInt("##integer_scale", &integer_scale, 0, 5)) {
+                prechain.integer_scale = static_cast<uint32_t>(std::clamp(integer_scale, 0, 5));
+                if (m_on_prechain_scale_mode) {
+                    m_on_prechain_scale_mode(prechain.scale_mode, prechain.integer_scale);
+                }
+            }
+        }
 
         // Resolution profile labels and heights (width=0 preserves aspect ratio)
         static constexpr std::array<const char*, 8> PROFILE_LABELS = {

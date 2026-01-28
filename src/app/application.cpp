@@ -100,8 +100,7 @@ auto Application::init_vulkan_backend(const Config& config, const util::AppDirs&
         .source_height = config.render.source_height,
     };
 
-    m_scale_mode = config.render.scale_mode;
-    GOGGLES_LOG_INFO("Scale mode: {}", to_string(m_scale_mode));
+    GOGGLES_LOG_INFO("Scale mode: {}", to_string(config.render.scale_mode));
 
     m_vulkan_backend = GOGGLES_MUST(render::VulkanBackend::create(
         m_window, config.render.enable_validation, util::resource_path(app_dirs, "shaders"),
@@ -158,9 +157,29 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
         [&backend = *m_vulkan_backend](const std::string& name, float value) {
             backend.filter_chain()->set_prechain_parameter(name, value);
         });
+    m_imgui_layer->set_prechain_scale_mode_callback([this](ScaleMode mode, uint32_t integer_scale) {
+        m_vulkan_backend->set_scale_mode(mode);
+        m_vulkan_backend->set_integer_scale(integer_scale);
+
+        if (mode != ScaleMode::dynamic) {
+            return;
+        }
+
+        m_initial_resolution_sent = false;
+        if (!m_capture_receiver || !m_capture_receiver->is_connected()) {
+            return;
+        }
+
+        auto extent = m_vulkan_backend->swapchain_extent();
+        if (extent.width > 0 && extent.height > 0) {
+            m_capture_receiver->request_resolution(extent.width, extent.height);
+            m_initial_resolution_sent = true;
+        }
+    });
 
     auto prechain_res = m_vulkan_backend->get_prechain_resolution();
-    m_imgui_layer->set_prechain_state(prechain_res);
+    m_imgui_layer->set_prechain_state(prechain_res, m_vulkan_backend->get_scale_mode(),
+                                      m_vulkan_backend->get_integer_scale());
     m_imgui_layer->set_prechain_parameters(
         m_vulkan_backend->filter_chain()->get_prechain_parameters());
 
@@ -378,7 +397,8 @@ void Application::sync_prechain_ui() {
     if (prechain.target_width == 0 && prechain.target_height == 0) {
         auto captured = m_vulkan_backend->get_captured_extent();
         if (captured.width > 0 && captured.height > 0) {
-            m_imgui_layer->set_prechain_state(captured);
+            m_imgui_layer->set_prechain_state(captured, m_vulkan_backend->get_scale_mode(),
+                                              m_vulkan_backend->get_integer_scale());
             m_vulkan_backend->filter_chain()->set_prechain_resolution(captured.width,
                                                                       captured.height);
         }
@@ -429,7 +449,8 @@ void Application::handle_swapchain_changes() {
             GOGGLES_LOG_ERROR("Swapchain rebuild failed: {}", result.error().message);
         }
 
-        if (fmt == vk::Format::eUndefined && m_scale_mode == ScaleMode::dynamic &&
+        if (fmt == vk::Format::eUndefined &&
+            m_vulkan_backend->get_scale_mode() == ScaleMode::dynamic &&
             m_capture_receiver->is_connected()) {
             auto extent = m_vulkan_backend->swapchain_extent();
             if (extent.width > 0 && extent.height > 0) {
@@ -447,7 +468,7 @@ void Application::update_frame_sources() {
     m_capture_receiver->poll_frame();
 
     // Send initial resolution request once connected
-    if (m_scale_mode == ScaleMode::dynamic && !m_initial_resolution_sent &&
+    if (m_vulkan_backend->get_scale_mode() == ScaleMode::dynamic && !m_initial_resolution_sent &&
         m_capture_receiver->is_connected()) {
         auto extent = m_vulkan_backend->swapchain_extent();
         if (extent.width > 0 && extent.height > 0) {

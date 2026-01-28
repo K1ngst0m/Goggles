@@ -88,7 +88,6 @@ private:
     bool m_skip_frame = false;
     uint32_t m_pending_format = 0;
     uint64_t m_last_source_frame_number = UINT64_MAX;
-    ScaleMode m_scale_mode = ScaleMode::fill;
 };
 
 } // namespace app

@@ -96,6 +96,10 @@ public:
     [[nodiscard]] auto filter_chain() -> FilterChain* { return m_filter_chain.get(); }
     [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
     [[nodiscard]] auto get_captured_extent() const -> vk::Extent2D { return m_import_extent; }
+    [[nodiscard]] auto get_scale_mode() const -> ScaleMode { return m_scale_mode; }
+    [[nodiscard]] auto get_integer_scale() const -> uint32_t { return m_integer_scale; }
+    void set_scale_mode(ScaleMode mode) { m_scale_mode = mode; }
+    void set_integer_scale(uint32_t scale) { m_integer_scale = scale; }
     [[nodiscard]] auto gpu_index() const -> uint32_t { return m_gpu_index; }
     [[nodiscard]] auto gpu_uuid() const -> const std::string& { return m_gpu_uuid; }
 
