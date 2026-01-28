@@ -8,6 +8,7 @@
 #include <map>
 #include <render/shader/retroarch_preprocessor.hpp>
 #include <string>
+#include <util/config.hpp>
 #include <util/error.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -63,6 +64,8 @@ enum class ResolutionProfile : std::uint8_t {
 
 /// @brief UI state for pre-chain pipeline configuration.
 struct PreChainState {
+    ScaleMode scale_mode = ScaleMode::stretch;
+    uint32_t integer_scale = 0;
     ResolutionProfile profile = ResolutionProfile::disabled;
     uint32_t target_width = 0;
     uint32_t target_height = 0;
@@ -88,6 +91,7 @@ using ParameterChangeCallback =
 using ParameterResetCallback = std::function<void()>;
 using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t height)>;
 using PreChainParameterCallback = std::function<void(const std::string& name, float value)>;
+using PreChainScaleModeCallback = std::function<void(ScaleMode mode, uint32_t integer_scale)>;
 using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
 using SurfaceResetCallback = std::function<void()>;
 using PointerLockOverrideCallback = std::function<void(bool override_active)>;
@@ -139,11 +143,13 @@ public:
     /// @brief Sets a callback invoked when pre-chain resolution is changed.
     void set_prechain_change_callback(PreChainChangeCallback callback);
     /// @brief Initializes pre-chain UI state from backend values.
-    void set_prechain_state(vk::Extent2D resolution);
+    void set_prechain_state(vk::Extent2D resolution, ScaleMode scale_mode, uint32_t integer_scale);
     /// @brief Updates pre-chain pass parameters for UI display.
     void set_prechain_parameters(std::vector<render::ShaderParameter> params);
     /// @brief Sets a callback invoked when a pre-chain pass parameter is changed.
     void set_prechain_parameter_callback(PreChainParameterCallback callback);
+    /// @brief Sets a callback invoked when the pre-chain scale mode changes.
+    void set_prechain_scale_mode_callback(PreChainScaleModeCallback callback);
 
     /// @brief Returns mutable UI state (owned by this layer).
     [[nodiscard]] auto state() -> ShaderControlState& { return m_state; }
@@ -207,6 +213,7 @@ private:
     ParameterResetCallback m_on_parameter_reset;
     PreChainChangeCallback m_on_prechain_change;
     PreChainParameterCallback m_on_prechain_parameter;
+    PreChainScaleModeCallback m_on_prechain_scale_mode;
     SurfaceSelectCallback m_on_surface_select;
     SurfaceResetCallback m_on_surface_reset;
     PointerLockOverrideCallback m_on_pointer_lock_override;
