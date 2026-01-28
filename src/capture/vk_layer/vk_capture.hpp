@@ -94,7 +94,6 @@ struct SwapData {
 
     // State
     bool export_initialized = false;
-    bool capture_active = false;
     bool dmabuf_sent = false;
 };
 
