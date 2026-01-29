@@ -390,9 +390,10 @@ struct CompositorServer::Impl {
     void focus_surface(wlr_surface* surface);
     void focus_xwayland_surface(wlr_xwayland_surface* xsurface);
     void update_presented_frame(wlr_surface* surface);
+    void refresh_presented_frame();
     void clear_presented_frame();
     void request_present_reset();
-    void render_surface_to_frame(wlr_surface* surface);
+    bool render_surface_to_frame(wlr_surface* surface);
 
     // Helper to get input target surface respecting manual override
     struct InputTarget {
@@ -876,7 +877,7 @@ auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
 
 void CompositorServer::Impl::process_input_events() {
     if (present_reset_requested.exchange(false, std::memory_order_acq_rel)) {
-        clear_presented_frame();
+        refresh_presented_frame();
     }
 
     while (auto event_opt = event_queue.try_pop()) {
@@ -1462,6 +1463,8 @@ void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
             activate_constraint(constraint);
         }
     }
+
+    refresh_presented_frame();
 }
 
 void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurface) {
@@ -1506,6 +1509,8 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
             activate_constraint(constraint);
         }
     }
+
+    refresh_presented_frame();
 }
 
 void CompositorServer::Impl::clear_presented_frame() {
@@ -1535,21 +1540,33 @@ void CompositorServer::Impl::update_presented_frame(wlr_surface* surface) {
     render_surface_to_frame(surface);
 }
 
-void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
-    if (!present_swapchain || !surface) {
+void CompositorServer::Impl::refresh_presented_frame() {
+    auto target = get_input_target();
+    if (!target.surface) {
+        clear_presented_frame();
         return;
+    }
+
+    if (!render_surface_to_frame(target.surface) && presented_surface != target.surface) {
+        clear_presented_frame();
+    }
+}
+
+bool CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
+    if (!present_swapchain || !surface) {
+        return false;
     }
 
     wlr_texture* texture = wlr_surface_get_texture(surface);
     if (!texture) {
-        return;
+        return false;
     }
 
     // Capture at surface-native size; fixed-size output pre-scales and breaks viewer scale modes.
     const auto desired_width = static_cast<uint32_t>(texture->width);
     const auto desired_height = static_cast<uint32_t>(texture->height);
     if (desired_width == 0 || desired_height == 0) {
-        return;
+        return false;
     }
 
     if (present_width != desired_width || present_height != desired_height) {
@@ -1561,7 +1578,7 @@ void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
                              "disabled");
             present_width = 0;
             present_height = 0;
-            return;
+            return false;
         }
         present_width = desired_width;
         present_height = desired_height;
@@ -1570,13 +1587,13 @@ void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
     int age = 0;
     wlr_buffer* buffer = wlr_swapchain_acquire(present_swapchain, &age);
     if (!buffer) {
-        return;
+        return false;
     }
 
     wlr_render_pass* pass = wlr_renderer_begin_buffer_pass(renderer, buffer, nullptr);
     if (!pass) {
         wlr_buffer_unlock(buffer);
-        return;
+        return false;
     }
 
     wlr_render_texture_options tex_opts{};
@@ -1599,7 +1616,7 @@ void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
 
     if (!wlr_render_pass_submit(pass)) {
         wlr_buffer_unlock(buffer);
-        return;
+        return false;
     }
 
     wlr_swapchain_set_buffer_submitted(present_swapchain, buffer);
@@ -1607,19 +1624,19 @@ void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
     wlr_dmabuf_attributes attribs{};
     if (!wlr_buffer_get_dmabuf(buffer, &attribs)) {
         wlr_buffer_unlock(buffer);
-        return;
+        return false;
     }
 
     if (attribs.n_planes != 1) {
         GOGGLES_LOG_DEBUG("Skipping multi-plane DMA-BUF output (planes={})", attribs.n_planes);
         wlr_buffer_unlock(buffer);
-        return;
+        return false;
     }
 
     auto dup_fd = util::UniqueFd::dup_from(attribs.fd[0]);
     if (!dup_fd) {
         wlr_buffer_unlock(buffer);
-        return;
+        return false;
     }
 
     std::scoped_lock lock(present_mutex);
@@ -1643,6 +1660,7 @@ void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
 
     presented_frame = std::move(frame);
     presented_surface = surface;
+    return true;
 }
 
 auto CompositorServer::Impl::get_input_target() -> InputTarget {
