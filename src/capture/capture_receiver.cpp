@@ -308,7 +308,7 @@ bool CaptureReceiver::process_message(const char* data, size_t len, const std::v
         int consumed_fd = fds[fd_index++];
 
         clear_sync_semaphores();
-        m_frame.image.handle = util::UniqueFd{};
+        // Keep the current DMA-BUF FD: the layer may resend semaphores without re-sending the FD.
         m_frame_ready_fd = ready_fd;
         m_frame_consumed_fd = consumed_fd;
         m_semaphores_updated = true;

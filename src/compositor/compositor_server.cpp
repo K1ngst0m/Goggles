@@ -266,7 +266,11 @@ struct CompositorServer::Impl {
         uint32_t id = 0;
         std::string title;
         std::string class_name;
+        // XWayland map_request can arrive before associate (surface becomes available).
+        bool map_requested = false;
+        bool mapped = false;
         wl_listener associate{};
+        wl_listener map_request{};
         wl_listener commit{};
         wl_listener destroy{};
     };
@@ -327,6 +331,8 @@ struct CompositorServer::Impl {
     wlr_swapchain* present_swapchain = nullptr;
     wlr_drm_format present_format{};
     std::array<uint64_t, 1> present_modifiers{};
+    uint32_t present_width = 0;
+    uint32_t present_height = 0;
     double last_pointer_x = 0.0;
     double last_pointer_y = 0.0;
     std::jthread compositor_thread;
@@ -374,6 +380,7 @@ struct CompositorServer::Impl {
     void handle_xdg_surface_ack_configure(XdgToplevelHooks* hooks);
     void handle_new_xwayland_surface(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface);
+    void handle_xwayland_surface_map_request(XWaylandSurfaceHooks* hooks);
     void handle_xwayland_surface_commit(XWaylandSurfaceHooks* hooks);
     void handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface);
     void handle_new_pointer_constraint(wlr_pointer_constraint_v1* constraint);
@@ -699,6 +706,9 @@ auto CompositorServer::Impl::setup_output() -> Result<void> {
     if (!present_swapchain) {
         GOGGLES_LOG_WARN("Compositor present swapchain unavailable; non-Vulkan presentation "
                          "disabled");
+    } else {
+        present_width = static_cast<uint32_t>(output->width);
+        present_height = static_cast<uint32_t>(output->height);
     }
 
     return {};
@@ -1000,6 +1010,15 @@ void CompositorServer::Impl::handle_pointer_axis_event(const InputEvent& event, 
 }
 
 void CompositorServer::Impl::handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel) {
+    if (!toplevel || !toplevel->base) {
+        return;
+    }
+
+    GOGGLES_LOG_DEBUG("New XDG toplevel: toplevel={} surface={} title='{}' app_id='{}'",
+                      static_cast<void*>(toplevel), static_cast<void*>(toplevel->base->surface),
+                      toplevel->title ? toplevel->title : "",
+                      toplevel->app_id ? toplevel->app_id : "");
+
     auto* hooks = new XdgToplevelHooks{};
     hooks->impl = this;
     hooks->toplevel = toplevel;
@@ -1101,6 +1120,12 @@ void CompositorServer::Impl::handle_xdg_surface_map(XdgToplevelHooks* hooks) {
 
     hooks->mapped = true;
 
+    GOGGLES_LOG_DEBUG("XDG surface mapped: id={} surface={} title='{}' app_id='{}' size={}x{}",
+                      hooks->id, static_cast<void*>(hooks->surface),
+                      hooks->toplevel->title ? hooks->toplevel->title : "",
+                      hooks->toplevel->app_id ? hooks->toplevel->app_id : "",
+                      hooks->toplevel->current.width, hooks->toplevel->current.height);
+
     wl_list_remove(&hooks->surface_map.link);
     wl_list_init(&hooks->surface_map.link);
 
@@ -1164,6 +1189,7 @@ void CompositorServer::Impl::handle_new_xwayland_surface(wlr_xwayland_surface* x
     }
 
     wl_list_init(&hooks->associate.link);
+    wl_list_init(&hooks->map_request.link);
     wl_list_init(&hooks->commit.link);
     wl_list_init(&hooks->destroy.link);
 
@@ -1184,11 +1210,19 @@ void CompositorServer::Impl::handle_new_xwayland_surface(wlr_xwayland_surface* x
     };
     wl_signal_add(&xsurface->events.associate, &hooks->associate);
 
+    hooks->map_request.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XWaylandSurfaceHooks*>(
+            reinterpret_cast<char*>(listener) - offsetof(XWaylandSurfaceHooks, map_request));
+        h->impl->handle_xwayland_surface_map_request(h);
+    };
+    wl_signal_add(&xsurface->events.map_request, &hooks->map_request);
+
     hooks->destroy.notify = [](wl_listener* listener, void* /*data*/) {
         auto* h = reinterpret_cast<XWaylandSurfaceHooks*>(reinterpret_cast<char*>(listener) -
                                                           offsetof(XWaylandSurfaceHooks, destroy));
         h->impl->handle_xwayland_surface_destroy(h->xsurface);
         wl_list_remove(&h->associate.link);
+        wl_list_remove(&h->map_request.link);
         if (h->commit.link.next != nullptr && h->commit.link.next != &h->commit.link) {
             wl_list_remove(&h->commit.link);
         }
@@ -1203,14 +1237,16 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
         return;
     }
 
+    XWaylandSurfaceHooks* hooks = nullptr;
     {
         std::scoped_lock lock(hooks_mutex);
         auto hook_it = std::find_if(
             xwayland_hooks.begin(), xwayland_hooks.end(),
             [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
         if (hook_it != xwayland_hooks.end()) {
-            (*hook_it)->title = xsurface->title ? xsurface->title : "";
-            (*hook_it)->class_name = xsurface->class_ ? xsurface->class_ : "";
+            hooks = *hook_it;
+            hooks->title = xsurface->title ? xsurface->title : "";
+            hooks->class_name = xsurface->class_ ? xsurface->class_ : "";
         }
     }
 
@@ -1229,6 +1265,36 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
 
     // NOTE: Do NOT register destroy listener on xsurface->surface->events.destroy
     // It fires unexpectedly during normal operation, breaking X11 input entirely.
+
+    // XWayland events can arrive out-of-order (map_request before associate).
+    if (hooks && hooks->map_requested && !hooks->mapped) {
+        hooks->mapped = true;
+
+        // Focus XWayland surface if:
+        // - No current focus, OR
+        // - Current focus is XWayland (switch between XWayland surfaces safely)
+        if (!focused_surface || focused_xsurface) {
+            focus_xwayland_surface(xsurface);
+        }
+    }
+}
+
+void CompositorServer::Impl::handle_xwayland_surface_map_request(XWaylandSurfaceHooks* hooks) {
+    if (!hooks || !hooks->xsurface) {
+        return;
+    }
+    auto* xsurface = hooks->xsurface;
+    if (xsurface->override_redirect) {
+        return;
+    }
+
+    hooks->map_requested = true;
+    if (!xsurface->surface) {
+        // Wait for associate: wlroots will set xsurface->surface later.
+        return;
+    }
+
+    hooks->mapped = true;
 
     // Focus XWayland surface if:
     // - No current focus, OR
@@ -1249,7 +1315,9 @@ void CompositorServer::Impl::handle_xwayland_surface_commit(XWaylandSurfaceHooks
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_surface_send_frame_done(hooks->xsurface->surface, &now);
 
-    update_presented_frame(hooks->xsurface->surface);
+    if (hooks->mapped) {
+        update_presented_frame(hooks->xsurface->surface);
+    }
 }
 
 void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface) {
@@ -1345,6 +1413,26 @@ void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
         return;
     }
 
+    uint32_t focused_id = 0;
+    std::string title;
+    std::string app_id;
+    int width = 0;
+    int height = 0;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        for (const auto* hooks : xdg_hooks) {
+            if (hooks->surface != surface || !hooks->toplevel) {
+                continue;
+            }
+            focused_id = hooks->id;
+            title = hooks->toplevel->title ? hooks->toplevel->title : "";
+            app_id = hooks->toplevel->app_id ? hooks->toplevel->app_id : "";
+            width = hooks->toplevel->current.width;
+            height = hooks->toplevel->current.height;
+            break;
+        }
+    }
+
     // Deactivate any constraint on the previous surface
     deactivate_constraint();
 
@@ -1355,6 +1443,9 @@ void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
 
     // Clean up any pending XWayland state
     xwayland_surface_detached = false;
+
+    GOGGLES_LOG_DEBUG("Focused XDG: id={} surface={} title='{}' app_id='{}' size={}x{}", focused_id,
+                      static_cast<void*>(surface), title, app_id, width, height);
 
     wlr_seat_set_keyboard(seat, keyboard.get());
     wlr_seat_keyboard_notify_enter(seat, surface, keyboard->keycodes, keyboard->num_keycodes,
@@ -1454,6 +1545,28 @@ void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
         return;
     }
 
+    // Capture at surface-native size; fixed-size output pre-scales and breaks viewer scale modes.
+    const auto desired_width = static_cast<uint32_t>(texture->width);
+    const auto desired_height = static_cast<uint32_t>(texture->height);
+    if (desired_width == 0 || desired_height == 0) {
+        return;
+    }
+
+    if (present_width != desired_width || present_height != desired_height) {
+        wlr_swapchain_destroy(present_swapchain);
+        present_swapchain = wlr_swapchain_create(allocator, static_cast<int>(desired_width),
+                                                 static_cast<int>(desired_height), &present_format);
+        if (!present_swapchain) {
+            GOGGLES_LOG_WARN("Compositor present swapchain unavailable; non-Vulkan presentation "
+                             "disabled");
+            present_width = 0;
+            present_height = 0;
+            return;
+        }
+        present_width = desired_width;
+        present_height = desired_height;
+    }
+
     int age = 0;
     wlr_buffer* buffer = wlr_swapchain_acquire(present_swapchain, &age);
     if (!buffer) {
@@ -1477,8 +1590,8 @@ void CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
     tex_opts.dst_box = wlr_box{
         .x = 0,
         .y = 0,
-        .width = output->width,
-        .height = output->height,
+        .width = static_cast<int>(present_width),
+        .height = static_cast<int>(present_height),
     };
     tex_opts.filter_mode = WLR_SCALE_FILTER_BILINEAR;
     tex_opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
