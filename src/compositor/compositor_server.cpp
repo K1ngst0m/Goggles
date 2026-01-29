@@ -344,7 +344,8 @@ struct CompositorServer::Impl {
     Listeners listeners;
     util::UniqueFd event_fd;
     uint32_t next_surface_id = 1;
-    std::optional<uint32_t> manual_input_target;
+    static constexpr uint32_t NO_MANUAL_TARGET = 0;
+    std::atomic<uint32_t> manual_input_target{NO_MANUAL_TARGET};
     std::atomic<bool> pointer_locked{false};
     bool xwayland_surface_detached = false;
     std::optional<util::ExternalImageFrame> presented_frame;
@@ -1108,7 +1109,7 @@ void CompositorServer::Impl::handle_xdg_surface_ack_configure(XdgToplevelHooks* 
         return;
     }
 
-    if (!focused_surface || focused_xsurface) {
+    if (manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
         wlr_xdg_toplevel_set_activated(hooks->toplevel, true);
         focus_surface(hooks->surface);
     }
@@ -1158,8 +1159,8 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
 
     {
         std::scoped_lock lock(hooks_mutex);
-        if (manual_input_target && *manual_input_target == hooks->id) {
-            manual_input_target.reset();
+        if (manual_input_target.load(std::memory_order_relaxed) == hooks->id) {
+            manual_input_target.store(NO_MANUAL_TARGET, std::memory_order_relaxed);
         }
 
         auto hook_it = std::find(xdg_hooks.begin(), xdg_hooks.end(), hooks);
@@ -1271,10 +1272,7 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
     if (hooks && hooks->map_requested && !hooks->mapped) {
         hooks->mapped = true;
 
-        // Focus XWayland surface if:
-        // - No current focus, OR
-        // - Current focus is XWayland (switch between XWayland surfaces safely)
-        if (!focused_surface || focused_xsurface) {
+        if (manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
             focus_xwayland_surface(xsurface);
         }
     }
@@ -1297,10 +1295,7 @@ void CompositorServer::Impl::handle_xwayland_surface_map_request(XWaylandSurface
 
     hooks->mapped = true;
 
-    // Focus XWayland surface if:
-    // - No current focus, OR
-    // - Current focus is XWayland (switch between XWayland surfaces safely)
-    if (!focused_surface || focused_xsurface) {
+    if (manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
         focus_xwayland_surface(xsurface);
     }
 }
@@ -1328,8 +1323,8 @@ void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surfac
             xwayland_hooks.begin(), xwayland_hooks.end(),
             [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
         if (hook_it != xwayland_hooks.end()) {
-            if (manual_input_target && *manual_input_target == (*hook_it)->id) {
-                manual_input_target.reset();
+            if (manual_input_target.load(std::memory_order_relaxed) == (*hook_it)->id) {
+                manual_input_target.store(NO_MANUAL_TARGET, std::memory_order_relaxed);
             }
             xwayland_hooks.erase(hook_it);
         }
@@ -1668,17 +1663,17 @@ auto CompositorServer::Impl::get_input_target() -> InputTarget {
 
     {
         std::scoped_lock lock(hooks_mutex);
-        if (manual_input_target) {
+        const auto manual_id = manual_input_target.load(std::memory_order_relaxed);
+        if (manual_id != NO_MANUAL_TARGET) {
             for (const auto* hooks : xwayland_hooks) {
-                if (hooks->id == *manual_input_target && hooks->xsurface &&
-                    hooks->xsurface->surface) {
+                if (hooks->id == manual_id && hooks->xsurface && hooks->xsurface->surface) {
                     target.xsurface = hooks->xsurface;
                     target.surface = hooks->xsurface->surface;
                     return target;
                 }
             }
             for (const auto* hooks : xdg_hooks) {
-                if (hooks->id == *manual_input_target && hooks->surface) {
+                if (hooks->id == manual_id && hooks->surface) {
                     target.surface = hooks->surface;
                     return target;
                 }
@@ -1702,14 +1697,14 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
     std::vector<SurfaceInfo> result;
 
     uint32_t target_id = 0;
-    if (m_impl->manual_input_target) {
-        target_id = *m_impl->manual_input_target;
+    const auto manual_id = m_impl->manual_input_target.load(std::memory_order_relaxed);
+    if (manual_id != Impl::NO_MANUAL_TARGET) {
+        target_id = manual_id;
     } else {
-        // Auto-select: first XWayland surface if available, else first XDG surface
         if (!m_impl->xwayland_hooks.empty()) {
-            target_id = m_impl->xwayland_hooks.front()->id;
+            target_id = m_impl->xwayland_hooks.back()->id;
         } else if (!m_impl->xdg_hooks.empty()) {
-            target_id = m_impl->xdg_hooks.front()->id;
+            target_id = m_impl->xdg_hooks.back()->id;
         }
     }
 
@@ -1748,7 +1743,7 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
 
 auto CompositorServer::is_manual_override_active() const -> bool {
     std::scoped_lock lock(m_impl->hooks_mutex);
-    return m_impl->manual_input_target.has_value();
+    return m_impl->manual_input_target.load(std::memory_order_relaxed) != Impl::NO_MANUAL_TARGET;
 }
 
 void CompositorServer::set_input_target(uint32_t surface_id) {
@@ -1769,14 +1764,14 @@ void CompositorServer::set_input_target(uint32_t surface_id) {
         }
     }
     if (found) {
-        m_impl->manual_input_target = surface_id;
+        m_impl->manual_input_target.store(surface_id, std::memory_order_relaxed);
     }
     m_impl->request_present_reset();
 }
 
 void CompositorServer::clear_input_override() {
     std::scoped_lock lock(m_impl->hooks_mutex);
-    m_impl->manual_input_target.reset();
+    m_impl->manual_input_target.store(Impl::NO_MANUAL_TARGET, std::memory_order_relaxed);
     m_impl->request_present_reset();
 }
 
