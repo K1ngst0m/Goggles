@@ -763,7 +763,9 @@ auto CompositorServer::Impl::setup_cursor_theme() -> Result<void> {
     for (unsigned int i = 0; i < cursor_shape->image_count; ++i) {
         const auto* image = cursor_shape->images[i];
         if (!image || !image->buffer || image->width == 0 || image->height == 0) {
-            continue;
+            clear_cursor_theme();
+            return make_error<void>(ErrorCode::input_init_failed,
+                                    "Cursor theme contains invalid image data");
         }
         wlr_texture* texture =
             wlr_texture_from_pixels(renderer, util::DRM_FORMAT_ARGB8888, image->width * 4,
@@ -1505,6 +1507,8 @@ void CompositorServer::Impl::handle_constraint_set_region(ConstraintHooks* hooks
         return;
     }
 
+    const double previous_x = cursor_x;
+    const double previous_y = cursor_y;
     const int cursor_x_int = static_cast<int>(std::floor(cursor_x));
     const int cursor_y_int = static_cast<int>(std::floor(cursor_y));
     if (!pixman_region32_contains_point(&active_constraint->region, cursor_x_int, cursor_y_int,
@@ -1521,6 +1525,12 @@ void CompositorServer::Impl::handle_constraint_set_region(ConstraintHooks* hooks
             cursor_y = clamped_y;
             cursor_initialized = true;
         }
+    }
+
+    if (cursor_initialized && (previous_x != cursor_x || previous_y != cursor_y)) {
+        const uint32_t time = get_time_msec();
+        wlr_seat_pointer_notify_motion(seat, time, cursor_x, cursor_y);
+        wlr_seat_pointer_notify_frame(seat);
     }
 
     request_present_reset();
