@@ -310,6 +310,14 @@ struct CompositorServer::Impl {
         wl_listener destroy{};
     };
 
+    struct CursorFrame {
+        wlr_texture* texture = nullptr;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t hotspot_x = 0;
+        uint32_t hotspot_y = 0;
+        uint32_t delay_ms = 0;
+    };
     // Fields ordered for optimal padding
     util::SPSCQueue<InputEvent> event_queue{64};
     wl_display* display = nullptr;
@@ -334,43 +342,35 @@ struct CompositorServer::Impl {
     wlr_surface* keyboard_entered_surface = nullptr;
     wlr_surface* pointer_entered_surface = nullptr;
     wlr_swapchain* present_swapchain = nullptr;
-    wlr_drm_format present_format{};
     std::array<uint64_t, 1> present_modifiers{};
-    uint32_t present_width = 0;
-    uint32_t present_height = 0;
     double cursor_x = 0.0;
     double cursor_y = 0.0;
-    std::atomic<bool> cursor_visible{true};
-    bool cursor_initialized = false;
     wlr_surface* cursor_surface = nullptr;
-    struct CursorFrame {
-        wlr_texture* texture = nullptr;
-        uint32_t width = 0;
-        uint32_t height = 0;
-        uint32_t hotspot_x = 0;
-        uint32_t hotspot_y = 0;
-        uint32_t delay_ms = 0;
-    };
     wlr_xcursor_theme* cursor_theme = nullptr;
     wlr_xcursor* cursor_shape = nullptr;
-    std::vector<CursorFrame> cursor_frames;
+    wlr_buffer* presented_buffer = nullptr;
+    wlr_surface* presented_surface = nullptr;
+    uint64_t presented_frame_number = 0;
     std::jthread compositor_thread;
+    std::vector<CursorFrame> cursor_frames;
     std::vector<XdgToplevelHooks*> xdg_hooks;
     std::vector<XWaylandSurfaceHooks*> xwayland_hooks;
+    wlr_drm_format present_format{};
     std::string wayland_socket_name;
     mutable std::mutex hooks_mutex;
+    mutable std::mutex present_mutex;
+    std::optional<util::ExternalImageFrame> presented_frame;
     Listeners listeners;
+    uint32_t present_width = 0;
+    uint32_t present_height = 0;
     util::UniqueFd event_fd;
     uint32_t next_surface_id = 1;
     static constexpr uint32_t NO_MANUAL_TARGET = 0;
     std::atomic<uint32_t> manual_input_target{NO_MANUAL_TARGET};
+    std::atomic<bool> cursor_visible{true};
+    bool cursor_initialized = false;
     std::atomic<bool> pointer_locked{false};
-    std::optional<util::ExternalImageFrame> presented_frame;
-    wlr_buffer* presented_buffer = nullptr;
-    wlr_surface* presented_surface = nullptr;
-    uint64_t presented_frame_number = 0;
     std::atomic<bool> present_reset_requested{false};
-    mutable std::mutex present_mutex;
 
     Impl() { listeners.impl = this; }
 
@@ -742,8 +742,8 @@ auto CompositorServer::Impl::setup_output() -> Result<void> {
 }
 
 auto CompositorServer::Impl::setup_cursor_theme() -> Result<void> {
-    constexpr int cursor_size = 64;
-    cursor_theme = wlr_xcursor_theme_load("cursor", cursor_size);
+    constexpr int CURSOR_SIZE = 64;
+    cursor_theme = wlr_xcursor_theme_load("cursor", CURSOR_SIZE);
     if (!cursor_theme) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to load cursor theme");
     }
@@ -1795,7 +1795,7 @@ void CompositorServer::Impl::update_cursor_position(const InputEvent& event, wlr
 
     const bool show_cursor =
         cursor_visible.load(std::memory_order_acquire) &&
-        !(active_constraint && active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED);
+        (!active_constraint || active_constraint->type != WLR_POINTER_CONSTRAINT_V1_LOCKED);
     if (show_cursor && (previous_x != cursor_x || previous_y != cursor_y)) {
         request_present_reset();
     }
@@ -1886,7 +1886,7 @@ bool CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
 
     const bool show_cursor =
         cursor_visible.load(std::memory_order_acquire) &&
-        !(active_constraint && active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED);
+        (!active_constraint || active_constraint->type != WLR_POINTER_CONSTRAINT_V1_LOCKED);
     if (show_cursor && cursor_initialized && present_width > 0 && present_height > 0) {
         const auto* frame = get_cursor_frame(get_time_msec());
         if (frame && frame->texture) {
