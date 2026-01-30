@@ -30,7 +30,6 @@ struct InputEvent {
     InputEventType type;
     uint32_t code;
     bool pressed;
-    double x, y;
     double dx, dy;
     double value;
     bool horizontal;
@@ -85,6 +84,8 @@ public:
     [[nodiscard]] auto inject_event(const InputEvent& event) -> bool;
     /// @brief Returns true if pointer is currently locked (not confined) by target app.
     [[nodiscard]] auto is_pointer_locked() const -> bool;
+    /// @brief Sets whether the compositor cursor is rendered.
+    void set_cursor_visible(bool visible);
 
     /// @brief Returns the latest compositor-presented frame (DMA-BUF), if available.
     /// @param after_frame_number Return a frame only if newer than this number.

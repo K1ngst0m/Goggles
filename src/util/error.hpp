@@ -142,4 +142,20 @@ make_result_ptr_error(ErrorCode code, std::string message,
         std::move(_must_result).value();                                                           \
     })
 
+/// @brief Aborts when an invariant is violated.
+// NOLINTNEXTLINE(bugprone-macro-parentheses)
+#define GOGGLES_ASSERT(condition, ...)                                                             \
+    do {                                                                                           \
+        if (!(condition)) {                                                                        \
+            std::fprintf(stderr, "GOGGLES_ASSERT failed: %s at %s:%u in %s\n", #condition,         \
+                         __FILE__, __LINE__, __func__);                                            \
+            __VA_OPT__(do {                                                                        \
+                std::fprintf(stderr, "  ");                                                        \
+                std::fprintf(stderr, __VA_ARGS__);                                                 \
+                std::fprintf(stderr, "\n");                                                        \
+            } while (false);)                                                                      \
+            std::abort();                                                                          \
+        }                                                                                          \
+    } while (false)
+
 // NOLINTEND(cppcoreguidelines-macro-usage)

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <ctime>
@@ -13,6 +14,7 @@
 #include <sys/eventfd.h>
 #include <thread>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 extern "C" {
@@ -34,6 +36,8 @@ extern "C" {
 #include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/util/region.h>
+#include <wlr/xcursor.h>
 #include <xkbcommon/xkbcommon.h>
 
 // xwayland.h contains 'char *class' which conflicts with C++ keyword
@@ -302,9 +306,18 @@ struct CompositorServer::Impl {
     struct ConstraintHooks {
         Impl* impl = nullptr;
         wlr_pointer_constraint_v1* constraint = nullptr;
+        wl_listener set_region{};
         wl_listener destroy{};
     };
 
+    struct CursorFrame {
+        wlr_texture* texture = nullptr;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t hotspot_x = 0;
+        uint32_t hotspot_y = 0;
+        uint32_t delay_ms = 0;
+    };
     // Fields ordered for optimal padding
     util::SPSCQueue<InputEvent> event_queue{64};
     wl_display* display = nullptr;
@@ -329,31 +342,35 @@ struct CompositorServer::Impl {
     wlr_surface* keyboard_entered_surface = nullptr;
     wlr_surface* pointer_entered_surface = nullptr;
     wlr_swapchain* present_swapchain = nullptr;
-    wlr_drm_format present_format{};
     std::array<uint64_t, 1> present_modifiers{};
-    uint32_t present_width = 0;
-    uint32_t present_height = 0;
-    double last_pointer_x = 0.0;
-    double last_pointer_y = 0.0;
+    double cursor_x = 0.0;
+    double cursor_y = 0.0;
+    wlr_surface* cursor_surface = nullptr;
+    wlr_xcursor_theme* cursor_theme = nullptr;
+    wlr_xcursor* cursor_shape = nullptr;
+    wlr_buffer* presented_buffer = nullptr;
+    wlr_surface* presented_surface = nullptr;
+    uint64_t presented_frame_number = 0;
     std::jthread compositor_thread;
-    std::vector<wlr_surface*> surfaces;
+    std::vector<CursorFrame> cursor_frames;
     std::vector<XdgToplevelHooks*> xdg_hooks;
     std::vector<XWaylandSurfaceHooks*> xwayland_hooks;
+    wlr_drm_format present_format{};
     std::string wayland_socket_name;
     mutable std::mutex hooks_mutex;
+    mutable std::mutex present_mutex;
+    std::optional<util::ExternalImageFrame> presented_frame;
     Listeners listeners;
+    uint32_t present_width = 0;
+    uint32_t present_height = 0;
     util::UniqueFd event_fd;
     uint32_t next_surface_id = 1;
     static constexpr uint32_t NO_MANUAL_TARGET = 0;
     std::atomic<uint32_t> manual_input_target{NO_MANUAL_TARGET};
+    std::atomic<bool> cursor_visible{true};
+    bool cursor_initialized = false;
     std::atomic<bool> pointer_locked{false};
-    bool xwayland_surface_detached = false;
-    std::optional<util::ExternalImageFrame> presented_frame;
-    wlr_buffer* presented_buffer = nullptr;
-    wlr_surface* presented_surface = nullptr;
-    uint64_t presented_frame_number = 0;
     std::atomic<bool> present_reset_requested{false};
-    mutable std::mutex present_mutex;
 
     Impl() { listeners.impl = this; }
 
@@ -367,6 +384,7 @@ struct CompositorServer::Impl {
     [[nodiscard]] auto setup_xwayland() -> Result<void>;
     [[nodiscard]] auto start_backend() -> Result<void>;
     [[nodiscard]] auto setup_output() -> Result<void>;
+    [[nodiscard]] auto setup_cursor_theme() -> Result<void>;
     void start_compositor_thread();
 
     void process_input_events();
@@ -385,6 +403,7 @@ struct CompositorServer::Impl {
     void handle_xwayland_surface_commit(XWaylandSurfaceHooks* hooks);
     void handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface);
     void handle_new_pointer_constraint(wlr_pointer_constraint_v1* constraint);
+    void handle_constraint_set_region(ConstraintHooks* hooks);
     void handle_constraint_destroy(ConstraintHooks* hooks);
     void activate_constraint(wlr_pointer_constraint_v1* constraint);
     void deactivate_constraint();
@@ -395,6 +414,9 @@ struct CompositorServer::Impl {
     void clear_presented_frame();
     void request_present_reset();
     bool render_surface_to_frame(wlr_surface* surface);
+    void set_cursor_visible(bool visible);
+    void clear_cursor_theme();
+    [[nodiscard]] auto get_cursor_frame(uint32_t time_msec) const -> const CursorFrame*;
 
     // Helper to get input target surface respecting manual override
     struct InputTarget {
@@ -402,6 +424,11 @@ struct CompositorServer::Impl {
         wlr_xwayland_surface* xsurface = nullptr;
     };
     [[nodiscard]] auto get_input_target() -> InputTarget;
+    [[nodiscard]] auto get_surface_extent(wlr_surface* surface) const
+        -> std::optional<std::pair<uint32_t, uint32_t>>;
+    void reset_cursor_for_surface(wlr_surface* surface);
+    void apply_cursor_hint_if_needed();
+    void update_cursor_position(const InputEvent& event, wlr_surface* surface);
 };
 
 CompositorServer::CompositorServer() : m_impl(std::make_unique<Impl>()) {}
@@ -473,8 +500,6 @@ auto CompositorServer::forward_mouse_button(const SDL_MouseButtonEvent& event) -
 auto CompositorServer::forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void> {
     InputEvent input_event{};
     input_event.type = InputEventType::pointer_motion;
-    input_event.x = static_cast<double>(event.x);
-    input_event.y = static_cast<double>(event.y);
     input_event.dx = static_cast<double>(event.xrel);
     input_event.dy = static_cast<double>(event.yrel);
     if (!inject_event(input_event)) {
@@ -716,6 +741,85 @@ auto CompositorServer::Impl::setup_output() -> Result<void> {
     return {};
 }
 
+auto CompositorServer::Impl::setup_cursor_theme() -> Result<void> {
+    constexpr int CURSOR_SIZE = 64;
+    cursor_theme = wlr_xcursor_theme_load("cursor", CURSOR_SIZE);
+    if (!cursor_theme) {
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to load cursor theme");
+    }
+
+    cursor_shape = wlr_xcursor_theme_get_cursor(cursor_theme, "left_ptr");
+    if (!cursor_shape) {
+        cursor_shape = wlr_xcursor_theme_get_cursor(cursor_theme, "default");
+    }
+    if (!cursor_shape) {
+        clear_cursor_theme();
+        return make_error<void>(ErrorCode::input_init_failed,
+                                "Cursor theme missing default cursor images");
+    }
+
+    cursor_frames.clear();
+    cursor_frames.reserve(cursor_shape->image_count);
+    for (unsigned int i = 0; i < cursor_shape->image_count; ++i) {
+        const auto* image = cursor_shape->images[i];
+        if (!image || !image->buffer || image->width == 0 || image->height == 0) {
+            clear_cursor_theme();
+            return make_error<void>(ErrorCode::input_init_failed,
+                                    "Cursor theme contains invalid image data");
+        }
+        wlr_texture* texture =
+            wlr_texture_from_pixels(renderer, util::DRM_FORMAT_ARGB8888, image->width * 4,
+                                    image->width, image->height, image->buffer);
+        if (!texture) {
+            clear_cursor_theme();
+            return make_error<void>(ErrorCode::input_init_failed,
+                                    "Failed to create cursor texture");
+        }
+        CursorFrame frame{};
+        frame.texture = texture;
+        frame.width = image->width;
+        frame.height = image->height;
+        frame.hotspot_x = image->hotspot_x;
+        frame.hotspot_y = image->hotspot_y;
+        frame.delay_ms = image->delay;
+        cursor_frames.push_back(frame);
+    }
+
+    if (cursor_frames.empty()) {
+        clear_cursor_theme();
+        return make_error<void>(ErrorCode::input_init_failed,
+                                "Cursor theme provided no usable images");
+    }
+
+    return {};
+}
+
+void CompositorServer::Impl::clear_cursor_theme() {
+    for (auto& frame : cursor_frames) {
+        if (frame.texture) {
+            wlr_texture_destroy(frame.texture);
+            frame.texture = nullptr;
+        }
+    }
+    cursor_frames.clear();
+    cursor_shape = nullptr;
+    if (cursor_theme) {
+        wlr_xcursor_theme_destroy(cursor_theme);
+        cursor_theme = nullptr;
+    }
+}
+
+auto CompositorServer::Impl::get_cursor_frame(uint32_t time_msec) const -> const CursorFrame* {
+    if (!cursor_shape || cursor_frames.empty()) {
+        return nullptr;
+    }
+    const int frame_index = wlr_xcursor_frame(cursor_shape, time_msec);
+    if (frame_index < 0 || static_cast<size_t>(frame_index) >= cursor_frames.size()) {
+        return nullptr;
+    }
+    return &cursor_frames[static_cast<size_t>(frame_index)];
+}
+
 void CompositorServer::Impl::start_compositor_thread() {
     compositor_thread = std::jthread([this] {
         StderrSuppressor suppress;
@@ -745,6 +849,10 @@ auto CompositorServer::start() -> Result<void> {
     GOGGLES_TRY(impl.setup_xwayland());
     GOGGLES_TRY(impl.start_backend());
     GOGGLES_TRY(impl.setup_output());
+    auto cursor_result = impl.setup_cursor_theme();
+    if (!cursor_result) {
+        GOGGLES_LOG_WARN("Compositor cursor theme unavailable: {}", cursor_result.error().message);
+    }
 
     impl.start_compositor_thread();
 
@@ -772,12 +880,12 @@ void CompositorServer::stop() {
         impl.event_source = nullptr;
     }
 
-    impl.surfaces.clear();
     impl.focused_surface = nullptr;
     impl.focused_xsurface = nullptr;
     impl.keyboard_entered_surface = nullptr;
     impl.pointer_entered_surface = nullptr;
     impl.clear_presented_frame();
+    impl.clear_cursor_theme();
 
     // Destruction order: xwayland before compositor, seat before display
     if (impl.xwayland) {
@@ -847,6 +955,10 @@ auto CompositorServer::inject_event(const InputEvent& event) -> bool {
 
 auto CompositorServer::is_pointer_locked() const -> bool {
     return m_impl->pointer_locked.load(std::memory_order_acquire);
+}
+
+void CompositorServer::set_cursor_visible(bool visible) {
+    m_impl->set_cursor_visible(visible);
 }
 
 auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
@@ -947,22 +1059,22 @@ void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event
 
     // For locked constraints, skip absolute motion update
     if (active_constraint && active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED) {
+        apply_cursor_hint_if_needed();
         wlr_seat_pointer_notify_frame(seat);
         return;
     }
 
     // XWayland quirk: requires re-activation and pointer re-entry before each event
+    update_cursor_position(event, target_surface);
     if (target_xsurface) {
         wlr_xwayland_surface_activate(target_xsurface, true);
-        wlr_seat_pointer_notify_enter(seat, target_surface, event.x, event.y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
     } else if (pointer_entered_surface != target_surface) {
-        wlr_seat_pointer_notify_enter(seat, target_surface, event.x, event.y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
         pointer_entered_surface = target_surface;
     }
-    wlr_seat_pointer_notify_motion(seat, time, event.x, event.y);
+    wlr_seat_pointer_notify_motion(seat, time, cursor_x, cursor_y);
     wlr_seat_pointer_notify_frame(seat);
-    last_pointer_x = event.x;
-    last_pointer_y = event.y;
 }
 
 void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event, uint32_t time) {
@@ -974,11 +1086,15 @@ void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event
         return;
     }
 
+    if (cursor_surface != target_surface || !cursor_initialized) {
+        reset_cursor_for_surface(target_surface);
+    }
+
     if (target_xsurface) {
         wlr_xwayland_surface_activate(target_xsurface, true);
-        wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
     } else if (pointer_entered_surface != target_surface) {
-        wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
         pointer_entered_surface = target_surface;
     }
     auto state = event.pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED;
@@ -995,11 +1111,15 @@ void CompositorServer::Impl::handle_pointer_axis_event(const InputEvent& event, 
         return;
     }
 
+    if (cursor_surface != target_surface || !cursor_initialized) {
+        reset_cursor_for_surface(target_surface);
+    }
+
     if (target_xsurface) {
         wlr_xwayland_surface_activate(target_xsurface, true);
-        wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
     } else if (pointer_entered_surface != target_surface) {
-        wlr_seat_pointer_notify_enter(seat, target_surface, last_pointer_x, last_pointer_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
         pointer_entered_surface = target_surface;
     }
     auto orientation =
@@ -1130,8 +1250,6 @@ void CompositorServer::Impl::handle_xdg_surface_map(XdgToplevelHooks* hooks) {
 
     wl_list_remove(&hooks->surface_map.link);
     wl_list_init(&hooks->surface_map.link);
-
-    surfaces.push_back(hooks->surface);
 }
 
 void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks) {
@@ -1150,6 +1268,8 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
         focused_surface = nullptr;
         keyboard_entered_surface = nullptr;
         pointer_entered_surface = nullptr;
+        cursor_surface = nullptr;
+        cursor_initialized = false;
         wlr_seat_keyboard_clear_focus(seat);
         wlr_seat_pointer_clear_focus(seat);
     }
@@ -1167,11 +1287,6 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
         if (hook_it != xdg_hooks.end()) {
             xdg_hooks.erase(hook_it);
         }
-    }
-
-    auto it = std::find(surfaces.begin(), surfaces.end(), hooks->surface);
-    if (it != surfaces.end()) {
-        surfaces.erase(it);
     }
 
     delete hooks;
@@ -1261,10 +1376,6 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
         return;
     }
 
-    // NOTE: Do NOT add xsurface->surface to surfaces - we can't clean it up
-    // when X11 client disconnects (destroy listener breaks X11 input), so it
-    // would become a dangling pointer.
-
     // NOTE: Do NOT register destroy listener on xsurface->surface->events.destroy
     // It fires unexpectedly during normal operation, breaking X11 input entirely.
 
@@ -1344,7 +1455,8 @@ void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surfac
     focused_surface = nullptr;
     keyboard_entered_surface = nullptr;
     pointer_entered_surface = nullptr;
-    xwayland_surface_detached = false;
+    cursor_surface = nullptr;
+    cursor_initialized = false;
     wlr_seat_keyboard_clear_focus(seat);
     wlr_seat_pointer_clear_focus(seat);
 }
@@ -1363,6 +1475,14 @@ void CompositorServer::Impl::handle_new_pointer_constraint(wlr_pointer_constrain
     hooks->impl = this;
     hooks->constraint = constraint;
 
+    wl_list_init(&hooks->set_region.link);
+    hooks->set_region.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<ConstraintHooks*>(reinterpret_cast<char*>(listener) -
+                                                     offsetof(ConstraintHooks, set_region));
+        h->impl->handle_constraint_set_region(h);
+    };
+    wl_signal_add(&constraint->events.set_region, &hooks->set_region);
+
     wl_list_init(&hooks->destroy.link);
     hooks->destroy.notify = [](wl_listener* listener, void* /*data*/) {
         auto* h = reinterpret_cast<ConstraintHooks*>(reinterpret_cast<char*>(listener) -
@@ -1372,11 +1492,57 @@ void CompositorServer::Impl::handle_new_pointer_constraint(wlr_pointer_constrain
     wl_signal_add(&constraint->events.destroy, &hooks->destroy);
 }
 
+void CompositorServer::Impl::handle_constraint_set_region(ConstraintHooks* hooks) {
+    if (!hooks || active_constraint != hooks->constraint) {
+        return;
+    }
+
+    apply_cursor_hint_if_needed();
+
+    if (active_constraint->type != WLR_POINTER_CONSTRAINT_V1_CONFINED) {
+        return;
+    }
+
+    if (!pixman_region32_not_empty(&active_constraint->region)) {
+        return;
+    }
+
+    const double previous_x = cursor_x;
+    const double previous_y = cursor_y;
+    const int cursor_x_int = static_cast<int>(std::floor(cursor_x));
+    const int cursor_y_int = static_cast<int>(std::floor(cursor_y));
+    if (!pixman_region32_contains_point(&active_constraint->region, cursor_x_int, cursor_y_int,
+                                        nullptr)) {
+        int box_count = 0;
+        pixman_box32_t* boxes = pixman_region32_rectangles(&active_constraint->region, &box_count);
+        if (boxes && box_count > 0) {
+            const auto& box = boxes[0];
+            const double clamped_x =
+                std::clamp(cursor_x, static_cast<double>(box.x1), static_cast<double>(box.x2 - 1));
+            const double clamped_y =
+                std::clamp(cursor_y, static_cast<double>(box.y1), static_cast<double>(box.y2 - 1));
+            cursor_x = clamped_x;
+            cursor_y = clamped_y;
+            cursor_initialized = true;
+        }
+    }
+
+    if (cursor_initialized && (previous_x != cursor_x || previous_y != cursor_y)) {
+        const uint32_t time = get_time_msec();
+        wlr_seat_pointer_notify_motion(seat, time, cursor_x, cursor_y);
+        wlr_seat_pointer_notify_frame(seat);
+    }
+
+    request_present_reset();
+}
+
 void CompositorServer::Impl::handle_constraint_destroy(ConstraintHooks* hooks) {
     if (active_constraint == hooks->constraint) {
         active_constraint = nullptr;
         pointer_locked.store(false, std::memory_order_release);
+        request_present_reset();
     }
+    wl_list_remove(&hooks->set_region.link);
     wl_list_remove(&hooks->destroy.link);
     delete hooks;
 }
@@ -1390,6 +1556,8 @@ void CompositorServer::Impl::activate_constraint(wlr_pointer_constraint_v1* cons
     pointer_locked.store(constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED,
                          std::memory_order_release);
     wlr_pointer_constraint_v1_send_activated(constraint);
+    apply_cursor_hint_if_needed();
+    request_present_reset();
     GOGGLES_LOG_DEBUG("Pointer constraint activated: type={}",
                       constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED ? "locked" : "confined");
 }
@@ -1402,6 +1570,7 @@ void CompositorServer::Impl::deactivate_constraint() {
     GOGGLES_LOG_DEBUG("Pointer constraint deactivated");
     active_constraint = nullptr;
     pointer_locked.store(false, std::memory_order_release);
+    request_present_reset();
 }
 
 void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
@@ -1437,16 +1606,14 @@ void CompositorServer::Impl::focus_surface(wlr_surface* surface) {
     focused_xsurface = nullptr;
     focused_surface = surface;
 
-    // Clean up any pending XWayland state
-    xwayland_surface_detached = false;
-
     GOGGLES_LOG_DEBUG("Focused XDG: id={} surface={} title='{}' app_id='{}' size={}x{}", focused_id,
                       static_cast<void*>(surface), title, app_id, width, height);
 
     wlr_seat_set_keyboard(seat, keyboard.get());
     wlr_seat_keyboard_notify_enter(seat, surface, keyboard->keycodes, keyboard->num_keycodes,
                                    &keyboard->modifiers);
-    wlr_seat_pointer_notify_enter(seat, surface, 0.0, 0.0);
+    reset_cursor_for_surface(surface);
+    wlr_seat_pointer_notify_enter(seat, surface, cursor_x, cursor_y);
     keyboard_entered_surface = surface;
     pointer_entered_surface = surface;
 
@@ -1470,8 +1637,6 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
     // Deactivate any constraint on the previous surface
     deactivate_constraint();
 
-    xwayland_surface_detached = false;
-
     // Clear seat focus first to prevent wlroots from sending leave events to stale surface
     wlr_seat_keyboard_clear_focus(seat);
     wlr_seat_pointer_clear_focus(seat);
@@ -1492,7 +1657,8 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
     wlr_seat_set_keyboard(seat, keyboard.get());
     wlr_seat_keyboard_notify_enter(seat, xsurface->surface, keyboard->keycodes,
                                    keyboard->num_keycodes, &keyboard->modifiers);
-    wlr_seat_pointer_notify_enter(seat, xsurface->surface, 0.0, 0.0);
+    reset_cursor_for_surface(xsurface->surface);
+    wlr_seat_pointer_notify_enter(seat, xsurface->surface, cursor_x, cursor_y);
     keyboard_entered_surface = xsurface->surface;
     pointer_entered_surface = xsurface->surface;
 
@@ -1519,10 +1685,129 @@ void CompositorServer::Impl::clear_presented_frame() {
 }
 
 void CompositorServer::Impl::request_present_reset() {
-    present_reset_requested.store(true, std::memory_order_release);
-    if (event_fd.valid()) {
-        uint64_t val = 1;
-        static_cast<void>(write(event_fd.get(), &val, sizeof(val)));
+    if (!present_reset_requested.exchange(true, std::memory_order_acq_rel)) {
+        if (event_fd.valid()) {
+            uint64_t val = 1;
+            static_cast<void>(write(event_fd.get(), &val, sizeof(val)));
+        }
+    }
+}
+
+void CompositorServer::Impl::set_cursor_visible(bool visible) {
+    bool previous = cursor_visible.exchange(visible, std::memory_order_acq_rel);
+    if (previous != visible) {
+        request_present_reset();
+    }
+}
+
+auto CompositorServer::Impl::get_surface_extent(wlr_surface* surface) const
+    -> std::optional<std::pair<uint32_t, uint32_t>> {
+    if (surface && surface->current.width > 0 && surface->current.height > 0) {
+        return std::pair<uint32_t, uint32_t>(static_cast<uint32_t>(surface->current.width),
+                                             static_cast<uint32_t>(surface->current.height));
+    }
+
+    return std::nullopt;
+}
+
+void CompositorServer::Impl::reset_cursor_for_surface(wlr_surface* surface) {
+    cursor_surface = surface;
+    auto extent_opt = get_surface_extent(surface);
+    if (!extent_opt) {
+        cursor_initialized = false;
+        return;
+    }
+
+    const auto [width, height] = *extent_opt;
+    if (width == 0 || height == 0) {
+        cursor_initialized = false;
+        return;
+    }
+
+    cursor_x = static_cast<double>(width) * 0.5;
+    cursor_y = static_cast<double>(height) * 0.5;
+    cursor_initialized = true;
+}
+
+void CompositorServer::Impl::apply_cursor_hint_if_needed() {
+    if (!active_constraint || active_constraint->type != WLR_POINTER_CONSTRAINT_V1_LOCKED) {
+        return;
+    }
+
+    cursor_surface = active_constraint->surface;
+
+    const auto& hint = active_constraint->current.cursor_hint;
+    if (!hint.enabled) {
+        return;
+    }
+
+    const double previous_x = cursor_x;
+    const double previous_y = cursor_y;
+    cursor_x = hint.x;
+    cursor_y = hint.y;
+    cursor_initialized = true;
+
+    auto extent_opt = get_surface_extent(active_constraint->surface);
+    if (!extent_opt) {
+        return;
+    }
+
+    const auto [width, height] = *extent_opt;
+    if (width == 0 || height == 0) {
+        return;
+    }
+    cursor_x = std::clamp(cursor_x, 0.0, static_cast<double>(width - 1));
+    cursor_y = std::clamp(cursor_y, 0.0, static_cast<double>(height - 1));
+
+    if ((previous_x != cursor_x || previous_y != cursor_y) &&
+        cursor_visible.load(std::memory_order_acquire)) {
+        request_present_reset();
+    }
+}
+
+void CompositorServer::Impl::update_cursor_position(const InputEvent& event, wlr_surface* surface) {
+    if (cursor_surface != surface || !cursor_initialized) {
+        reset_cursor_for_surface(surface);
+    }
+    if (!cursor_initialized) {
+        return;
+    }
+
+    const double previous_x = cursor_x;
+    const double previous_y = cursor_y;
+    double next_x = cursor_x + event.dx;
+    double next_y = cursor_y + event.dy;
+
+    auto extent_opt = get_surface_extent(surface);
+    if (extent_opt) {
+        const auto [width, height] = *extent_opt;
+        if (width > 0 && height > 0) {
+            next_x = std::clamp(next_x, 0.0, static_cast<double>(width - 1));
+            next_y = std::clamp(next_y, 0.0, static_cast<double>(height - 1));
+        }
+    }
+
+    if (active_constraint && active_constraint->type == WLR_POINTER_CONSTRAINT_V1_CONFINED) {
+        if (pixman_region32_not_empty(&active_constraint->region)) {
+            double confined_x = next_x;
+            double confined_y = next_y;
+            if (wlr_region_confine(&active_constraint->region, cursor_x, cursor_y, next_x, next_y,
+                                   &confined_x, &confined_y)) {
+                next_x = confined_x;
+                next_y = confined_y;
+            }
+        }
+    }
+
+    cursor_x = next_x;
+    cursor_y = next_y;
+    cursor_initialized = true;
+
+    const bool show_cursor =
+        cursor_visible.load(std::memory_order_acquire) &&
+        (!active_constraint || active_constraint->type != WLR_POINTER_CONSTRAINT_V1_LOCKED);
+    if (show_cursor && (previous_x != cursor_x || previous_y != cursor_y)) {
+        request_present_reset();
     }
 }
 
@@ -1608,6 +1893,45 @@ bool CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
     tex_opts.filter_mode = WLR_SCALE_FILTER_BILINEAR;
     tex_opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
     wlr_render_pass_add_texture(pass, &tex_opts);
+
+    const bool show_cursor =
+        cursor_visible.load(std::memory_order_acquire) &&
+        (!active_constraint || active_constraint->type != WLR_POINTER_CONSTRAINT_V1_LOCKED);
+    if (show_cursor && cursor_initialized && present_width > 0 && present_height > 0) {
+        const auto* frame = get_cursor_frame(get_time_msec());
+        if (frame && frame->texture) {
+            const int center_x = static_cast<int>(std::lround(cursor_x));
+            const int center_y = static_cast<int>(std::lround(cursor_y));
+            const int min_x = -static_cast<int>(frame->hotspot_x);
+            const int min_y = -static_cast<int>(frame->hotspot_y);
+            const int max_x =
+                static_cast<int>(present_width - 1) - static_cast<int>(frame->hotspot_x);
+            const int max_y =
+                static_cast<int>(present_height - 1) - static_cast<int>(frame->hotspot_y);
+            const int draw_x =
+                std::clamp(center_x - static_cast<int>(frame->hotspot_x), min_x, max_x);
+            const int draw_y =
+                std::clamp(center_y - static_cast<int>(frame->hotspot_y), min_y, max_y);
+
+            wlr_render_texture_options cursor_opts{};
+            cursor_opts.texture = frame->texture;
+            cursor_opts.src_box = wlr_fbox{
+                .x = 0.0,
+                .y = 0.0,
+                .width = static_cast<double>(frame->width),
+                .height = static_cast<double>(frame->height),
+            };
+            cursor_opts.dst_box = wlr_box{
+                .x = draw_x,
+                .y = draw_y,
+                .width = static_cast<int>(frame->width),
+                .height = static_cast<int>(frame->height),
+            };
+            cursor_opts.filter_mode = WLR_SCALE_FILTER_NEAREST;
+            cursor_opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
+            wlr_render_pass_add_texture(pass, &cursor_opts);
+        }
+    }
 
     if (!wlr_render_pass_submit(pass)) {
         wlr_buffer_unlock(buffer);

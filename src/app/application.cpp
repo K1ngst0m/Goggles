@@ -68,6 +68,18 @@ static void update_ui_parameters(render::VulkanBackend& vulkan_backend,
     imgui_layer.set_parameters(std::move(ui_params));
 }
 
+static auto configure_cursor_theme_env(const util::AppDirs& app_dirs) -> Result<void> {
+    auto assets_dir = util::resource_path(app_dirs, "assets");
+    std::string cursor_path = assets_dir.string();
+    if (setenv("XCURSOR_PATH", cursor_path.c_str(), 1) != 0) {
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to set XCURSOR_PATH");
+    }
+    if (setenv("XCURSOR_SIZE", "64", 1) != 0) {
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to set XCURSOR_SIZE");
+    }
+    return Result<void>{};
+}
+
 // =============================================================================
 // Lifecycle
 // =============================================================================
@@ -192,8 +204,12 @@ auto Application::init_capture_receiver() -> Result<void> {
     return Result<void>{};
 }
 
-auto Application::init_compositor_server() -> Result<void> {
+auto Application::init_compositor_server(const util::AppDirs& app_dirs) -> Result<void> {
     GOGGLES_LOG_INFO("Initializing compositor server...");
+    auto cursor_env_result = configure_cursor_theme_env(app_dirs);
+    if (!cursor_env_result) {
+        GOGGLES_LOG_WARN("Cursor theme setup failed: {}", cursor_env_result.error().message);
+    }
     m_compositor_server = GOGGLES_MUST(input::CompositorServer::create());
     GOGGLES_LOG_INFO("Compositor server: DISPLAY={} WAYLAND_DISPLAY={}",
                      m_compositor_server->x11_display(), m_compositor_server->wayland_display());
@@ -210,10 +226,6 @@ auto Application::init_compositor_server() -> Result<void> {
             app_ptr->m_surface_frame.reset();
             app_ptr->m_last_source_frame_number = UINT64_MAX;
         });
-    m_imgui_layer->set_pointer_lock_override_callback([this](bool override_active) {
-        m_pointer_lock_override = override_active;
-        update_pointer_lock_mirror();
-    });
     return Result<void>{};
 }
 
@@ -226,7 +238,7 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs)
     GOGGLES_MUST(app->init_imgui_layer(app_dirs));
     GOGGLES_MUST(app->init_shader_system(config, app_dirs));
     GOGGLES_MUST(app->init_capture_receiver());
-    GOGGLES_MUST(app->init_compositor_server());
+    GOGGLES_MUST(app->init_compositor_server(app_dirs));
 
     return make_result_ptr(std::move(app));
 }
@@ -302,6 +314,8 @@ void Application::process_event() {
 
     // Poll compositor for pointer lock state changes
     update_pointer_lock_mirror();
+    update_cursor_visibility();
+    update_mouse_grab();
 }
 
 void Application::forward_input_event(const SDL_Event& event) {
@@ -310,8 +324,9 @@ void Application::forward_input_event(const SDL_Event& event) {
     }
 
     // Block input to target app when ImGui has focus
-    bool capture_kb = m_imgui_layer->wants_capture_keyboard();
-    bool capture_mouse = m_imgui_layer->wants_capture_mouse();
+    const bool ui_visible = m_imgui_layer->is_globally_visible();
+    bool capture_kb = ui_visible && m_imgui_layer->wants_capture_keyboard();
+    bool capture_mouse = ui_visible && m_imgui_layer->wants_capture_mouse();
 
     switch (event.type) {
     case SDL_EVENT_KEY_DOWN:
@@ -327,7 +342,7 @@ void Application::forward_input_event(const SDL_Event& event) {
     }
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP: {
-        if (capture_mouse) {
+        if (ui_visible || capture_mouse) {
             return;
         }
         auto result = m_compositor_server->forward_mouse_button(event.button);
@@ -337,7 +352,7 @@ void Application::forward_input_event(const SDL_Event& event) {
         return;
     }
     case SDL_EVENT_MOUSE_MOTION: {
-        if (capture_mouse) {
+        if (ui_visible || capture_mouse) {
             return;
         }
         auto result = m_compositor_server->forward_mouse_motion(event.motion);
@@ -347,7 +362,7 @@ void Application::forward_input_event(const SDL_Event& event) {
         return;
     }
     case SDL_EVENT_MOUSE_WHEEL: {
-        if (capture_mouse) {
+        if (ui_visible || capture_mouse) {
             return;
         }
         auto result = m_compositor_server->forward_mouse_wheel(event.wheel);
@@ -614,18 +629,51 @@ auto Application::gpu_uuid() const -> std::string {
 }
 
 void Application::update_pointer_lock_mirror() {
-    if (!m_compositor_server) {
+    if (!m_compositor_server || !m_imgui_layer) {
         return;
     }
 
-    bool should_lock = m_pointer_lock_override || m_compositor_server->is_pointer_locked();
-    if (m_imgui_layer && m_imgui_layer->is_globally_visible()) {
-        should_lock = false;
-    }
+    const bool ui_visible = m_imgui_layer->is_globally_visible();
+    bool should_lock = !ui_visible;
     if (should_lock != m_pointer_lock_mirrored) {
         SDL_SetWindowRelativeMouseMode(m_window, should_lock);
         m_pointer_lock_mirrored = should_lock;
         GOGGLES_LOG_DEBUG("Pointer lock mirror: {}", should_lock ? "ON" : "OFF");
+    }
+}
+
+void Application::update_cursor_visibility() {
+    if (!m_window || !m_imgui_layer) {
+        return;
+    }
+
+    const bool ui_visible = m_imgui_layer->is_globally_visible();
+    const bool should_show = ui_visible;
+
+    if (should_show != m_cursor_visible) {
+        if (should_show) {
+            SDL_ShowCursor();
+        } else {
+            SDL_HideCursor();
+        }
+        m_cursor_visible = should_show;
+    }
+
+    if (m_compositor_server) {
+        m_compositor_server->set_cursor_visible(!should_show);
+    }
+}
+
+void Application::update_mouse_grab() {
+    if (!m_window || !m_imgui_layer) {
+        return;
+    }
+
+    const bool ui_visible = m_imgui_layer->is_globally_visible();
+    const bool should_grab = !ui_visible;
+    if (should_grab != m_mouse_grabbed) {
+        SDL_SetWindowMouseGrab(m_window, should_grab);
+        m_mouse_grabbed = should_grab;
     }
 }
 
