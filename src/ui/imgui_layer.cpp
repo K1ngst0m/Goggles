@@ -88,6 +88,7 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config,
     auto& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 
     {
         std::error_code ec;
@@ -418,14 +419,6 @@ void ImGuiLayer::set_surface_reset_callback(SurfaceResetCallback callback) {
     m_on_surface_reset = std::move(callback);
 }
 
-void ImGuiLayer::set_pointer_lock_override(bool override_active) {
-    m_pointer_lock_override = override_active;
-}
-
-void ImGuiLayer::set_pointer_lock_override_callback(PointerLockOverrideCallback callback) {
-    m_on_pointer_lock_override = std::move(callback);
-}
-
 auto ImGuiLayer::wants_capture_keyboard() const -> bool {
     return ImGui::GetIO().WantCaptureKeyboard;
 }
@@ -745,21 +738,6 @@ void ImGuiLayer::draw_app_management() {
         }
 
         if (ImGui::CollapsingHeader("Input", ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (ImGui::Checkbox("Force Enable Pointer Lock", &m_pointer_lock_override)) {
-                if (m_on_pointer_lock_override) {
-                    m_on_pointer_lock_override(m_pointer_lock_override);
-                }
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Force pointer lock even when target app doesn't request it");
-            }
-            if (m_pointer_lock_override) {
-                ImGui::TextColored(ImVec4(1.0F, 0.8F, 0.2F, 1.0F),
-                                   "Press Ctrl+Alt+Shift+Q to toggle overlay");
-            }
-
-            ImGui::Separator();
-
             ImGui::Text("Input Target");
             if (m_surfaces.empty()) {
                 ImGui::TextDisabled("No surfaces connected");

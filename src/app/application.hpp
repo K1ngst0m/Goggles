@@ -63,13 +63,15 @@ private:
     [[nodiscard]] auto init_shader_system(const Config& config, const util::AppDirs& app_dirs)
         -> Result<void>;
     [[nodiscard]] auto init_capture_receiver() -> Result<void>;
-    [[nodiscard]] auto init_compositor_server() -> Result<void>;
+    [[nodiscard]] auto init_compositor_server(const util::AppDirs& app_dirs) -> Result<void>;
     void handle_swapchain_changes();
     void update_frame_sources();
     void sync_ui_state();
     void render_frame();
     void handle_sync_semaphores();
     void update_pointer_lock_mirror();
+    void update_cursor_visibility();
+    void update_mouse_grab();
     void sync_prechain_ui();
 
     SDL_Window* m_window = nullptr;
@@ -83,8 +85,9 @@ private:
     bool m_running = true;
     bool m_window_resized = false;
     bool m_initial_resolution_sent = false;
-    bool m_pointer_lock_override = false;
     bool m_pointer_lock_mirrored = false;
+    bool m_cursor_visible = true;
+    bool m_mouse_grabbed = false;
     bool m_skip_frame = false;
     uint32_t m_pending_format = 0;
     uint64_t m_last_source_frame_number = UINT64_MAX;
