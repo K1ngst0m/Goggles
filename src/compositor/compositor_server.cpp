@@ -428,6 +428,7 @@ struct CompositorServer::Impl {
         -> std::optional<std::pair<uint32_t, uint32_t>>;
     void reset_cursor_for_surface(wlr_surface* surface);
     void apply_cursor_hint_if_needed();
+    void auto_focus_next_surface();
     void update_cursor_position(const InputEvent& event, wlr_surface* surface);
 };
 
@@ -1272,6 +1273,7 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
         cursor_initialized = false;
         wlr_seat_keyboard_clear_focus(seat);
         wlr_seat_pointer_clear_focus(seat);
+        auto_focus_next_surface();
     }
     if (presented_surface == hooks->surface) {
         clear_presented_frame();
@@ -1459,6 +1461,7 @@ void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surfac
     cursor_initialized = false;
     wlr_seat_keyboard_clear_focus(seat);
     wlr_seat_pointer_clear_focus(seat);
+    auto_focus_next_surface();
 }
 
 void CompositorServer::Impl::handle_new_pointer_constraint(wlr_pointer_constraint_v1* constraint) {
@@ -1763,6 +1766,33 @@ void CompositorServer::Impl::apply_cursor_hint_if_needed() {
         cursor_visible.load(std::memory_order_acquire)) {
         request_present_reset();
     }
+}
+
+void CompositorServer::Impl::auto_focus_next_surface() {
+    XWaylandSurfaceHooks* last_xwayland = nullptr;
+    for (auto* hooks : xwayland_hooks) {
+        if (hooks->mapped && hooks->xsurface && hooks->xsurface->surface) {
+            last_xwayland = hooks;
+        }
+    }
+    if (last_xwayland) {
+        focus_xwayland_surface(last_xwayland->xsurface);
+        return;
+    }
+
+    XdgToplevelHooks* last_xdg = nullptr;
+    for (auto* hooks : xdg_hooks) {
+        if (hooks->mapped && hooks->surface && hooks->toplevel) {
+            last_xdg = hooks;
+        }
+    }
+    if (last_xdg) {
+        wlr_xdg_toplevel_set_activated(last_xdg->toplevel, true);
+        focus_surface(last_xdg->surface);
+        return;
+    }
+
+    clear_presented_frame();
 }
 
 void CompositorServer::Impl::update_cursor_position(const InputEvent& event, wlr_surface* surface) {
