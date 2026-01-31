@@ -9,6 +9,7 @@
 #include <ctime>
 #include <fcntl.h>
 #include <linux/input-event-codes.h>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <sys/eventfd.h>
@@ -205,6 +206,45 @@ auto sdl_to_linux_button(uint8_t sdl_button) -> uint32_t {
     }
 }
 
+struct RenderSurfaceContext {
+    wlr_render_pass* pass = nullptr;
+    int32_t offset_x = 0;
+    int32_t offset_y = 0;
+};
+
+void render_surface_iterator(wlr_surface* surface, int sx, int sy, void* data) {
+    if (!surface || !data) {
+        return;
+    }
+    auto* context = static_cast<RenderSurfaceContext*>(data);
+    if (!context->pass) {
+        return;
+    }
+
+    wlr_texture* texture = wlr_surface_get_texture(surface);
+    if (!texture) {
+        return;
+    }
+
+    wlr_render_texture_options tex_opts{};
+    tex_opts.texture = texture;
+    tex_opts.src_box = wlr_fbox{
+        .x = 0.0,
+        .y = 0.0,
+        .width = static_cast<double>(texture->width),
+        .height = static_cast<double>(texture->height),
+    };
+    tex_opts.dst_box = wlr_box{
+        .x = context->offset_x + sx,
+        .y = context->offset_y + sy,
+        .width = static_cast<int>(texture->width),
+        .height = static_cast<int>(texture->height),
+    };
+    tex_opts.filter_mode = WLR_SCALE_FILTER_BILINEAR;
+    tex_opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
+    wlr_render_pass_add_texture(context->pass, &tex_opts);
+}
+
 // XWayland/wlroots emit stderr warnings (xkbcomp, event loop errors).
 // Suppress at info+ levels; visible at debug/trace for troubleshooting.
 class StderrSuppressor {
@@ -273,10 +313,29 @@ struct CompositorServer::Impl {
         // XWayland map_request can arrive before associate (surface becomes available).
         bool map_requested = false;
         bool mapped = false;
+        bool override_redirect = false;
         wl_listener associate{};
         wl_listener map_request{};
         wl_listener commit{};
         wl_listener destroy{};
+    };
+
+    struct XdgPopupHooks {
+        Impl* impl = nullptr;
+        wlr_xdg_popup* popup = nullptr;
+        wlr_surface* surface = nullptr;
+        wlr_surface* parent_surface = nullptr;
+        uint32_t id = 0;
+        bool sent_configure = false;
+        bool acked_configure = false;
+        bool mapped = false;
+        bool destroyed = false;
+
+        wl_listener surface_commit{};
+        wl_listener surface_map{};
+        wl_listener surface_destroy{};
+        wl_listener xdg_ack_configure{};
+        wl_listener popup_destroy{};
     };
 
     struct XdgToplevelHooks {
@@ -299,6 +358,7 @@ struct CompositorServer::Impl {
         Impl* impl = nullptr;
 
         wl_listener new_xdg_toplevel{};
+        wl_listener new_xdg_popup{};
         wl_listener new_xwayland_surface{};
         wl_listener new_pointer_constraint{};
     };
@@ -317,6 +377,15 @@ struct CompositorServer::Impl {
         uint32_t hotspot_x = 0;
         uint32_t hotspot_y = 0;
         uint32_t delay_ms = 0;
+    };
+
+    struct InputTarget {
+        wlr_surface* surface = nullptr;
+        wlr_xwayland_surface* xsurface = nullptr;
+        wlr_surface* root_surface = nullptr;
+        wlr_xwayland_surface* root_xsurface = nullptr;
+        double offset_x = 0.0;
+        double offset_y = 0.0;
     };
     // Fields ordered for optimal padding
     util::SPSCQueue<InputEvent> event_queue{64};
@@ -354,6 +423,7 @@ struct CompositorServer::Impl {
     std::jthread compositor_thread;
     std::vector<CursorFrame> cursor_frames;
     std::vector<XdgToplevelHooks*> xdg_hooks;
+    std::vector<std::unique_ptr<XdgPopupHooks>> xdg_popup_hooks;
     std::vector<XWaylandSurfaceHooks*> xwayland_hooks;
     wlr_drm_format present_format{};
     std::string wayland_socket_name;
@@ -393,10 +463,15 @@ struct CompositorServer::Impl {
     void handle_pointer_button_event(const InputEvent& event, uint32_t time);
     void handle_pointer_axis_event(const InputEvent& event, uint32_t time);
     void handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel);
+    void handle_new_xdg_popup(wlr_xdg_popup* popup);
     void handle_xdg_surface_commit(XdgToplevelHooks* hooks);
     void handle_xdg_surface_map(XdgToplevelHooks* hooks);
     void handle_xdg_surface_destroy(XdgToplevelHooks* hooks);
     void handle_xdg_surface_ack_configure(XdgToplevelHooks* hooks);
+    void handle_xdg_popup_commit(XdgPopupHooks* hooks);
+    void handle_xdg_popup_map(XdgPopupHooks* hooks);
+    void handle_xdg_popup_destroy(XdgPopupHooks* hooks);
+    void handle_xdg_popup_ack_configure(XdgPopupHooks* hooks);
     void handle_new_xwayland_surface(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_associate(wlr_xwayland_surface* xsurface);
     void handle_xwayland_surface_map_request(XWaylandSurfaceHooks* hooks);
@@ -413,23 +488,28 @@ struct CompositorServer::Impl {
     void refresh_presented_frame();
     void clear_presented_frame();
     void request_present_reset();
-    bool render_surface_to_frame(wlr_surface* surface);
+    bool render_surface_to_frame(const InputTarget& target);
     void set_cursor_visible(bool visible);
     void clear_cursor_theme();
     [[nodiscard]] auto get_cursor_frame(uint32_t time_msec) const -> const CursorFrame*;
 
-    // Helper to get input target surface respecting manual override
-    struct InputTarget {
-        wlr_surface* surface = nullptr;
-        wlr_xwayland_surface* xsurface = nullptr;
-    };
+    [[nodiscard]] auto get_root_input_target() -> InputTarget;
+    [[nodiscard]] auto resolve_input_target(const InputTarget& root_target,
+                                            bool use_pointer_hit_test) -> InputTarget;
     [[nodiscard]] auto get_input_target() -> InputTarget;
+    [[nodiscard]] auto get_root_xdg_surface(wlr_surface* surface) const -> wlr_xdg_surface*;
+    [[nodiscard]] auto get_xdg_popup_position(const XdgPopupHooks* hooks) const
+        -> std::pair<double, double>;
+    [[nodiscard]] auto get_cursor_bounds(const InputTarget& root_target) const
+        -> std::optional<std::pair<double, double>>;
+    [[nodiscard]] auto get_surface_local_coords(const InputTarget& target) const
+        -> std::pair<double, double>;
     [[nodiscard]] auto get_surface_extent(wlr_surface* surface) const
         -> std::optional<std::pair<uint32_t, uint32_t>>;
     void reset_cursor_for_surface(wlr_surface* surface);
     void apply_cursor_hint_if_needed();
     void auto_focus_next_surface();
-    void update_cursor_position(const InputEvent& event, wlr_surface* surface);
+    void update_cursor_position(const InputEvent& event, const InputTarget& root_target);
 };
 
 CompositorServer::CompositorServer() : m_impl(std::make_unique<Impl>()) {}
@@ -600,6 +680,14 @@ auto CompositorServer::Impl::setup_xdg_shell() -> Result<void> {
         list->impl->handle_new_xdg_toplevel(static_cast<wlr_xdg_toplevel*>(data));
     };
     wl_signal_add(&xdg_shell->events.new_toplevel, &listeners.new_xdg_toplevel);
+
+    wl_list_init(&listeners.new_xdg_popup.link);
+    listeners.new_xdg_popup.notify = [](wl_listener* listener, void* data) {
+        auto* list = reinterpret_cast<Impl::Listeners*>(reinterpret_cast<char*>(listener) -
+                                                        offsetof(Impl::Listeners, new_xdg_popup));
+        list->impl->handle_new_xdg_popup(static_cast<wlr_xdg_popup*>(data));
+    };
+    wl_signal_add(&xdg_shell->events.new_popup, &listeners.new_xdg_popup);
 
     return {};
 }
@@ -1043,14 +1131,10 @@ void CompositorServer::Impl::handle_key_event(const InputEvent& event, uint32_t 
 }
 
 void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event, uint32_t time) {
-    auto target = get_input_target();
-    wlr_surface* target_surface = target.surface;
-    wlr_xwayland_surface* target_xsurface = target.xsurface;
-
-    if (!target_surface) {
+    auto root_target = get_root_input_target();
+    if (!root_target.root_surface) {
         return;
     }
-
     // Send relative motion (always, regardless of constraint)
     if (relative_pointer_manager && (event.dx != 0.0 || event.dy != 0.0)) {
         wlr_relative_pointer_manager_v1_send_relative_motion(
@@ -1066,36 +1150,51 @@ void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event
     }
 
     // XWayland quirk: requires re-activation and pointer re-entry before each event
-    update_cursor_position(event, target_surface);
+    update_cursor_position(event, root_target);
+
+    auto target = resolve_input_target(root_target, true);
+    wlr_surface* target_surface = target.surface;
+    wlr_xwayland_surface* target_xsurface = target.xsurface;
+    if (!target_surface) {
+        return;
+    }
+
+    const auto [local_x, local_y] = get_surface_local_coords(target);
     if (target_xsurface) {
         wlr_xwayland_surface_activate(target_xsurface, true);
-        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, local_x, local_y);
     } else if (pointer_entered_surface != target_surface) {
-        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, local_x, local_y);
         pointer_entered_surface = target_surface;
     }
-    wlr_seat_pointer_notify_motion(seat, time, cursor_x, cursor_y);
+    wlr_seat_pointer_notify_motion(seat, time, local_x, local_y);
     wlr_seat_pointer_notify_frame(seat);
 }
 
 void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event, uint32_t time) {
-    auto target = get_input_target();
+    auto root_target = get_root_input_target();
+    auto target = resolve_input_target(root_target, true);
     wlr_surface* target_surface = target.surface;
     wlr_xwayland_surface* target_xsurface = target.xsurface;
+    wlr_surface* cursor_reference = target.root_surface ? target.root_surface : target_surface;
 
     if (!target_surface) {
         return;
     }
 
-    if (cursor_surface != target_surface || !cursor_initialized) {
-        reset_cursor_for_surface(target_surface);
+    if (cursor_surface != cursor_reference || !cursor_initialized) {
+        reset_cursor_for_surface(cursor_reference);
     }
 
+    const auto [local_x, local_y] = get_surface_local_coords(target);
     if (target_xsurface) {
         wlr_xwayland_surface_activate(target_xsurface, true);
-        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
+        if (pointer_entered_surface != target_surface) {
+            wlr_seat_pointer_notify_enter(seat, target_surface, local_x, local_y);
+            pointer_entered_surface = target_surface;
+        }
     } else if (pointer_entered_surface != target_surface) {
-        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, local_x, local_y);
         pointer_entered_surface = target_surface;
     }
     auto state = event.pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED;
@@ -1104,23 +1203,26 @@ void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event
 }
 
 void CompositorServer::Impl::handle_pointer_axis_event(const InputEvent& event, uint32_t time) {
-    auto target = get_input_target();
+    auto root_target = get_root_input_target();
+    auto target = resolve_input_target(root_target, true);
     wlr_surface* target_surface = target.surface;
     wlr_xwayland_surface* target_xsurface = target.xsurface;
+    wlr_surface* cursor_reference = target.root_surface ? target.root_surface : target_surface;
 
     if (!target_surface) {
         return;
     }
 
-    if (cursor_surface != target_surface || !cursor_initialized) {
-        reset_cursor_for_surface(target_surface);
+    if (cursor_surface != cursor_reference || !cursor_initialized) {
+        reset_cursor_for_surface(cursor_reference);
     }
 
+    const auto [local_x, local_y] = get_surface_local_coords(target);
     if (target_xsurface) {
         wlr_xwayland_surface_activate(target_xsurface, true);
-        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, local_x, local_y);
     } else if (pointer_entered_surface != target_surface) {
-        wlr_seat_pointer_notify_enter(seat, target_surface, cursor_x, cursor_y);
+        wlr_seat_pointer_notify_enter(seat, target_surface, local_x, local_y);
         pointer_entered_surface = target_surface;
     }
     auto orientation =
@@ -1195,6 +1297,170 @@ void CompositorServer::Impl::handle_new_xdg_toplevel(wlr_xdg_toplevel* toplevel)
         h->toplevel = nullptr;
     };
     wl_signal_add(&toplevel->events.destroy, &hooks->toplevel_destroy);
+}
+
+void CompositorServer::Impl::handle_new_xdg_popup(wlr_xdg_popup* popup) {
+    if (!popup || !popup->base || !popup->base->surface) {
+        return;
+    }
+
+    GOGGLES_LOG_DEBUG("New XDG popup: popup={} surface={} parent={}", static_cast<void*>(popup),
+                      static_cast<void*>(popup->base->surface), static_cast<void*>(popup->parent));
+
+    auto hooks = std::make_unique<XdgPopupHooks>();
+    auto* hooks_ptr = hooks.get();
+    hooks_ptr->impl = this;
+    hooks_ptr->popup = popup;
+    hooks_ptr->surface = popup->base->surface;
+    hooks_ptr->parent_surface = popup->parent;
+    hooks_ptr->id = next_surface_id++;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        xdg_popup_hooks.push_back(std::move(hooks));
+    }
+
+    wl_list_init(&hooks_ptr->surface_commit.link);
+    hooks_ptr->surface_commit.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgPopupHooks*>(reinterpret_cast<char*>(listener) -
+                                                   offsetof(XdgPopupHooks, surface_commit));
+        h->impl->handle_xdg_popup_commit(h);
+    };
+    wl_signal_add(&hooks_ptr->surface->events.commit, &hooks_ptr->surface_commit);
+
+    wl_list_init(&hooks_ptr->xdg_ack_configure.link);
+    hooks_ptr->xdg_ack_configure.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgPopupHooks*>(reinterpret_cast<char*>(listener) -
+                                                   offsetof(XdgPopupHooks, xdg_ack_configure));
+        h->impl->handle_xdg_popup_ack_configure(h);
+    };
+    wl_signal_add(&popup->base->events.ack_configure, &hooks_ptr->xdg_ack_configure);
+
+    wl_list_init(&hooks_ptr->surface_map.link);
+    hooks_ptr->surface_map.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgPopupHooks*>(reinterpret_cast<char*>(listener) -
+                                                   offsetof(XdgPopupHooks, surface_map));
+        h->impl->handle_xdg_popup_map(h);
+    };
+    wl_signal_add(&hooks_ptr->surface->events.map, &hooks_ptr->surface_map);
+
+    wl_list_init(&hooks_ptr->surface_destroy.link);
+    hooks_ptr->surface_destroy.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgPopupHooks*>(reinterpret_cast<char*>(listener) -
+                                                   offsetof(XdgPopupHooks, surface_destroy));
+        h->impl->handle_xdg_popup_destroy(h);
+    };
+    wl_signal_add(&hooks_ptr->surface->events.destroy, &hooks_ptr->surface_destroy);
+
+    wl_list_init(&hooks_ptr->popup_destroy.link);
+    hooks_ptr->popup_destroy.notify = [](wl_listener* listener, void* /*data*/) {
+        auto* h = reinterpret_cast<XdgPopupHooks*>(reinterpret_cast<char*>(listener) -
+                                                   offsetof(XdgPopupHooks, popup_destroy));
+        h->impl->handle_xdg_popup_destroy(h);
+    };
+    wl_signal_add(&popup->events.destroy, &hooks_ptr->popup_destroy);
+}
+
+void CompositorServer::Impl::handle_xdg_popup_commit(XdgPopupHooks* hooks) {
+    if (!hooks || !hooks->popup || !hooks->popup->base || !hooks->popup->base->initialized) {
+        return;
+    }
+
+    if (!hooks->sent_configure) {
+        wlr_xdg_surface_schedule_configure(hooks->popup->base);
+        hooks->sent_configure = true;
+
+        auto* root = get_root_xdg_surface(hooks->surface);
+        if (root && root->surface) {
+            auto extent_opt = get_surface_extent(root->surface);
+            if (extent_opt) {
+                const auto [width, height] = *extent_opt;
+                if (width > 0 && height > 0) {
+                    wlr_box constraint_box{
+                        .x = 0,
+                        .y = 0,
+                        .width = static_cast<int>(width),
+                        .height = static_cast<int>(height),
+                    };
+                    wlr_xdg_popup_unconstrain_from_box(hooks->popup, &constraint_box);
+                }
+            }
+        }
+    }
+
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    wlr_surface_send_frame_done(hooks->surface, &now);
+
+    update_presented_frame(hooks->surface);
+}
+
+void CompositorServer::Impl::handle_xdg_popup_ack_configure(XdgPopupHooks* hooks) {
+    if (!hooks || hooks->acked_configure) {
+        return;
+    }
+
+    hooks->acked_configure = true;
+
+    wl_list_remove(&hooks->xdg_ack_configure.link);
+    wl_list_init(&hooks->xdg_ack_configure.link);
+}
+
+void CompositorServer::Impl::handle_xdg_popup_map(XdgPopupHooks* hooks) {
+    if (!hooks || hooks->mapped) {
+        return;
+    }
+
+    hooks->mapped = true;
+
+    GOGGLES_LOG_DEBUG("XDG popup mapped: id={} surface={} parent={}", hooks->id,
+                      static_cast<void*>(hooks->surface),
+                      static_cast<void*>(hooks->parent_surface));
+
+    wl_list_remove(&hooks->surface_map.link);
+    wl_list_init(&hooks->surface_map.link);
+    request_present_reset();
+}
+
+void CompositorServer::Impl::handle_xdg_popup_destroy(XdgPopupHooks* hooks) {
+    if (!hooks || hooks->destroyed) {
+        return;
+    }
+
+    hooks->destroyed = true;
+
+    GOGGLES_LOG_DEBUG("XDG popup destroyed: id={} surface={} parent={}", hooks->id,
+                      static_cast<void*>(hooks->surface),
+                      static_cast<void*>(hooks->parent_surface));
+
+    wl_list_remove(&hooks->surface_destroy.link);
+    wl_list_init(&hooks->surface_destroy.link);
+    wl_list_remove(&hooks->surface_commit.link);
+    wl_list_init(&hooks->surface_commit.link);
+    wl_list_remove(&hooks->surface_map.link);
+    wl_list_init(&hooks->surface_map.link);
+    wl_list_remove(&hooks->xdg_ack_configure.link);
+    wl_list_init(&hooks->xdg_ack_configure.link);
+    wl_list_remove(&hooks->popup_destroy.link);
+    wl_list_init(&hooks->popup_destroy.link);
+
+    {
+        std::scoped_lock lock(hooks_mutex);
+        auto hook_it = std::find_if(
+            xdg_popup_hooks.begin(), xdg_popup_hooks.end(),
+            [hooks](const std::unique_ptr<XdgPopupHooks>& entry) { return entry.get() == hooks; });
+        if (hook_it != xdg_popup_hooks.end()) {
+            xdg_popup_hooks.erase(hook_it);
+        }
+    }
+
+    if (keyboard_entered_surface == hooks->surface) {
+        keyboard_entered_surface = nullptr;
+    }
+    if (pointer_entered_surface == hooks->surface) {
+        pointer_entered_surface = nullptr;
+    }
+
+    request_present_reset();
 }
 
 void CompositorServer::Impl::handle_xdg_surface_commit(XdgToplevelHooks* hooks) {
@@ -1273,6 +1539,8 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
         cursor_initialized = false;
         wlr_seat_keyboard_clear_focus(seat);
         wlr_seat_pointer_clear_focus(seat);
+        while (event_queue.try_pop()) {
+        }
         auto_focus_next_surface();
     }
     if (presented_surface == hooks->surface) {
@@ -1302,6 +1570,7 @@ void CompositorServer::Impl::handle_new_xwayland_surface(wlr_xwayland_surface* x
     hooks->impl = this;
     hooks->xsurface = xsurface;
     hooks->id = next_surface_id++;
+    hooks->override_redirect = xsurface->override_redirect;
     {
         std::scoped_lock lock(hooks_mutex);
         xwayland_hooks.push_back(hooks);
@@ -1374,10 +1643,6 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
                       static_cast<void*>(xsurface->surface),
                       xsurface->title ? xsurface->title : "");
 
-    if (xsurface->override_redirect) {
-        return;
-    }
-
     // NOTE: Do NOT register destroy listener on xsurface->surface->events.destroy
     // It fires unexpectedly during normal operation, breaking X11 input entirely.
 
@@ -1385,8 +1650,11 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
     if (hooks && hooks->map_requested && !hooks->mapped) {
         hooks->mapped = true;
 
-        if (manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
+        if (!hooks->override_redirect &&
+            manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
             focus_xwayland_surface(xsurface);
+        } else if (hooks->override_redirect) {
+            request_present_reset();
         }
     }
 }
@@ -1396,11 +1664,12 @@ void CompositorServer::Impl::handle_xwayland_surface_map_request(XWaylandSurface
         return;
     }
     auto* xsurface = hooks->xsurface;
-    if (xsurface->override_redirect) {
-        return;
-    }
 
     hooks->map_requested = true;
+    if (hooks->override_redirect) {
+        GOGGLES_LOG_DEBUG("XWayland override-redirect map request: window_id={} ptr={}",
+                          static_cast<uint32_t>(xsurface->window_id), static_cast<void*>(xsurface));
+    }
     if (!xsurface->surface) {
         // Wait for associate: wlroots will set xsurface->surface later.
         return;
@@ -1408,8 +1677,11 @@ void CompositorServer::Impl::handle_xwayland_surface_map_request(XWaylandSurface
 
     hooks->mapped = true;
 
-    if (manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
+    if (!hooks->override_redirect &&
+        manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
         focus_xwayland_surface(xsurface);
+    } else if (hooks->override_redirect) {
+        request_present_reset();
     }
 }
 
@@ -1430,6 +1702,10 @@ void CompositorServer::Impl::handle_xwayland_surface_commit(XWaylandSurfaceHooks
 }
 
 void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface) {
+    if (xsurface && xsurface->override_redirect) {
+        GOGGLES_LOG_DEBUG("XWayland override-redirect destroyed: window_id={} ptr={}",
+                          static_cast<uint32_t>(xsurface->window_id), static_cast<void*>(xsurface));
+    }
     {
         std::scoped_lock lock(hooks_mutex);
         auto hook_it = std::find_if(
@@ -1443,8 +1719,19 @@ void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surfac
         }
     }
 
+    if (keyboard_entered_surface == xsurface->surface) {
+        keyboard_entered_surface = nullptr;
+    }
+    if (pointer_entered_surface == xsurface->surface) {
+        pointer_entered_surface = nullptr;
+    }
+
     if (presented_surface == xsurface->surface) {
         clear_presented_frame();
+    }
+
+    if (xsurface && xsurface->override_redirect) {
+        request_present_reset();
     }
 
     if (focused_xsurface != xsurface) {
@@ -1461,6 +1748,8 @@ void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surfac
     cursor_initialized = false;
     wlr_seat_keyboard_clear_focus(seat);
     wlr_seat_pointer_clear_focus(seat);
+    while (event_queue.try_pop()) {
+    }
     auto_focus_next_surface();
 }
 
@@ -1713,6 +2002,140 @@ auto CompositorServer::Impl::get_surface_extent(wlr_surface* surface) const
     return std::nullopt;
 }
 
+auto CompositorServer::Impl::get_root_xdg_surface(wlr_surface* surface) const -> wlr_xdg_surface* {
+    auto* xdg_surface = wlr_xdg_surface_try_from_wlr_surface(surface);
+    while (xdg_surface && xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP) {
+        if (!xdg_surface->popup || !xdg_surface->popup->parent) {
+            break;
+        }
+        auto* parent = wlr_xdg_surface_try_from_wlr_surface(xdg_surface->popup->parent);
+        if (!parent || parent == xdg_surface) {
+            break;
+        }
+        xdg_surface = parent;
+    }
+    return xdg_surface;
+}
+
+auto CompositorServer::Impl::get_xdg_popup_position(const XdgPopupHooks* hooks) const
+    -> std::pair<double, double> {
+    if (!hooks || !hooks->popup) {
+        return {0.0, 0.0};
+    }
+
+    double popup_x = 0.0;
+    double popup_y = 0.0;
+    wlr_xdg_popup_get_position(hooks->popup, &popup_x, &popup_y);
+    return {popup_x, popup_y};
+}
+
+auto CompositorServer::Impl::get_cursor_bounds(const InputTarget& root_target) const
+    -> std::optional<std::pair<double, double>> {
+    if (!root_target.root_surface) {
+        return std::nullopt;
+    }
+
+    auto extent_opt = get_surface_extent(root_target.root_surface);
+    if (!extent_opt) {
+        return std::nullopt;
+    }
+
+    double width = static_cast<double>(extent_opt->first);
+    double height = static_cast<double>(extent_opt->second);
+
+    if (!root_target.root_xsurface) {
+        std::scoped_lock lock(hooks_mutex);
+        for (const auto& hooks : xdg_popup_hooks) {
+            auto* popup_hooks = hooks.get();
+            if (!popup_hooks || !popup_hooks->mapped || !popup_hooks->popup ||
+                !popup_hooks->surface) {
+                continue;
+            }
+            if (!popup_hooks->acked_configure) {
+                continue;
+            }
+            auto* root = get_root_xdg_surface(popup_hooks->surface);
+            if (!root || root->surface != root_target.root_surface) {
+                continue;
+            }
+
+            auto popup_extent = get_surface_extent(popup_hooks->surface);
+            if (!popup_extent) {
+                continue;
+            }
+
+            auto [popup_x, popup_y] = get_xdg_popup_position(popup_hooks);
+            width = std::max(width, popup_x + static_cast<double>(popup_extent->first));
+            height = std::max(height, popup_y + static_cast<double>(popup_extent->second));
+        }
+
+        return std::pair<double, double>(width, height);
+    }
+
+    std::scoped_lock lock(hooks_mutex);
+    for (const auto* hooks : xwayland_hooks) {
+        if (!hooks->mapped || !hooks->override_redirect || !hooks->xsurface ||
+            !hooks->xsurface->surface) {
+            continue;
+        }
+
+        const auto* popup = hooks->xsurface;
+        const auto* parent = popup->parent;
+        bool belongs_to_root = false;
+        while (parent) {
+            if (parent == root_target.root_xsurface) {
+                belongs_to_root = true;
+                break;
+            }
+            parent = parent->parent;
+        }
+        if (!belongs_to_root && !popup->parent) {
+            belongs_to_root = true;
+        }
+        if (!belongs_to_root) {
+            continue;
+        }
+
+        auto popup_extent = get_surface_extent(popup->surface);
+        if (!popup_extent) {
+            continue;
+        }
+
+        const double popup_x =
+            static_cast<double>(popup->x) - static_cast<double>(root_target.root_xsurface->x);
+        const double popup_y =
+            static_cast<double>(popup->y) - static_cast<double>(root_target.root_xsurface->y);
+        width = std::max(width, popup_x + static_cast<double>(popup_extent->first));
+        height = std::max(height, popup_y + static_cast<double>(popup_extent->second));
+    }
+
+    return std::pair<double, double>(width, height);
+}
+
+auto CompositorServer::Impl::get_surface_local_coords(const InputTarget& target) const
+    -> std::pair<double, double> {
+    if (!target.surface) {
+        return {0.0, 0.0};
+    }
+
+    double local_x = cursor_x - target.offset_x;
+    double local_y = cursor_y - target.offset_y;
+
+    const bool clamp_to_surface = !target.root_surface || target.surface == target.root_surface;
+    if (clamp_to_surface) {
+        auto extent_opt = get_surface_extent(target.surface);
+        if (extent_opt) {
+            const auto [width, height] = *extent_opt;
+            if (width > 0 && height > 0) {
+                local_x = std::clamp(local_x, 0.0, static_cast<double>(width - 1));
+                local_y = std::clamp(local_y, 0.0, static_cast<double>(height - 1));
+            }
+        }
+    }
+
+    return {local_x, local_y};
+}
+
 void CompositorServer::Impl::reset_cursor_for_surface(wlr_surface* surface) {
     cursor_surface = surface;
     auto extent_opt = get_surface_extent(surface);
@@ -1771,7 +2194,8 @@ void CompositorServer::Impl::apply_cursor_hint_if_needed() {
 void CompositorServer::Impl::auto_focus_next_surface() {
     XWaylandSurfaceHooks* last_xwayland = nullptr;
     for (auto* hooks : xwayland_hooks) {
-        if (hooks->mapped && hooks->xsurface && hooks->xsurface->surface) {
+        if (hooks->mapped && !hooks->override_redirect && hooks->xsurface &&
+            hooks->xsurface->surface) {
             last_xwayland = hooks;
         }
     }
@@ -1795,7 +2219,12 @@ void CompositorServer::Impl::auto_focus_next_surface() {
     clear_presented_frame();
 }
 
-void CompositorServer::Impl::update_cursor_position(const InputEvent& event, wlr_surface* surface) {
+void CompositorServer::Impl::update_cursor_position(const InputEvent& event,
+                                                    const InputTarget& root_target) {
+    wlr_surface* surface = root_target.root_surface;
+    if (!surface) {
+        return;
+    }
     if (cursor_surface != surface || !cursor_initialized) {
         reset_cursor_for_surface(surface);
     }
@@ -1808,12 +2237,12 @@ void CompositorServer::Impl::update_cursor_position(const InputEvent& event, wlr
     double next_x = cursor_x + event.dx;
     double next_y = cursor_y + event.dy;
 
-    auto extent_opt = get_surface_extent(surface);
-    if (extent_opt) {
-        const auto [width, height] = *extent_opt;
+    auto bounds_opt = get_cursor_bounds(root_target);
+    if (bounds_opt) {
+        const auto [width, height] = *bounds_opt;
         if (width > 0 && height > 0) {
-            next_x = std::clamp(next_x, 0.0, static_cast<double>(width - 1));
-            next_y = std::clamp(next_y, 0.0, static_cast<double>(height - 1));
+            next_x = std::clamp(next_x, 0.0, width - 1.0);
+            next_y = std::clamp(next_y, 0.0, height - 1.0);
         }
     }
 
@@ -1843,38 +2272,43 @@ void CompositorServer::Impl::update_cursor_position(const InputEvent& event, wlr
 
 void CompositorServer::Impl::update_presented_frame(wlr_surface* surface) {
     auto target = get_input_target();
-    if (target.surface != surface) {
+    if (!target.root_surface || !surface) {
         return;
     }
 
-    render_surface_to_frame(surface);
+    if (target.surface != surface && target.root_surface != surface) {
+        return;
+    }
+
+    render_surface_to_frame(target);
 }
 
 void CompositorServer::Impl::refresh_presented_frame() {
     auto target = get_input_target();
-    if (!target.surface) {
+    if (!target.root_surface) {
         clear_presented_frame();
         return;
     }
 
-    if (!render_surface_to_frame(target.surface) && presented_surface != target.surface) {
+    if (!render_surface_to_frame(target) && presented_surface != target.root_surface) {
         clear_presented_frame();
     }
 }
 
-bool CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
-    if (!present_swapchain || !surface) {
+bool CompositorServer::Impl::render_surface_to_frame(const InputTarget& target) {
+    wlr_surface* root_surface = target.root_surface ? target.root_surface : target.surface;
+    if (!present_swapchain || !root_surface) {
         return false;
     }
 
-    wlr_texture* texture = wlr_surface_get_texture(surface);
-    if (!texture) {
+    wlr_texture* root_texture = wlr_surface_get_texture(root_surface);
+    if (!root_texture) {
         return false;
     }
 
     // Capture at surface-native size; fixed-size output pre-scales and breaks viewer scale modes.
-    const auto desired_width = static_cast<uint32_t>(texture->width);
-    const auto desired_height = static_cast<uint32_t>(texture->height);
+    const auto desired_width = static_cast<uint32_t>(root_texture->width);
+    const auto desired_height = static_cast<uint32_t>(root_texture->height);
     if (desired_width == 0 || desired_height == 0) {
         return false;
     }
@@ -1906,23 +2340,50 @@ bool CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
         return false;
     }
 
-    wlr_render_texture_options tex_opts{};
-    tex_opts.texture = texture;
-    tex_opts.src_box = wlr_fbox{
-        .x = 0.0,
-        .y = 0.0,
-        .width = static_cast<double>(texture->width),
-        .height = static_cast<double>(texture->height),
-    };
-    tex_opts.dst_box = wlr_box{
-        .x = 0,
-        .y = 0,
-        .width = static_cast<int>(present_width),
-        .height = static_cast<int>(present_height),
-    };
-    tex_opts.filter_mode = WLR_SCALE_FILTER_BILINEAR;
-    tex_opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
-    wlr_render_pass_add_texture(pass, &tex_opts);
+    RenderSurfaceContext render_context{};
+    render_context.pass = pass;
+
+    auto* root_xdg = get_root_xdg_surface(root_surface);
+    if (root_xdg && root_xdg->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
+        wlr_xdg_surface_for_each_surface(root_xdg, render_surface_iterator, &render_context);
+    } else {
+        wlr_surface_for_each_surface(root_surface, render_surface_iterator, &render_context);
+    }
+
+    if (target.root_xsurface) {
+        std::scoped_lock lock(hooks_mutex);
+        for (const auto* hooks : xwayland_hooks) {
+            if (!hooks->mapped || !hooks->override_redirect || !hooks->xsurface ||
+                !hooks->xsurface->surface) {
+                continue;
+            }
+
+            const auto* popup = hooks->xsurface;
+            const auto* parent = popup->parent;
+            bool belongs_to_root = false;
+            while (parent) {
+                if (parent == target.root_xsurface) {
+                    belongs_to_root = true;
+                    break;
+                }
+                parent = parent->parent;
+            }
+            if (!belongs_to_root && !popup->parent) {
+                belongs_to_root = true;
+            }
+            if (!belongs_to_root) {
+                continue;
+            }
+
+            RenderSurfaceContext popup_context{};
+            popup_context.pass = pass;
+            popup_context.offset_x =
+                static_cast<int32_t>(popup->x) - static_cast<int32_t>(target.root_xsurface->x);
+            popup_context.offset_y =
+                static_cast<int32_t>(popup->y) - static_cast<int32_t>(target.root_xsurface->y);
+            wlr_surface_for_each_surface(popup->surface, render_surface_iterator, &popup_context);
+        }
+    }
 
     const bool show_cursor =
         cursor_visible.load(std::memory_order_acquire) &&
@@ -2008,42 +2469,185 @@ bool CompositorServer::Impl::render_surface_to_frame(wlr_surface* surface) {
     frame.frame_number = ++presented_frame_number;
 
     presented_frame = std::move(frame);
-    presented_surface = surface;
+    presented_surface = root_surface;
     return true;
 }
 
-auto CompositorServer::Impl::get_input_target() -> InputTarget {
+auto CompositorServer::Impl::get_root_input_target() -> InputTarget {
     InputTarget target{};
+
+    wlr_surface* root_surface = nullptr;
+    wlr_xwayland_surface* root_xsurface = nullptr;
 
     {
         std::scoped_lock lock(hooks_mutex);
         const auto manual_id = manual_input_target.load(std::memory_order_relaxed);
         if (manual_id != NO_MANUAL_TARGET) {
             for (const auto* hooks : xwayland_hooks) {
+                if (hooks->override_redirect) {
+                    continue;
+                }
                 if (hooks->id == manual_id && hooks->xsurface && hooks->xsurface->surface) {
-                    target.xsurface = hooks->xsurface;
-                    target.surface = hooks->xsurface->surface;
-                    return target;
+                    root_xsurface = hooks->xsurface;
+                    root_surface = hooks->xsurface->surface;
+                    break;
                 }
             }
-            for (const auto* hooks : xdg_hooks) {
-                if (hooks->id == manual_id && hooks->surface) {
-                    target.surface = hooks->surface;
-                    return target;
+            if (!root_surface) {
+                for (const auto* hooks : xdg_hooks) {
+                    if (hooks->id == manual_id && hooks->surface) {
+                        root_surface = hooks->surface;
+                        break;
+                    }
                 }
             }
-            // Manual target not found (surface may have been destroyed), fall through to auto
         }
     }
 
-    if (focused_xsurface && focused_xsurface->surface) {
-        target.xsurface = focused_xsurface;
-        target.surface = focused_xsurface->surface;
-    } else if (focused_surface) {
-        target.surface = focused_surface;
+    if (!root_surface) {
+        if (focused_xsurface && focused_xsurface->surface) {
+            root_xsurface = focused_xsurface;
+            root_surface = focused_xsurface->surface;
+        } else if (focused_surface) {
+            root_surface = focused_surface;
+        }
     }
 
+    if (!root_surface) {
+        return target;
+    }
+
+    target.surface = root_surface;
+    target.xsurface = root_xsurface;
+    target.root_surface = root_surface;
+    target.root_xsurface = root_xsurface;
     return target;
+}
+
+auto CompositorServer::Impl::resolve_input_target(const InputTarget& root_target,
+                                                  bool use_pointer_hit_test) -> InputTarget {
+    InputTarget target = root_target;
+    if (!root_target.root_surface) {
+        return target;
+    }
+
+    if (!root_target.root_xsurface) {
+        wlr_surface* hit_surface = nullptr;
+        double sub_x = cursor_x;
+        double sub_y = cursor_y;
+
+        if (use_pointer_hit_test) {
+            auto* root_xdg = get_root_xdg_surface(root_target.root_surface);
+            if (root_xdg && root_xdg->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
+                hit_surface =
+                    wlr_xdg_surface_surface_at(root_xdg, cursor_x, cursor_y, &sub_x, &sub_y);
+            } else {
+                hit_surface = wlr_surface_surface_at(root_target.root_surface, cursor_x, cursor_y,
+                                                     &sub_x, &sub_y);
+            }
+        }
+
+        XdgPopupHooks* topmost_popup = nullptr;
+        {
+            std::scoped_lock lock(hooks_mutex);
+            for (const auto& hooks : xdg_popup_hooks) {
+                auto* popup_hooks = hooks.get();
+                if (!popup_hooks || !popup_hooks->mapped || !popup_hooks->popup ||
+                    !popup_hooks->surface) {
+                    continue;
+                }
+                if (!popup_hooks->acked_configure || popup_hooks->popup->seat != seat) {
+                    continue;
+                }
+                auto* root = get_root_xdg_surface(popup_hooks->surface);
+                if (root && root->surface == root_target.root_surface) {
+                    topmost_popup = popup_hooks;
+                }
+            }
+        }
+
+        if (topmost_popup) {
+            if (use_pointer_hit_test && hit_surface) {
+                wlr_surface* hit_root = wlr_surface_get_root_surface(hit_surface);
+                if (hit_root == topmost_popup->surface) {
+                    target.surface = hit_surface;
+                    target.offset_x = cursor_x - sub_x;
+                    target.offset_y = cursor_y - sub_y;
+                    return target;
+                }
+            }
+
+            auto [popup_sx, popup_sy] = get_xdg_popup_position(topmost_popup);
+            target.surface = topmost_popup->surface;
+            target.offset_x = popup_sx;
+            target.offset_y = popup_sy;
+            return target;
+        }
+
+        if (use_pointer_hit_test && hit_surface) {
+            target.surface = hit_surface;
+            target.offset_x = cursor_x - sub_x;
+            target.offset_y = cursor_y - sub_y;
+            return target;
+        }
+
+        target.surface = root_target.root_surface;
+        target.offset_x = 0.0;
+        target.offset_y = 0.0;
+        return target;
+    }
+
+    XWaylandSurfaceHooks* topmost_popup = nullptr;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        for (auto* hooks : xwayland_hooks) {
+            if (!hooks->mapped || !hooks->override_redirect || !hooks->xsurface ||
+                !hooks->xsurface->surface) {
+                continue;
+            }
+
+            const auto* popup = hooks->xsurface;
+            const auto* parent = popup->parent;
+            bool belongs_to_root = false;
+            while (parent) {
+                if (parent == root_target.root_xsurface) {
+                    belongs_to_root = true;
+                    break;
+                }
+                parent = parent->parent;
+            }
+            if (!belongs_to_root && !popup->parent) {
+                belongs_to_root = true;
+            }
+            if (!belongs_to_root) {
+                continue;
+            }
+
+            topmost_popup = hooks;
+        }
+    }
+
+    if (topmost_popup && topmost_popup->xsurface && topmost_popup->xsurface->surface) {
+        const auto* popup = topmost_popup->xsurface;
+        target.surface = popup->surface;
+        target.xsurface = topmost_popup->xsurface;
+        target.offset_x =
+            static_cast<double>(popup->x) - static_cast<double>(root_target.root_xsurface->x);
+        target.offset_y =
+            static_cast<double>(popup->y) - static_cast<double>(root_target.root_xsurface->y);
+        return target;
+    }
+
+    target.surface = root_target.root_surface;
+    target.xsurface = root_target.root_xsurface;
+    target.offset_x = 0.0;
+    target.offset_y = 0.0;
+    return target;
+}
+
+auto CompositorServer::Impl::get_input_target() -> InputTarget {
+    auto root_target = get_root_input_target();
+    return resolve_input_target(root_target, false);
 }
 
 auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
@@ -2056,13 +2660,20 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
         target_id = manual_id;
     } else {
         if (!m_impl->xwayland_hooks.empty()) {
-            target_id = m_impl->xwayland_hooks.back()->id;
+            for (auto* hooks : m_impl->xwayland_hooks) {
+                if (!hooks->override_redirect) {
+                    target_id = hooks->id;
+                }
+            }
         } else if (!m_impl->xdg_hooks.empty()) {
             target_id = m_impl->xdg_hooks.back()->id;
         }
     }
 
     for (const auto* hooks : m_impl->xwayland_hooks) {
+        if (hooks->override_redirect) {
+            continue;
+        }
         if (!hooks->xsurface || !hooks->xsurface->surface) {
             continue;
         }
@@ -2104,6 +2715,9 @@ void CompositorServer::set_input_target(uint32_t surface_id) {
     std::scoped_lock lock(m_impl->hooks_mutex);
     bool found = false;
     for (const auto* hooks : m_impl->xwayland_hooks) {
+        if (hooks->override_redirect) {
+            continue;
+        }
         if (hooks->id == surface_id) {
             found = true;
             break;
