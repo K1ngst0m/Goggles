@@ -489,6 +489,9 @@ struct CompositorServer::Impl {
     void clear_presented_frame();
     void request_present_reset();
     bool render_surface_to_frame(const InputTarget& target);
+    void render_root_surface_tree(wlr_render_pass* pass, wlr_surface* root_surface);
+    void render_xwayland_popup_surfaces(wlr_render_pass* pass, const InputTarget& target);
+    void render_cursor_overlay(wlr_render_pass* pass) const;
     void set_cursor_visible(bool visible);
     void clear_cursor_theme();
     [[nodiscard]] auto get_cursor_frame(uint32_t time_msec) const -> const CursorFrame*;
@@ -2040,8 +2043,8 @@ auto CompositorServer::Impl::get_cursor_bounds(const InputTarget& root_target) c
         return std::nullopt;
     }
 
-    double width = static_cast<double>(extent_opt->first);
-    double height = static_cast<double>(extent_opt->second);
+    auto width = static_cast<double>(extent_opt->first);
+    auto height = static_cast<double>(extent_opt->second);
 
     if (!root_target.root_xsurface) {
         std::scoped_lock lock(hooks_mutex);
@@ -2295,6 +2298,96 @@ void CompositorServer::Impl::refresh_presented_frame() {
     }
 }
 
+void CompositorServer::Impl::render_root_surface_tree(wlr_render_pass* pass,
+                                                      wlr_surface* root_surface) {
+    RenderSurfaceContext render_context{};
+    render_context.pass = pass;
+
+    auto* root_xdg = get_root_xdg_surface(root_surface);
+    if (root_xdg && root_xdg->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
+        wlr_xdg_surface_for_each_surface(root_xdg, render_surface_iterator, &render_context);
+    } else {
+        wlr_surface_for_each_surface(root_surface, render_surface_iterator, &render_context);
+    }
+}
+
+void CompositorServer::Impl::render_xwayland_popup_surfaces(wlr_render_pass* pass,
+                                                            const InputTarget& target) {
+    std::scoped_lock lock(hooks_mutex);
+    for (const auto* hooks : xwayland_hooks) {
+        if (!hooks->mapped || !hooks->override_redirect || !hooks->xsurface ||
+            !hooks->xsurface->surface) {
+            continue;
+        }
+
+        const auto* popup = hooks->xsurface;
+        const auto* parent = popup->parent;
+        bool belongs_to_root = false;
+        while (parent) {
+            if (parent == target.root_xsurface) {
+                belongs_to_root = true;
+                break;
+            }
+            parent = parent->parent;
+        }
+        if (!belongs_to_root && !popup->parent) {
+            belongs_to_root = true;
+        }
+        if (!belongs_to_root) {
+            continue;
+        }
+
+        RenderSurfaceContext popup_context{};
+        popup_context.pass = pass;
+        popup_context.offset_x =
+            static_cast<int32_t>(popup->x) - static_cast<int32_t>(target.root_xsurface->x);
+        popup_context.offset_y =
+            static_cast<int32_t>(popup->y) - static_cast<int32_t>(target.root_xsurface->y);
+        wlr_surface_for_each_surface(popup->surface, render_surface_iterator, &popup_context);
+    }
+}
+
+void CompositorServer::Impl::render_cursor_overlay(wlr_render_pass* pass) const {
+    const bool show_cursor =
+        cursor_visible.load(std::memory_order_acquire) &&
+        (!active_constraint || active_constraint->type != WLR_POINTER_CONSTRAINT_V1_LOCKED);
+    if (!show_cursor || !cursor_initialized || present_width == 0 || present_height == 0) {
+        return;
+    }
+
+    const auto* frame = get_cursor_frame(get_time_msec());
+    if (!frame || !frame->texture) {
+        return;
+    }
+
+    const int center_x = static_cast<int>(std::lround(cursor_x));
+    const int center_y = static_cast<int>(std::lround(cursor_y));
+    const int min_x = -static_cast<int>(frame->hotspot_x);
+    const int min_y = -static_cast<int>(frame->hotspot_y);
+    const int max_x = static_cast<int>(present_width - 1) - static_cast<int>(frame->hotspot_x);
+    const int max_y = static_cast<int>(present_height - 1) - static_cast<int>(frame->hotspot_y);
+    const int draw_x = std::clamp(center_x - static_cast<int>(frame->hotspot_x), min_x, max_x);
+    const int draw_y = std::clamp(center_y - static_cast<int>(frame->hotspot_y), min_y, max_y);
+
+    wlr_render_texture_options cursor_opts{};
+    cursor_opts.texture = frame->texture;
+    cursor_opts.src_box = wlr_fbox{
+        .x = 0.0,
+        .y = 0.0,
+        .width = static_cast<double>(frame->width),
+        .height = static_cast<double>(frame->height),
+    };
+    cursor_opts.dst_box = wlr_box{
+        .x = draw_x,
+        .y = draw_y,
+        .width = static_cast<int>(frame->width),
+        .height = static_cast<int>(frame->height),
+    };
+    cursor_opts.filter_mode = WLR_SCALE_FILTER_NEAREST;
+    cursor_opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
+    wlr_render_pass_add_texture(pass, &cursor_opts);
+}
+
 bool CompositorServer::Impl::render_surface_to_frame(const InputTarget& target) {
     wlr_surface* root_surface = target.root_surface ? target.root_surface : target.surface;
     if (!present_swapchain || !root_surface) {
@@ -2340,89 +2433,11 @@ bool CompositorServer::Impl::render_surface_to_frame(const InputTarget& target) 
         return false;
     }
 
-    RenderSurfaceContext render_context{};
-    render_context.pass = pass;
-
-    auto* root_xdg = get_root_xdg_surface(root_surface);
-    if (root_xdg && root_xdg->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
-        wlr_xdg_surface_for_each_surface(root_xdg, render_surface_iterator, &render_context);
-    } else {
-        wlr_surface_for_each_surface(root_surface, render_surface_iterator, &render_context);
-    }
-
+    render_root_surface_tree(pass, root_surface);
     if (target.root_xsurface) {
-        std::scoped_lock lock(hooks_mutex);
-        for (const auto* hooks : xwayland_hooks) {
-            if (!hooks->mapped || !hooks->override_redirect || !hooks->xsurface ||
-                !hooks->xsurface->surface) {
-                continue;
-            }
-
-            const auto* popup = hooks->xsurface;
-            const auto* parent = popup->parent;
-            bool belongs_to_root = false;
-            while (parent) {
-                if (parent == target.root_xsurface) {
-                    belongs_to_root = true;
-                    break;
-                }
-                parent = parent->parent;
-            }
-            if (!belongs_to_root && !popup->parent) {
-                belongs_to_root = true;
-            }
-            if (!belongs_to_root) {
-                continue;
-            }
-
-            RenderSurfaceContext popup_context{};
-            popup_context.pass = pass;
-            popup_context.offset_x =
-                static_cast<int32_t>(popup->x) - static_cast<int32_t>(target.root_xsurface->x);
-            popup_context.offset_y =
-                static_cast<int32_t>(popup->y) - static_cast<int32_t>(target.root_xsurface->y);
-            wlr_surface_for_each_surface(popup->surface, render_surface_iterator, &popup_context);
-        }
+        render_xwayland_popup_surfaces(pass, target);
     }
-
-    const bool show_cursor =
-        cursor_visible.load(std::memory_order_acquire) &&
-        (!active_constraint || active_constraint->type != WLR_POINTER_CONSTRAINT_V1_LOCKED);
-    if (show_cursor && cursor_initialized && present_width > 0 && present_height > 0) {
-        const auto* frame = get_cursor_frame(get_time_msec());
-        if (frame && frame->texture) {
-            const int center_x = static_cast<int>(std::lround(cursor_x));
-            const int center_y = static_cast<int>(std::lround(cursor_y));
-            const int min_x = -static_cast<int>(frame->hotspot_x);
-            const int min_y = -static_cast<int>(frame->hotspot_y);
-            const int max_x =
-                static_cast<int>(present_width - 1) - static_cast<int>(frame->hotspot_x);
-            const int max_y =
-                static_cast<int>(present_height - 1) - static_cast<int>(frame->hotspot_y);
-            const int draw_x =
-                std::clamp(center_x - static_cast<int>(frame->hotspot_x), min_x, max_x);
-            const int draw_y =
-                std::clamp(center_y - static_cast<int>(frame->hotspot_y), min_y, max_y);
-
-            wlr_render_texture_options cursor_opts{};
-            cursor_opts.texture = frame->texture;
-            cursor_opts.src_box = wlr_fbox{
-                .x = 0.0,
-                .y = 0.0,
-                .width = static_cast<double>(frame->width),
-                .height = static_cast<double>(frame->height),
-            };
-            cursor_opts.dst_box = wlr_box{
-                .x = draw_x,
-                .y = draw_y,
-                .width = static_cast<int>(frame->width),
-                .height = static_cast<int>(frame->height),
-            };
-            cursor_opts.filter_mode = WLR_SCALE_FILTER_NEAREST;
-            cursor_opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
-            wlr_render_pass_add_texture(pass, &cursor_opts);
-        }
-    }
+    render_cursor_overlay(pass);
 
     if (!wlr_render_pass_submit(pass)) {
         wlr_buffer_unlock(buffer);
