@@ -93,7 +93,6 @@ using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t heigh
 using PreChainParameterCallback = std::function<void(const std::string& name, float value)>;
 using PreChainScaleModeCallback = std::function<void(ScaleMode mode, uint32_t integer_scale)>;
 using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
-using SurfaceResetCallback = std::function<void()>;
 
 /// @brief ImGui overlay layer for shader control and debug widgets.
 class ImGuiLayer {
@@ -164,12 +163,8 @@ public:
 
     /// @brief Updates the displayed surface list.
     void set_surfaces(std::vector<input::SurfaceInfo> surfaces);
-    /// @brief Updates whether manual override is active.
-    void set_manual_override_active(bool active);
     /// @brief Sets the callback invoked when a surface is selected.
     void set_surface_select_callback(SurfaceSelectCallback callback);
-    /// @brief Sets the callback invoked when "Reset to Auto" is clicked.
-    void set_surface_reset_callback(SurfaceResetCallback callback);
 
     /// @brief Rebuilds ImGui resources after a swapchain format change.
     void rebuild_for_format(vk::Format new_format);
@@ -210,11 +205,9 @@ private:
     PreChainParameterCallback m_on_prechain_parameter;
     PreChainScaleModeCallback m_on_prechain_scale_mode;
     SurfaceSelectCallback m_on_surface_select;
-    SurfaceResetCallback m_on_surface_reset;
     std::vector<input::SurfaceInfo> m_surfaces;
     float m_last_display_scale = 1.0F;
     bool m_global_visible = true;
-    bool m_manual_override_active = false;
     bool m_initialized = false;
 
     static constexpr size_t K_FRAME_HISTORY_SIZE = 120;

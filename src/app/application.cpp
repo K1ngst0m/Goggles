@@ -220,12 +220,6 @@ auto Application::init_compositor_server(const util::AppDirs& app_dirs) -> Resul
             app_ptr->m_surface_frame.reset();
             app_ptr->m_last_source_frame_number = UINT64_MAX;
         });
-    m_imgui_layer->set_surface_reset_callback(
-        [app_ptr = this, compositor = m_compositor_server.get()]() {
-            compositor->clear_input_override();
-            app_ptr->m_surface_frame.reset();
-            app_ptr->m_last_source_frame_number = UINT64_MAX;
-        });
     return Result<void>{};
 }
 
@@ -546,7 +540,6 @@ void Application::sync_ui_state() {
     }
     if (m_compositor_server) {
         m_imgui_layer->set_surfaces(m_compositor_server->get_surfaces());
-        m_imgui_layer->set_manual_override_active(m_compositor_server->is_manual_override_active());
     }
 
     sync_prechain_ui();
