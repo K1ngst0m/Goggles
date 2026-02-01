@@ -435,8 +435,8 @@ struct CompositorServer::Impl {
     uint32_t present_height = 0;
     util::UniqueFd event_fd;
     uint32_t next_surface_id = 1;
-    static constexpr uint32_t NO_MANUAL_TARGET = 0;
-    std::atomic<uint32_t> manual_input_target{NO_MANUAL_TARGET};
+    static constexpr uint32_t NO_FOCUS_TARGET = 0;
+    std::atomic<uint32_t> pending_focus_target{NO_FOCUS_TARGET};
     std::atomic<bool> cursor_visible{true};
     bool cursor_initialized = false;
     std::atomic<bool> pointer_locked{false};
@@ -457,7 +457,10 @@ struct CompositorServer::Impl {
     [[nodiscard]] auto setup_cursor_theme() -> Result<void>;
     void start_compositor_thread();
 
+    bool wake_event_loop();
+    void request_focus_target(uint32_t surface_id);
     void process_input_events();
+    void handle_focus_request();
     void handle_key_event(const InputEvent& event, uint32_t time);
     void handle_pointer_motion_event(const InputEvent& event, uint32_t time);
     void handle_pointer_button_event(const InputEvent& event, uint32_t time);
@@ -484,6 +487,7 @@ struct CompositorServer::Impl {
     void deactivate_constraint();
     void focus_surface(wlr_surface* surface);
     void focus_xwayland_surface(wlr_xwayland_surface* xsurface);
+    bool focus_surface_by_id(uint32_t surface_id);
     void update_presented_frame(wlr_surface* surface);
     void refresh_presented_frame();
     void clear_presented_frame();
@@ -1037,12 +1041,10 @@ void CompositorServer::stop() {
 }
 
 auto CompositorServer::inject_event(const InputEvent& event) -> bool {
-    if (m_impl->event_queue.try_push(event)) {
-        uint64_t val = 1;
-        auto ret = write(m_impl->event_fd.get(), &val, sizeof(val));
-        return ret == sizeof(val);
+    if (!m_impl->event_queue.try_push(event)) {
+        return false;
     }
-    return false;
+    return m_impl->wake_event_loop();
 }
 
 auto CompositorServer::is_pointer_locked() const -> bool {
@@ -1080,7 +1082,33 @@ auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
     return frame;
 }
 
+bool CompositorServer::Impl::wake_event_loop() {
+    if (!event_fd.valid()) {
+        return false;
+    }
+    uint64_t val = 1;
+    auto ret = write(event_fd.get(), &val, sizeof(val));
+    return ret == sizeof(val);
+}
+
+void CompositorServer::Impl::request_focus_target(uint32_t surface_id) {
+    if (surface_id == NO_FOCUS_TARGET) {
+        return;
+    }
+    pending_focus_target.store(surface_id, std::memory_order_release);
+    wake_event_loop();
+}
+
+void CompositorServer::Impl::handle_focus_request() {
+    const auto focus_id = pending_focus_target.exchange(NO_FOCUS_TARGET, std::memory_order_acq_rel);
+    if (focus_id == NO_FOCUS_TARGET) {
+        return;
+    }
+    focus_surface_by_id(focus_id);
+}
+
 void CompositorServer::Impl::process_input_events() {
+    handle_focus_request();
     if (present_reset_requested.exchange(false, std::memory_order_acq_rel)) {
         refresh_presented_frame();
     }
@@ -1499,10 +1527,8 @@ void CompositorServer::Impl::handle_xdg_surface_ack_configure(XdgToplevelHooks* 
         return;
     }
 
-    if (manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
-        wlr_xdg_toplevel_set_activated(hooks->toplevel, true);
-        focus_surface(hooks->surface);
-    }
+    wlr_xdg_toplevel_set_activated(hooks->toplevel, true);
+    focus_surface(hooks->surface);
 }
 
 void CompositorServer::Impl::handle_xdg_surface_map(XdgToplevelHooks* hooks) {
@@ -1552,10 +1578,6 @@ void CompositorServer::Impl::handle_xdg_surface_destroy(XdgToplevelHooks* hooks)
 
     {
         std::scoped_lock lock(hooks_mutex);
-        if (manual_input_target.load(std::memory_order_relaxed) == hooks->id) {
-            manual_input_target.store(NO_MANUAL_TARGET, std::memory_order_relaxed);
-        }
-
         auto hook_it = std::find(xdg_hooks.begin(), xdg_hooks.end(), hooks);
         if (hook_it != xdg_hooks.end()) {
             xdg_hooks.erase(hook_it);
@@ -1653,10 +1675,9 @@ void CompositorServer::Impl::handle_xwayland_surface_associate(wlr_xwayland_surf
     if (hooks && hooks->map_requested && !hooks->mapped) {
         hooks->mapped = true;
 
-        if (!hooks->override_redirect &&
-            manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
+        if (!hooks->override_redirect) {
             focus_xwayland_surface(xsurface);
-        } else if (hooks->override_redirect) {
+        } else {
             request_present_reset();
         }
     }
@@ -1680,10 +1701,9 @@ void CompositorServer::Impl::handle_xwayland_surface_map_request(XWaylandSurface
 
     hooks->mapped = true;
 
-    if (!hooks->override_redirect &&
-        manual_input_target.load(std::memory_order_relaxed) == NO_MANUAL_TARGET) {
+    if (!hooks->override_redirect) {
         focus_xwayland_surface(xsurface);
-    } else if (hooks->override_redirect) {
+    } else {
         request_present_reset();
     }
 }
@@ -1715,9 +1735,6 @@ void CompositorServer::Impl::handle_xwayland_surface_destroy(wlr_xwayland_surfac
             xwayland_hooks.begin(), xwayland_hooks.end(),
             [xsurface](const XWaylandSurfaceHooks* h) { return h->xsurface == xsurface; });
         if (hook_it != xwayland_hooks.end()) {
-            if (manual_input_target.load(std::memory_order_relaxed) == (*hook_it)->id) {
-                manual_input_target.store(NO_MANUAL_TARGET, std::memory_order_relaxed);
-            }
             xwayland_hooks.erase(hook_it);
         }
     }
@@ -1969,6 +1986,46 @@ void CompositorServer::Impl::focus_xwayland_surface(wlr_xwayland_surface* xsurfa
     refresh_presented_frame();
 }
 
+bool CompositorServer::Impl::focus_surface_by_id(uint32_t surface_id) {
+    wlr_xwayland_surface* xwayland_target = nullptr;
+    wlr_surface* xdg_surface_target = nullptr;
+    wlr_xdg_toplevel* xdg_toplevel_target = nullptr;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        for (auto* hooks : xwayland_hooks) {
+            if (hooks->override_redirect) {
+                continue;
+            }
+            if (hooks->id == surface_id && hooks->xsurface && hooks->xsurface->surface) {
+                xwayland_target = hooks->xsurface;
+                break;
+            }
+        }
+        if (!xwayland_target) {
+            for (auto* hooks : xdg_hooks) {
+                if (hooks->id == surface_id && hooks->surface && hooks->toplevel) {
+                    xdg_surface_target = hooks->surface;
+                    xdg_toplevel_target = hooks->toplevel;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (xwayland_target) {
+        focus_xwayland_surface(xwayland_target);
+        return true;
+    }
+
+    if (xdg_surface_target && xdg_toplevel_target) {
+        wlr_xdg_toplevel_set_activated(xdg_toplevel_target, true);
+        focus_surface(xdg_surface_target);
+        return true;
+    }
+
+    return false;
+}
+
 void CompositorServer::Impl::clear_presented_frame() {
     std::scoped_lock lock(present_mutex);
     if (presented_buffer) {
@@ -1981,10 +2038,7 @@ void CompositorServer::Impl::clear_presented_frame() {
 
 void CompositorServer::Impl::request_present_reset() {
     if (!present_reset_requested.exchange(true, std::memory_order_acq_rel)) {
-        if (event_fd.valid()) {
-            uint64_t val = 1;
-            static_cast<void>(write(event_fd.get(), &val, sizeof(val)));
-        }
+        wake_event_loop();
     }
 }
 
@@ -2494,38 +2548,11 @@ auto CompositorServer::Impl::get_root_input_target() -> InputTarget {
     wlr_surface* root_surface = nullptr;
     wlr_xwayland_surface* root_xsurface = nullptr;
 
-    {
-        std::scoped_lock lock(hooks_mutex);
-        const auto manual_id = manual_input_target.load(std::memory_order_relaxed);
-        if (manual_id != NO_MANUAL_TARGET) {
-            for (const auto* hooks : xwayland_hooks) {
-                if (hooks->override_redirect) {
-                    continue;
-                }
-                if (hooks->id == manual_id && hooks->xsurface && hooks->xsurface->surface) {
-                    root_xsurface = hooks->xsurface;
-                    root_surface = hooks->xsurface->surface;
-                    break;
-                }
-            }
-            if (!root_surface) {
-                for (const auto* hooks : xdg_hooks) {
-                    if (hooks->id == manual_id && hooks->surface) {
-                        root_surface = hooks->surface;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if (!root_surface) {
-        if (focused_xsurface && focused_xsurface->surface) {
-            root_xsurface = focused_xsurface;
-            root_surface = focused_xsurface->surface;
-        } else if (focused_surface) {
-            root_surface = focused_surface;
-        }
+    if (focused_xsurface && focused_xsurface->surface) {
+        root_xsurface = focused_xsurface;
+        root_surface = focused_xsurface->surface;
+    } else if (focused_surface) {
+        root_surface = focused_surface;
     }
 
     if (!root_surface) {
@@ -2670,18 +2697,20 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
     std::vector<SurfaceInfo> result;
 
     uint32_t target_id = 0;
-    const auto manual_id = m_impl->manual_input_target.load(std::memory_order_relaxed);
-    if (manual_id != Impl::NO_MANUAL_TARGET) {
-        target_id = manual_id;
-    } else {
-        if (!m_impl->xwayland_hooks.empty()) {
-            for (auto* hooks : m_impl->xwayland_hooks) {
-                if (!hooks->override_redirect) {
-                    target_id = hooks->id;
-                }
+    if (m_impl->focused_xsurface && m_impl->focused_xsurface->surface) {
+        for (auto* hooks : m_impl->xwayland_hooks) {
+            if (!hooks->override_redirect && hooks->xsurface == m_impl->focused_xsurface) {
+                target_id = hooks->id;
+                break;
             }
-        } else if (!m_impl->xdg_hooks.empty()) {
-            target_id = m_impl->xdg_hooks.back()->id;
+        }
+    }
+    if (target_id == 0 && m_impl->focused_surface) {
+        for (auto* hooks : m_impl->xdg_hooks) {
+            if (hooks->surface == m_impl->focused_surface) {
+                target_id = hooks->id;
+                break;
+            }
         }
     }
 
@@ -2721,41 +2750,8 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
     return result;
 }
 
-auto CompositorServer::is_manual_override_active() const -> bool {
-    std::scoped_lock lock(m_impl->hooks_mutex);
-    return m_impl->manual_input_target.load(std::memory_order_relaxed) != Impl::NO_MANUAL_TARGET;
-}
-
 void CompositorServer::set_input_target(uint32_t surface_id) {
-    std::scoped_lock lock(m_impl->hooks_mutex);
-    bool found = false;
-    for (const auto* hooks : m_impl->xwayland_hooks) {
-        if (hooks->override_redirect) {
-            continue;
-        }
-        if (hooks->id == surface_id) {
-            found = true;
-            break;
-        }
-    }
-    if (!found) {
-        for (const auto* hooks : m_impl->xdg_hooks) {
-            if (hooks->id == surface_id) {
-                found = true;
-                break;
-            }
-        }
-    }
-    if (found) {
-        m_impl->manual_input_target.store(surface_id, std::memory_order_relaxed);
-    }
-    m_impl->request_present_reset();
-}
-
-void CompositorServer::clear_input_override() {
-    std::scoped_lock lock(m_impl->hooks_mutex);
-    m_impl->manual_input_target.store(Impl::NO_MANUAL_TARGET, std::memory_order_relaxed);
-    m_impl->request_present_reset();
+    m_impl->request_focus_target(surface_id);
 }
 
 } // namespace goggles::input

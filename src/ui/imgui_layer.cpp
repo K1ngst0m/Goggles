@@ -407,16 +407,8 @@ void ImGuiLayer::set_surfaces(std::vector<input::SurfaceInfo> surfaces) {
     m_surfaces = std::move(surfaces);
 }
 
-void ImGuiLayer::set_manual_override_active(bool active) {
-    m_manual_override_active = active;
-}
-
 void ImGuiLayer::set_surface_select_callback(SurfaceSelectCallback callback) {
     m_on_surface_select = std::move(callback);
-}
-
-void ImGuiLayer::set_surface_reset_callback(SurfaceResetCallback callback) {
-    m_on_surface_reset = std::move(callback);
 }
 
 auto ImGuiLayer::wants_capture_keyboard() const -> bool {
@@ -742,8 +734,6 @@ void ImGuiLayer::draw_app_management() {
             if (m_surfaces.empty()) {
                 ImGui::TextDisabled("No surfaces connected");
             } else {
-                ImGui::Text("Mode: %s", m_manual_override_active ? "Manual" : "Auto");
-
                 for (const auto& surface : m_surfaces) {
                     ImGui::PushID(static_cast<int>(surface.id));
 
@@ -781,13 +771,6 @@ void ImGuiLayer::draw_app_management() {
                     }
 
                     ImGui::PopID();
-                }
-
-                ImGui::Separator();
-                if (ImGui::Button("Reset to Auto")) {
-                    if (m_on_surface_reset) {
-                        m_on_surface_reset();
-                    }
                 }
             }
         }
