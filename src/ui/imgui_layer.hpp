@@ -80,6 +80,7 @@ struct ShaderControlState {
     std::vector<ParameterState> parameters;
     std::array<char, 256> search_filter{};
     bool shader_enabled = false;
+    bool window_filter_chain_enabled = true;
     int selected_preset_index = -1;
     bool reload_requested = false;
     bool parameters_dirty = false;
@@ -93,6 +94,7 @@ using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t heigh
 using PreChainParameterCallback = std::function<void(const std::string& name, float value)>;
 using PreChainScaleModeCallback = std::function<void(ScaleMode mode, uint32_t integer_scale)>;
 using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
+using SurfaceFilterToggleCallback = std::function<void(uint32_t surface_id, bool enabled)>;
 
 /// @brief ImGui overlay layer for shader control and debug widgets.
 class ImGuiLayer {
@@ -165,6 +167,8 @@ public:
     void set_surfaces(std::vector<input::SurfaceInfo> surfaces);
     /// @brief Sets the callback invoked when a surface is selected.
     void set_surface_select_callback(SurfaceSelectCallback callback);
+    /// @brief Sets the callback invoked when a surface filter toggle changes.
+    void set_surface_filter_toggle_callback(SurfaceFilterToggleCallback callback);
 
     /// @brief Rebuilds ImGui resources after a swapchain format change.
     void rebuild_for_format(vk::Format new_format);
@@ -205,6 +209,7 @@ private:
     PreChainParameterCallback m_on_prechain_parameter;
     PreChainScaleModeCallback m_on_prechain_scale_mode;
     SurfaceSelectCallback m_on_surface_select;
+    SurfaceFilterToggleCallback m_on_surface_filter_toggle;
     std::vector<input::SurfaceInfo> m_surfaces;
     float m_last_display_scale = 1.0F;
     bool m_global_visible = true;

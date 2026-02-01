@@ -493,10 +493,14 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
     m_last_integer_scale = integer_scale;
     m_last_source_extent = original_extent;
 
-    GOGGLES_MUST(ensure_prechain_passes(original_extent));
-
-    auto [effective_original_view, effective_original_extent] =
-        record_prechain(cmd, original_view, original_extent, frame_index);
+    vk::ImageView effective_original_view = original_view;
+    vk::Extent2D effective_original_extent = original_extent;
+    if (m_prechain_enabled.load(std::memory_order_relaxed)) {
+        GOGGLES_MUST(ensure_prechain_passes(original_extent));
+        auto prechain_result = record_prechain(cmd, original_view, original_extent, frame_index);
+        effective_original_view = prechain_result.view;
+        effective_original_extent = prechain_result.extent;
+    }
 
     GOGGLES_MUST(ensure_frame_history(effective_original_extent));
 

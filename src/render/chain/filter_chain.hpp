@@ -78,6 +78,12 @@ public:
     [[nodiscard]] auto is_bypass() const -> bool {
         return m_bypass_enabled.load(std::memory_order_relaxed);
     }
+    void set_prechain_enabled(bool enabled) {
+        m_prechain_enabled.store(enabled, std::memory_order_relaxed);
+    }
+    [[nodiscard]] auto is_prechain_enabled() const -> bool {
+        return m_prechain_enabled.load(std::memory_order_relaxed);
+    }
 
     /// @brief Computes the output extent for a pass given input sizes and scaling rules.
     [[nodiscard]] static auto calculate_pass_output_size(const ShaderPassConfig& pass_config,
@@ -157,6 +163,7 @@ private:
     FrameHistory m_frame_history;
     uint32_t m_required_history_depth = 0;
     std::atomic<bool> m_bypass_enabled{false};
+    std::atomic<bool> m_prechain_enabled{true};
 
     // Pre-chain stage
     vk::Extent2D m_source_resolution; // 0,0 = disabled

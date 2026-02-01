@@ -411,6 +411,10 @@ void ImGuiLayer::set_surface_select_callback(SurfaceSelectCallback callback) {
     m_on_surface_select = std::move(callback);
 }
 
+void ImGuiLayer::set_surface_filter_toggle_callback(SurfaceFilterToggleCallback callback) {
+    m_on_surface_filter_toggle = std::move(callback);
+}
+
 auto ImGuiLayer::wants_capture_keyboard() const -> bool {
     return ImGui::GetIO().WantCaptureKeyboard;
 }
@@ -729,13 +733,33 @@ void ImGuiLayer::draw_app_management() {
                 static_cast<int>(m_source_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 40));
         }
 
-        if (ImGui::CollapsingHeader("Input", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("Input Target");
+        if (ImGui::CollapsingHeader("Window Management", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Checkbox("Filter Chain (All Surfaces)", &m_state.window_filter_chain_enabled);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Toggle filter chain for all surfaces in this session");
+            }
+            ImGui::Separator();
+            ImGui::Text("Surface List");
             if (m_surfaces.empty()) {
                 ImGui::TextDisabled("No surfaces connected");
             } else {
                 for (const auto& surface : m_surfaces) {
                     ImGui::PushID(static_cast<int>(surface.id));
+
+                    bool filter_enabled = surface.filter_chain_enabled;
+                    if (ImGui::Checkbox("FX", &filter_enabled)) {
+                        if (m_on_surface_filter_toggle) {
+                            m_on_surface_filter_toggle(surface.id, filter_enabled);
+                        }
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        if (!m_state.window_filter_chain_enabled) {
+                            ImGui::SetTooltip("Per-surface filter chain (global bypass is active)");
+                        } else {
+                            ImGui::SetTooltip("Toggle filter chain for this surface");
+                        }
+                    }
+                    ImGui::SameLine();
 
                     bool is_selected = surface.is_input_target;
                     std::string label;

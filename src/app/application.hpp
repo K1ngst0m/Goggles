@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/external_image.hpp>
@@ -73,6 +74,15 @@ private:
     void update_cursor_visibility();
     void update_mouse_grab();
     void sync_prechain_ui();
+    void sync_surface_filters(std::vector<input::SurfaceInfo>& surfaces);
+    void update_surface_resize_for_surfaces(const std::vector<input::SurfaceInfo>& surfaces);
+    [[nodiscard]] auto compute_global_filter_chain_enabled() const -> bool;
+    [[nodiscard]] auto compute_surface_filter_chain_enabled(uint32_t surface_id) const -> bool;
+    [[nodiscard]] auto compute_global_effect_stage_enabled() const -> bool;
+    [[nodiscard]] auto compute_surface_effect_stage_enabled(uint32_t surface_id) const -> bool;
+    void request_surface_resize(uint32_t surface_id, bool maximize);
+    void set_surface_filter_enabled(uint32_t surface_id, bool enabled);
+    [[nodiscard]] auto is_surface_filter_enabled(uint32_t surface_id) const -> bool;
 
     SDL_Window* m_window = nullptr;
     bool m_sdl_initialized = false;
@@ -81,6 +91,22 @@ private:
     std::unique_ptr<CaptureReceiver> m_capture_receiver;
     std::unique_ptr<input::CompositorServer> m_compositor_server;
     std::optional<util::ExternalImageFrame> m_surface_frame;
+
+    struct SurfaceResizeState {
+        bool maximized = false;
+        uint32_t width = 0;
+        uint32_t height = 0;
+    };
+    struct SurfaceRuntimeState {
+        bool filter_enabled = false;
+        SurfaceResizeState resize;
+        bool has_resize_state = false;
+        uint32_t restore_width = 0;
+        uint32_t restore_height = 0;
+        bool has_restore_size = false;
+    };
+    std::unordered_map<uint32_t, SurfaceRuntimeState> m_surface_state;
+    uint32_t m_active_surface_id = 0;
 
     bool m_running = true;
     bool m_window_resized = false;
