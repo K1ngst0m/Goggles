@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <ctime>
 #include <fcntl.h>
+#include <limits>
 #include <linux/input-event-codes.h>
 #include <memory>
 #include <mutex>
@@ -304,6 +305,11 @@ using UniqueKeyboard = std::unique_ptr<wlr_keyboard, KeyboardDeleter>;
 } // anonymous namespace
 
 struct CompositorServer::Impl {
+    struct SurfaceResizeRequest {
+        uint32_t surface_id = 0;
+        SurfaceResizeInfo resize;
+    };
+
     struct XWaylandSurfaceHooks {
         Impl* impl = nullptr;
         wlr_xwayland_surface* xsurface = nullptr;
@@ -389,6 +395,7 @@ struct CompositorServer::Impl {
     };
     // Fields ordered for optimal padding
     util::SPSCQueue<InputEvent> event_queue{64};
+    util::SPSCQueue<SurfaceResizeRequest> resize_queue{64};
     wl_display* display = nullptr;
     wl_event_loop* event_loop = nullptr;
     wl_event_source* event_source = nullptr;
@@ -459,8 +466,10 @@ struct CompositorServer::Impl {
 
     bool wake_event_loop();
     void request_focus_target(uint32_t surface_id);
+    void request_surface_resize(uint32_t surface_id, const SurfaceResizeInfo& resize);
     void process_input_events();
     void handle_focus_request();
+    void handle_surface_resize_requests();
     void handle_key_event(const InputEvent& event, uint32_t time);
     void handle_pointer_motion_event(const InputEvent& event, uint32_t time);
     void handle_pointer_button_event(const InputEvent& event, uint32_t time);
@@ -517,6 +526,7 @@ struct CompositorServer::Impl {
     void apply_cursor_hint_if_needed();
     void auto_focus_next_surface();
     void update_cursor_position(const InputEvent& event, const InputTarget& root_target);
+    void apply_surface_resize_request(const SurfaceResizeRequest& request);
 };
 
 CompositorServer::CompositorServer() : m_impl(std::make_unique<Impl>()) {}
@@ -1099,6 +1109,20 @@ void CompositorServer::Impl::request_focus_target(uint32_t surface_id) {
     wake_event_loop();
 }
 
+void CompositorServer::Impl::request_surface_resize(uint32_t surface_id,
+                                                    const SurfaceResizeInfo& resize) {
+    if (surface_id == NO_FOCUS_TARGET) {
+        return;
+    }
+    SurfaceResizeRequest request{};
+    request.surface_id = surface_id;
+    request.resize = resize;
+    if (!resize_queue.try_push(request)) {
+        return;
+    }
+    wake_event_loop();
+}
+
 void CompositorServer::Impl::handle_focus_request() {
     const auto focus_id = pending_focus_target.exchange(NO_FOCUS_TARGET, std::memory_order_acq_rel);
     if (focus_id == NO_FOCUS_TARGET) {
@@ -1107,8 +1131,15 @@ void CompositorServer::Impl::handle_focus_request() {
     focus_surface_by_id(focus_id);
 }
 
+void CompositorServer::Impl::handle_surface_resize_requests() {
+    while (auto request_opt = resize_queue.try_pop()) {
+        apply_surface_resize_request(*request_opt);
+    }
+}
+
 void CompositorServer::Impl::process_input_events() {
     handle_focus_request();
+    handle_surface_resize_requests();
     if (present_reset_requested.exchange(false, std::memory_order_acq_rel)) {
         refresh_presented_frame();
     }
@@ -2042,6 +2073,59 @@ void CompositorServer::Impl::request_present_reset() {
     }
 }
 
+void CompositorServer::Impl::apply_surface_resize_request(const SurfaceResizeRequest& request) {
+    if (request.surface_id == NO_FOCUS_TARGET) {
+        return;
+    }
+
+    XdgToplevelHooks* xdg_hooks_entry = nullptr;
+    XWaylandSurfaceHooks* xwayland_hooks_entry = nullptr;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        for (auto* hooks : xdg_hooks) {
+            if (hooks && hooks->id == request.surface_id) {
+                xdg_hooks_entry = hooks;
+                break;
+            }
+        }
+        if (!xdg_hooks_entry) {
+            for (auto* hooks : xwayland_hooks) {
+                if (hooks && hooks->id == request.surface_id) {
+                    xwayland_hooks_entry = hooks;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (xdg_hooks_entry && xdg_hooks_entry->toplevel) {
+        wlr_xdg_toplevel_set_maximized(xdg_hooks_entry->toplevel, request.resize.maximized);
+        if (request.resize.width > 0 && request.resize.height > 0) {
+            wlr_xdg_toplevel_set_size(xdg_hooks_entry->toplevel,
+                                      static_cast<int>(request.resize.width),
+                                      static_cast<int>(request.resize.height));
+        } else {
+            wlr_xdg_toplevel_set_size(xdg_hooks_entry->toplevel, 0, 0);
+        }
+        request_present_reset();
+        return;
+    }
+
+    if (xwayland_hooks_entry && xwayland_hooks_entry->xsurface) {
+        auto* xsurface = xwayland_hooks_entry->xsurface;
+        wlr_xwayland_surface_set_maximized(xsurface, request.resize.maximized);
+        if (request.resize.width > 0 && request.resize.height > 0) {
+            const uint16_t width = static_cast<uint16_t>(
+                std::min<uint32_t>(request.resize.width, std::numeric_limits<uint16_t>::max()));
+            const uint16_t height = static_cast<uint16_t>(
+                std::min<uint32_t>(request.resize.height, std::numeric_limits<uint16_t>::max()));
+            wlr_xwayland_surface_configure(xsurface, static_cast<int16_t>(xsurface->x),
+                                           static_cast<int16_t>(xsurface->y), width, height);
+        }
+        request_present_reset();
+    }
+}
+
 void CompositorServer::Impl::set_cursor_visible(bool visible) {
     bool previous = cursor_visible.exchange(visible, std::memory_order_acq_rel);
     if (previous != visible) {
@@ -2729,6 +2813,7 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
         info.height = hooks->xsurface->height;
         info.is_xwayland = true;
         info.is_input_target = (info.id == target_id);
+        info.capture_path = SurfaceCapturePath::compositor;
         result.push_back(std::move(info));
     }
 
@@ -2744,6 +2829,7 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
         info.height = hooks->toplevel->current.height;
         info.is_xwayland = false;
         info.is_input_target = (info.id == target_id);
+        info.capture_path = SurfaceCapturePath::compositor;
         result.push_back(std::move(info));
     }
 
@@ -2752,6 +2838,11 @@ auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
 
 void CompositorServer::set_input_target(uint32_t surface_id) {
     m_impl->request_focus_target(surface_id);
+}
+
+void CompositorServer::request_surface_resize(uint32_t surface_id,
+                                              const SurfaceResizeInfo& resize) {
+    m_impl->request_surface_resize(surface_id, resize);
 }
 
 } // namespace goggles::input

@@ -60,6 +60,11 @@ public:
 
     /// @brief Enables or disables shader processing (bypass mode).
     void set_shader_enabled(bool enabled);
+    void set_prechain_enabled(bool enabled) {
+        if (m_filter_chain) {
+            m_filter_chain->set_prechain_enabled(enabled);
+        }
+    }
 
     using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
     /// @brief Renders a captured frame or clears the swapchain when no frame is provided.
@@ -95,6 +100,12 @@ public:
     }
     [[nodiscard]] auto filter_chain() -> FilterChain* { return m_filter_chain.get(); }
     [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
+    void set_prechain_resolution(uint32_t width, uint32_t height) {
+        m_source_resolution = vk::Extent2D{width, height};
+        if (m_filter_chain) {
+            m_filter_chain->set_prechain_resolution(width, height);
+        }
+    }
     [[nodiscard]] auto get_captured_extent() const -> vk::Extent2D { return m_import_extent; }
     [[nodiscard]] auto get_scale_mode() const -> ScaleMode { return m_scale_mode; }
     [[nodiscard]] auto get_integer_scale() const -> uint32_t { return m_integer_scale; }

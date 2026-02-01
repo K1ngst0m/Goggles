@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <ui/imgui_layer.hpp>
+#include <unordered_set>
 #include <util/config.hpp>
 #include <util/drm_fourcc.hpp>
 #include <util/logging.hpp>
@@ -163,7 +164,7 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
         });
     m_imgui_layer->set_prechain_change_callback(
         [&backend = *m_vulkan_backend](uint32_t width, uint32_t height) {
-            backend.filter_chain()->set_prechain_resolution(width, height);
+            backend.set_prechain_resolution(width, height);
         });
     m_imgui_layer->set_prechain_parameter_callback(
         [&backend = *m_vulkan_backend](const std::string& name, float value) {
@@ -220,6 +221,10 @@ auto Application::init_compositor_server(const util::AppDirs& app_dirs) -> Resul
             app_ptr->m_surface_frame.reset();
             app_ptr->m_last_source_frame_number = UINT64_MAX;
         });
+    m_imgui_layer->set_surface_filter_toggle_callback([this](uint32_t surface_id, bool enabled) {
+        set_surface_filter_enabled(surface_id, enabled);
+        request_surface_resize(surface_id, !compute_surface_filter_chain_enabled(surface_id));
+    });
     return Result<void>{};
 }
 
@@ -408,8 +413,7 @@ void Application::sync_prechain_ui() {
         if (captured.width > 0 && captured.height > 0) {
             m_imgui_layer->set_prechain_state(captured, m_vulkan_backend->get_scale_mode(),
                                               m_vulkan_backend->get_integer_scale());
-            m_vulkan_backend->filter_chain()->set_prechain_resolution(captured.width,
-                                                                      captured.height);
+            m_vulkan_backend->set_prechain_resolution(captured.width, captured.height);
         }
     }
 
@@ -418,6 +422,151 @@ void Application::sync_prechain_ui() {
         if (!params.empty()) {
             m_imgui_layer->set_prechain_parameters(std::move(params));
         }
+    }
+}
+
+void Application::sync_surface_filters(std::vector<input::SurfaceInfo>& surfaces) {
+    std::unordered_set<uint32_t> seen;
+    seen.reserve(surfaces.size());
+
+    for (auto& surface : surfaces) {
+        seen.insert(surface.id);
+        auto it = m_surface_state.find(surface.id);
+        if (it == m_surface_state.end()) {
+            SurfaceRuntimeState state{};
+            state.filter_enabled = surface.capture_path == input::SurfaceCapturePath::vulkan;
+            it = m_surface_state.emplace(surface.id, state).first;
+        }
+        surface.filter_chain_enabled = it->second.filter_enabled;
+        if (surface.width > 0 && surface.height > 0) {
+            if (!it->second.has_resize_state || !it->second.resize.maximized) {
+                it->second.restore_width = static_cast<uint32_t>(surface.width);
+                it->second.restore_height = static_cast<uint32_t>(surface.height);
+                it->second.has_restore_size = true;
+            }
+        }
+    }
+
+    for (auto it = m_surface_state.begin(); it != m_surface_state.end();) {
+        if (!seen.contains(it->first)) {
+            it = m_surface_state.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    uint32_t active_id = 0;
+    for (const auto& surface : surfaces) {
+        if (surface.is_input_target) {
+            active_id = surface.id;
+            break;
+        }
+    }
+    m_active_surface_id = active_id;
+}
+
+auto Application::compute_global_filter_chain_enabled() const -> bool {
+    if (!m_imgui_layer) {
+        return true;
+    }
+    const auto& state = m_imgui_layer->state();
+    return state.window_filter_chain_enabled;
+}
+
+auto Application::compute_surface_filter_chain_enabled(uint32_t surface_id) const -> bool {
+    if (!compute_global_filter_chain_enabled()) {
+        return false;
+    }
+    if (surface_id == 0) {
+        return true;
+    }
+    return is_surface_filter_enabled(surface_id);
+}
+
+auto Application::compute_global_effect_stage_enabled() const -> bool {
+    if (!m_imgui_layer) {
+        return true;
+    }
+    const auto& state = m_imgui_layer->state();
+    return state.shader_enabled && state.window_filter_chain_enabled;
+}
+
+auto Application::compute_surface_effect_stage_enabled(uint32_t surface_id) const -> bool {
+    if (!compute_global_effect_stage_enabled()) {
+        return false;
+    }
+    if (surface_id == 0) {
+        return true;
+    }
+    return is_surface_filter_enabled(surface_id);
+}
+
+void Application::set_surface_filter_enabled(uint32_t surface_id, bool enabled) {
+    if (surface_id == 0) {
+        return;
+    }
+    auto it = m_surface_state.find(surface_id);
+    if (it == m_surface_state.end()) {
+        return;
+    }
+    it->second.filter_enabled = enabled;
+}
+
+auto Application::is_surface_filter_enabled(uint32_t surface_id) const -> bool {
+    auto it = m_surface_state.find(surface_id);
+    return it != m_surface_state.end() ? it->second.filter_enabled : false;
+}
+
+void Application::request_surface_resize(uint32_t surface_id, bool maximize) {
+    if (!m_compositor_server || surface_id == 0) {
+        return;
+    }
+
+    auto extent = m_vulkan_backend->swapchain_extent();
+    if (extent.width == 0 || extent.height == 0) {
+        return;
+    }
+
+    auto it = m_surface_state.find(surface_id);
+    if (it == m_surface_state.end()) {
+        return;
+    }
+    auto& surface_state = it->second;
+
+    SurfaceResizeState desired{};
+    desired.maximized = maximize;
+    if (maximize) {
+        desired.width = extent.width;
+        desired.height = extent.height;
+    } else if (surface_state.has_restore_size) {
+        desired.width = surface_state.restore_width;
+        desired.height = surface_state.restore_height;
+    }
+
+    if (surface_state.has_resize_state) {
+        if (surface_state.resize.maximized == desired.maximized &&
+            surface_state.resize.width == desired.width &&
+            surface_state.resize.height == desired.height) {
+            return;
+        }
+    }
+
+    surface_state.resize = desired;
+    surface_state.has_resize_state = true;
+    input::SurfaceResizeInfo resize{};
+    resize.width = desired.width;
+    resize.height = desired.height;
+    resize.maximized = desired.maximized;
+    m_compositor_server->request_surface_resize(surface_id, resize);
+}
+
+void Application::update_surface_resize_for_surfaces(
+    const std::vector<input::SurfaceInfo>& surfaces) {
+    const bool global_enabled = compute_global_filter_chain_enabled();
+    for (const auto& surface : surfaces) {
+        const bool surface_enabled = is_surface_filter_enabled(surface.id);
+        const bool should_maximize = !(global_enabled && surface_enabled);
+        request_surface_resize(surface.id, should_maximize);
     }
 }
 
@@ -525,7 +674,6 @@ void Application::sync_ui_state() {
     }
 
     auto& state = m_imgui_layer->state();
-    m_vulkan_backend->set_shader_enabled(state.shader_enabled);
     if (state.reload_requested) {
         state.reload_requested = false;
         if (state.selected_preset_index >= 0 &&
@@ -539,7 +687,10 @@ void Application::sync_ui_state() {
         }
     }
     if (m_compositor_server) {
-        m_imgui_layer->set_surfaces(m_compositor_server->get_surfaces());
+        auto surfaces = m_compositor_server->get_surfaces();
+        sync_surface_filters(surfaces);
+        update_surface_resize_for_surfaces(surfaces);
+        m_imgui_layer->set_surfaces(std::move(surfaces));
     }
 
     sync_prechain_ui();
@@ -559,6 +710,7 @@ void Application::render_frame() {
 
     const util::ExternalImageFrame* source_frame = nullptr;
     uint64_t source_frame_number = 0;
+    bool using_surface_frame = false;
 
     if (m_capture_receiver->has_frame()) {
         source_frame = &m_capture_receiver->get_frame();
@@ -572,6 +724,7 @@ void Application::render_frame() {
             if (m_surface_frame->image.handle) {
                 source_frame = &m_surface_frame.value();
                 source_frame_number = m_surface_frame->frame_number;
+                using_surface_frame = true;
             }
         }
     }
@@ -580,6 +733,16 @@ void Application::render_frame() {
         m_last_source_frame_number = source_frame_number;
         m_imgui_layer->notify_source_frame();
     }
+
+    const bool filter_chain_enabled =
+        using_surface_frame ? compute_surface_filter_chain_enabled(m_active_surface_id)
+                            : compute_global_filter_chain_enabled();
+    m_vulkan_backend->set_prechain_enabled(filter_chain_enabled);
+
+    const bool effect_stage_enabled =
+        using_surface_frame ? compute_surface_effect_stage_enabled(m_active_surface_id)
+                            : compute_global_effect_stage_enabled();
+    m_vulkan_backend->set_shader_enabled(effect_stage_enabled);
 
     auto ui_callback = [this](vk::CommandBuffer cmd, vk::ImageView view, vk::Extent2D extent) {
         m_imgui_layer->end_frame();
