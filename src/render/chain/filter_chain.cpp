@@ -613,24 +613,8 @@ auto FilterChain::handle_resize(vk::Extent2D new_viewport_extent) -> Result<void
                                  new_viewport_extent.width, new_viewport_extent.height,
                                  m_last_scale_mode, m_last_integer_scale);
 
-    for (size_t i = 0; i < m_framebuffers.size(); ++i) {
-        const auto& pass_config = m_preset.passes[i];
-        if (pass_config.scale_type_x == ScaleType::viewport ||
-            pass_config.scale_type_y == ScaleType::viewport) {
-            vk::Extent2D prev_extent =
-                (i == 0) ? m_last_source_extent : m_framebuffers[i - 1]->extent();
-            auto new_size =
-                calculate_pass_output_size(pass_config, prev_extent, {vp.width, vp.height});
-
-            GOGGLES_LOG_DEBUG("handle_resize: fb[{}] current={}x{}, new={}x{}", i,
-                              m_framebuffers[i]->extent().width, m_framebuffers[i]->extent().height,
-                              new_size.width, new_size.height);
-
-            if (m_framebuffers[i]->extent() != new_size) {
-                GOGGLES_TRY(m_framebuffers[i]->resize(new_size));
-            }
-        }
-    }
+    GOGGLES_TRY(ensure_framebuffers(
+        {.viewport = new_viewport_extent, .source = m_last_source_extent}, {vp.width, vp.height}));
     return {};
 }
 
