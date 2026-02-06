@@ -215,9 +215,16 @@ struct RenderSurfaceContext {
     int32_t offset_y = 0;
 };
 
-auto format_wlr_message(const char* format, va_list args) -> std::string {
+enum class WlrLogFormatStatus : std::uint8_t { ok, null_format, format_error };
+
+struct FormattedWlrMessage {
+    std::string message;
+    WlrLogFormatStatus status = WlrLogFormatStatus::ok;
+};
+
+auto format_wlr_message(const char* format, va_list args) -> FormattedWlrMessage {
     if (!format) {
-        return {};
+        return {.message = {}, .status = WlrLogFormatStatus::null_format};
     }
 
     std::array<char, 512> buffer{};
@@ -227,7 +234,7 @@ auto format_wlr_message(const char* format, va_list args) -> std::string {
     va_end(args_copy);
 
     if (length < 0) {
-        return {};
+        return {.message = {}, .status = WlrLogFormatStatus::format_error};
     }
 
     if (static_cast<size_t>(length) < buffer.size()) {
@@ -235,7 +242,7 @@ auto format_wlr_message(const char* format, va_list args) -> std::string {
         while (!message.empty() && message.back() == '\n') {
             message.pop_back();
         }
-        return message;
+        return {.message = std::move(message), .status = WlrLogFormatStatus::ok};
     }
 
     std::string message(static_cast<size_t>(length) + 1, '\0');
@@ -246,7 +253,7 @@ auto format_wlr_message(const char* format, va_list args) -> std::string {
     while (!message.empty() && message.back() == '\n') {
         message.pop_back();
     }
-    return message;
+    return {.message = std::move(message), .status = WlrLogFormatStatus::ok};
 }
 
 auto wlr_importance_from_log_level(spdlog::level::level_enum level) -> wlr_log_importance {
@@ -263,20 +270,30 @@ auto wlr_importance_from_log_level(spdlog::level::level_enum level) -> wlr_log_i
 }
 
 void wlr_log_bridge(wlr_log_importance importance, const char* format, va_list args) {
-    std::string message = format_wlr_message(format, args);
-    if (message.empty()) {
+    const FormattedWlrMessage formatted = format_wlr_message(format, args);
+    if (formatted.status != WlrLogFormatStatus::ok) {
+        if (formatted.status == WlrLogFormatStatus::null_format) {
+            GOGGLES_LOG_WARN("[wlr] log formatting failed: null format string");
+        } else {
+            GOGGLES_LOG_WARN("[wlr] log formatting failed for format '{}'",
+                             format ? format : "<null>");
+        }
+        return;
+    }
+
+    if (formatted.message.empty()) {
         return;
     }
 
     switch (importance) {
     case WLR_ERROR:
-        GOGGLES_LOG_ERROR("[wlr] {}", message);
+        GOGGLES_LOG_ERROR("[wlr] {}", formatted.message);
         return;
     case WLR_INFO:
-        GOGGLES_LOG_INFO("[wlr] {}", message);
+        GOGGLES_LOG_INFO("[wlr] {}", formatted.message);
         return;
     case WLR_DEBUG:
-        GOGGLES_LOG_DEBUG("[wlr] {}", message);
+        GOGGLES_LOG_DEBUG("[wlr] {}", formatted.message);
         return;
     case WLR_SILENT:
     case WLR_LOG_IMPORTANCE_LAST:
