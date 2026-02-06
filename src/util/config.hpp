@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace goggles {
 
@@ -78,5 +79,15 @@ struct Config {
 
 /// @brief Returns a default configuration.
 [[nodiscard]] auto default_config() -> Config;
+
+/// @brief Resolves `logging.file` into an effective filesystem path.
+/// @param logging_file Raw `[logging].file` value from config.
+/// @param config_path Path of the config file that provided `logging_file`.
+/// @return Empty path when `logging_file` is empty; otherwise absolute path as-is or a relative
+/// path
+///         resolved against `config_path.parent_path()`.
+[[nodiscard]] auto resolve_logging_file_path(std::string_view logging_file,
+                                             const std::filesystem::path& config_path)
+    -> std::filesystem::path;
 
 } // namespace goggles

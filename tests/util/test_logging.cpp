@@ -1,6 +1,8 @@
 #include "util/logging.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
+#include <fstream>
 #include <spdlog/spdlog.h>
 
 using namespace goggles;
@@ -155,4 +157,55 @@ TEST_CASE("logger level filtering works", "[logging]") {
 
         REQUIRE(true);
     }
+}
+
+TEST_CASE("set_log_file_path writes logs to file sink", "[logging]") {
+    initialize_logger("file_sink_test");
+    set_log_level(spdlog::level::info);
+
+    const auto temp_dir =
+        std::filesystem::temp_directory_path() / "goggles_logging_test" / "file_sink";
+    std::filesystem::remove_all(temp_dir);
+    std::filesystem::create_directories(temp_dir);
+    const auto log_path = temp_dir / "goggles.log";
+
+    auto sink_result = set_log_file_path(log_path);
+    REQUIRE(sink_result.has_value());
+
+    constexpr const char* FILE_TEST_MESSAGE = "file sink integration marker";
+    GOGGLES_LOG_INFO("{}", FILE_TEST_MESSAGE);
+    get_logger()->flush();
+
+    std::ifstream file(log_path);
+    REQUIRE(file.is_open());
+
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    REQUIRE(content.find(FILE_TEST_MESSAGE) != std::string::npos);
+
+    std::filesystem::remove_all(temp_dir);
+}
+
+TEST_CASE("set_log_file_path reports invalid destinations and keeps logger usable", "[logging]") {
+    initialize_logger("file_sink_failure_test");
+
+    const auto temp_dir =
+        std::filesystem::temp_directory_path() / "goggles_logging_test" / "invalid_path";
+    std::filesystem::remove_all(temp_dir);
+    std::filesystem::create_directories(temp_dir);
+
+    const auto blocking_file = temp_dir / "not_a_directory";
+    {
+        std::ofstream out(blocking_file);
+        REQUIRE(out.is_open());
+        out << "blocker";
+    }
+
+    auto sink_result = set_log_file_path(blocking_file / "goggles.log");
+    REQUIRE(!sink_result.has_value());
+    REQUIRE(sink_result.error().code == ErrorCode::file_write_failed);
+
+    GOGGLES_LOG_INFO("logger still works after file sink setup failure");
+    REQUIRE(get_logger() != nullptr);
+
+    std::filesystem::remove_all(temp_dir);
 }

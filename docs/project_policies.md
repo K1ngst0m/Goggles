@@ -107,6 +107,8 @@ application’s `spdlog` logger to keep the layer build standalone and avoid `st
 
 - **One global logger** initialized at application startup.
 - **Console output** for development; file output optional.
+- **App config scope only:** `[logging].*` settings apply to the app logger and do not configure
+  `src/capture/vk_layer/` logging.
 - **Capture layer:** Do not use the global logger; use the vk-layer `write(2)` backend and cache
   `GOGGLES_DEBUG_LOG` / `GOGGLES_DEBUG_LOG_LEVEL` on first use.
 
@@ -705,7 +707,7 @@ target_fps = 60
 
 [logging]
 level = "info"
-file = ""  # empty = console only
+file = ""  # empty = console only; relative paths resolve against config file directory
 ```
 
 ### F.3 User Configuration Paths

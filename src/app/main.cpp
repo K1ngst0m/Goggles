@@ -196,6 +196,11 @@ struct FileCopyPaths {
     std::filesystem::path dst;
 };
 
+struct LoadedConfig {
+    goggles::Config config;
+    std::filesystem::path source_path;
+};
+
 static auto copy_file_atomic(const FileCopyPaths& paths) -> goggles::Result<std::filesystem::path> {
     std::error_code ec;
     const auto dst_dir = paths.dst.parent_path();
@@ -233,12 +238,20 @@ static auto copy_file_atomic(const FileCopyPaths& paths) -> goggles::Result<std:
 }
 
 static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts,
-                                const goggles::util::AppDirs& bootstrap_dirs) -> goggles::Config {
+                                const goggles::util::AppDirs& bootstrap_dirs) -> LoadedConfig {
     const auto default_config_path = goggles::util::config_path(bootstrap_dirs, "goggles.toml");
     const bool explicit_config = !cli_opts.config_path.empty();
 
     std::filesystem::path config_path =
         explicit_config ? cli_opts.config_path : default_config_path;
+    if (config_path.is_relative()) {
+        std::error_code abs_ec;
+        auto absolute_path = std::filesystem::absolute(config_path, abs_ec);
+        if (!abs_ec) {
+            config_path = absolute_path;
+        }
+    }
+    config_path = config_path.lexically_normal();
 
     std::error_code ec;
     const bool exists = std::filesystem::is_regular_file(config_path, ec) && !ec;
@@ -262,7 +275,10 @@ static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts,
         GOGGLES_LOG_INFO("Loading configuration: {}", config_path.string());
         auto config_result = goggles::load_config(config_path);
         if (config_result) {
-            return config_result.value();
+            return LoadedConfig{
+                .config = config_result.value(),
+                .source_path = config_path,
+            };
         }
 
         const auto& error = config_result.error();
@@ -271,7 +287,7 @@ static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts,
         if (explicit_config) {
             GOGGLES_LOG_WARN("Explicit config ignored; falling back to defaults");
         }
-        return goggles::default_config();
+        return LoadedConfig{.config = goggles::default_config(), .source_path = {}};
     }
 
     if (ec) {
@@ -284,7 +300,7 @@ static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts,
         GOGGLES_LOG_INFO("No configuration file found; using defaults");
     }
 
-    return goggles::default_config();
+    return LoadedConfig{.config = goggles::default_config(), .source_path = {}};
 }
 
 static auto apply_log_level(const goggles::Config& config) -> void {
@@ -301,6 +317,24 @@ static auto apply_log_level(const goggles::Config& config) -> void {
     } else if (config.logging.level == "critical") {
         goggles::set_log_level(spdlog::level::critical);
     }
+}
+
+static auto apply_log_file(const goggles::Config& config, const std::filesystem::path& config_path)
+    -> void {
+    if (config.logging.file.empty()) {
+        return;
+    }
+
+    const auto resolved_path = goggles::resolve_logging_file_path(config.logging.file, config_path);
+    auto set_result = goggles::set_log_file_path(resolved_path);
+    if (!set_result) {
+        const auto& error = set_result.error();
+        GOGGLES_LOG_WARN("Failed to enable file logging '{}': {} ({})", resolved_path.string(),
+                         error.message, goggles::error_code_name(error.code));
+        return;
+    }
+
+    GOGGLES_LOG_INFO("File logging enabled: {}", resolved_path.string());
 }
 
 static auto log_config_summary(const goggles::Config& config) -> void {
@@ -350,7 +384,8 @@ static auto run_app(int argc, char** argv) -> int {
     }
     const auto& bootstrap_dirs = bootstrap_dirs_result.value();
 
-    goggles::Config config = load_config_for_cli(cli_opts, bootstrap_dirs);
+    auto loaded_config = load_config_for_cli(cli_opts, bootstrap_dirs);
+    goggles::Config config = loaded_config.config;
     auto final_overrides = goggles::util::overrides_from_config(config);
     auto final_dirs_result = goggles::util::resolve_app_dirs(resolve_ctx, final_overrides);
     goggles::util::AppDirs app_dirs = bootstrap_dirs;
@@ -387,6 +422,7 @@ static auto run_app(int argc, char** argv) -> int {
 
     apply_log_level(config);
     goggles::set_log_timestamp_enabled(config.logging.timestamp);
+    apply_log_file(config, loaded_config.source_path);
     log_config_summary(config);
 
     auto app_result = goggles::app::Application::create(config, app_dirs);
