@@ -733,6 +733,9 @@ void Application::render_frame() {
         m_last_source_frame_number = source_frame_number;
         m_imgui_layer->notify_source_frame();
     }
+    if (source_frame) {
+        GOGGLES_PROFILE_VALUE("goggles_source_frame", static_cast<double>(source_frame_number));
+    }
 
     const bool filter_chain_enabled =
         using_surface_frame ? compute_surface_filter_chain_enabled(m_active_surface_id)
@@ -749,8 +752,9 @@ void Application::render_frame() {
         m_imgui_layer->record(cmd, view, extent);
     };
     [[maybe_unused]] const char* scope_name = source_frame ? "RenderFrame" : "RenderClear";
-    const char* error_label = source_frame ? "Render" : "Clear";
-    GOGGLES_PROFILE_SCOPE(scope_name);
+    [[maybe_unused]] const char* error_label = source_frame ? "Render" : "Clear";
+    GOGGLES_PROFILE_SCOPE("Render");
+    GOGGLES_PROFILE_TAG(scope_name);
     auto render_result = m_vulkan_backend->render(source_frame, ui_callback);
     if (!render_result) {
         GOGGLES_LOG_ERROR("{} failed: {}", error_label, render_result.error().message);
