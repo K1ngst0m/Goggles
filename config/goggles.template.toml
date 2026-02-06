@@ -55,6 +55,10 @@ integer_scale = 0
 [logging]
 # Log level: "trace" | "debug" | "info" | "warn" | "error" | "critical"
 level = "info"
+# File logging target:
+#   ""                -> console only
+#   "/abs/path.log"   -> use absolute path as-is
+#   "logs/goggles.log"-> resolved relative to the loaded config file directory
 file = ""
 
 # Include timestamp prefix in console logs.

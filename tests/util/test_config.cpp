@@ -213,3 +213,49 @@ TEST_CASE("load_config handles valid target_fps range", "[config]") {
         std::filesystem::remove(temp_config);
     }
 }
+
+TEST_CASE("resolve_logging_file_path handles empty values", "[config]") {
+    const std::filesystem::path config_path = "/home/test/.config/goggles/goggles.toml";
+    const auto resolved = resolve_logging_file_path("", config_path);
+    REQUIRE(resolved.empty());
+}
+
+TEST_CASE("resolve_logging_file_path keeps absolute paths", "[config]") {
+    const std::filesystem::path config_path = "/home/test/.config/goggles/goggles.toml";
+    const std::filesystem::path absolute_log_path = "/var/log/goggles/app.log";
+    const auto resolved = resolve_logging_file_path(absolute_log_path.string(), config_path);
+    REQUIRE(resolved == absolute_log_path);
+}
+
+TEST_CASE("resolve_logging_file_path resolves relative paths against config origin", "[config]") {
+    const std::filesystem::path config_path = "/home/test/.config/goggles/goggles.toml";
+    const auto resolved = resolve_logging_file_path("logs/goggles.log", config_path);
+    REQUIRE(resolved == "/home/test/.config/goggles/logs/goggles.log");
+}
+
+TEST_CASE("resolve_logging_file_path is independent of current working directory", "[config]") {
+    const std::filesystem::path config_path = "/opt/custom/goggles.toml";
+
+    struct CurrentPathGuard {
+        std::filesystem::path original_cwd;
+        ~CurrentPathGuard() { std::filesystem::current_path(original_cwd); }
+    } guard{.original_cwd = std::filesystem::current_path()};
+
+    std::filesystem::path tmp_a = std::filesystem::temp_directory_path() / "goggles_config_cwd_a";
+    std::filesystem::path tmp_b = std::filesystem::temp_directory_path() / "goggles_config_cwd_b";
+    std::filesystem::create_directories(tmp_a);
+    std::filesystem::create_directories(tmp_b);
+
+    std::filesystem::current_path(tmp_a);
+    const auto resolved_from_a = resolve_logging_file_path("logs/goggles.log", config_path);
+
+    std::filesystem::current_path(tmp_b);
+    const auto resolved_from_b = resolve_logging_file_path("logs/goggles.log", config_path);
+
+    REQUIRE(resolved_from_a == "/opt/custom/logs/goggles.log");
+    REQUIRE(resolved_from_b == "/opt/custom/logs/goggles.log");
+    REQUIRE(resolved_from_a == resolved_from_b);
+
+    std::filesystem::remove_all(tmp_a);
+    std::filesystem::remove_all(tmp_b);
+}

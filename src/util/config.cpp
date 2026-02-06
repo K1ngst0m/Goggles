@@ -218,4 +218,23 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
     return config;
 }
 
+auto resolve_logging_file_path(std::string_view logging_file,
+                               const std::filesystem::path& config_path) -> std::filesystem::path {
+    if (logging_file.empty()) {
+        return {};
+    }
+
+    std::filesystem::path candidate{logging_file};
+    if (candidate.is_absolute()) {
+        return candidate.lexically_normal();
+    }
+
+    const auto base_dir = config_path.parent_path();
+    if (base_dir.empty()) {
+        return candidate.lexically_normal();
+    }
+
+    return (base_dir / candidate).lexically_normal();
+}
+
 } // namespace goggles
