@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdarg>
 #include <cstddef>
 #include <cstdio>
 #include <ctime>
@@ -38,6 +39,7 @@ extern "C" {
 #include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/util/log.h>
 #include <wlr/util/region.h>
 #include <wlr/xcursor.h>
 #include <xkbcommon/xkbcommon.h>
@@ -213,6 +215,80 @@ struct RenderSurfaceContext {
     int32_t offset_y = 0;
 };
 
+auto format_wlr_message(const char* format, va_list args) -> std::string {
+    if (!format) {
+        return {};
+    }
+
+    std::array<char, 512> buffer{};
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int length = std::vsnprintf(buffer.data(), buffer.size(), format, args_copy);
+    va_end(args_copy);
+
+    if (length < 0) {
+        return {};
+    }
+
+    if (static_cast<size_t>(length) < buffer.size()) {
+        std::string message(buffer.data(), static_cast<size_t>(length));
+        while (!message.empty() && message.back() == '\n') {
+            message.pop_back();
+        }
+        return message;
+    }
+
+    std::string message(static_cast<size_t>(length) + 1, '\0');
+    va_copy(args_copy, args);
+    std::vsnprintf(message.data(), message.size(), format, args_copy);
+    va_end(args_copy);
+    message.resize(static_cast<size_t>(length));
+    while (!message.empty() && message.back() == '\n') {
+        message.pop_back();
+    }
+    return message;
+}
+
+auto wlr_importance_from_log_level(spdlog::level::level_enum level) -> wlr_log_importance {
+    if (level <= spdlog::level::debug) {
+        return WLR_DEBUG;
+    }
+    if (level <= spdlog::level::info) {
+        return WLR_INFO;
+    }
+    if (level <= spdlog::level::critical) {
+        return WLR_ERROR;
+    }
+    return WLR_SILENT;
+}
+
+void wlr_log_bridge(wlr_log_importance importance, const char* format, va_list args) {
+    std::string message = format_wlr_message(format, args);
+    if (message.empty()) {
+        return;
+    }
+
+    switch (importance) {
+    case WLR_ERROR:
+        GOGGLES_LOG_ERROR("[wlr] {}", message);
+        return;
+    case WLR_INFO:
+        GOGGLES_LOG_INFO("[wlr] {}", message);
+        return;
+    case WLR_DEBUG:
+        GOGGLES_LOG_DEBUG("[wlr] {}", message);
+        return;
+    case WLR_SILENT:
+    case WLR_LOG_IMPORTANCE_LAST:
+        return;
+    }
+}
+
+auto initialize_wlroots_logging() -> void {
+    const auto level = goggles::get_logger()->level();
+    wlr_log_init(wlr_importance_from_log_level(level), wlr_log_bridge);
+}
+
 void render_surface_iterator(wlr_surface* surface, int sx, int sy, void* data) {
     if (!surface || !data) {
         return;
@@ -246,8 +322,8 @@ void render_surface_iterator(wlr_surface* surface, int sx, int sy, void* data) {
     wlr_render_pass_add_texture(context->pass, &tex_opts);
 }
 
-// XWayland/wlroots emit stderr warnings (xkbcomp, event loop errors).
-// Suppress at info+ levels; visible at debug/trace for troubleshooting.
+// XWayland/helper tools emit stderr warnings (xkbcomp, event loop errors).
+// Suppress at info+ levels; wlroots logs use the project logger.
 class StderrSuppressor {
 public:
     StderrSuppressor() {
@@ -632,6 +708,8 @@ auto CompositorServer::forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> 
 }
 
 auto CompositorServer::Impl::setup_base_components() -> Result<void> {
+    initialize_wlroots_logging();
+
     display = wl_display_create();
     if (!display) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create Wayland display");
