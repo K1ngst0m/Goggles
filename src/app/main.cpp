@@ -64,7 +64,8 @@ static auto spawn_target_app(const std::vector<std::string>& command,
                key == "WAYLAND_DISPLAY" || key == "GOGGLES_WIDTH" || key == "GOGGLES_HEIGHT" ||
                key == "GOGGLES_GPU_UUID" || key == "GOGGLES_DUMP_DIR" ||
                key == "GOGGLES_DUMP_FRAME_RANGE" || key == "GOGGLES_DUMP_FRAME_MODE" ||
-               key == "GOGGLES_DEBUG_LOG" || key == "GOGGLES_DEBUG_LOG_LEVEL";
+               key == "GOGGLES_DEBUG_LOG" || key == "GOGGLES_DEBUG_LOG_LEVEL" ||
+               key == "TRACY_PORT";
     };
 
     std::vector<std::string> env_overrides;
@@ -95,6 +96,11 @@ static auto spawn_target_app(const std::vector<std::string>& command,
     if (app_width != 0 && app_height != 0) {
         env_overrides.emplace_back("GOGGLES_WIDTH=" + std::to_string(app_width));
         env_overrides.emplace_back("GOGGLES_HEIGHT=" + std::to_string(app_height));
+    }
+
+    if (const char* target_tracy_port = std::getenv("GOGGLES_TARGET_TRACY_PORT");
+        target_tracy_port != nullptr && target_tracy_port[0] != '\0') {
+        env_overrides.emplace_back(std::string("TRACY_PORT=") + target_tracy_port);
     }
 
     std::vector<char*> envp;

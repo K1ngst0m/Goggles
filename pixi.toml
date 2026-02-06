@@ -54,6 +54,10 @@ cmd = "bash scripts/task/dev.sh"
 description = "Launch app with capture + viewer"
 cmd = "bash scripts/task/start.sh"
 
+[tasks.profile]
+description = "Run dual-process Tracy profile session"
+cmd = "bash scripts/task/profile.sh"
+
 [tasks.shader-fetch]
 description = "Download RetroArch slang shaders"
 cmd = "bash scripts/task/shader-fetch.sh"

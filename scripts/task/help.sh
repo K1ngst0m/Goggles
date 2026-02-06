@@ -14,6 +14,8 @@ Build Commands
 Run Commands
   pixi run start [-p PRESET] [--] <APP> [APP_ARGS...]
                                           Launch app with capture + viewer
+  pixi run profile [-p PRESET] [goggles_args...] -- <APP> [APP_ARGS...]
+                                          Run dual-process Tracy profile session
 
 Utilities
   pixi run format                         Format C/C++ and TOML files
@@ -24,11 +26,12 @@ Utilities
 
 Options
   -p, --preset PRESET   Build preset (default: debug)
-                        Valid: debug, release, relwithdebinfo, asan, ubsan, test
+                        Valid: debug, release, relwithdebinfo, asan, ubsan, asan-ubsan, test, quality, profile
 
 Examples
   pixi run build                          Build with default preset (debug)
   pixi run build -p release               Build with release preset
   pixi run start vkcube                   Run vkcube with capture
   pixi run start -p release vkcube        Run with release build
+  pixi run profile -- vkcube              Capture + merge Tracy traces
 EOF

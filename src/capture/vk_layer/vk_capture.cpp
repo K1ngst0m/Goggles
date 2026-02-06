@@ -895,6 +895,7 @@ void CaptureManager::capture_frame(SwapData* swap, uint32_t image_index, VkQueue
 
     CopyCmd& cmd = swap->copy_cmds[image_index];
     uint64_t current_frame = sync->frame_counter + 1;
+    GOGGLES_PROFILE_VALUE("goggles_layer_frame", static_cast<double>(current_frame));
 
     // Send semaphore FDs on first frame
     if (!sync->semaphores_sent && sync->frame_ready_fd >= 0 && sync->frame_consumed_fd >= 0) {
