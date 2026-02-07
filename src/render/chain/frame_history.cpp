@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
 auto FrameHistory::init(vk::Device device, vk::PhysicalDevice physical_device, vk::Format format,
                         vk::Extent2D extent, uint32_t depth) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     if (m_initialized) {
         return {};
     }
@@ -27,6 +29,7 @@ auto FrameHistory::init(vk::Device device, vk::PhysicalDevice physical_device, v
 }
 
 void FrameHistory::push(vk::CommandBuffer cmd, vk::Image source, vk::Extent2D extent) {
+    GOGGLES_PROFILE_FUNCTION();
     if (!m_initialized || m_depth == 0) {
         return;
     }
@@ -120,6 +123,7 @@ auto FrameHistory::get_extent(uint32_t age) const -> vk::Extent2D {
 }
 
 void FrameHistory::shutdown() {
+    GOGGLES_PROFILE_FUNCTION();
     for (auto& buf : m_buffers) {
         buf.reset();
     }

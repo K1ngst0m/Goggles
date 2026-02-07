@@ -22,9 +22,11 @@
 #include <util/error.hpp>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
+#include <util/profiling.hpp>
 #include <vector>
 
 static auto get_exe_dir() -> std::filesystem::path {
+    GOGGLES_PROFILE_FUNCTION();
     std::array<char, 4096> exe_path{};
     const ssize_t len = readlink("/proc/self/exe", exe_path.data(), exe_path.size() - 1);
     if (len <= 0) {
@@ -49,6 +51,7 @@ static auto spawn_target_app(const std::vector<std::string>& command,
                              const std::string& dump_frame_mode, bool layer_log,
                              const std::string& layer_log_level, bool wsi_proxy)
     -> goggles::Result<pid_t> {
+    GOGGLES_PROFILE_FUNCTION();
     if (command.empty()) {
         return goggles::make_error<pid_t>(goggles::ErrorCode::invalid_config,
                                           "missing target app command");
@@ -144,6 +147,7 @@ static auto spawn_target_app(const std::vector<std::string>& command,
 }
 
 static auto terminate_child(pid_t pid) -> void {
+    GOGGLES_PROFILE_FUNCTION();
     if (pid <= 0) {
         return;
     }
@@ -208,6 +212,7 @@ struct LoadedConfig {
 };
 
 static auto copy_file_atomic(const FileCopyPaths& paths) -> goggles::Result<std::filesystem::path> {
+    GOGGLES_PROFILE_FUNCTION();
     std::error_code ec;
     const auto dst_dir = paths.dst.parent_path();
     std::filesystem::create_directories(dst_dir, ec);
@@ -245,6 +250,7 @@ static auto copy_file_atomic(const FileCopyPaths& paths) -> goggles::Result<std:
 
 static auto load_config_for_cli(const goggles::app::CliOptions& cli_opts,
                                 const goggles::util::AppDirs& bootstrap_dirs) -> LoadedConfig {
+    GOGGLES_PROFILE_FUNCTION();
     const auto default_config_path = goggles::util::config_path(bootstrap_dirs, "goggles.toml");
     const bool explicit_config = !cli_opts.config_path.empty();
 
@@ -355,6 +361,7 @@ static auto log_config_summary(const goggles::Config& config) -> void {
 }
 
 static auto run_app(int argc, char** argv) -> int {
+    GOGGLES_PROFILE_FUNCTION();
     auto cli_result = goggles::app::parse_cli(argc, argv);
     if (!cli_result) {
         std::fprintf(stderr, "Error: %s\n", cli_result.error().message.c_str());
@@ -498,6 +505,7 @@ static auto run_app(int argc, char** argv) -> int {
 }
 
 auto main(int argc, char** argv) -> int {
+    GOGGLES_PROFILE_FUNCTION();
     try {
         return run_app(argc, argv);
     } catch (const std::exception& e) {

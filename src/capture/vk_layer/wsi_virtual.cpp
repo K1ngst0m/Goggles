@@ -13,6 +13,7 @@
 #include <thread>
 #include <type_traits>
 #include <unistd.h>
+#include <util/profiling.hpp>
 #include <utility>
 
 namespace goggles::capture {
@@ -60,6 +61,7 @@ static uint32_t get_fps_limit() {
 }
 
 bool should_use_wsi_proxy() {
+    GOGGLES_PROFILE_FUNCTION();
     static const bool enabled = []() {
         const char* proxy = std::getenv("GOGGLES_WSI_PROXY");
         const char* capture = std::getenv("GOGGLES_CAPTURE");
@@ -98,6 +100,7 @@ VkSwapchainKHR WsiVirtualizer::generate_swapchain_handle() {
 }
 
 VkResult WsiVirtualizer::create_surface(VkInstance inst, VkSurfaceKHR* surface) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
 
     VirtualSurface vs{};
@@ -439,6 +442,7 @@ static auto create_exportable_image(VirtualSwapchain& swap, VkDevice device, VkD
                                     bool use_modifier_tiling,
                                     const std::vector<uint64_t>& modifier_list,
                                     uint32_t image_index) -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
 
     VkImage image = VK_NULL_HANDLE;
@@ -506,6 +510,7 @@ static auto create_exportable_image(VirtualSwapchain& swap, VkDevice device, VkD
 
 bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice device,
                                               VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     auto* inst_data = dev_data->inst_data;
 
@@ -552,6 +557,7 @@ bool WsiVirtualizer::create_exportable_images(VirtualSwapchain& swap, VkDevice d
 
 VkResult WsiVirtualizer::create_swapchain(VkDevice device, const VkSwapchainCreateInfoKHR* info,
                                           VkSwapchainKHR* swapchain, VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
 
     VirtualSwapchain swap{};
@@ -661,6 +667,7 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
                                             uint64_t /*timeout*/, VkSemaphore semaphore,
                                             VkFence fence, uint32_t* index,
                                             VkDeviceData* dev_data) {
+    GOGGLES_PROFILE_FUNCTION();
     // Poll for resolution requests before acquiring
     auto& socket = get_layer_socket();
     CaptureControl ctrl{};
@@ -756,6 +763,7 @@ VkResult WsiVirtualizer::acquire_next_image(VkDevice /*device*/, VkSwapchainKHR 
 }
 
 SwapchainFrameData WsiVirtualizer::get_frame_data(VkSwapchainKHR swapchain, uint32_t image_index) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     auto it = swapchains_.find(swapchain);
     if (it == swapchains_.end()) {

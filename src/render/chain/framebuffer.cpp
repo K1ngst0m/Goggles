@@ -2,6 +2,7 @@
 
 #include <render/backend/vulkan_error.hpp>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -45,6 +46,7 @@ Framebuffer& Framebuffer::operator=(Framebuffer&& other) noexcept {
 
 auto Framebuffer::create(vk::Device device, vk::PhysicalDevice physical_device, vk::Format format,
                          vk::Extent2D extent) -> ResultPtr<Framebuffer> {
+    GOGGLES_PROFILE_FUNCTION();
     auto framebuffer = std::unique_ptr<Framebuffer>(new Framebuffer());
 
     framebuffer->m_device = device;
@@ -62,6 +64,7 @@ auto Framebuffer::create(vk::Device device, vk::PhysicalDevice physical_device, 
 }
 
 auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     if (m_extent == new_extent) {
         return {};
     }
@@ -81,6 +84,7 @@ auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
 }
 
 void Framebuffer::shutdown() {
+    GOGGLES_PROFILE_FUNCTION();
     if (m_device) {
         static_cast<void>(m_device.waitIdle());
     }
@@ -92,6 +96,7 @@ void Framebuffer::shutdown() {
 }
 
 auto Framebuffer::create_image() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     vk::ImageCreateInfo image_info{};
     image_info.imageType = vk::ImageType::e2D;
     image_info.format = m_format;
@@ -115,6 +120,7 @@ auto Framebuffer::create_image() -> Result<void> {
 }
 
 auto Framebuffer::allocate_memory() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     auto mem_reqs = m_device.getImageMemoryRequirements(*m_image);
     auto mem_props = m_physical_device.getMemoryProperties();
 
@@ -143,6 +149,7 @@ auto Framebuffer::allocate_memory() -> Result<void> {
 }
 
 auto Framebuffer::create_image_view() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     vk::ImageViewCreateInfo view_info{};
     view_info.image = *m_image;
     view_info.viewType = vk::ImageViewType::e2D;

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <util/profiling.hpp>
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 
@@ -37,6 +38,7 @@ static PFN_vkVoidFunction VKAPI_CALL Goggles_GetInstanceProcAddr(VkInstance inst
                                                                  const char* pName);
 
 static PFN_vkVoidFunction VKAPI_CALL Goggles_GetDeviceProcAddr(VkDevice device, const char* pName) {
+    GOGGLES_PROFILE_FUNCTION();
     GETPROCADDR(GetDeviceProcAddr);
     GETPROCADDR(DestroyDevice);
     GETPROCADDR(CreateSwapchainKHR);
@@ -59,6 +61,7 @@ static PFN_vkVoidFunction VKAPI_CALL Goggles_GetDeviceProcAddr(VkDevice device, 
 
 static PFN_vkVoidFunction VKAPI_CALL Goggles_GetInstanceProcAddr(VkInstance instance,
                                                                  const char* pName) {
+    GOGGLES_PROFILE_FUNCTION();
     GETPROCADDR(GetInstanceProcAddr);
     GETPROCADDR(CreateInstance);
     GETPROCADDR(DestroyInstance);
@@ -108,6 +111,7 @@ extern "C" {
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface* pVersionStruct) {
+    GOGGLES_PROFILE_FUNCTION();
     if (pVersionStruct == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -131,11 +135,13 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface* pVersionStruct
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance,
                                                                                const char* pName) {
+    GOGGLES_PROFILE_FUNCTION();
     return goggles::capture::Goggles_GetInstanceProcAddr(instance, pName);
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device,
                                                                              const char* pName) {
+    GOGGLES_PROFILE_FUNCTION();
     return goggles::capture::Goggles_GetDeviceProcAddr(device, pName);
 }
 

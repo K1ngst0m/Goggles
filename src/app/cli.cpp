@@ -1,6 +1,7 @@
 #include "app/cli.hpp"
 
 #include <CLI/CLI.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::app {
 namespace {
@@ -57,6 +58,7 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
 }
 
 [[nodiscard]] auto validate_detach_mode(const CliOptions& options) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     if (options.wsi_proxy) {
         return make_error<void>(ErrorCode::parse_error,
                                 "--wsi-proxy is not supported with --detach");
@@ -83,6 +85,7 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
 
 [[nodiscard]] auto validate_default_mode(int argc, bool has_separator, const CliOptions& options)
     -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     if (!has_separator) {
         if (argc <= 1) {
             return make_error<void>(ErrorCode::parse_error,
@@ -111,6 +114,7 @@ auto normalize(CliOptions& options) -> void {
 } // namespace
 
 auto parse_cli(int argc, char** argv) -> CliResult {
+    GOGGLES_PROFILE_FUNCTION();
     CLI::App app{GOGGLES_PROJECT_NAME " - Low-latency game streaming and post-processing viewer"};
     app.set_version_flag("--version,-v", GOGGLES_PROJECT_NAME " v" GOGGLES_VERSION);
     app.footer(R"(Usage:

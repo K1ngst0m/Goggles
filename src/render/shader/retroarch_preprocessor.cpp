@@ -4,6 +4,7 @@
 #include <regex>
 #include <sstream>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -108,6 +109,7 @@ auto fix_slang_compat(const std::string& source) -> std::string {
 
 auto RetroArchPreprocessor::preprocess(const std::filesystem::path& shader_path)
     -> Result<PreprocessedShader> {
+    GOGGLES_PROFILE_FUNCTION();
     auto source_result = read_file(shader_path);
     if (!source_result) {
         return make_error<PreprocessedShader>(source_result.error().code,
@@ -120,6 +122,7 @@ auto RetroArchPreprocessor::preprocess(const std::filesystem::path& shader_path)
 auto RetroArchPreprocessor::preprocess_source(const std::string& source,
                                               const std::filesystem::path& base_path)
     -> Result<PreprocessedShader> {
+    GOGGLES_PROFILE_FUNCTION();
     // Step 1: Resolve includes
     auto resolved_result = resolve_includes(source, base_path);
     if (!resolved_result) {
@@ -151,6 +154,7 @@ auto RetroArchPreprocessor::preprocess_source(const std::string& source,
 auto RetroArchPreprocessor::resolve_includes(const std::string& source,
                                              const std::filesystem::path& base_path, int depth)
     -> Result<std::string> {
+    GOGGLES_PROFILE_FUNCTION();
     if (depth > MAX_INCLUDE_DEPTH) {
         return make_error<std::string>(ErrorCode::parse_error,
                                        "Maximum include depth exceeded (circular include?)");
@@ -195,6 +199,7 @@ auto RetroArchPreprocessor::resolve_includes(const std::string& source,
 
 auto RetroArchPreprocessor::split_by_stage(const std::string& source)
     -> std::pair<std::string, std::string> {
+    GOGGLES_PROFILE_FUNCTION();
     enum class Stage : std::uint8_t { shared, vertex, fragment };
 
     std::string shared;
@@ -241,6 +246,7 @@ auto RetroArchPreprocessor::split_by_stage(const std::string& source)
 
 auto RetroArchPreprocessor::extract_parameters(const std::string& source)
     -> std::pair<std::string, std::vector<ShaderParameter>> {
+    GOGGLES_PROFILE_FUNCTION();
     std::vector<ShaderParameter> parameters;
     std::string result;
 
@@ -275,6 +281,7 @@ auto RetroArchPreprocessor::extract_parameters(const std::string& source)
 
 auto RetroArchPreprocessor::extract_metadata(const std::string& source)
     -> std::pair<std::string, ShaderMetadata> {
+    GOGGLES_PROFILE_FUNCTION();
     ShaderMetadata metadata;
     std::string result;
 

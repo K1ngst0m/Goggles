@@ -2,20 +2,25 @@
 
 #include "logging.hpp"
 
+#include <util/profiling.hpp>
+
 namespace goggles::capture {
 
 void ObjectTracker::add_instance(VkInstance instance, VkInstData data) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     instances_[GET_LDT(instance)] = data;
 }
 
 VkInstData* ObjectTracker::get_instance(VkInstance instance) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     auto it = instances_.find(GET_LDT(instance));
     return it != instances_.end() ? &it->second : nullptr;
 }
 
 VkInstData* ObjectTracker::get_instance_by_physical_device(VkPhysicalDevice device) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     auto phys_it = phys_to_instance_.find(GET_LDT(device));
     if (phys_it == phys_to_instance_.end()) {
@@ -26,22 +31,26 @@ VkInstData* ObjectTracker::get_instance_by_physical_device(VkPhysicalDevice devi
 }
 
 void ObjectTracker::remove_instance(VkInstance instance) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     instances_.erase(GET_LDT(instance));
 }
 
 void ObjectTracker::add_device(VkDevice device, VkDeviceData data) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     devices_[GET_LDT(device)] = data;
 }
 
 VkDeviceData* ObjectTracker::get_device(VkDevice device) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     auto it = devices_.find(GET_LDT(device));
     return it != devices_.end() ? &it->second : nullptr;
 }
 
 VkDeviceData* ObjectTracker::get_device_by_queue(VkQueue queue) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     // VkQueue shares same dispatch table as VkDevice at layer level
     void* ldt = GET_LDT(queue);
@@ -57,11 +66,13 @@ VkDeviceData* ObjectTracker::get_device_by_queue(VkQueue queue) {
 }
 
 void ObjectTracker::remove_device(VkDevice device) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     devices_.erase(GET_LDT(device));
 }
 
 void ObjectTracker::add_queue(VkQueue queue, VkDevice device) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     void* queue_ldt = GET_LDT(queue);
     queue_to_device_[queue_ldt] = device;
@@ -69,6 +80,7 @@ void ObjectTracker::add_queue(VkQueue queue, VkDevice device) {
 }
 
 void ObjectTracker::remove_queues_for_device(VkDevice device) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     for (auto it = queue_to_device_.begin(); it != queue_to_device_.end();) {
         if (it->second == device) {
@@ -80,6 +92,7 @@ void ObjectTracker::remove_queues_for_device(VkDevice device) {
 }
 
 void ObjectTracker::add_physical_device(VkPhysicalDevice phys, VkInstance inst) {
+    GOGGLES_PROFILE_FUNCTION();
     std::lock_guard lock(mutex_);
     phys_to_instance_[GET_LDT(phys)] = inst;
 }

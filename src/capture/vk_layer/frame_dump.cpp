@@ -12,6 +12,7 @@
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <util/profiling.hpp>
 
 namespace goggles::capture {
 
@@ -212,6 +213,7 @@ void cleanup_dump_resources(const VkDeviceFuncs& funcs, VkDevice device, const D
 }
 
 auto create_dump_buffer(VkDeviceData* dev_data, VkDeviceSize size, DumpJob* out_job) -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = dev_data->device;
 
@@ -270,6 +272,7 @@ auto create_dump_buffer(VkDeviceData* dev_data, VkDeviceSize size, DumpJob* out_
 
 auto create_dump_command_buffer(VkDeviceData* dev_data, VkCommandPool* out_pool,
                                 VkCommandBuffer* out_cmd) -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     auto& funcs = dev_data->funcs;
     VkDevice device = dev_data->device;
 
@@ -384,6 +387,7 @@ FrameDumper::FrameDumper() {
 }
 
 void FrameDumper::parse_env_config() {
+    GOGGLES_PROFILE_FUNCTION();
     enabled_ = false;
     mode_ = DumpFrameMode::ppm;
     dump_dir_ = "/tmp/goggles_dump";
@@ -526,6 +530,7 @@ auto FrameDumper::try_schedule_export_image_dump(VkQueue queue, VkDeviceData* de
                                                  VkFormat format, uint64_t frame_number,
                                                  TimelineWait wait, const DumpSourceInfo& src)
     -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     if (!enabled_ || !should_dump_frame(frame_number)) {
         return false;
     }
@@ -538,6 +543,7 @@ auto FrameDumper::try_schedule_present_image_dump(VkQueue queue, VkDeviceData* d
                                                   VkFormat format, uint64_t frame_number,
                                                   const DumpSourceInfo& src, uint32_t wait_count,
                                                   const VkSemaphore* wait_semaphores) -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     if (!enabled_ || !should_dump_frame(frame_number)) {
         return false;
     }
@@ -550,6 +556,7 @@ auto FrameDumper::schedule_dump_copy(VkQueue queue, VkDeviceData* dev_data, VkIm
                                      uint64_t frame_number, const DumpSourceInfo& src,
                                      uint32_t wait_count, const VkSemaphore* wait_semaphores)
     -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     if (!enabled_ || image == VK_NULL_HANDLE) {
         return false;
     }
@@ -649,6 +656,7 @@ auto FrameDumper::schedule_dump_copy_timeline(VkQueue queue, VkDeviceData* dev_d
                                               uint32_t width, uint32_t height, VkFormat format,
                                               uint64_t frame_number, const DumpSourceInfo& src,
                                               TimelineWait wait) -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     if (!enabled_ || image == VK_NULL_HANDLE) {
         return false;
     }
@@ -740,6 +748,7 @@ auto FrameDumper::schedule_dump_copy_timeline(VkQueue queue, VkDeviceData* dev_d
 }
 
 void FrameDumper::drain_job(DumpJob& job) {
+    GOGGLES_PROFILE_FUNCTION();
     if (job.fence != VK_NULL_HANDLE) {
         job.funcs.WaitForFences(job.device, 1, &job.fence, VK_TRUE, Time::infinite);
     }
@@ -795,6 +804,7 @@ void FrameDumper::drain_job(DumpJob& job) {
 }
 
 void FrameDumper::drain() {
+    GOGGLES_PROFILE_FUNCTION();
     while (!queue_.empty()) {
         auto opt = queue_.try_pop();
         if (!opt) {
