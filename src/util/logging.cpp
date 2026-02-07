@@ -1,5 +1,7 @@
 #include "logging.hpp"
 
+#include "profiling.hpp"
+
 #include <algorithm>
 #include <filesystem>
 #include <memory>
@@ -43,6 +45,7 @@ auto update_sink_patterns() -> void {
 } // namespace
 
 void initialize_logger(std::string_view app_name) {
+    GOGGLES_PROFILE_FUNCTION();
     if (g_logger) {
         return;
     }
@@ -71,6 +74,7 @@ auto get_logger() -> std::shared_ptr<spdlog::logger> {
 }
 
 void set_log_level(spdlog::level::level_enum level) {
+    GOGGLES_PROFILE_FUNCTION();
     if (g_logger) {
         g_logger->set_level(level);
     }
@@ -86,6 +90,7 @@ void set_log_timestamp_enabled(bool enabled) {
 }
 
 auto set_log_file_path(const std::filesystem::path& path) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     if (!g_logger) {
         initialize_logger();
     }

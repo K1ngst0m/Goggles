@@ -1,6 +1,7 @@
 #include "paths.hpp"
 
 #include "config.hpp"
+#include "profiling.hpp"
 
 #include <cstdlib>
 #include <optional>
@@ -97,6 +98,7 @@ auto is_resource_root(const std::filesystem::path& candidate) -> bool {
 }
 
 auto find_resource_root(const ResolveContext& ctx) -> std::optional<std::filesystem::path> {
+    GOGGLES_PROFILE_FUNCTION();
     if (auto resource_dir = get_env_path("GOGGLES_RESOURCE_DIR")) {
         if (is_resource_root(*resource_dir)) {
             return resource_dir->lexically_normal();
@@ -177,6 +179,7 @@ auto overrides_from_config(const Config& config) -> PathOverrides {
 }
 
 auto resolve_config_dir(const PathOverrides& overrides) -> Result<std::filesystem::path> {
+    GOGGLES_PROFILE_FUNCTION();
     if (!is_absolute_or_empty(overrides.config_dir)) {
         return make_error<std::filesystem::path>(ErrorCode::invalid_config,
                                                  "paths.config_dir must be an absolute path");
@@ -197,6 +200,7 @@ auto resolve_config_dir(const PathOverrides& overrides) -> Result<std::filesyste
 
 auto resolve_app_dirs(const ResolveContext& ctx, const PathOverrides& overrides)
     -> Result<AppDirs> {
+    GOGGLES_PROFILE_FUNCTION();
     if (!is_absolute_or_empty(overrides.resource_dir) ||
         !is_absolute_or_empty(overrides.config_dir) || !is_absolute_or_empty(overrides.data_dir) ||
         !is_absolute_or_empty(overrides.cache_dir) ||

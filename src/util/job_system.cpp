@@ -1,5 +1,7 @@
 #include "job_system.hpp"
 
+#include "profiling.hpp"
+
 #include <thread>
 
 namespace goggles::util {
@@ -7,6 +9,7 @@ namespace goggles::util {
 std::unique_ptr<BS::thread_pool> JobSystem::s_pool = nullptr;
 
 void JobSystem::initialize(size_t thread_count) {
+    GOGGLES_PROFILE_FUNCTION();
     if (s_pool) {
         return;
     }
@@ -19,6 +22,7 @@ void JobSystem::initialize(size_t thread_count) {
 }
 
 void JobSystem::shutdown() {
+    GOGGLES_PROFILE_FUNCTION();
     if (s_pool) {
         s_pool->wait_for_tasks();
         s_pool.reset();
@@ -26,6 +30,7 @@ void JobSystem::shutdown() {
 }
 
 void JobSystem::wait_all() {
+    GOGGLES_PROFILE_FUNCTION();
     if (s_pool) {
         s_pool->wait_for_tasks();
     }

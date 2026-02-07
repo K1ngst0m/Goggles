@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -37,6 +38,7 @@ VulkanDebugMessenger::VulkanDebugMessenger(vk::UniqueDebugUtilsMessengerEXT mess
     : m_messenger(std::move(messenger)) {}
 
 auto VulkanDebugMessenger::create(vk::Instance instance) -> Result<VulkanDebugMessenger> {
+    GOGGLES_PROFILE_FUNCTION();
     vk::DebugUtilsMessengerCreateInfoEXT create_info{};
     create_info.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
                                   vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
@@ -60,6 +62,7 @@ auto VulkanDebugMessenger::create(vk::Instance instance) -> Result<VulkanDebugMe
 }
 
 auto is_validation_layer_available() -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     auto [result, layers] = vk::enumerateInstanceLayerProperties();
     if (result != vk::Result::eSuccess) {
         return false;

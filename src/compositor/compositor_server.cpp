@@ -55,6 +55,7 @@ extern "C" {
 #include <util/drm_format.hpp>
 #include <util/drm_fourcc.hpp>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 #include <util/queues.hpp>
 #include <util/unique_fd.hpp>
 
@@ -629,6 +630,7 @@ CompositorServer::~CompositorServer() {
 }
 
 auto CompositorServer::create() -> ResultPtr<CompositorServer> {
+    GOGGLES_PROFILE_FUNCTION();
     auto server = std::make_unique<CompositorServer>();
 
     auto start_result = server->start();
@@ -652,6 +654,7 @@ auto CompositorServer::wayland_display() const -> std::string {
 }
 
 auto CompositorServer::forward_key(const SDL_KeyboardEvent& event) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     uint32_t linux_keycode = sdl_to_linux_keycode(event.scancode);
     if (linux_keycode == 0) {
         GOGGLES_LOG_TRACE("Unmapped key scancode={}, down={}", static_cast<int>(event.scancode),
@@ -672,6 +675,7 @@ auto CompositorServer::forward_key(const SDL_KeyboardEvent& event) -> Result<voi
 }
 
 auto CompositorServer::forward_mouse_button(const SDL_MouseButtonEvent& event) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     uint32_t button = sdl_to_linux_button(event.button);
     if (button == 0) {
         GOGGLES_LOG_TRACE("Unmapped mouse button {}", event.button);
@@ -689,6 +693,7 @@ auto CompositorServer::forward_mouse_button(const SDL_MouseButtonEvent& event) -
 }
 
 auto CompositorServer::forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     InputEvent input_event{};
     input_event.type = InputEventType::pointer_motion;
     input_event.dx = static_cast<double>(event.xrel);
@@ -700,6 +705,7 @@ auto CompositorServer::forward_mouse_motion(const SDL_MouseMotionEvent& event) -
 }
 
 auto CompositorServer::forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     if (event.y != 0) {
         // SDL: positive = up, Wayland: positive = down; negate to match
         InputEvent input_event{};
@@ -725,6 +731,7 @@ auto CompositorServer::forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> 
 }
 
 auto CompositorServer::Impl::setup_base_components() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     initialize_wlroots_logging();
 
     display = wl_display_create();
@@ -756,6 +763,7 @@ auto CompositorServer::Impl::setup_base_components() -> Result<void> {
 }
 
 auto CompositorServer::Impl::create_allocator() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     allocator = wlr_allocator_autocreate(backend, renderer);
     if (!allocator) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create allocator");
@@ -764,6 +772,7 @@ auto CompositorServer::Impl::create_allocator() -> Result<void> {
 }
 
 auto CompositorServer::Impl::create_compositor() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     compositor = wlr_compositor_create(display, 6, renderer);
     if (!compositor) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create compositor");
@@ -772,6 +781,7 @@ auto CompositorServer::Impl::create_compositor() -> Result<void> {
 }
 
 auto CompositorServer::Impl::create_output_layout() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     output_layout = wlr_output_layout_create(display);
     if (!output_layout) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create output layout");
@@ -780,6 +790,7 @@ auto CompositorServer::Impl::create_output_layout() -> Result<void> {
 }
 
 auto CompositorServer::Impl::setup_xdg_shell() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     xdg_shell = wlr_xdg_shell_create(display, 3);
     if (!xdg_shell) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create xdg-shell");
@@ -805,6 +816,7 @@ auto CompositorServer::Impl::setup_xdg_shell() -> Result<void> {
 }
 
 auto CompositorServer::Impl::setup_input_devices() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     seat = wlr_seat_create(display, "seat0");
     if (!seat) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create seat");
@@ -853,6 +865,7 @@ auto CompositorServer::Impl::setup_input_devices() -> Result<void> {
 }
 
 auto CompositorServer::Impl::setup_event_loop_fd() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     int efd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (efd < 0) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create eventfd");
@@ -880,6 +893,7 @@ auto CompositorServer::Impl::setup_event_loop_fd() -> Result<void> {
 }
 
 auto CompositorServer::Impl::setup_xwayland() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     {
         StderrSuppressor suppress;
         xwayland = wlr_xwayland_create(display, compositor, false);
@@ -902,6 +916,7 @@ auto CompositorServer::Impl::setup_xwayland() -> Result<void> {
 }
 
 auto CompositorServer::Impl::start_backend() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     if (!wlr_backend_start(backend)) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to start wlroots backend");
     }
@@ -909,6 +924,7 @@ auto CompositorServer::Impl::start_backend() -> Result<void> {
 }
 
 auto CompositorServer::Impl::setup_output() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     // Create headless output for native Wayland clients
     output = wlr_headless_add_output(backend, 1920, 1080);
     if (!output) {
@@ -943,6 +959,7 @@ auto CompositorServer::Impl::setup_output() -> Result<void> {
 }
 
 auto CompositorServer::Impl::setup_cursor_theme() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     constexpr int CURSOR_SIZE = 64;
     cursor_theme = wlr_xcursor_theme_load("cursor", CURSOR_SIZE);
     if (!cursor_theme) {
@@ -1023,12 +1040,14 @@ auto CompositorServer::Impl::get_cursor_frame(uint32_t time_msec) const -> const
 
 void CompositorServer::Impl::start_compositor_thread() {
     compositor_thread = std::jthread([this] {
+        GOGGLES_PROFILE_FUNCTION();
         StderrSuppressor suppress;
         wl_display_run(display);
     });
 }
 
 auto CompositorServer::start() -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     auto& impl = *m_impl;
     auto cleanup_on_error = [this](void*) { stop(); };
     std::unique_ptr<void, decltype(cleanup_on_error)> guard(this, cleanup_on_error);
@@ -1062,6 +1081,7 @@ auto CompositorServer::start() -> Result<void> {
 }
 
 void CompositorServer::stop() {
+    GOGGLES_PROFILE_FUNCTION();
     auto& impl = *m_impl;
 
     if (!impl.display) {
@@ -1146,6 +1166,7 @@ void CompositorServer::stop() {
 }
 
 auto CompositorServer::inject_event(const InputEvent& event) -> bool {
+    GOGGLES_PROFILE_FUNCTION();
     if (!m_impl->event_queue.try_push(event)) {
         return false;
     }
@@ -1162,6 +1183,7 @@ void CompositorServer::set_cursor_visible(bool visible) {
 
 auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
     -> std::optional<util::ExternalImageFrame> {
+    GOGGLES_PROFILE_FUNCTION();
     std::scoped_lock lock(m_impl->present_mutex);
     if (!m_impl->presented_frame) {
         return std::nullopt;
@@ -1188,6 +1210,7 @@ auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
 }
 
 bool CompositorServer::Impl::wake_event_loop() {
+    GOGGLES_PROFILE_FUNCTION();
     if (!event_fd.valid()) {
         return false;
     }
@@ -1233,6 +1256,7 @@ void CompositorServer::Impl::handle_surface_resize_requests() {
 }
 
 void CompositorServer::Impl::process_input_events() {
+    GOGGLES_PROFILE_FUNCTION();
     handle_focus_request();
     handle_surface_resize_requests();
     if (present_reset_requested.exchange(false, std::memory_order_acq_rel)) {
@@ -1261,6 +1285,7 @@ void CompositorServer::Impl::process_input_events() {
 }
 
 void CompositorServer::Impl::handle_key_event(const InputEvent& event, uint32_t time) {
+    GOGGLES_PROFILE_FUNCTION();
     auto target = get_input_target();
     wlr_surface* target_surface = target.surface;
     wlr_xwayland_surface* target_xsurface = target.xsurface;
@@ -1288,6 +1313,7 @@ void CompositorServer::Impl::handle_key_event(const InputEvent& event, uint32_t 
 }
 
 void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event, uint32_t time) {
+    GOGGLES_PROFILE_FUNCTION();
     auto root_target = get_root_input_target();
     if (!root_target.root_surface) {
         return;
@@ -1329,6 +1355,7 @@ void CompositorServer::Impl::handle_pointer_motion_event(const InputEvent& event
 }
 
 void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event, uint32_t time) {
+    GOGGLES_PROFILE_FUNCTION();
     auto root_target = get_root_input_target();
     auto target = resolve_input_target(root_target, true);
     wlr_surface* target_surface = target.surface;
@@ -1360,6 +1387,7 @@ void CompositorServer::Impl::handle_pointer_button_event(const InputEvent& event
 }
 
 void CompositorServer::Impl::handle_pointer_axis_event(const InputEvent& event, uint32_t time) {
+    GOGGLES_PROFILE_FUNCTION();
     auto root_target = get_root_input_target();
     auto target = resolve_input_target(root_target, true);
     wlr_surface* target_surface = target.surface;
@@ -2507,6 +2535,7 @@ void CompositorServer::Impl::update_cursor_position(const InputEvent& event,
 }
 
 void CompositorServer::Impl::update_presented_frame(wlr_surface* surface) {
+    GOGGLES_PROFILE_FUNCTION();
     auto target = get_input_target();
     if (!target.root_surface || !surface) {
         return;
@@ -2520,6 +2549,7 @@ void CompositorServer::Impl::update_presented_frame(wlr_surface* surface) {
 }
 
 void CompositorServer::Impl::refresh_presented_frame() {
+    GOGGLES_PROFILE_FUNCTION();
     auto target = get_input_target();
     if (!target.root_surface) {
         clear_presented_frame();
@@ -2622,6 +2652,7 @@ void CompositorServer::Impl::render_cursor_overlay(wlr_render_pass* pass) const 
 }
 
 bool CompositorServer::Impl::render_surface_to_frame(const InputTarget& target) {
+    GOGGLES_PROFILE_SCOPE("CompositorRenderSurfaceToFrame");
     wlr_surface* root_surface = target.root_surface ? target.root_surface : target.surface;
     if (!present_swapchain || !root_surface) {
         return false;
@@ -2872,6 +2903,7 @@ auto CompositorServer::Impl::get_input_target() -> InputTarget {
 }
 
 auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
+    GOGGLES_PROFILE_FUNCTION();
     std::scoped_lock lock(m_impl->hooks_mutex);
     std::vector<SurfaceInfo> result;
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <util/logging.hpp>
+#include <util/profiling.hpp>
 
 namespace goggles::render {
 
@@ -86,6 +87,7 @@ auto get_format_size(vk::Format format) -> uint32_t {
 }
 
 void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& data) {
+    GOGGLES_PROFILE_FUNCTION();
     auto param_count = layout->getParameterCount();
     GOGGLES_LOG_DEBUG("Reflecting {} global parameters", param_count);
 
@@ -170,6 +172,7 @@ void reflect_global_parameters(slang::ProgramLayout* layout, ReflectionData& dat
 }
 
 void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
+    GOGGLES_PROFILE_FUNCTION();
     auto entry_point_count = layout->getEntryPointCount();
     for (unsigned ep = 0; ep < entry_point_count; ++ep) {
         auto entry_layout = layout->getEntryPointByIndex(ep);
@@ -260,6 +263,7 @@ void reflect_entry_points(slang::ProgramLayout* layout, ReflectionData& data) {
 } // namespace
 
 auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
+    GOGGLES_PROFILE_FUNCTION();
     if (linked == nullptr) {
         return make_error<ReflectionData>(ErrorCode::shader_compile_failed,
                                           "Cannot reflect null program");
@@ -284,6 +288,7 @@ auto reflect_program(slang::IComponentType* linked) -> Result<ReflectionData> {
 
 auto reflect_stage(slang::IComponentType* linked, vk::ShaderStageFlags stage)
     -> Result<ReflectionData> {
+    GOGGLES_PROFILE_FUNCTION();
     auto result = reflect_program(linked);
     if (!result) {
         return result;
@@ -312,6 +317,7 @@ auto reflect_stage(slang::IComponentType* linked, vk::ShaderStageFlags stage)
 
 auto merge_reflection(const ReflectionData& vertex, const ReflectionData& fragment)
     -> ReflectionData {
+    GOGGLES_PROFILE_FUNCTION();
     ReflectionData merged;
 
     if (vertex.push_constants.has_value() && fragment.push_constants.has_value()) {

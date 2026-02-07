@@ -1,5 +1,7 @@
 #include "config.hpp"
 
+#include "profiling.hpp"
+
 #include <toml.hpp>
 
 namespace goggles {
@@ -19,6 +21,7 @@ auto validate_absolute_or_empty(const std::string& value, const char* name) -> R
 }
 
 auto parse_paths(const toml::value& data, Config& config) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     try {
         if (!data.contains("paths")) {
             return {};
@@ -55,6 +58,7 @@ auto parse_paths(const toml::value& data, Config& config) -> Result<void> {
 }
 
 auto parse_capture(const toml::value& data, Config& config) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     try {
         if (!data.contains("capture")) {
             return {};
@@ -79,6 +83,7 @@ auto parse_capture(const toml::value& data, Config& config) -> Result<void> {
 }
 
 auto parse_shader(const toml::value& data, Config& config) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     try {
         if (!data.contains("shader")) {
             return {};
@@ -95,6 +100,7 @@ auto parse_shader(const toml::value& data, Config& config) -> Result<void> {
 }
 
 auto parse_render(const toml::value& data, Config& config) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     try {
         if (!data.contains("render")) {
             return {};
@@ -151,6 +157,7 @@ auto parse_render(const toml::value& data, Config& config) -> Result<void> {
 }
 
 auto parse_logging(const toml::value& data, Config& config) -> Result<void> {
+    GOGGLES_PROFILE_FUNCTION();
     try {
         if (!data.contains("logging")) {
             return {};
@@ -188,6 +195,7 @@ auto default_config() -> Config {
 }
 
 auto load_config(const std::filesystem::path& path) -> Result<Config> {
+    GOGGLES_PROFILE_FUNCTION();
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
         if (ec) {

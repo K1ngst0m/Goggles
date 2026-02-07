@@ -13,6 +13,7 @@
 #include <numeric>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
+#include <util/profiling.hpp>
 #include <utility>
 
 namespace goggles::ui {
@@ -72,6 +73,7 @@ void rebuild_fonts(const std::filesystem::path& font_path, float size_pixels, fl
 
 auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config,
                         const util::AppDirs& app_dirs) -> ResultPtr<ImGuiLayer> {
+    GOGGLES_PROFILE_FUNCTION();
     auto layer = std::unique_ptr<ImGuiLayer>(new ImGuiLayer());
     layer->m_window = window;
     layer->m_instance = config.instance;
@@ -209,6 +211,7 @@ void ImGuiLayer::process_event(const SDL_Event& event) {
 }
 
 void ImGuiLayer::begin_frame() {
+    GOGGLES_PROFILE_FUNCTION();
     if (!m_initialized) {
         return;
     }
@@ -263,6 +266,7 @@ void ImGuiLayer::end_frame() {
 }
 
 void ImGuiLayer::record(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Extent2D extent) {
+    GOGGLES_PROFILE_FUNCTION();
     if (!m_initialized) {
         return;
     }
@@ -471,6 +475,7 @@ void ImGuiLayer::draw_preset_tree(const PresetTreeNode& node) {
 }
 
 void ImGuiLayer::draw_shader_controls() {
+    GOGGLES_PROFILE_FUNCTION();
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 500), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Shader Controls")) {
@@ -484,6 +489,7 @@ void ImGuiLayer::draw_shader_controls() {
 }
 
 void ImGuiLayer::draw_prechain_stage_controls() {
+    GOGGLES_PROFILE_FUNCTION();
     if (ImGui::CollapsingHeader("Pre-Chain Stage", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& prechain = m_state.prechain;
 
@@ -631,6 +637,7 @@ void ImGuiLayer::draw_prechain_stage_controls() {
 }
 
 void ImGuiLayer::draw_effect_stage_controls() {
+    GOGGLES_PROFILE_FUNCTION();
     if (ImGui::CollapsingHeader("Effect Stage (RetroArch)", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Enable Shader", &m_state.shader_enabled);
 
@@ -680,6 +687,7 @@ void ImGuiLayer::draw_postchain_stage_controls() {
 }
 
 void ImGuiLayer::draw_parameter_controls() {
+    GOGGLES_PROFILE_FUNCTION();
     if (ImGui::TreeNode("Shader Parameters")) {
         if (ImGui::Button("Reset to Defaults")) {
             if (m_on_parameter_reset) {
@@ -710,6 +718,7 @@ void ImGuiLayer::draw_parameter_controls() {
 }
 
 void ImGuiLayer::draw_app_management() {
+    GOGGLES_PROFILE_FUNCTION();
     ImGui::SetNextWindowPos(ImVec2(370, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 350), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Application")) {
@@ -814,6 +823,7 @@ void ImGuiLayer::notify_source_frame() {
 }
 
 void ImGuiLayer::rebuild_for_format(vk::Format new_format) {
+    GOGGLES_PROFILE_FUNCTION();
     if (new_format == m_swapchain_format) {
         return;
     }
