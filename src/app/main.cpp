@@ -357,6 +357,8 @@ static auto log_config_summary(const goggles::Config& config) -> void {
     GOGGLES_LOG_DEBUG("  Render enable_validation: {}", config.render.enable_validation);
     GOGGLES_LOG_DEBUG("  Render scale_mode: {}", to_string(config.render.scale_mode));
     GOGGLES_LOG_DEBUG("  Render integer_scale: {}", config.render.integer_scale);
+    GOGGLES_LOG_DEBUG("  Render gpu_selector: {}",
+                      config.render.gpu_selector.empty() ? "<auto>" : config.render.gpu_selector);
     GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
 }
 
@@ -418,6 +420,10 @@ static auto run_app(int argc, char** argv) -> int {
     if (cli_opts.target_fps.has_value()) {
         config.render.target_fps = *cli_opts.target_fps;
         GOGGLES_LOG_INFO("Target FPS overridden by CLI: {}", config.render.target_fps);
+    }
+    if (!cli_opts.gpu_selector.empty()) {
+        config.render.gpu_selector = cli_opts.gpu_selector;
+        GOGGLES_LOG_INFO("GPU selector overridden by CLI: {}", config.render.gpu_selector);
     }
     if (cli_opts.app_width != 0 || cli_opts.app_height != 0) {
         config.render.source_width = cli_opts.app_width;

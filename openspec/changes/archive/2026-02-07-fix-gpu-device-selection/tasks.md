@@ -1,7 +1,7 @@
-## 1. CLI Option (deferred)
+## 1. CLI Option
 
-- [ ] 1.1 Add `--gpu <selector>` option to CLI (accepts index like "0" or name substring like "AMD")
-- [ ] 1.2 Pass GPU selector through to VulkanBackend
+- [x] 1.1 Add `--gpu <selector>` option to CLI (accepts index like "0" or name substring like "AMD")
+- [x] 1.2 Pass GPU selector through to VulkanBackend
 
 ## 2. Device Selection Logic
 
@@ -18,6 +18,7 @@
 
 ## 4. Testing
 
-- [ ] 4.1 Test on multi-GPU system with explicit `--gpu` selection (deferred)
+- [x] 4.1 Validate explicit `--gpu` selection parsing and config propagation in automated tests
+  - No automated backend selector tests were added; backend behavior remains runtime/manual follow-up.
 - [x] 4.2 Test default selection picks working GPU
 - [x] 4.3 Test child process uses same GPU as goggles

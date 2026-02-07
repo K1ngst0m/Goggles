@@ -61,6 +61,7 @@ struct Config {
         bool enable_validation = false;
         ScaleMode scale_mode = ScaleMode::fill;
         uint32_t integer_scale = 0;
+        std::string gpu_selector;
         uint32_t source_width = 0;
         uint32_t source_height = 0;
     } render;

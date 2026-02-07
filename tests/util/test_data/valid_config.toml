@@ -9,6 +9,7 @@ preset = "shaders/test.glsl"
 [render]
 vsync = false
 target_fps = 120
+gpu_selector = "AMD"
 
 [logging]
 level = "debug"

@@ -30,6 +30,8 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
     app.add_option("-c,--config", options.config_path, "Path to configuration file");
     app.add_option("-s,--shader", options.shader_preset, "Override shader preset (path to .slangp)")
         ->check(CLI::ExistingFile);
+    app.add_option("--gpu", options.gpu_selector,
+                   "Select GPU by index (e.g. 0) or name substring (e.g. AMD)");
     app.add_flag("--detach", options.detach, "Viewer-only mode (do not launch target app)");
     app.add_flag("--wsi-proxy", options.wsi_proxy,
                  "Default mode only: enable WSI proxy mode (sets GOGGLES_WSI_PROXY=1 for launched "

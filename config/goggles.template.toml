@@ -48,6 +48,9 @@ enable_validation = false
 # dynamic: request source to match viewer resolution (WSI proxy mode only)
 scale_mode = "fill"
 integer_scale = 0
+# Optional GPU selector: index ("0") or case-insensitive name substring ("AMD")
+# Empty string keeps automatic selection.
+gpu_selector = ""
 
 # =============================================================================
 # Logging Settings

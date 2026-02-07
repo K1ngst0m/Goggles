@@ -20,6 +20,7 @@ TEST_CASE("default_config returns expected values", "[config]") {
     SECTION("Render defaults") {
         REQUIRE(config.render.vsync == true);
         REQUIRE(config.render.target_fps == 60);
+        REQUIRE(config.render.gpu_selector.empty());
     }
 
     SECTION("Logging defaults") {
@@ -55,6 +56,7 @@ TEST_CASE("load_config parses valid configuration", "[config]") {
     SECTION("Render section") {
         REQUIRE(config.render.vsync == false);
         REQUIRE(config.render.target_fps == 120);
+        REQUIRE(config.render.gpu_selector == "AMD");
     }
 
     SECTION("Logging section") {

@@ -25,6 +25,7 @@ struct RenderSettings {
     ScaleMode scale_mode = ScaleMode::stretch;
     uint32_t integer_scale = 0;
     uint32_t target_fps = 60;
+    std::string gpu_selector;
     uint32_t source_width = 0;
     uint32_t source_height = 0;
 };
@@ -37,7 +38,8 @@ public:
     [[nodiscard]] static auto create(SDL_Window* window, bool enable_validation = false,
                                      const std::filesystem::path& shader_dir = "shaders",
                                      const std::filesystem::path& cache_dir = {},
-                                     RenderSettings settings = {}) -> ResultPtr<VulkanBackend>;
+                                     const RenderSettings& settings = {})
+        -> ResultPtr<VulkanBackend>;
 
     ~VulkanBackend();
 
@@ -193,6 +195,7 @@ private:
     std::filesystem::path m_shader_dir;
     std::filesystem::path m_cache_dir;
     std::filesystem::path m_preset_path;
+    std::string m_gpu_selector;
 
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
