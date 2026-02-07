@@ -18,4 +18,4 @@
 ## 4. Application Integration
 
 - [x] 4.1 Call `request_resolution()` on window resize
-- [ ] 4.2 Optional: Add aspect ratio lock mode
+- [x] 4.2 Optional: Add aspect ratio lock mode (explicitly deferred to a follow-up proposal)
