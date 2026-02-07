@@ -5,6 +5,8 @@
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <charconv>
 #include <cstring>
 #include <format>
 #include <render/chain/pass.hpp>
@@ -58,6 +60,79 @@ struct DmabufImageCreateChain {
     vk::SubresourceLayout plane_layout;
     vk::ImageCreateInfo image_info;
 };
+
+struct PhysicalDeviceCandidate {
+    vk::PhysicalDevice device;
+    uint32_t graphics_family;
+    uint32_t index;
+    bool present_wait_supported;
+    int score;
+};
+
+auto to_ascii_lower(std::string value) -> std::string {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+auto get_device_name(vk::PhysicalDevice device) -> std::string {
+    return device.getProperties().deviceName.data();
+}
+
+auto select_candidate_by_gpu_selector(const std::vector<PhysicalDeviceCandidate>& candidates,
+                                      const std::string& gpu_selector,
+                                      const std::string& available_gpus)
+    -> Result<const PhysicalDeviceCandidate*> {
+    uint32_t selector_index = 0;
+    const auto parse_end = gpu_selector.data() + gpu_selector.size();
+    auto [parsed_end, parsed_ec] = std::from_chars(gpu_selector.data(), parse_end, selector_index);
+    const bool numeric_selector = parsed_ec == std::errc{} && parsed_end == parse_end;
+
+    if (numeric_selector) {
+        auto it = std::find_if(candidates.begin(), candidates.end(),
+                               [selector_index](const PhysicalDeviceCandidate& c) {
+                                   return c.index == selector_index;
+                               });
+        if (it == candidates.end()) {
+            return make_error<const PhysicalDeviceCandidate*>(
+                ErrorCode::vulkan_init_failed,
+                "GPU selector '" + gpu_selector +
+                    "' is invalid or unsuitable. Available GPUs: " + available_gpus);
+        }
+        return &*it;
+    }
+
+    const auto selector_lower = to_ascii_lower(gpu_selector);
+    std::vector<const PhysicalDeviceCandidate*> matched_candidates;
+    for (const auto& candidate : candidates) {
+        const auto device_name = to_ascii_lower(get_device_name(candidate.device));
+        if (device_name.find(selector_lower) != std::string::npos) {
+            matched_candidates.push_back(&candidate);
+        }
+    }
+
+    if (matched_candidates.empty()) {
+        return make_error<const PhysicalDeviceCandidate*>(
+            ErrorCode::vulkan_init_failed,
+            "GPU selector '" + gpu_selector +
+                "' is invalid or unsuitable. Available GPUs: " + available_gpus);
+    }
+
+    if (matched_candidates.size() > 1) {
+        std::string matched_gpus;
+        for (const auto* candidate : matched_candidates) {
+            const auto gpu_name = get_device_name(candidate->device);
+            matched_gpus += std::format("{}[{}] {}", matched_gpus.empty() ? "" : ", ",
+                                        candidate->index, gpu_name);
+        }
+        return make_error<const PhysicalDeviceCandidate*>(
+            ErrorCode::vulkan_init_failed, "GPU selector '" + gpu_selector +
+                                               "' matches multiple suitable GPUs: " + matched_gpus +
+                                               ". Please use a numeric index.");
+    }
+
+    return matched_candidates.front();
+}
 
 static void init_dmabuf_image_create_chain(const util::ExternalImage& frame, vk::Format vk_format,
                                            DmabufImageCreateChain* chain) {
@@ -169,7 +244,7 @@ VulkanBackend::~VulkanBackend() {
 
 auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
                            const std::filesystem::path& shader_dir,
-                           const std::filesystem::path& cache_dir, RenderSettings settings)
+                           const std::filesystem::path& cache_dir, const RenderSettings& settings)
     -> ResultPtr<VulkanBackend> {
     GOGGLES_PROFILE_FUNCTION();
 
@@ -195,6 +270,7 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     }
     backend->m_scale_mode = settings.scale_mode;
     backend->m_integer_scale = settings.integer_scale;
+    backend->m_gpu_selector = settings.gpu_selector;
     backend->m_source_resolution = vk::Extent2D{settings.source_width, settings.source_height};
     backend->update_target_fps(settings.target_fps);
 
@@ -361,14 +437,8 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
         return make_error<void>(ErrorCode::vulkan_init_failed, "No Vulkan devices found");
     }
 
-    struct Candidate {
-        vk::PhysicalDevice device;
-        uint32_t graphics_family;
-        uint32_t index;
-        bool present_wait_supported;
-        int score;
-    };
-    std::vector<Candidate> candidates;
+    std::vector<PhysicalDeviceCandidate> candidates;
+    std::string available_gpus;
 
     GOGGLES_LOG_INFO("Available GPUs:");
     for (size_t idx = 0; idx < devices.size(); ++idx) {
@@ -430,6 +500,8 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
                                  ? "suitable"
                                  : (!surface_ok ? "no surface support" : "missing extensions");
         GOGGLES_LOG_INFO("  [{}] {} ({})", idx, props.deviceName.data(), status);
+        available_gpus += std::format("{}[{}] {}", available_gpus.empty() ? "" : ", ", idx,
+                                      props.deviceName.data());
 
         if (surface_ok && extensions_ok) {
             int score = 0;
@@ -451,14 +523,27 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
                                 "No suitable GPU found with DMA-BUF and surface support");
     }
 
-    auto best =
-        std::max_element(candidates.begin(), candidates.end(),
-                         [](const Candidate& a, const Candidate& b) { return a.score < b.score; });
+    const PhysicalDeviceCandidate* selected = nullptr;
+    if (!m_gpu_selector.empty()) {
+        auto selected_result =
+            select_candidate_by_gpu_selector(candidates, m_gpu_selector, available_gpus);
+        if (!selected_result) {
+            return make_error<void>(selected_result.error().code, selected_result.error().message,
+                                    selected_result.error().location);
+        }
+        selected = selected_result.value();
+    } else {
+        auto best =
+            std::max_element(candidates.begin(), candidates.end(),
+                             [](const PhysicalDeviceCandidate& a,
+                                const PhysicalDeviceCandidate& b) { return a.score < b.score; });
+        selected = &*best;
+    }
 
-    m_physical_device = best->device;
-    m_graphics_queue_family = best->graphics_family;
-    m_gpu_index = best->index;
-    m_present_wait_supported = best->present_wait_supported;
+    m_physical_device = selected->device;
+    m_graphics_queue_family = selected->graphics_family;
+    m_gpu_index = selected->index;
+    m_present_wait_supported = selected->present_wait_supported;
 
     vk::PhysicalDeviceIDProperties id_props{};
     vk::PhysicalDeviceProperties2 props2{};

@@ -125,6 +125,16 @@ TEST_CASE("parse_cli: default mode parses vk-layer logging options", "[cli]") {
     REQUIRE(result->options.layer_log_level == "debug");
 }
 
+TEST_CASE("parse_cli: default mode parses gpu selector", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args({"goggles", "--config", cfg, "--gpu", "AMD", "--", "vkcube"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(result);
+    REQUIRE(result->action == goggles::app::CliAction::run);
+    REQUIRE(result->options.gpu_selector == "AMD");
+}
+
 TEST_CASE("parse_cli: app args may include options that collide with viewer flags", "[cli]") {
     auto cfg = default_config_path();
     ArgvBuilder args({"goggles", "--config", cfg, "--", "some_app", "--config", "app.toml"});

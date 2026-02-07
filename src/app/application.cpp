@@ -109,6 +109,7 @@ auto Application::init_vulkan_backend(const Config& config, const util::AppDirs&
         .scale_mode = config.render.scale_mode,
         .integer_scale = config.render.integer_scale,
         .target_fps = config.render.target_fps,
+        .gpu_selector = config.render.gpu_selector,
         .source_width = config.render.source_width,
         .source_height = config.render.source_height,
     };

@@ -13,6 +13,7 @@ namespace goggles::app {
 struct CliOptions {
     std::filesystem::path config_path;
     std::string shader_preset;
+    std::string gpu_selector;
     bool detach = false;
     bool wsi_proxy = false;
     uint32_t app_width = 0;

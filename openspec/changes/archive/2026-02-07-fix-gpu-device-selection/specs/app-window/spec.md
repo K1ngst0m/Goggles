@@ -22,6 +22,13 @@ The application SHALL allow users to select a specific GPU and SHALL improve aut
 - **WHEN** the user runs with `--gpu nonexistent`
 - **THEN** the application SHALL exit with an error message listing available GPUs
 
+#### Scenario: Ambiguous GPU selector
+
+- **GIVEN** multiple suitable GPUs match the name selector
+- **WHEN** the user runs with a non-unique selector like `--gpu AMD`
+- **THEN** the application SHALL exit with an error listing matching GPUs
+- **AND** it SHALL instruct the user to choose a numeric index
+
 #### Scenario: Default GPU selection
 
 - **GIVEN** multiple GPUs are available and no `--gpu` option is specified

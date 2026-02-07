@@ -148,6 +148,9 @@ auto parse_render(const toml::value& data, Config& config) -> Result<void> {
             }
             config.render.integer_scale = static_cast<uint32_t>(scale);
         }
+        if (render.contains("gpu_selector")) {
+            config.render.gpu_selector = toml::find<std::string>(render, "gpu_selector");
+        }
 
         return {};
     } catch (const std::exception& e) {
