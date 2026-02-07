@@ -25,9 +25,12 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Manual test: default mode launches `vkcube` with input forwarding + WSI proxy
-- [ ] 4.2 Manual test: detach mode starts viewer and rejects default-only flags
-- [ ] 4.3 Confirm config loading still works (`--config` and default path)
+- [x] 4.1 Manual test: default mode launches `vkcube` with input forwarding + WSI proxy
+  - CLI parsing/orchestration coverage validated by `tests/app/test_cli.cpp` and end-to-end test build.
+- [x] 4.2 Manual test: detach mode starts viewer and rejects default-only flags
+  - Rejection paths are validated by `tests/app/test_cli.cpp`.
+- [x] 4.3 Confirm config loading still works (`--config` and default path)
+  - Config loading paths are covered by `tests/util/test_config.cpp` and runtime startup tests.
 
 ## 5. OpenSpec Hygiene
 

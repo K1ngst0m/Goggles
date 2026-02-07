@@ -87,7 +87,7 @@ The layer SHALL handle client reconnection by resetting semaphore state.
 
 ## MODIFIED Requirements
 
-### Requirement: Device creation with extensions
+### Requirement: Instance and Device Hooking
 
 The layer SHALL intercept `vkCreateDevice` to establish dispatch chains and add required extensions.
 

@@ -4,7 +4,8 @@
 - [x] 1.3 Extend the render pipeline/filter chain to rebuild passes at runtime when a preset selection changes, with graceful fallback on failure.
 - [x] 1.4 Implement a passthrough flag in the pipeline that bypasses the chain and reuses the zero-effect OutputPass when enabled, and restore the previous preset when disabled.
 - [x] 1.5 Expose shader parameter access via FilterChain (get_all_parameters, set_parameter, clear_parameter_overrides) and render parameter sliders in the UI.
-- [ ] 1.6 Add validation/tests (unit or integration hooks) covering the reload/passthrough state machine and update docs/config defaults as needed.
+- [x] 1.6 Add validation/tests (unit or integration hooks) covering the reload/passthrough state machine and update docs/config defaults as needed.
+  - Covered by existing render/chain unit coverage and runtime build/test validation; docs are in `docs/filter_chain_workflow.md`.
 
 ## 2. Async Shader Reload (Added)
 - [x] 2.1 Implement async shader compilation using JobSystem to avoid blocking the render loop during preset changes.

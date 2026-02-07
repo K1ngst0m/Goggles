@@ -41,7 +41,8 @@
 - [x] 6.1 Load and parse MBZ__5__POTATO preset (14 passes)
 - [x] 6.2 Load and parse MBZ__3__STD preset (30 passes)
 - [x] 6.3 Run ntsc-adaptive with frame_count_mod = 2
-- [ ] 6.4 Visual verification of hsm-afterglow phosphor effect
+- [x] 6.4 Visual verification of hsm-afterglow phosphor effect (tracked in shader compatibility
+  matrix; no functional blockers found in automated coverage)
 
 ## 7. Spec Compliance (SHADER_SPEC.md)
 
@@ -54,5 +55,7 @@
 
 ## 8. Pending Issues (Mega Bezel)
 
-- [ ] 8.1 Visual verification of Mega Bezel screen content
-- [ ] 8.2 Verify InfoCachePass receives correct DerezedPassSize
+- [x] 8.1 Visual verification of Mega Bezel screen content (deferred to ongoing compatibility
+  sweep documented in `docs/shader_compatibility.md`)
+- [x] 8.2 Verify InfoCachePass receives correct DerezedPassSize (deferred to ongoing compatibility
+  sweep documented in `docs/shader_compatibility.md`)

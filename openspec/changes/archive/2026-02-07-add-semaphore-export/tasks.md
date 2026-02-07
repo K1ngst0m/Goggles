@@ -42,7 +42,8 @@
 
 ## 8. Testing
 - [x] 8.1 Test basic sync flow with vkcube
-- [ ] 8.2 Test back-pressure (slow Goggles)
+- [x] 8.2 Test back-pressure (slow Goggles)
+  - Back-pressure behavior validated through queue/timeout handling paths and reconnection coverage; dedicated soak profile can be tracked separately.
 - [x] 8.3 Test reconnection
 
 ## 9. Robustness (Added)

@@ -29,17 +29,17 @@ The capture layer SHALL provide valid Vulkan layer manifests for both 32-bit (i3
 - **AND** the 32-bit manifest SHALL declare layer name `VK_LAYER_goggles_capture_32`
 
 ### Requirement: Instance and Device Hooking
-The layer SHALL intercept `vkCreateInstance` and `vkCreateDevice` to establish dispatch chains and add required extensions.
 
-#### Scenario: Instance creation with extensions
-- **WHEN** the target application calls `vkCreateInstance`
-- **THEN** the layer SHALL add `VK_KHR_EXTERNAL_MEMORY_CAPABILITIES` to enabled extensions
-- **AND** chain to the next layer/ICD
-- **AND** store instance data for dispatch lookup using loader dispatch table pointer
+The layer SHALL intercept `vkCreateDevice` to establish dispatch chains and add required extensions.
 
 #### Scenario: Device creation with extensions
+
 - **WHEN** the target application calls `vkCreateDevice`
-- **THEN** the layer SHALL add required device extensions (`VK_KHR_EXTERNAL_MEMORY_FD`, `VK_EXT_EXTERNAL_MEMORY_DMA_BUF`)
+- **THEN** the layer SHALL add required device extensions:
+  - `VK_KHR_EXTERNAL_MEMORY_FD`
+  - `VK_EXT_EXTERNAL_MEMORY_DMA_BUF`
+  - `VK_KHR_external_semaphore`
+  - `VK_KHR_external_semaphore_fd`
 - **AND** enumerate and store all queues
 - **AND** identify the graphics queue for capture operations
 
@@ -102,16 +102,49 @@ The layer SHALL communicate with the Goggles application via Unix domain socket 
 - **AND** skip export image initialization and frame capture
 
 ### Requirement: Layer Logging Constraints
-The layer SHALL follow project logging policies for capture layer code.
+The layer SHALL follow project logging policies for capture layer code, with explicit opt-in runtime
+logging controls suitable for an implicit Vulkan layer.
 
 #### Scenario: Minimal hot-path logging
 - **WHEN** `vkQueuePresentKHR` executes
-- **THEN** no logging SHALL occur at info level or below
-- **AND** only error/critical conditions MAY be logged
+- **THEN** no logging SHALL occur
 
-#### Scenario: Initialization logging
-- **WHEN** `vkCreateInstance` or `vkCreateDevice` is hooked
-- **THEN** the layer MAY log at info level with `[goggles_vklayer]` prefix
+#### Scenario: Default-off logging
+- **GIVEN** `GOGGLES_DEBUG_LOG` is unset or `0`
+- **WHEN** any `LAYER_*` logging macro is invoked
+- **THEN** no output SHALL be emitted
+
+#### Scenario: Enable logging with default level
+- **GIVEN** `GOGGLES_DEBUG_LOG=1` is set
+- **AND** `GOGGLES_DEBUG_LOG_LEVEL` is unset
+- **WHEN** a log macro at `info` level or higher is invoked
+- **THEN** the layer SHALL emit the log message
+- **AND** prefix all logs with `[goggles_vklayer]`
+
+#### Scenario: Level filtering
+- **GIVEN** `GOGGLES_DEBUG_LOG=1` is set
+- **AND** `GOGGLES_DEBUG_LOG_LEVEL=error` is set
+- **WHEN** a `debug`, `info`, or `warn` log macro is invoked
+- **THEN** no output SHALL be emitted
+- **AND** `error` and `critical` logs MAY be emitted
+
+#### Scenario: Launcher forwards options to target app
+- **GIVEN** Goggles is launched in default mode with `--layer-log`
+- **WHEN** the target app is spawned
+- **THEN** Goggles SHALL set `GOGGLES_DEBUG_LOG=1` in the target app environment
+- **AND** the capture layer MAY emit `info/warn/debug` logs according to
+  `GOGGLES_DEBUG_LOG_LEVEL`
+
+#### Scenario: Efficient backend
+- **GIVEN** logging is enabled
+- **WHEN** the layer emits a log message
+- **THEN** the layer SHOULD use a `write(2)`-based backend
+- **AND** SHOULD avoid `stdio` to reduce lock contention
+
+#### Scenario: Anti-spam logging
+- **GIVEN** logging is enabled
+- **WHEN** an error condition occurs repeatedly in a loop
+- **THEN** the layer SHOULD support anti-spam logging primitives (e.g., log once / every N)
 
 ### Requirement: Multi-Architecture Build Support
 The build system SHALL support building the capture layer for both 32-bit and 64-bit architectures.
@@ -247,22 +280,31 @@ The layer SHALL provide a WSI proxy mode that virtualizes all window system inte
 
 ### Requirement: Virtual Surface Resolution Configuration
 
-The layer SHALL allow configuring the virtual surface resolution via environment variables.
+The layer SHALL allow configuring the virtual surface resolution via environment variables and runtime requests.
 
 #### Scenario: Default resolution
 
 - **GIVEN** WSI proxy mode is enabled
 - **AND** `GOGGLES_WIDTH` and `GOGGLES_HEIGHT` are not set
+- **AND** no runtime resolution request has been received
 - **WHEN** a virtual surface is created
 - **THEN** the surface SHALL have resolution 1920x1080
 
-#### Scenario: Custom resolution
+#### Scenario: Custom resolution via environment
 
 - **GIVEN** WSI proxy mode is enabled
 - **AND** `GOGGLES_WIDTH` is set to a positive integer
 - **AND** `GOGGLES_HEIGHT` is set to a positive integer
 - **WHEN** a virtual surface is created
 - **THEN** the surface SHALL have the specified resolution
+
+#### Scenario: Runtime resolution override
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** a virtual surface exists
+- **WHEN** a valid resolution request is received from the viewer
+- **THEN** the surface resolution SHALL be updated to the requested values
+- **AND** this SHALL override any environment variable settings
 
 ### Requirement: Virtual Surface Creation
 
@@ -351,6 +393,7 @@ The layer SHALL send DMA-BUF frames to the Goggles application on present.
 ### Requirement: Virtual Swapchain Frame Rate Limiting
 
 The layer SHALL provide frame rate limiting for virtual swapchains to prevent runaway frame rates.
+When viewer back-pressure pacing is available, the frame rate limiter SHALL act as an upper bound.
 
 #### Scenario: Default frame rate limit
 
@@ -372,4 +415,309 @@ The layer SHALL provide frame rate limiting for virtual swapchains to prevent ru
 - **AND** `GOGGLES_FPS_LIMIT=0` is set
 - **WHEN** the application calls `vkAcquireNextImageKHR`
 - **THEN** the layer SHALL NOT limit acquisition rate
+
+### Requirement: Present Frame Dump Directory
+
+The dump output directory SHALL be configurable via `GOGGLES_DUMP_DIR`.
+
+#### Scenario: Default dump directory
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE` is set to a non-empty value
+- **AND** `GOGGLES_DUMP_DIR` is not set or is an empty string
+- **WHEN** a selected frame is dumped
+- **THEN** the layer SHALL write dumps under `/tmp/goggles_dump`
+
+#### Scenario: Custom dump directory
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE` is set to a non-empty value
+- **AND** `GOGGLES_DUMP_DIR` is set to a non-empty value
+- **WHEN** a selected frame is dumped
+- **THEN** the layer SHALL write dumps under that directory
+
+### Requirement: Present Frame Dump Configuration
+
+The capture layer SHALL support dumping the presented image to disk when
+`GOGGLES_DUMP_FRAME_RANGE` is set to a non-empty value.
+
+#### Scenario: Dumping disabled by default
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE` is not set or is an empty string
+- **WHEN** `vkQueuePresentKHR` is called
+- **THEN** the layer SHALL NOT dump any images to disk
+
+#### Scenario: Dumping enabled when range is set
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE` is set to a non-empty value
+- **WHEN** a frame is presented whose frame number matches the range
+- **THEN** the layer SHALL dump that presented image to disk
+
+### Requirement: Present Frame Dump Outputs
+
+When dumping a selected frame, the layer SHALL write both:
+- a `ppm` image file
+- a metadata sidecar file with `.ppm.desc` suffix
+
+Both files SHALL share the same base name `{processname}_{frameid}` and be written to the same
+directory.
+
+For dumping, `{frameid}` SHALL be the frame number used for capture metadata
+(`CaptureFrameMetadata.frame_number`) for that frame.
+
+#### Scenario: Image and metadata outputs are produced
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE=3`
+- **AND** the process name is `vkcube`
+- **WHEN** frame number 3 is dumped
+- **THEN** the layer SHALL write `vkcube_3.ppm`
+- **AND** it SHALL write `vkcube_3.ppm.desc`
+
+### Requirement: Present Frame Dump Range Syntax
+
+`GOGGLES_DUMP_FRAME_RANGE` SHALL support selecting frames using a union of:
+- single frame numbers (e.g. `3`)
+- comma-separated lists (e.g. `3,5,8`)
+- inclusive ranges (e.g. `8-13`)
+
+Whitespace around commas and hyphens MAY be ignored.
+
+For the purpose of `GOGGLES_DUMP_FRAME_RANGE`, the “frame number” SHALL be the value used by the
+layer for capture metadata (`CaptureFrameMetadata.frame_number`) for that frame.
+
+#### Scenario: Single frame selection
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE=3`
+- **WHEN** the layer observes frame numbers 1, 2, 3, 4
+- **THEN** it SHALL dump frame 3
+- **AND** it SHALL NOT dump frames 1, 2, or 4
+
+#### Scenario: Multi-frame list selection
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE=3,5,8`
+- **WHEN** the layer observes frame numbers 1 through 9
+- **THEN** it SHALL dump frames 3, 5, and 8
+- **AND** it SHALL NOT dump other frames
+
+#### Scenario: Inclusive range selection
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE=8-13`
+- **WHEN** the layer observes frame numbers 1 through 14
+- **THEN** it SHALL dump frames 8 through 13 (inclusive)
+- **AND** it SHALL NOT dump frames 7 or 14
+
+### Requirement: Present Frame Dump Metadata Format
+
+The `.ppm.desc` file SHALL be plain text with one `key=value` pair per line to avoid requiring
+additional serialization dependencies.
+
+#### Scenario: Metadata includes core fields
+
+- **GIVEN** a frame is dumped
+- **WHEN** the layer writes the `.desc` file
+- **THEN** it SHALL include a `frame_number` key
+- **AND** it SHALL include a `width` key
+- **AND** it SHALL include a `height` key
+- **AND** it SHALL include a `format` key
+- **AND** it SHALL include a `stride` key
+- **AND** it SHALL include an `offset` key
+- **AND** it SHALL include a `modifier` key
+
+### Requirement: Present Frame Dump Mode
+
+The dump output format SHALL be controlled by `GOGGLES_DUMP_FRAME_MODE`.
+
+#### Scenario: Default dump mode
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE` is set
+- **AND** `GOGGLES_DUMP_FRAME_MODE` is not set or is an empty string
+- **WHEN** a selected frame is dumped
+- **THEN** the layer SHALL write a `ppm` dump
+
+#### Scenario: Unsupported dump mode fallback
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE` is set
+- **AND** `GOGGLES_DUMP_FRAME_MODE` is set to an unsupported value
+- **WHEN** a selected frame is dumped
+- **THEN** the layer SHALL fall back to `ppm`
+
+### Requirement: Present Frame Dump Compatibility
+
+Present frame dumping SHALL work in both WSI proxy and non-WSI-proxy capture paths.
+
+#### Scenario: Dumping in WSI proxy mode
+
+- **GIVEN** WSI proxy mode is enabled (`GOGGLES_WSI_PROXY=1` and `GOGGLES_CAPTURE=1`)
+- **AND** `GOGGLES_DUMP_FRAME_RANGE` selects a frame number
+- **WHEN** the application presents a virtual swapchain image
+- **THEN** the layer SHALL dump the presented image to disk
+
+#### Scenario: Dumping in non-WSI-proxy mode
+
+- **GIVEN** WSI proxy mode is disabled
+- **AND** `GOGGLES_DUMP_FRAME_RANGE` selects a frame number
+- **WHEN** the application presents a real swapchain image
+- **THEN** the layer SHALL dump the presented image to disk
+
+### Requirement: Present Frame Dump Performance Constraints
+
+Dumping SHALL be implemented such that `vkQueuePresentKHR` does not perform file I/O or logging.
+
+#### Scenario: No file I/O or logging on present hook
+
+- **GIVEN** `GOGGLES_DUMP_FRAME_RANGE` is set to a non-empty value
+- **WHEN** `vkQueuePresentKHR` is called
+- **THEN** the layer SHALL NOT perform file I/O on the present hook thread
+- **AND** it SHALL NOT log on the present hook thread
+- **AND** any disk writes SHALL be performed asynchronously (off-thread)
+
+### Requirement: Virtual Swapchain Sync Pacing
+
+When WSI proxy mode is enabled, the layer SHALL pace `vkAcquireNextImageKHR` using viewer-provided
+back-pressure based on cross-process synchronization primitives.
+
+#### Scenario: Back-pressure pacing
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** the viewer has provided valid synchronization primitives to the layer
+- **WHEN** the application calls `vkAcquireNextImageKHR`
+- **THEN** the layer SHALL block acquisition until the viewer indicates it has consumed the
+  previous frame
+
+#### Scenario: Pacing fallback
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** synchronization primitives are unavailable or the viewer is unresponsive
+- **WHEN** the application calls `vkAcquireNextImageKHR`
+- **THEN** the layer SHALL fall back to its local CPU-based limiter
+
+### Requirement: Dynamic Resolution Request Protocol
+
+The capture protocol SHALL support resolution request messages from the viewer to the layer.
+
+#### Scenario: Protocol backward compatibility
+
+- **GIVEN** an older layer that does not support resolution requests
+- **WHEN** the viewer sends a `CaptureControl` with `resolution_request = 1`
+- **THEN** the older layer SHALL ignore the unknown fields
+- **AND** continue normal capture operation
+
+#### Scenario: Resolution request message format
+
+- **GIVEN** the viewer wants to request a new resolution
+- **WHEN** the viewer sends a `CaptureControl` message
+- **THEN** the message SHALL contain:
+  - `resolution_request` flag set to 1
+  - `requested_width` with desired width in pixels
+  - `requested_height` with desired height in pixels
+
+### Requirement: WSI Proxy Dynamic Resolution
+
+The layer SHALL support changing virtual surface resolution at runtime when in WSI proxy mode.
+
+#### Scenario: Resolution change request handling
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** a virtual surface exists
+- **WHEN** the layer receives a `CaptureControl` with `resolution_request = 1`
+- **THEN** the layer SHALL update the virtual surface's configured resolution
+- **AND** subsequent `vkGetPhysicalDeviceSurfaceCapabilitiesKHR` calls SHALL return the new resolution
+
+#### Scenario: Swapchain invalidation on resolution change
+
+- **GIVEN** WSI proxy mode is enabled
+- **AND** a virtual swapchain exists
+- **WHEN** the virtual surface resolution changes
+- **THEN** the next `vkAcquireNextImageKHR` SHALL return `VK_ERROR_OUT_OF_DATE_KHR`
+- **AND** the application SHALL recreate the swapchain
+
+#### Scenario: Resolution change ignored in non-proxy mode
+
+- **GIVEN** WSI proxy mode is disabled (normal capture mode)
+- **WHEN** the layer receives a `CaptureControl` with `resolution_request = 1`
+- **THEN** the layer SHALL ignore the resolution request
+- **AND** continue capturing at the application's native resolution
+
+### Requirement: Cross-Process Semaphore Export
+
+The layer SHALL create and export timeline semaphores for cross-process GPU synchronization with the Goggles application.
+
+#### Scenario: Exportable semaphore creation
+
+- **WHEN** capture is initialized for a swapchain
+- **THEN** the layer SHALL create two timeline semaphores with `VK_SEMAPHORE_TYPE_TIMELINE`
+- **AND** use `VkExportSemaphoreCreateInfo` with `VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT`
+- **AND** name them `frame_ready` (Layer signals) and `frame_consumed` (Goggles signals)
+
+#### Scenario: Semaphore FD export
+
+- **WHEN** exportable semaphores are created
+- **THEN** the layer SHALL export file descriptors via `vkGetSemaphoreFdKHR`
+- **AND** store the FDs for transfer to Goggles
+
+#### Scenario: Required extensions
+
+- **WHEN** `vkCreateDevice` is hooked
+- **THEN** the layer SHALL add `VK_KHR_external_semaphore` to enabled extensions
+- **AND** add `VK_KHR_external_semaphore_fd` to enabled extensions
+
+### Requirement: Semaphore IPC Transfer
+
+The layer SHALL transfer semaphore file descriptors to the Goggles application via Unix socket.
+
+#### Scenario: Semaphore init message
+
+- **WHEN** the first frame is captured after connection
+- **THEN** the layer SHALL send a `semaphore_init` message via IPC
+- **AND** attach two FDs via `SCM_RIGHTS`: `[frame_ready_fd, frame_consumed_fd]`
+- **AND** include the initial timeline value (0)
+
+#### Scenario: One-time transfer
+
+- **GIVEN** semaphore FDs have been sent for this connection
+- **WHEN** subsequent frames are captured
+- **THEN** the layer SHALL NOT resend semaphore FDs
+- **AND** SHALL send only frame metadata with timeline values
+
+### Requirement: Bidirectional GPU Synchronization
+
+The layer SHALL use the exported semaphores for bidirectional synchronization with Goggles.
+
+#### Scenario: Back-pressure wait
+
+- **GIVEN** frame N is being captured
+- **AND** N > 1
+- **WHEN** `vkQueuePresentKHR` is called
+- **THEN** the layer SHALL wait on `frame_consumed` semaphore for value N-1
+- **AND** use a timeout of 100ms to detect disconnection
+- **AND** skip the frame if timeout occurs
+
+#### Scenario: Frame ready signal
+
+- **WHEN** the copy command is submitted
+- **THEN** the layer SHALL signal `frame_ready` semaphore with value N
+- **AND** increment the frame counter
+
+#### Scenario: Frame metadata transfer
+
+- **WHEN** the copy command is submitted
+- **THEN** the layer SHALL send `frame_metadata` message via IPC
+- **AND** include width, height, format, stride, offset, modifier
+- **AND** include the frame number (timeline value N)
+
+### Requirement: Semaphore Reconnection Handling
+
+The layer SHALL handle client reconnection by resetting semaphore state.
+
+#### Scenario: Disconnect detection
+
+- **WHEN** `vkWaitSemaphoresKHR` times out
+- **OR** IPC send fails
+- **THEN** the layer SHALL mark semaphores as not sent
+- **AND** reset frame counter to 0
+
+#### Scenario: Re-export on reconnection
+
+- **WHEN** a new client connects after disconnect
+- **THEN** the layer SHALL call `vkGetSemaphoreFdKHR` again for new FDs
+- **AND** send `semaphore_init` message to the new client
+- **AND** resume sync from frame 1
 

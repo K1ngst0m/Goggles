@@ -45,31 +45,15 @@ The render shader subsystem SHALL compile Slang shaders to SPIR-V at runtime usi
 
 ### Requirement: Fullscreen Blit Pipeline
 
-The render backend SHALL provide a graphics pipeline for blitting imported textures to the swapchain with exact pixel value preservation.
-
-#### Scenario: Passthrough rendering
-
-- **GIVEN** an imported DMA-BUF captured from source app's swapchain
-- **AND** swapchain format matches source color space (per Swapchain Format Matching)
-- **WHEN** rendered to Goggles swapchain
-- **THEN** the output SHALL match the original application's visual appearance exactly
-- **AND** the fragment shader SHALL only sample and output (no color math)
+The render backend SHALL provide a graphics pipeline for blitting imported textures to the swapchain, initialized via typed config structs.
 
 #### Scenario: Pipeline initialization
 
 - **GIVEN** valid SPIR-V bytecode from `ShaderRuntime`
-- **WHEN** `OutputPass` is initialized
+- **WHEN** `OutputPass` is initialized via `init(const VulkanContext&, ShaderRuntime&, const OutputPassConfig&)`
 - **THEN** pipeline and descriptor layout SHALL be created
-- **AND** pipeline SHALL be created with `VkPipelineRenderingCreateInfo` specifying target format
+- **AND** pipeline SHALL be created with `VkPipelineRenderingCreateInfo` specifying target format from config
 - **AND** all Vulkan resources SHALL use RAII (`vk::Unique*`)
-
-#### Scenario: Frame rendering
-
-- **GIVEN** an imported texture and acquired swapchain image
-- **WHEN** `OutputPass` records commands
-- **THEN** dynamic rendering SHALL be begun with the swapchain image view
-- **AND** the imported texture SHALL be bound via descriptor set
-- **AND** a fullscreen triangle SHALL be drawn
 
 ### Requirement: Texture Sampling
 
@@ -162,22 +146,29 @@ The render chain subsystem SHALL provide a Pass abstraction compatible with Retr
 
 ### Requirement: OutputPass Behavior
 
-The `OutputPass` SHALL serve as combined normalize+output pass until multi-pass chains are implemented.
+The `OutputPass` SHALL serve as the final post-chain pass, rendering to the swapchain.
 
-#### Scenario: Direct DMA-BUF to swapchain
+#### Scenario: OutputPass in post-chain vector
+
+- **GIVEN** `FilterChain` is initialized
+- **THEN** `OutputPass` SHALL be stored in `m_postchain_passes` vector
+- **AND** there SHALL NOT be a separate `m_output_pass` member pointer
+- **AND** `m_postchain_passes.back()` SHALL reference the OutputPass
+
+#### Scenario: Direct DMA-BUF to swapchain (no RetroArch passes)
 
 - **GIVEN** no RetroArch shader passes are configured
 - **WHEN** OutputPass processes a frame
-- **THEN** it SHALL sample `ctx.source_texture` (the DMA-BUF import)
+- **THEN** it SHALL sample `ctx.source_texture` (the pre-chain output or DMA-BUF import)
 - **AND** begin dynamic rendering with `ctx.target_image_view`
 - **AND** use `ctx.frame_index` for descriptor set selection
 
-#### Scenario: Backend provides image views
+#### Scenario: Post-RetroArch to swapchain
 
-- **GIVEN** swapchain is recreated (resize)
-- **WHEN** backend recreates swapchain image views
-- **THEN** OutputPass SHALL NOT need reinitialization
-- **AND** new image views SHALL be passed via `PassContext.target_image_view`
+- **GIVEN** RetroArch shader passes are configured
+- **WHEN** OutputPass (as final post-chain pass) processes a frame
+- **THEN** it SHALL sample the previous post-chain pass output (or RetroArch output if first)
+- **AND** render to the swapchain image view
 
 ### Requirement: Future RetroArch Integration
 
@@ -848,4 +839,602 @@ The render backend SHALL use VK_KHR_present_wait when supported to pace presenta
 - **GIVEN** a configuration file sets `render.target_fps` to a non-zero value
 - **WHEN** the application starts
 - **THEN** the backend SHALL pace presentation to that value
+
+### Requirement: Pass Shader Parameter Interface
+
+The `Pass` base class SHALL provide virtual methods for exposing tunable shader uniforms, allowing internal passes to opt-in to runtime parameter adjustment.
+
+#### Scenario: Default implementation returns no parameters
+
+- **GIVEN** a Pass subclass that does not override parameter methods
+- **WHEN** `get_shader_parameters()` is called
+- **THEN** an empty vector SHALL be returned
+
+#### Scenario: Pass exposes shader parameters
+
+- **GIVEN** a Pass subclass that overrides `get_shader_parameters()`
+- **WHEN** the method is called
+- **THEN** a vector of `ShaderParameter` metadata SHALL be returned
+- **AND** each entry SHALL include name, description, default, min, max, and step
+
+#### Scenario: Parameter value update
+
+- **GIVEN** a Pass with exposed parameters
+- **WHEN** `set_shader_parameter(name, value)` is called
+- **THEN** the internal parameter value SHALL be updated
+- **AND** the change SHALL take effect on the next frame
+
+#### Scenario: FilterPass implements parameter interface
+
+- **GIVEN** a FilterPass with shader parameters from preprocessing
+- **WHEN** `get_shader_parameters()` is called
+- **THEN** it SHALL return the parameters extracted from the shader
+- **AND** `set_shader_parameter()` SHALL update the parameter override map
+
+### Requirement: Downsample Filter Type Selection
+
+The DownsamplePass SHALL support runtime selection of downsampling filter algorithm via the shader parameter interface.
+
+#### Scenario: Area filter (default)
+
+- **GIVEN** DownsamplePass with filter_type = 0
+- **WHEN** downsampling is performed
+- **THEN** weighted box filter SHALL be used
+- **AND** each source pixel SHALL be weighted by coverage overlap
+
+#### Scenario: Gaussian filter
+
+- **GIVEN** DownsamplePass with filter_type = 1
+- **WHEN** downsampling is performed
+- **THEN** Gaussian-weighted bilinear sampling SHALL be used
+- **AND** 4 bilinear taps SHALL approximate a Gaussian kernel
+- **AND** effective sampling SHALL cover 16 source texels
+
+#### Scenario: Filter type exposed as parameter
+
+- **GIVEN** a DownsamplePass instance
+- **WHEN** `get_shader_parameters()` is called
+- **THEN** a parameter named "filter_type" SHALL be returned
+- **AND** min SHALL be 0, max SHALL be 1, step SHALL be 1
+
+#### Scenario: Filter type runtime change
+
+- **GIVEN** DownsamplePass is actively rendering
+- **WHEN** `set_shader_parameter("filter_type", 1.0)` is called
+- **THEN** the next frame SHALL use Gaussian filter
+- **AND** no pipeline rebuild SHALL occur
+
+### Requirement: Unified Pass Parameter UI
+
+The ImGui layer SHALL provide a reusable helper for rendering pass parameter controls.
+
+#### Scenario: Parameter sliders rendered for pass with parameters
+
+- **GIVEN** a Pass with non-empty `get_shader_parameters()` result
+- **WHEN** the parameter UI helper is invoked
+- **THEN** a slider SHALL be rendered for each parameter
+- **AND** slider range SHALL use min/max from parameter metadata
+- **AND** slider step SHALL use step from parameter metadata
+
+#### Scenario: Enum-style parameter rendered as combo box
+
+- **GIVEN** a parameter with step = 1 and integer min/max range
+- **WHEN** the parameter UI helper is invoked
+- **THEN** a combo box MAY be rendered instead of a slider
+- **AND** values SHALL map to descriptive labels
+
+#### Scenario: No UI rendered for pass without parameters
+
+- **GIVEN** a Pass with empty `get_shader_parameters()` result
+- **WHEN** the parameter UI helper is invoked
+- **THEN** no UI elements SHALL be rendered
+
+#### Scenario: Parameter changes propagate to pass
+
+- **GIVEN** a parameter control is displayed
+- **WHEN** the user adjusts the value
+- **THEN** `set_shader_parameter(name, value)` SHALL be called on the pass
+- **AND** the change SHALL be reflected in the next rendered frame
+
+### Requirement: Post-Chain Infrastructure
+
+The filter chain subsystem SHALL provide a generic post-chain stage that executes after RetroArch passes and before final swapchain presentation.
+
+#### Scenario: Post-chain as vector of passes
+
+- **GIVEN** `FilterChain` is initialized
+- **THEN** it SHALL maintain `m_postchain_passes` as a vector of `Pass` pointers
+- **AND** it SHALL maintain `m_postchain_framebuffers` as a vector of `Framebuffer` pointers
+- **AND** the vectors SHALL have the same count (minus one for final output)
+
+#### Scenario: Post-chain execution order
+
+- **GIVEN** post-chain contains N passes
+- **WHEN** `record_postchain()` is called
+- **THEN** passes SHALL execute in vector order (0 to N-1)
+- **AND** each pass output SHALL become the next pass input
+- **AND** the final pass SHALL render to the swapchain
+
+#### Scenario: OutputPass as final post-chain entry
+
+- **GIVEN** `FilterChain` is initialized
+- **THEN** `OutputPass` SHALL be added as the last entry in `m_postchain_passes`
+- **AND** it SHALL always be present (minimum post-chain size is 1)
+- **AND** no framebuffer SHALL be allocated for the final pass (renders to swapchain)
+
+#### Scenario: Post-chain extensibility
+
+- **GIVEN** a post-processing effect is needed after RetroArch passes
+- **WHEN** a new pass is added to `m_postchain_passes` before OutputPass
+- **THEN** it SHALL receive the RetroArch chain output as input
+- **AND** its output SHALL be passed to subsequent post-chain passes
+
+### Requirement: Pre-Chain Stage Infrastructure
+
+The filter chain SHALL support a generic pre-chain stage that processes captured frames before the RetroArch shader passes. The pre-chain is a vector of passes, analogous to the RetroArch pass vector, allowing multiple preprocessing steps.
+
+#### Scenario: Pre-chain as extensible pass vector
+
+- **GIVEN** `FilterChain` is initialized
+- **WHEN** pre-chain passes are configured
+- **THEN** `m_prechain_passes` SHALL be a vector capable of holding multiple passes
+- **AND** `m_prechain_framebuffers` SHALL be a vector of corresponding framebuffers
+- **AND** passes SHALL execute in vector order
+
+#### Scenario: Pre-chain disabled by default
+
+- **GIVEN** no pre-chain passes are configured
+- **WHEN** `FilterChain::record()` executes
+- **THEN** captured frames SHALL pass directly to RetroArch passes (or OutputPass in passthrough mode)
+
+#### Scenario: Pre-chain output becomes Original for RetroArch chain
+
+- **GIVEN** pre-chain contains one or more passes
+- **WHEN** `FilterChain::record()` executes
+- **THEN** pre-chain passes SHALL execute first in vector order
+- **AND** the final pre-chain output SHALL be used as `original_view` for RetroArch passes
+- **AND** `OriginalSize` semantic SHALL reflect final pre-chain output dimensions
+
+#### Scenario: Generic pre-chain recording
+
+- **GIVEN** pre-chain contains N passes
+- **WHEN** `record_prechain()` executes
+- **THEN** each pass SHALL receive the previous pass's output as input
+- **AND** image barriers SHALL be inserted between passes
+- **AND** the loop SHALL NOT be hardcoded to a specific pass type
+
+### Requirement: Downsample Pass
+
+The internal pass library SHALL include an area-filter downsampling pass that can be added to the pre-chain.
+
+#### Scenario: Area filter downsampling
+
+- **GIVEN** source image at 1920x1080 and target resolution 640x480
+- **WHEN** downsample pass executes
+- **THEN** each output pixel SHALL be computed as a weighted average of covered source pixels
+- **AND** the result SHALL exhibit minimal aliasing compared to point sampling
+
+#### Scenario: Downsample added to pre-chain when configured
+
+- **GIVEN** source resolution is configured via `--app-width` and/or `--app-height`
+- **WHEN** `FilterChain` is created
+- **THEN** a `DownsamplePass` SHALL be added to `m_prechain_passes`
+- **AND** a framebuffer sized to target resolution SHALL be added to `m_prechain_framebuffers`
+
+#### Scenario: Identity passthrough at same resolution
+
+- **GIVEN** source and target resolution are identical
+- **WHEN** downsample pass executes
+- **THEN** output SHALL exactly match input
+- **AND** no blurring or aliasing SHALL occur
+
+### Requirement: Source Resolution CLI Semantics
+
+The `--app-width` and `--app-height` CLI options SHALL configure the downsample pass in the pre-chain. Either option may be specified alone, with the other dimension calculated to preserve aspect ratio.
+
+#### Scenario: Both dimensions specified
+
+- **GIVEN** user specifies `--app-width 640 --app-height 480`
+- **WHEN** Goggles starts
+- **THEN** `DownsamplePass` SHALL be added to pre-chain with target 640x480
+
+#### Scenario: Only width specified preserves aspect ratio
+
+- **GIVEN** user specifies `--app-width 640` without `--app-height`
+- **AND** captured frame is 1920x1080 (16:9 aspect ratio)
+- **WHEN** first frame is processed
+- **THEN** height SHALL be computed as `round(640 * 1080 / 1920) = 360`
+- **AND** downsample pass target SHALL be 640x360
+
+#### Scenario: Only height specified preserves aspect ratio
+
+- **GIVEN** user specifies `--app-height 480` without `--app-width`
+- **AND** captured frame is 1920x1080 (16:9 aspect ratio)
+- **WHEN** first frame is processed
+- **THEN** width SHALL be computed as `round(480 * 1920 / 1080) = 853`
+- **AND** downsample pass target SHALL be 853x480
+
+#### Scenario: Options still set environment variables
+
+- **GIVEN** user specifies `--app-width` and/or `--app-height`
+- **WHEN** target app is launched
+- **THEN** `GOGGLES_WIDTH` and `GOGGLES_HEIGHT` environment variables SHALL be set for specified dimensions
+- **AND** WSI proxy (if enabled) SHALL use these values for virtual surface sizing
+
+### Requirement: Shader Stage UI Organization
+
+The shader controls window SHALL organize controls into three collapsible sections corresponding to pipeline stages: Pre-Chain, Effect, and Post-Chain.
+
+#### Scenario: Pre-chain section displays downsample controls
+
+- **GIVEN** the shader controls window is visible
+- **WHEN** the Pre-Chain section is expanded
+- **THEN** resolution width and height input fields SHALL be displayed
+- **AND** an "Apply" button SHALL be displayed to confirm changes
+
+#### Scenario: Effect section displays RetroArch controls
+
+- **GIVEN** the shader controls window is visible
+- **WHEN** the Effect section is expanded
+- **THEN** the shader enable checkbox SHALL be displayed
+- **AND** the current preset label SHALL be displayed
+- **AND** the available presets tree SHALL be displayed
+- **AND** shader parameters SHALL be displayed if a preset is loaded
+
+#### Scenario: Post-chain section displays placeholder
+
+- **GIVEN** the shader controls window is visible
+- **WHEN** the Post-Chain section is expanded
+- **THEN** a label indicating "Output Blit" SHALL be displayed
+- **AND** no controls SHALL be displayed
+
+### Requirement: Pre-Chain Pipeline Configuration
+
+The filter chain SHALL support runtime updates to pre-chain pipeline configuration (resolution) without requiring application restart. Pipeline configuration is distinct from shader parameters - it affects resource allocation and triggers pass rebuilds.
+
+#### Scenario: Resolution update triggers pass rebuild
+
+- **GIVEN** a pre-chain downsample pass exists
+- **WHEN** `FilterChain::set_prechain_resolution(width, height)` is called with new values
+- **THEN** existing pre-chain passes and framebuffers SHALL be cleared
+- **AND** new passes SHALL be created on the next frame with the updated resolution
+
+#### Scenario: Resolution query returns current state
+
+- **GIVEN** a pre-chain resolution is configured
+- **WHEN** `FilterChain::get_prechain_resolution()` is called
+- **THEN** the current target width and height SHALL be returned
+
+#### Scenario: Zero resolution disables pre-chain
+
+- **GIVEN** pre-chain passes exist
+- **WHEN** `set_prechain_resolution(0, 0)` is called
+- **THEN** pre-chain processing SHALL be disabled
+- **AND** captured frames SHALL pass directly to effect stage
+
+### Requirement: Pre-Chain UI State Synchronization
+
+The UI layer SHALL maintain synchronized state with the filter chain pre-chain configuration.
+
+#### Scenario: UI initialized from backend state
+
+- **GIVEN** the application starts with `--app-width 640 --app-height 480`
+- **WHEN** the ImGui layer is initialized
+- **THEN** the pre-chain resolution inputs SHALL display 640 and 480
+
+#### Scenario: UI callback propagates changes
+
+- **GIVEN** the pre-chain section is visible
+- **WHEN** the user changes resolution and clicks Apply
+- **THEN** the pre-chain change callback SHALL be invoked
+- **AND** the new resolution SHALL be passed to the filter chain
+
+### Requirement: External Image Format Normalization
+The application SHALL represent external image metadata using `VkFormat` for all render imports.
+Sources that provide DRM FourCC formats (e.g., compositor surface frames) SHALL be converted to
+`VkFormat` before reaching the render backend.
+
+#### Scenario: Compositor surface frame conversion
+- **GIVEN** a compositor frame provides DRM FourCC format metadata
+- **WHEN** the frame is ingested by the application
+- **THEN** the metadata SHALL be converted to the equivalent `VkFormat`
+- **AND** frames with unsupported formats SHALL be skipped
+
+#### Scenario: Capture receiver format passthrough
+- **GIVEN** a capture frame provides `VkFormat` metadata over IPC
+- **WHEN** the application ingests the frame
+- **THEN** the metadata SHALL be forwarded unchanged to the render backend
+
+### Requirement: Dynamic Scale Mode
+
+The viewer SHALL support a dynamic scale mode that requests source resolution changes to match the viewer window.
+
+#### Scenario: Dynamic mode activation
+
+- **GIVEN** `scale_mode = "dynamic"` in configuration
+- **WHEN** the viewer window is resized
+- **THEN** the viewer SHALL send a resolution request to the source
+- **AND** render using fit mode until source resolution changes
+
+#### Scenario: Dynamic mode with WSI proxy source
+
+- **GIVEN** `scale_mode = "dynamic"` is configured
+- **AND** source is running in WSI proxy mode
+- **WHEN** the viewer window is resized
+- **THEN** the source SHALL recreate its swapchain with the new resolution
+- **AND** subsequent frames SHALL match the viewer window resolution
+
+#### Scenario: Dynamic mode with non-proxy source
+
+- **GIVEN** `scale_mode = "dynamic"` is configured
+- **AND** source is NOT running in WSI proxy mode
+- **WHEN** the viewer window is resized
+- **THEN** the resolution request SHALL be ignored by the source
+- **AND** the viewer SHALL fall back to fit mode behavior
+
+### Requirement: Preset Reference Directive
+
+The preset parser SHALL support `#reference` directive for including other presets.
+
+#### Scenario: Mega-Bezel modular preset
+- **GIVEN** a preset contains `#reference "Base_CRT_Presets/MBZ__3__STD__GDV.slangp"`
+- **WHEN** the preset is parsed
+- **THEN** the referenced preset SHALL be loaded and merged
+- **AND** paths SHALL be resolved relative to the referencing file
+
+#### Scenario: Nested references
+- **GIVEN** preset A references preset B which references preset C
+- **WHEN** parsing completes
+- **THEN** all references SHALL be resolved recursively
+- **AND** final config SHALL contain merged settings from all presets
+
+#### Scenario: Reference depth limit
+- **GIVEN** a reference chain exceeds 8 levels
+- **WHEN** parsing is attempted
+- **THEN** an error SHALL be returned with message indicating depth exceeded
+
+#### Scenario: Circular reference detection
+- **GIVEN** preset A references preset B which references preset A
+- **WHEN** parsing is attempted
+- **THEN** an error SHALL be returned indicating circular reference
+
+### Requirement: Frame History Access
+
+The filter chain SHALL maintain a ring buffer of previous frame textures and expose them as OriginalHistory[0-6] samplers.
+
+#### Scenario: Afterglow accesses previous frame
+- **GIVEN** a shader samples `OriginalHistory0`
+- **WHEN** the pass is recorded
+- **THEN** `OriginalHistory0` SHALL be bound to the previous frame's Original texture
+- **AND** `OriginalHistory0Size` SHALL be populated as vec4 [width, height, 1/width, 1/height]
+
+#### Scenario: Motion interpolation accesses multiple frames
+- **GIVEN** a shader samples `OriginalHistory1` and `OriginalHistory2`
+- **WHEN** the pass is recorded
+- **THEN** `OriginalHistory1` SHALL be bound to frame N-2
+- **AND** `OriginalHistory2` SHALL be bound to frame N-3
+
+#### Scenario: History depth auto-detection
+- **GIVEN** shaders reference `OriginalHistory3` as highest index
+- **WHEN** filter chain initializes
+- **THEN** a ring buffer of exactly 4 frames SHALL be allocated
+- **AND** unused history slots SHALL NOT be allocated
+
+#### Scenario: First frames without history
+- **GIVEN** filter chain has processed fewer frames than history depth
+- **WHEN** OriginalHistory[N] is requested for unavailable frame
+- **THEN** a black texture SHALL be bound as fallback
+
+### Requirement: Frame Count Modulo
+
+The filter chain SHALL apply per-pass frame_count_mod to the FrameCount semantic.
+
+#### Scenario: NTSC alternating lines
+- **GIVEN** pass 27 sets `frame_count_mod27 = 2`
+- **AND** current absolute frame is 157
+- **WHEN** FrameCount semantic is populated for pass 27
+- **THEN** FrameCount SHALL be 157 % 2 = 1
+
+#### Scenario: Different modulo per pass
+- **GIVEN** pass 5 sets `frame_count_mod5 = 4`
+- **AND** pass 10 sets `frame_count_mod10 = 100`
+- **WHEN** passes are recorded
+- **THEN** each pass SHALL receive its own modulo-applied FrameCount
+
+#### Scenario: No modulo uses absolute count
+- **GIVEN** no frame_count_mod is set for a pass
+- **WHEN** FrameCount semantic is populated
+- **THEN** FrameCount SHALL be the absolute frame count
+
+#### Scenario: Modulo value of zero
+- **GIVEN** `frame_count_mod5 = 0` is set
+- **WHEN** FrameCount semantic is populated for pass 5
+- **THEN** FrameCount SHALL be the absolute frame count (0 means disabled)
+
+### Requirement: Rotation Semantic
+
+The semantic binder SHALL provide Rotation push constant for display orientation.
+
+#### Scenario: No rotation (landscape)
+- **GIVEN** display rotation is 0 degrees
+- **WHEN** Rotation semantic is populated
+- **THEN** Rotation SHALL be 0
+
+#### Scenario: Portrait rotation (90 degrees)
+- **GIVEN** display rotation is 90 degrees clockwise
+- **WHEN** Rotation semantic is populated
+- **THEN** Rotation SHALL be 1
+
+#### Scenario: Inverted rotation (180 degrees)
+- **GIVEN** display rotation is 180 degrees
+- **WHEN** Rotation semantic is populated
+- **THEN** Rotation SHALL be 2
+
+#### Scenario: Portrait rotation (270 degrees)
+- **GIVEN** display rotation is 270 degrees clockwise
+- **WHEN** Rotation semantic is populated
+- **THEN** Rotation SHALL be 3
+
+### Requirement: Runtime Shader Preset Reload
+The render pipeline SHALL support rebuilding the RetroArch filter chain at runtime when the application requests a new `.slangp` preset without forcing an application restart.
+
+#### Scenario: UI-triggered reload success
+- **GIVEN** the Shader Controls panel emits a preset selection event containing `<path>`
+- **WHEN** the render pipeline handles the event
+- **THEN** it SHALL wait for the in-flight frame to complete
+- **AND** it SHALL destroy the current filter chain state
+- **AND** it SHALL parse and instantiate the new preset from `<path>`
+- **AND** the next frame SHALL render using the newly loaded passes
+
+#### Scenario: Reload failure fallback
+- **GIVEN** the render pipeline attempts to load a preset that fails to parse or compile
+- **WHEN** the failure occurs
+- **THEN** the previously active preset SHALL remain bound and continue rendering
+- **AND** the failure SHALL be reported back to the UI/log so the user can pick a different preset
+
+### Requirement: Passthrough Mode Toggle
+The render pipeline SHALL provide a passthrough mode that bypasses all filter passes and blits the captured frame directly when requested, while remembering the last successful preset for restoration.
+
+#### Scenario: Passthrough enabled at runtime
+- **GIVEN** the Shader Controls panel requests passthrough mode
+- **WHEN** the render pipeline processes the request
+- **THEN** it SHALL stop invoking the filter chain and route the captured texture directly into `OutputPass`
+- **AND** no RetroArch preset compilation SHALL occur while passthrough is active
+
+#### Scenario: Passthrough disabled restores preset
+- **GIVEN** passthrough mode is active and the user turns it off
+- **WHEN** the render pipeline receives the request
+- **THEN** it SHALL reload the last successful preset (or the default from config if none exists)
+- **AND** rendering SHALL resume using the restored filter chain without requiring an application restart
+
+### Requirement: Runtime Parameter Access
+The render pipeline SHALL expose shader parameter metadata and runtime override capabilities so the UI layer can display and modify filter chain parameters.
+
+#### Scenario: Parameter list query
+- **GIVEN** a filter chain with one or more passes is loaded
+- **WHEN** the UI queries available parameters
+- **THEN** the pipeline SHALL return a list of ShaderParameter (name, description, min, max, step, default, current value)
+- **AND** parameters from all passes SHALL be accessible
+
+#### Scenario: Parameter override
+- **GIVEN** a valid parameter name and value within bounds
+- **WHEN** set_parameter_override(name, value) is called
+- **THEN** the filter chain SHALL apply the override to the appropriate pass
+- **AND** update_ubo_parameters() SHALL be invoked before the next render
+
+#### Scenario: Parameter reset
+- **GIVEN** one or more parameters have been overridden
+- **WHEN** clear_parameter_overrides() is called
+- **THEN** all overrides SHALL be removed
+- **AND** parameters SHALL revert to preset defaults on the next frame
+
+### Requirement: Render Scale Mode Ownership
+
+The render backend SHALL own the active scale mode and integer scale values and expose them for application and UI synchronization.
+
+#### Scenario: Query returns current runtime state
+
+- **GIVEN** the active scale mode has been updated at runtime
+- **WHEN** the application queries the render backend for the active scale mode
+- **THEN** the backend SHALL return the updated mode
+- **AND** the current integer scale SHALL be available alongside it
+
+### Requirement: Runtime Scale Mode Switching
+
+The viewer SHALL allow switching the render scale mode at runtime and apply changes to subsequent frames without restart.
+
+#### Scenario: UI change updates active scale mode
+
+- **GIVEN** the shader controls window is visible
+- **WHEN** the user selects a new scale mode in the Pre-Chain section
+- **THEN** the active render scale mode SHALL update without restart
+- **AND** subsequent frames SHALL use the new mode
+
+#### Scenario: Dynamic mode request uses active backend state
+
+- **GIVEN** the capture receiver is connected
+- **WHEN** the active scale mode is `dynamic` and the swapchain extent changes or dynamic mode becomes active
+- **THEN** the viewer SHALL request the source resolution to match the swapchain extent
+- **AND** no request SHALL be sent when the active scale mode is not `dynamic`
+
+### Requirement: Pre-Chain Scale Mode Controls
+
+The Pre-Chain stage UI SHALL expose controls for the viewer scale mode.
+
+#### Scenario: Scale mode selector is available
+
+- **GIVEN** the shader controls window is visible
+- **WHEN** the Pre-Chain section is expanded
+- **THEN** a scale mode selector SHALL be displayed
+- **AND** it SHALL include fit, fill, stretch, integer, and dynamic options
+
+#### Scenario: Integer scale input visibility
+
+- **GIVEN** the scale mode selector is set to `integer`
+- **WHEN** the Pre-Chain section is visible
+- **THEN** an integer scale input SHALL be displayed
+- **AND** changes SHALL update the active integer scale at runtime
+
+### Requirement: Per-Surface Filter Chain Routing
+The render pipeline SHALL honor a per-surface filter-chain enable flag and a session-wide global
+enable flag when deciding whether to execute the filter chain for a frame.
+
+The effect stage SHALL also respect `Shader Controls -> Effect Stage (RetroArch) -> Enable Shader`.
+
+When the global flag is disabled, the pipeline SHALL bypass the filter chain for all surfaces and
+render captured surfaces using a compositor-style maximize resize so the client re-renders at the
+window size (no stretch-blit).
+
+When the global flag is enabled but the per-surface flag is disabled, the pipeline SHALL bypass the
+filter chain for that surface and render it using a compositor-style maximize resize so the client
+re-renders at the window size (no stretch-blit).
+
+The per-surface mode SHALL apply to the entire xdg_toplevel surface, including all popups and subsurfaces belonging to that toplevel.
+
+#### Scenario: Default uses filter chain
+- **GIVEN** a surface has no explicit override
+- **WHEN** a frame is rendered for that surface
+- **THEN** the filter chain SHALL be executed for that frame
+
+#### Scenario: Bypass filter chain for a surface
+- **GIVEN** a surface has filter-chain disabled
+- **WHEN** a frame is rendered for that surface
+- **THEN** the filter chain SHALL be bypassed
+- **AND** the surface SHALL be rendered via a maximize-style resize without stretch-blit
+
+#### Scenario: Global bypass overrides per-surface
+- **GIVEN** the global filter-chain flag is disabled
+- **WHEN** a frame is rendered for any surface
+- **THEN** the filter chain SHALL be bypassed
+- **AND** the surface SHALL be rendered via a maximize-style resize without stretch-blit
+
+#### Scenario: Popup inherits parent mode
+- **GIVEN** an xdg_toplevel surface has filter-chain disabled
+- **WHEN** a popup or subsurface belonging to that toplevel is rendered
+- **THEN** the popup SHALL be rendered with filter-chain bypass and maximize-style resize without stretch-blit
+
+### Requirement: Pass Initialization Interface
+
+All render pass classes SHALL use a consistent initialization pattern with typed config structs and shared Vulkan context.
+
+#### Scenario: VulkanContext sharing
+
+- **GIVEN** `VulkanBackend` has initialized device and physical device
+- **WHEN** any pass is initialized
+- **THEN** the pass SHALL receive a `VulkanContext` reference containing both handles
+- **AND** the pass SHALL NOT store redundant copies of device handles
+
+#### Scenario: OutputPass initialization with config
+
+- **GIVEN** an `OutputPassConfig` with target format, sync indices, and shader directory
+- **WHEN** `OutputPass::init()` is called with `VulkanContext`, `ShaderRuntime`, and config
+- **THEN** the pass SHALL initialize using the provided configuration
+- **AND** the signature SHALL be `init(const VulkanContext&, ShaderRuntime&, const OutputPassConfig&)`
+
+#### Scenario: FilterPass initialization with config
+
+- **GIVEN** a `FilterPassConfig` with target format, sync indices, shader sources, and filter mode
+- **WHEN** `FilterPass::init()` is called with `VulkanContext`, `ShaderRuntime`, and config
+- **THEN** the pass SHALL compile shaders and create pipeline from the config
+- **AND** the signature SHALL be `init(const VulkanContext&, ShaderRuntime&, const FilterPassConfig&)`
 

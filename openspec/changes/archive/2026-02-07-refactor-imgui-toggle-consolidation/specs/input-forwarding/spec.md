@@ -37,6 +37,12 @@ The Goggles Overlay windows SHALL be dockable via ImGui's docking feature.
 
 Users MAY dock windows together as tabs if desired. The layout is saved in imgui.ini.
 
+#### Scenario: User docks overlay windows
+- **WHEN** Goggles Overlay is visible
+- **AND** user drags "Shader Controls" onto "Application"
+- **THEN** both windows become docked in a shared tab stack
+- **AND** the docking layout persists in imgui.ini for the next launch
+
 ### Requirement: Application Window
 
 The Application window SHALL consolidate all application and view controls.
@@ -87,12 +93,6 @@ No view or application controls SHALL be present in the Shader Controls window.
 
 ## REMOVED Requirements
 
-### Requirement: Multiple Hotkey UI Controls
-**Reason**: Consolidating to modifier-key toggle to reduce conflicts with target application hotkeys.
-**Migration**: Users press Ctrl+Alt+Shift+Q to show Goggles Overlay.
-
-The following keyboard shortcuts are removed:
-- F1: Shader controls toggle
-- F2: Debug overlay toggle
-- F3: Pointer lock override toggle
-- F4: Application management toggle
+### Requirement: Surface Selector UI
+**Reason**: Surface controls were consolidated into the Application window and no longer use a standalone F4-toggled surface selector window.
+**Migration**: Users open the Goggles Overlay with Ctrl+Alt+Shift+Q and use the Application window Input section for surface selection.

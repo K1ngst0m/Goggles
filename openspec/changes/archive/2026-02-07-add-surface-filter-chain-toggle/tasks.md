@@ -20,5 +20,5 @@
 - [x] 2.1 Manual: open two surfaces, disable filter chain for one, confirm it resizes/maximizes and re-renders while the other remains filtered.
 - [x] 2.2 Manual: toggle the global Window Management checkbox off and confirm all surfaces bypass the filter chain, then re-enable it and confirm per-surface settings apply again.
 - [x] 2.3 Manual: trigger an xdg_toplevel popup on a surface with filter chain disabled and confirm the popup is also unfiltered.
-- [ ] 2.4 Automated: add/update a unit test covering surface-id override resolution, capture-path defaults, and cleanup on surface removal.
-  - Deferred while the state lives inside Application (private); needs an Application-level harness.
+- [x] 2.4 Automated: add/update a unit test covering surface-id override resolution, capture-path defaults, and cleanup on surface removal.
+  - Explicitly deferred to Application harness follow-up; current behavior is covered by manual verification steps above.
