@@ -30,6 +30,11 @@ struct RenderSettings {
     uint32_t source_height = 0;
 };
 
+struct FilterChainStagePolicy {
+    bool prechain_enabled = true;
+    bool effect_stage_enabled = true;
+};
+
 /// @brief Vulkan renderer for presenting captured frames.
 class VulkanBackend {
 public:
@@ -60,13 +65,7 @@ public:
         return m_preset_path;
     }
 
-    /// @brief Enables or disables shader processing (bypass mode).
-    void set_shader_enabled(bool enabled);
-    void set_prechain_enabled(bool enabled) {
-        if (m_filter_chain) {
-            m_filter_chain->set_prechain_enabled(enabled);
-        }
-    }
+    void set_filter_chain_policy(const FilterChainStagePolicy& policy);
 
     using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
     /// @brief Renders a captured frame or clears the swapchain when no frame is provided.
@@ -221,6 +220,8 @@ private:
     bool m_needs_resize = false;
     bool m_sync_semaphores_imported = false;
     bool m_present_wait_supported = false;
+    bool m_prechain_policy_enabled = true;
+    bool m_effect_stage_policy_enabled = true;
     uint32_t m_target_fps = 0;
     uint64_t m_present_id = 0;
     std::chrono::steady_clock::time_point m_last_present_time;
@@ -246,6 +247,7 @@ private:
 
     void check_pending_chain_swap();
     void cleanup_deferred_destroys();
+    void apply_filter_chain_policy();
 };
 
 } // namespace goggles::render

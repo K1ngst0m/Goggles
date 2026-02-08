@@ -232,6 +232,9 @@ auto Application::init_compositor_server(const util::AppDirs& app_dirs) -> Resul
 auto Application::create(const Config& config, const util::AppDirs& app_dirs)
     -> ResultPtr<Application> {
     auto app = std::unique_ptr<Application>(new Application());
+    app->m_session_capture_mode = config.capture.backend == "compositor"
+                                      ? SessionCaptureMode::compositor
+                                      : SessionCaptureMode::direct_vulkan;
 
     GOGGLES_MUST(app->init_sdl());
     GOGGLES_MUST(app->init_vulkan_backend(config, app_dirs));
@@ -410,11 +413,19 @@ void Application::handle_sync_semaphores() {
 void Application::sync_prechain_ui() {
     auto& prechain = m_imgui_layer->state().prechain;
     if (prechain.target_width == 0 && prechain.target_height == 0) {
-        auto captured = m_vulkan_backend->get_captured_extent();
-        if (captured.width > 0 && captured.height > 0) {
-            m_imgui_layer->set_prechain_state(captured, m_vulkan_backend->get_scale_mode(),
+        vk::Extent2D initial_resolution{};
+        if (is_direct_vulkan_session()) {
+            initial_resolution = m_vulkan_backend->swapchain_extent();
+        }
+        if (initial_resolution.width == 0 || initial_resolution.height == 0) {
+            initial_resolution = m_vulkan_backend->get_captured_extent();
+        }
+        if (initial_resolution.width > 0 && initial_resolution.height > 0) {
+            m_imgui_layer->set_prechain_state(initial_resolution,
+                                              m_vulkan_backend->get_scale_mode(),
                                               m_vulkan_backend->get_integer_scale());
-            m_vulkan_backend->set_prechain_resolution(captured.width, captured.height);
+            m_vulkan_backend->set_prechain_resolution(initial_resolution.width,
+                                                      initial_resolution.height);
         }
     }
 
@@ -433,9 +444,11 @@ void Application::sync_surface_filters(std::vector<input::SurfaceInfo>& surfaces
     for (auto& surface : surfaces) {
         seen.insert(surface.id);
         auto it = m_surface_state.find(surface.id);
+        const bool default_filter_enabled =
+            is_direct_vulkan_session() || surface.capture_path == input::SurfaceCapturePath::vulkan;
         if (it == m_surface_state.end()) {
             SurfaceRuntimeState state{};
-            state.filter_enabled = surface.capture_path == input::SurfaceCapturePath::vulkan;
+            state.filter_enabled = default_filter_enabled;
             it = m_surface_state.emplace(surface.id, state).first;
         }
         surface.filter_chain_enabled = it->second.filter_enabled;
@@ -484,22 +497,26 @@ auto Application::compute_surface_filter_chain_enabled(uint32_t surface_id) cons
     return is_surface_filter_enabled(surface_id);
 }
 
-auto Application::compute_global_effect_stage_enabled() const -> bool {
-    if (!m_imgui_layer) {
-        return true;
+auto Application::compute_stage_policy(bool using_surface_frame) const -> Application::StagePolicy {
+    const bool global_filter_enabled = compute_global_filter_chain_enabled();
+    bool surface_filter_enabled = true;
+    if (m_active_surface_id != 0) {
+        surface_filter_enabled = is_surface_filter_enabled(m_active_surface_id);
+    } else if (using_surface_frame || !m_surface_state.empty()) {
+        surface_filter_enabled = false;
     }
-    const auto& state = m_imgui_layer->state();
-    return state.shader_enabled && state.window_filter_chain_enabled;
+    const bool prechain_enabled = global_filter_enabled && surface_filter_enabled;
+
+    const bool effect_checkbox_enabled = !m_imgui_layer || m_imgui_layer->state().shader_enabled;
+
+    Application::StagePolicy policy{};
+    policy.prechain_enabled = prechain_enabled;
+    policy.effect_stage_enabled = prechain_enabled && effect_checkbox_enabled;
+    return policy;
 }
 
-auto Application::compute_surface_effect_stage_enabled(uint32_t surface_id) const -> bool {
-    if (!compute_global_effect_stage_enabled()) {
-        return false;
-    }
-    if (surface_id == 0) {
-        return true;
-    }
-    return is_surface_filter_enabled(surface_id);
+auto Application::is_direct_vulkan_session() const -> bool {
+    return m_session_capture_mode == SessionCaptureMode::direct_vulkan;
 }
 
 void Application::set_surface_filter_enabled(uint32_t surface_id, bool enabled) {
@@ -511,6 +528,7 @@ void Application::set_surface_filter_enabled(uint32_t surface_id, bool enabled) 
         return;
     }
     it->second.filter_enabled = enabled;
+    it->second.filter_explicitly_set = true;
 }
 
 auto Application::is_surface_filter_enabled(uint32_t surface_id) const -> bool {
@@ -566,7 +584,11 @@ void Application::update_surface_resize_for_surfaces(
     const bool global_enabled = compute_global_filter_chain_enabled();
     for (const auto& surface : surfaces) {
         const bool surface_enabled = is_surface_filter_enabled(surface.id);
-        const bool should_maximize = !(global_enabled && surface_enabled);
+        bool should_maximize = !(global_enabled && surface_enabled);
+        if (is_direct_vulkan_session() && surface.is_input_target && global_enabled &&
+            surface_enabled) {
+            should_maximize = true;
+        }
         request_surface_resize(surface.id, should_maximize);
     }
 }
@@ -738,15 +760,10 @@ void Application::render_frame() {
         GOGGLES_PROFILE_VALUE("goggles_source_frame", static_cast<double>(source_frame_number));
     }
 
-    const bool filter_chain_enabled =
-        using_surface_frame ? compute_surface_filter_chain_enabled(m_active_surface_id)
-                            : compute_global_filter_chain_enabled();
-    m_vulkan_backend->set_prechain_enabled(filter_chain_enabled);
-
-    const bool effect_stage_enabled =
-        using_surface_frame ? compute_surface_effect_stage_enabled(m_active_surface_id)
-                            : compute_global_effect_stage_enabled();
-    m_vulkan_backend->set_shader_enabled(effect_stage_enabled);
+    auto policy = compute_stage_policy(using_surface_frame);
+    m_vulkan_backend->set_filter_chain_policy(
+        {.prechain_enabled = policy.prechain_enabled,
+         .effect_stage_enabled = policy.effect_stage_enabled});
 
     auto ui_callback = [this](vk::CommandBuffer cmd, vk::ImageView view, vk::Extent2D extent) {
         m_imgui_layer->end_frame();
