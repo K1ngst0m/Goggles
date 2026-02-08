@@ -33,36 +33,23 @@ This roadmap covers core infrastructure work focused on establishing robust fram
 ### 1. Shader Validation & Testing
 Prevent regressions in filter chain when adding new features
 
-- [ ] Validate shader compilation for all implemented presets
-- [ ] Catch SPIR-V compilation errors early
-- [ ] Report shader compilation failures with diagnostics
+- [x] Catch SPIR-V compilation errors early
+- [x] Report shader compilation failures with diagnostics
 - [ ] Golden image generation for reference outputs
 - [ ] Comparison against golden images (pixel-by-pixel or perceptual)
 - [ ] Automated regression detection for various shader presets
 - [ ] Automated test runner for shader validation
-- [ ] Integration with existing test infrastructure (Catch2)
 
 ### 2. Tracy Profiling Improvements
 
 - [ ] Add Tracy GPU profiling support (Vulkan)
-- [ ] Multiple processes with single timeline profiling (capture layer + viewer app), [context](https://github.com/wolfpld/tracy/issues/822)
+- [x] Multiple processes with single timeline profiling (capture layer + viewer app), [context](https://github.com/wolfpld/tracy/issues/822)
 
 ### 3. Error Traceback Integration
 
 - [ ] Integrate cpptrace for stack traces on errors
 - [ ] Hook into existing error handling (`tl::expected`)
 - [ ] Configure for debug/release builds
-
-### 4. Shader Parameter Control
-
-Runtime control of shader parameters and preset selection
-
-- [ ] Config file based parameter overrides
-- [ ] CLI arguments for preset and parameter selection
-- [ ] GUI integration (ImGui) - pending in [#12](https://github.com/K1ngst0m/Goggles/pull/12)
-  - Runtime preset reload without restart
-  - Passthrough toggle to bypass filter chain
-  - Direct DMA-BUF blitting for passthrough mode
 
 ---
 

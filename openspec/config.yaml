@@ -1,0 +1,44 @@
+schema: spec-driven
+
+context: |
+  Goggles is a Linux C++20 Vulkan frame capture/viewer system.
+  Flow: target app + implicit Vulkan layer -> DMA-BUF/IPC -> viewer (CaptureReceiver -> VulkanBackend -> FilterChain -> SDL3).
+  Optional input forwarding runs through a nested wlroots/XWayland compositor.
+
+  Core modules: src/capture, src/render, src/compositor, src/app, src/util.
+
+  Authoritative policy: docs/project_policies.md.
+  In any conflict, docs/project_policies.md takes precedence.
+  Narrower-scope rules (for example capture layer) override broader rules in that scope.
+  Exceptions must be explicit and include reason, scope, and rollback/remediation plan.
+
+  Non-negotiables:
+  - Fallible operations use tl::expected<T, Error>; expected runtime failures do not use exceptions.
+  - Errors are handled or propagated; no silent failure; avoid duplicate cascading logs.
+  - App Vulkan code uses vk::; src/capture/vk_layer uses raw Vulkan C API.
+  - Check vk::Result explicitly; no static_cast<void>(...) on result-returning Vulkan calls.
+  - App code does not use raw new/delete; owned fds use goggles::util::UniqueFd.
+  - Build/test uses Pixi tasks and CMake/CTest presets (no ad-hoc non-preset build dirs).
+  - Render/pipeline concurrency uses goggles::util::JobSystem; no std::thread/std::jthread there.
+
+  OpenSpec style:
+  - Use RFC-style normative words (MUST/SHOULD/MAY).
+  - Requirements are behavior-focused, observable, and testable.
+  - Use GIVEN/WHEN/THEN scenarios.
+
+rules:
+  proposal:
+    - MUST include Problem, Scope, Non-goals, Risks, and Validation Plan.
+    - MUST identify impacted modules/files and impacted OpenSpec specs.
+    - MUST explain why, not only implementation steps.
+    - MUST call out policy-sensitive impacts (error handling, logging, threading, Vulkan API split, lifetime/ownership) when touched.
+  tasks:
+    - MUST break work into small verifiable steps mapped to concrete files/subsystems.
+    - MUST include verification commands using Pixi/CMake/CTest presets.
+    - MUST include spec-update tasks when behavior/contracts change.
+    - MUST NOT include unrelated broad refactors unless explicitly in scope.
+  spec:
+    - MUST use explicit Requirement blocks with normative language.
+    - MUST include at least one GIVEN/WHEN/THEN scenario per requirement.
+    - MUST keep statements behavior-oriented and testable.
+    - MUST update Purpose from placeholder/TBD when editing a spec.
