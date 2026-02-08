@@ -302,11 +302,11 @@ Docstrings are for API contracts, not implementation narration.
 
 ### D.1 RAII Mandate
 
-**All resources must be managed via RAII.**
+**All C++ owned resources must be managed via RAII. Vulkan handles are the exception and use explicit lifetime management (see D.2).**
 
-- **Vulkan objects:** Wrap in RAII types (custom or from libraries like `vk-bootstrap`, `vulkan-hpp`).
+- **Vulkan objects:** Use plain `vk::` handle types (for example `vk::Instance`, `vk::Device`, `vk::Image`) with explicit destroy/free calls in deterministic cleanup paths.
 - **File handles, sockets, etc.:** Use RAII wrappers (`std::fstream`, `UniqueFd`, custom types).
-- **No manual cleanup** in destructors unless encapsulated in RAII.
+- **No raw `new`/`delete`** in application code.
 
 ### D.1.1 File Descriptor Management
 
@@ -348,17 +348,17 @@ int m_fd = some_fd;  // Who closes this?
 - **No exceptions:** Vulkan-hpp exceptions are disabled. Functions return `vk::ResultValue<T>` which contains both result code and value. Convert to `nonstd::expected` at public API boundaries.
 - **Dynamic dispatch:** Required for Vulkan extension functions (DMA-BUF, external memory). Initialize dispatcher with `vkGetInstanceProcAddr`, then instance-level and device-level functions after creation.
 
-**RAII Handle Guidelines:**
+**Vulkan Handle Lifetime Rules (No Vulkan-RAII Wrappers):**
 
-Due to the async nature of GPU execution, RAII handles (`vk::Unique*`) cannot automatically handle synchronization. Use them selectively:
+Do not use Vulkan-Hpp RAII wrappers such as `vk::Unique*` or `vk::raii::*` in application code. Use plain `vk::` handles and explicit cleanup.
 
-| Resource Type | Handle Type | Rationale |
-|---------------|-------------|-----------|
-| Instance, Device, Surface | `vk::Unique*` | Long-lived singletons, destroyed at shutdown when GPU idle |
-| Swapchain, Pipelines, Layouts | `vk::Unique*` | Created once, destroyed with explicit sync or at shutdown |
-| Command buffers from pools | `vk::CommandBuffer` (plain) | Pooled lifetime, reused across frames |
-| Per-frame sync primitives | `vk::Fence`, `vk::Semaphore` (plain) | Reused every frame, explicit lifetime |
-| Imported external images | `vk::Image` (plain) | Requires explicit sync before destruction |
+| Resource Type | Handle Type | Lifetime Rule |
+|---------------|-------------|---------------|
+| Instance, Device, Surface | plain `vk::` handles | Destroy explicitly during shutdown in correct order |
+| Swapchain, Pipelines, Layouts | plain `vk::` handles | Destroy explicitly after proper synchronization |
+| Command buffers from pools | `vk::CommandBuffer` | Allocate/free from command pools, do not wrap in `Unique` |
+| Per-frame sync primitives | `vk::Fence`, `vk::Semaphore` | Reuse and destroy explicitly at teardown |
+| Imported external images | `vk::Image` and `vk::DeviceMemory` | Explicit sync before destroy/free |
 
 **Exception - Capture Layer Code:**
 
@@ -371,7 +371,7 @@ The Vulkan capture layer (`src/capture/vk_layer/`) is exempt and MUST use the ra
 - Type safety: C++ types prevent handle misuse
 - Zero overhead: Static dispatch compiles to identical code as raw C API
 - Cleaner code: Method syntax, no manual struct initialization
-- Selective RAII: Automatic cleanup where safe, explicit control where GPU async matters
+- Explicit Vulkan lifetime control: predictable teardown and synchronization boundaries
 
 ### D.3 Dynamic Memory Management
 
@@ -393,11 +393,11 @@ The Vulkan capture layer (`src/capture/vk_layer/`) is exempt and MUST use the ra
 
 ### D.5 Vulkan Resource Management
 
-- **Follow RAII guidelines in D.2:** Use `vk::Unique*` only for appropriate resource types (see table in D.2).
+- **Follow Vulkan lifetime rules in D.2:** Use plain `vk::` handles and explicit destroy/free calls.
 - **Explicit sync before destruction:** For resources with GPU-async lifetime, call `device.waitIdle()` or wait on appropriate fences before destroying.
 - **Store creation info** with resources for debugging/recreation.
 - **Never leak Vulkan objects:** Ensure proper destruction order (devices before instances, etc.).
-- **Member ordering:** When using `vk::Unique*` members, declare in reverse destruction order (device before instance, etc.) so destructors run correctly.
+- **Member ordering:** Keep members organized by teardown dependencies and destroy in explicit reverse dependency order (e.g., image views -> swapchain -> device -> surface -> instance).
 
 ### D.6 Vulkan Error Handling Rules
 
@@ -871,7 +871,7 @@ These policies establish:
 1. **Error handling:** `tl::expected<T, Error>`, no silent failures, log at boundaries.
 2. **Logging:** `spdlog`, standard levels, minimal logging in capture layer.
 3. **Naming & Comments:** `snake_case` functions/files, `PascalCase` types, `m_` private members. Comments explain **why**, never **what**. No narration. No LLM-style verbosity.
-4. **Ownership:** RAII, `std::unique_ptr` default, no raw `new`/`delete`. Vulkan errors must be checked (no `static_cast<void>`).
+4. **Ownership:** RAII for C++ owned resources, `std::unique_ptr` default, no raw `new`/`delete`; Vulkan uses plain `vk::` handles with explicit cleanup. Vulkan errors must be checked (no `static_cast<void>`).
 5. **Threading:** Single-threaded default, `std::jthread` when needed, no detached threads.
 6. **Configuration:** TOML format, `config/goggles.toml` for development.
 7. **Dependencies:** Pixi-managed environment, pinned versions, justify additions.

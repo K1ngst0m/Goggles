@@ -48,11 +48,28 @@ auto DownsamplePass::create(const VulkanContext& vk_ctx, ShaderRuntime& shader_r
 }
 
 void DownsamplePass::shutdown() {
-    m_pipeline.reset();
-    m_pipeline_layout.reset();
-    m_descriptor_pool.reset();
-    m_descriptor_layout.reset();
-    m_sampler.reset();
+    if (m_device) {
+        if (m_pipeline) {
+            m_device.destroyPipeline(m_pipeline);
+            m_pipeline = nullptr;
+        }
+        if (m_pipeline_layout) {
+            m_device.destroyPipelineLayout(m_pipeline_layout);
+            m_pipeline_layout = nullptr;
+        }
+        if (m_descriptor_pool) {
+            m_device.destroyDescriptorPool(m_descriptor_pool);
+            m_descriptor_pool = nullptr;
+        }
+        if (m_descriptor_layout) {
+            m_device.destroyDescriptorSetLayout(m_descriptor_layout);
+            m_descriptor_layout = nullptr;
+        }
+        if (m_sampler) {
+            m_device.destroySampler(m_sampler);
+            m_sampler = nullptr;
+        }
+    }
     m_descriptor_sets.clear();
     m_target_format = vk::Format::eUndefined;
     m_device = nullptr;
@@ -80,7 +97,7 @@ void DownsamplePass::set_shader_parameter(const std::string& name, float value) 
 
 void DownsamplePass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
     vk::DescriptorImageInfo image_info{};
-    image_info.sampler = *m_sampler;
+    image_info.sampler = m_sampler;
     image_info.imageView = source_view;
     image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
@@ -128,11 +145,11 @@ void DownsamplePass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     rendering_info.pColorAttachments = &color_attachment;
 
     cmd.beginRendering(rendering_info);
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline_layout, 0,
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0,
                            m_descriptor_sets[ctx.frame_index], {});
 
-    cmd.pushConstants<DownsamplePushConstants>(*m_pipeline_layout,
+    cmd.pushConstants<DownsamplePushConstants>(m_pipeline_layout,
                                                vk::ShaderStageFlagBits::eFragment, 0, pc);
 
     vk::Viewport viewport{};
@@ -169,13 +186,13 @@ auto DownsamplePass::create_sampler() -> Result<void> {
     create_info.borderColor = vk::BorderColor::eFloatOpaqueBlack;
     create_info.unnormalizedCoordinates = VK_FALSE;
 
-    auto [result, sampler] = m_device.createSamplerUnique(create_info);
+    auto [result, sampler] = m_device.createSampler(create_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create sampler: " + vk::to_string(result));
     }
 
-    m_sampler = std::move(sampler);
+    m_sampler = sampler;
     return {};
 }
 
@@ -190,13 +207,13 @@ auto DownsamplePass::create_descriptor_resources() -> Result<void> {
     layout_info.bindingCount = 1;
     layout_info.pBindings = &binding;
 
-    auto [layout_result, layout] = m_device.createDescriptorSetLayoutUnique(layout_info);
+    auto [layout_result, layout] = m_device.createDescriptorSetLayout(layout_info);
     if (layout_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create descriptor set layout: " +
                                     vk::to_string(layout_result));
     }
-    m_descriptor_layout = std::move(layout);
+    m_descriptor_layout = layout;
 
     vk::DescriptorPoolSize pool_size{};
     pool_size.type = vk::DescriptorType::eCombinedImageSampler;
@@ -207,17 +224,17 @@ auto DownsamplePass::create_descriptor_resources() -> Result<void> {
     pool_info.poolSizeCount = 1;
     pool_info.pPoolSizes = &pool_size;
 
-    auto [pool_result, pool] = m_device.createDescriptorPoolUnique(pool_info);
+    auto [pool_result, pool] = m_device.createDescriptorPool(pool_info);
     if (pool_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create descriptor pool: " + vk::to_string(pool_result));
     }
-    m_descriptor_pool = std::move(pool);
+    m_descriptor_pool = pool;
 
-    std::vector<vk::DescriptorSetLayout> layouts(m_num_sync_indices, *m_descriptor_layout);
+    std::vector<vk::DescriptorSetLayout> layouts(m_num_sync_indices, m_descriptor_layout);
 
     vk::DescriptorSetAllocateInfo alloc_info{};
-    alloc_info.descriptorPool = *m_descriptor_pool;
+    alloc_info.descriptorPool = m_descriptor_pool;
     alloc_info.descriptorSetCount = m_num_sync_indices;
     alloc_info.pSetLayouts = layouts.data();
 
@@ -240,17 +257,17 @@ auto DownsamplePass::create_pipeline_layout() -> Result<void> {
 
     vk::PipelineLayoutCreateInfo create_info{};
     create_info.setLayoutCount = 1;
-    create_info.pSetLayouts = &*m_descriptor_layout;
+    create_info.pSetLayouts = &m_descriptor_layout;
     create_info.pushConstantRangeCount = 1;
     create_info.pPushConstantRanges = &push_constant;
 
-    auto [result, layout] = m_device.createPipelineLayoutUnique(create_info);
+    auto [result, layout] = m_device.createPipelineLayout(create_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create pipeline layout: " + vk::to_string(result));
     }
 
-    m_pipeline_layout = std::move(layout);
+    m_pipeline_layout = layout;
     return {};
 }
 
@@ -266,7 +283,7 @@ auto DownsamplePass::create_pipeline(ShaderRuntime& shader_runtime,
     vert_module_info.codeSize = vert_compiled.spirv.size() * sizeof(uint32_t);
     vert_module_info.pCode = vert_compiled.spirv.data();
 
-    auto [vert_mod_result, vert_module] = m_device.createShaderModuleUnique(vert_module_info);
+    auto [vert_mod_result, vert_module] = m_device.createShaderModule(vert_module_info);
     if (vert_mod_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create vertex shader module: " +
@@ -277,8 +294,9 @@ auto DownsamplePass::create_pipeline(ShaderRuntime& shader_runtime,
     frag_module_info.codeSize = frag_compiled.spirv.size() * sizeof(uint32_t);
     frag_module_info.pCode = frag_compiled.spirv.data();
 
-    auto [frag_mod_result, frag_module] = m_device.createShaderModuleUnique(frag_module_info);
+    auto [frag_mod_result, frag_module] = m_device.createShaderModule(frag_module_info);
     if (frag_mod_result != vk::Result::eSuccess) {
+        m_device.destroyShaderModule(vert_module);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create fragment shader module: " +
                                     vk::to_string(frag_mod_result));
@@ -286,10 +304,10 @@ auto DownsamplePass::create_pipeline(ShaderRuntime& shader_runtime,
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> stages{};
     stages[0].stage = vk::ShaderStageFlagBits::eVertex;
-    stages[0].module = *vert_module;
+    stages[0].module = vert_module;
     stages[0].pName = "main";
     stages[1].stage = vk::ShaderStageFlagBits::eFragment;
-    stages[1].module = *frag_module;
+    stages[1].module = frag_module;
     stages[1].pName = "main";
 
     vk::PipelineVertexInputStateCreateInfo vertex_input{};
@@ -348,15 +366,17 @@ auto DownsamplePass::create_pipeline(ShaderRuntime& shader_runtime,
     create_info.pMultisampleState = &multisample;
     create_info.pColorBlendState = &color_blend;
     create_info.pDynamicState = &dynamic_state;
-    create_info.layout = *m_pipeline_layout;
+    create_info.layout = m_pipeline_layout;
 
-    auto [result, pipelines] = m_device.createGraphicsPipelinesUnique(nullptr, create_info);
+    auto [result, pipelines] = m_device.createGraphicsPipelines(nullptr, create_info);
+    m_device.destroyShaderModule(frag_module);
+    m_device.destroyShaderModule(vert_module);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create graphics pipeline: " + vk::to_string(result));
     }
 
-    m_pipeline = std::move(pipelines[0]);
+    m_pipeline = pipelines[0];
     return {};
 }
 

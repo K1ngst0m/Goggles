@@ -14,9 +14,9 @@ struct ImageSize {
 
 /// @brief Loaded GPU texture resources.
 struct TextureData {
-    vk::UniqueImage image;
-    vk::UniqueDeviceMemory memory;
-    vk::UniqueImageView view;
+    vk::Image image;
+    vk::DeviceMemory memory;
+    vk::ImageView view;
     vk::Extent2D extent{0, 0};
     uint32_t mip_levels{1};
 };
@@ -42,13 +42,13 @@ public:
 
 private:
     struct StagingResources {
-        vk::UniqueBuffer buffer;
-        vk::UniqueDeviceMemory memory;
+        vk::Buffer buffer;
+        vk::DeviceMemory memory;
     };
 
     struct ImageResources {
-        vk::UniqueImage image;
-        vk::UniqueDeviceMemory memory;
+        vk::Image image;
+        vk::DeviceMemory memory;
     };
 
     [[nodiscard]] auto upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_t height,

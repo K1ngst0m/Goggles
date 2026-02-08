@@ -27,8 +27,12 @@ Framebuffer::~Framebuffer() {
 
 Framebuffer::Framebuffer(Framebuffer&& other) noexcept
     : m_device(other.m_device), m_physical_device(other.m_physical_device),
-      m_format(other.m_format), m_extent(other.m_extent), m_image(std::move(other.m_image)),
-      m_memory(std::move(other.m_memory)), m_view(std::move(other.m_view)) {}
+      m_format(other.m_format), m_extent(other.m_extent), m_image(other.m_image),
+      m_memory(other.m_memory), m_view(other.m_view) {
+    other.m_image = nullptr;
+    other.m_memory = nullptr;
+    other.m_view = nullptr;
+}
 
 Framebuffer& Framebuffer::operator=(Framebuffer&& other) noexcept {
     if (this != &other) {
@@ -37,9 +41,12 @@ Framebuffer& Framebuffer::operator=(Framebuffer&& other) noexcept {
         m_physical_device = other.m_physical_device;
         m_format = other.m_format;
         m_extent = other.m_extent;
-        m_image = std::move(other.m_image);
-        m_memory = std::move(other.m_memory);
-        m_view = std::move(other.m_view);
+        m_image = other.m_image;
+        m_memory = other.m_memory;
+        m_view = other.m_view;
+        other.m_image = nullptr;
+        other.m_memory = nullptr;
+        other.m_view = nullptr;
     }
     return *this;
 }
@@ -69,9 +76,18 @@ auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
         return {};
     }
 
-    m_view.reset();
-    m_memory.reset();
-    m_image.reset();
+    if (m_view) {
+        m_device.destroyImageView(m_view);
+        m_view = nullptr;
+    }
+    if (m_memory) {
+        m_device.freeMemory(m_memory);
+        m_memory = nullptr;
+    }
+    if (m_image) {
+        m_device.destroyImage(m_image);
+        m_image = nullptr;
+    }
 
     m_extent = new_extent;
 
@@ -88,9 +104,18 @@ void Framebuffer::shutdown() {
     if (m_device) {
         static_cast<void>(m_device.waitIdle());
     }
-    m_view.reset();
-    m_memory.reset();
-    m_image.reset();
+    if (m_view) {
+        m_device.destroyImageView(m_view);
+        m_view = nullptr;
+    }
+    if (m_memory) {
+        m_device.freeMemory(m_memory);
+        m_memory = nullptr;
+    }
+    if (m_image) {
+        m_device.destroyImage(m_image);
+        m_image = nullptr;
+    }
     m_format = vk::Format::eUndefined;
     m_extent = vk::Extent2D{0, 0};
 }
@@ -110,18 +135,18 @@ auto Framebuffer::create_image() -> Result<void> {
     image_info.sharingMode = vk::SharingMode::eExclusive;
     image_info.initialLayout = vk::ImageLayout::eUndefined;
 
-    auto [result, image] = m_device.createImageUnique(image_info);
+    auto [result, image] = m_device.createImage(image_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create framebuffer image: " + vk::to_string(result));
     }
-    m_image = std::move(image);
+    m_image = image;
     return {};
 }
 
 auto Framebuffer::allocate_memory() -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
-    auto mem_reqs = m_device.getImageMemoryRequirements(*m_image);
+    auto mem_reqs = m_device.getImageMemoryRequirements(m_image);
     auto mem_props = m_physical_device.getMemoryProperties();
 
     uint32_t mem_type_index = find_memory_type(mem_props, mem_reqs.memoryTypeBits,
@@ -135,14 +160,14 @@ auto Framebuffer::allocate_memory() -> Result<void> {
     alloc_info.allocationSize = mem_reqs.size;
     alloc_info.memoryTypeIndex = mem_type_index;
 
-    auto [result, memory] = m_device.allocateMemoryUnique(alloc_info);
+    auto [result, memory] = m_device.allocateMemory(alloc_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate framebuffer memory: " + vk::to_string(result));
     }
-    m_memory = std::move(memory);
+    m_memory = memory;
 
-    VK_TRY(m_device.bindImageMemory(*m_image, *m_memory, 0), ErrorCode::vulkan_init_failed,
+    VK_TRY(m_device.bindImageMemory(m_image, m_memory, 0), ErrorCode::vulkan_init_failed,
            "Failed to bind framebuffer memory");
 
     return {};
@@ -151,7 +176,7 @@ auto Framebuffer::allocate_memory() -> Result<void> {
 auto Framebuffer::create_image_view() -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
     vk::ImageViewCreateInfo view_info{};
-    view_info.image = *m_image;
+    view_info.image = m_image;
     view_info.viewType = vk::ImageViewType::e2D;
     view_info.format = m_format;
     view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
@@ -160,13 +185,13 @@ auto Framebuffer::create_image_view() -> Result<void> {
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = 1;
 
-    auto [result, view] = m_device.createImageViewUnique(view_info);
+    auto [result, view] = m_device.createImageView(view_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create framebuffer image view: " +
                                     vk::to_string(result));
     }
-    m_view = std::move(view);
+    m_view = view;
     return {};
 }
 

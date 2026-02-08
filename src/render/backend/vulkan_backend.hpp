@@ -90,9 +90,9 @@ public:
         -> Result<void>;
     void wait_all_frames();
 
-    [[nodiscard]] auto instance() const -> vk::Instance { return *m_instance; }
+    [[nodiscard]] auto instance() const -> vk::Instance { return m_instance; }
     [[nodiscard]] auto physical_device() const -> vk::PhysicalDevice { return m_physical_device; }
-    [[nodiscard]] auto device() const -> vk::Device { return *m_device; }
+    [[nodiscard]] auto device() const -> vk::Device { return m_device; }
     [[nodiscard]] auto graphics_queue() const -> vk::Queue { return m_graphics_queue; }
     [[nodiscard]] auto graphics_queue_family() const -> uint32_t { return m_graphics_queue_family; }
     [[nodiscard]] auto swapchain_format() const -> vk::Format { return m_swapchain_format; }
@@ -174,10 +174,10 @@ private:
     uint64_t m_last_signaled_frame = 0;
     bool m_sync_wait_succeeded = false;
 
-    vk::UniqueInstance m_instance;
-    vk::UniqueDevice m_device;
+    vk::Instance m_instance;
+    vk::Device m_device;
     std::vector<vk::Image> m_swapchain_images;
-    std::vector<vk::UniqueImageView> m_swapchain_image_views;
+    std::vector<vk::ImageView> m_swapchain_image_views;
     std::vector<vk::Semaphore> m_render_finished_sems;
 
     struct ImportedImage {
@@ -187,9 +187,9 @@ private:
     };
     ImportedImage m_import;
 
-    vk::UniqueSurfaceKHR m_surface;
-    vk::UniqueSwapchainKHR m_swapchain;
-    vk::UniqueCommandPool m_command_pool;
+    vk::SurfaceKHR m_surface;
+    vk::SwapchainKHR m_swapchain;
+    vk::CommandPool m_command_pool;
     std::optional<VulkanDebugMessenger> m_debug_messenger;
 
     std::filesystem::path m_shader_dir;

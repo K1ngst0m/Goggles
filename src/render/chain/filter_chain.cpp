@@ -202,7 +202,7 @@ auto FilterChain::load_preset(const std::filesystem::path& preset_path) -> Resul
     m_alias_to_pass_index = std::move(new_alias_map);
     m_framebuffers.clear();
     m_framebuffers.resize(m_passes.size());
-    m_texture_registry.clear();
+    cleanup_texture_registry();
 
     // Reset frame history when switching presets (new preset may need different depth)
     m_frame_history.shutdown();
@@ -314,7 +314,7 @@ void FilterChain::bind_pass_textures(FilterPass& pass, size_t pass_index,
     }
 
     for (const auto& [name, tex] : m_texture_registry) {
-        pass.set_texture_binding(name, *tex.data.view, *tex.sampler);
+        pass.set_texture_binding(name, tex.data.view, tex.sampler);
     }
 }
 
@@ -622,7 +622,7 @@ void FilterChain::shutdown() {
     m_passes.clear();
     m_framebuffers.clear();
     m_feedback_framebuffers.clear();
-    m_texture_registry.clear();
+    cleanup_texture_registry();
     m_alias_to_pass_index.clear();
     m_frame_history.shutdown();
     m_preset = PresetConfig{};
@@ -877,12 +877,42 @@ auto FilterChain::load_preset_textures() -> Result<void> {
             return nonstd::make_unexpected(tex_data_result.error());
         }
 
-        auto sampler = GOGGLES_TRY(create_texture_sampler(tex_config));
+        auto sampler_result = create_texture_sampler(tex_config);
+        if (!sampler_result) {
+            auto& loaded = tex_data_result.value();
+            if (loaded.view) {
+                m_vk_ctx.device.destroyImageView(loaded.view);
+            }
+            if (loaded.memory) {
+                m_vk_ctx.device.freeMemory(loaded.memory);
+            }
+            if (loaded.image) {
+                m_vk_ctx.device.destroyImage(loaded.image);
+            }
+            return nonstd::make_unexpected(sampler_result.error());
+        }
+        auto sampler = sampler_result.value();
 
-        m_texture_registry[tex_config.name] = LoadedTexture{
-            .data = std::move(tex_data_result.value()),
-            .sampler = std::move(sampler),
-        };
+        if (auto existing = m_texture_registry.find(tex_config.name);
+            existing != m_texture_registry.end()) {
+            if (existing->second.sampler) {
+                m_vk_ctx.device.destroySampler(existing->second.sampler);
+            }
+            if (existing->second.data.view) {
+                m_vk_ctx.device.destroyImageView(existing->second.data.view);
+            }
+            if (existing->second.data.memory) {
+                m_vk_ctx.device.freeMemory(existing->second.data.memory);
+            }
+            if (existing->second.data.image) {
+                m_vk_ctx.device.destroyImage(existing->second.data.image);
+            }
+            m_texture_registry.erase(existing);
+        }
+
+        auto texture_data = tex_data_result.value();
+        m_texture_registry[tex_config.name] =
+            LoadedTexture{.data = texture_data, .sampler = sampler};
 
         GOGGLES_LOG_DEBUG("Loaded texture '{}' from {}", tex_config.name,
                           tex_config.path.filename().string());
@@ -890,8 +920,29 @@ auto FilterChain::load_preset_textures() -> Result<void> {
     return {};
 }
 
-auto FilterChain::create_texture_sampler(const TextureConfig& config) const
-    -> Result<vk::UniqueSampler> {
+void FilterChain::cleanup_texture_registry() {
+    for (auto& [_, tex] : m_texture_registry) {
+        if (tex.sampler) {
+            m_vk_ctx.device.destroySampler(tex.sampler);
+            tex.sampler = nullptr;
+        }
+        if (tex.data.view) {
+            m_vk_ctx.device.destroyImageView(tex.data.view);
+            tex.data.view = nullptr;
+        }
+        if (tex.data.memory) {
+            m_vk_ctx.device.freeMemory(tex.data.memory);
+            tex.data.memory = nullptr;
+        }
+        if (tex.data.image) {
+            m_vk_ctx.device.destroyImage(tex.data.image);
+            tex.data.image = nullptr;
+        }
+    }
+    m_texture_registry.clear();
+}
+
+auto FilterChain::create_texture_sampler(const TextureConfig& config) const -> Result<vk::Sampler> {
     vk::Filter filter =
         (config.filter_mode == FilterMode::linear) ? vk::Filter::eLinear : vk::Filter::eNearest;
 
@@ -933,13 +984,13 @@ auto FilterChain::create_texture_sampler(const TextureConfig& config) const
     sampler_info.minLod = 0.0f;
     sampler_info.maxLod = config.mipmap ? VK_LOD_CLAMP_NONE : 0.0f;
 
-    auto [result, sampler] = m_vk_ctx.device.createSamplerUnique(sampler_info);
+    auto [result, sampler] = m_vk_ctx.device.createSampler(sampler_info);
     if (result != vk::Result::eSuccess) {
-        return make_error<vk::UniqueSampler>(ErrorCode::vulkan_init_failed,
-                                             "Failed to create texture sampler: " +
-                                                 vk::to_string(result));
+        return make_error<vk::Sampler>(ErrorCode::vulkan_init_failed,
+                                       "Failed to create texture sampler: " +
+                                           vk::to_string(result));
     }
-    return Result<vk::UniqueSampler>{std::move(sampler)};
+    return Result<vk::Sampler>{sampler};
 }
 
 } // namespace goggles::render

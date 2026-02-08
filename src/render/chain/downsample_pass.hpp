@@ -51,14 +51,14 @@ private:
     vk::Format m_target_format = vk::Format::eUndefined;
     uint32_t m_num_sync_indices = 0;
 
-    vk::UniquePipelineLayout m_pipeline_layout;
-    vk::UniquePipeline m_pipeline;
+    vk::PipelineLayout m_pipeline_layout;
+    vk::Pipeline m_pipeline;
 
-    vk::UniqueDescriptorSetLayout m_descriptor_layout;
-    vk::UniqueDescriptorPool m_descriptor_pool;
+    vk::DescriptorSetLayout m_descriptor_layout;
+    vk::DescriptorPool m_descriptor_pool;
     std::vector<vk::DescriptorSet> m_descriptor_sets;
 
-    vk::UniqueSampler m_sampler;
+    vk::Sampler m_sampler;
 
     float m_filter_type = 0.0F;
 };
