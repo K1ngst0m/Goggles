@@ -550,7 +550,13 @@ struct CompositorServer::Impl {
     std::atomic<bool> pointer_locked{false};
     std::atomic<bool> present_reset_requested{false};
 
-    Impl() { listeners.impl = this; }
+    Impl() {
+        listeners.impl = this;
+        wl_list_init(&listeners.new_xdg_toplevel.link);
+        wl_list_init(&listeners.new_xdg_popup.link);
+        wl_list_init(&listeners.new_xwayland_surface.link);
+        wl_list_init(&listeners.new_pointer_constraint.link);
+    }
 
     [[nodiscard]] auto setup_base_components() -> Result<void>;
     [[nodiscard]] auto create_allocator() -> Result<void>;
