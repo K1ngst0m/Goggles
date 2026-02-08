@@ -1,0 +1,9 @@
+[package]
+name = "wlroots-0-19"
+version = "0.19.2"
+description = "wlroots 0.19.x compositor library (prebuilt, headless backend + XWayland)"
+authors = ["Goggles Team"]
+license = "MIT"
+
+[package.build]
+backend = { name = "pixi-build-rattler-build", version = "==0.3.7" }

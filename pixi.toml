@@ -159,7 +159,7 @@ expected-lite = { path = "packages/expected-lite" }
 stb = { path = "packages/stb" }
 bs-thread-pool = { path = "packages/bs-thread-pool" }
 slang-shaders = { path = "packages/slang-shaders" }
-wlroots-0-18 = { path = "packages/wlroots_0_18" }
+wlroots-0-19 = { path = "packages/wlroots_0_19" }
 imgui = { path = "packages/imgui" }
 
 # CI-only: Lightweight lint environment

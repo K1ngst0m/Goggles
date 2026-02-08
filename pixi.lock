@@ -159,7 +159,7 @@ environments:
       - conda: packages/stb
       - conda: packages/sysroot-i686
       - conda: packages/tracy
-      - conda: packages/wlroots_0_18
+      - conda: packages/wlroots_0_19
   lint:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
@@ -1697,9 +1697,9 @@ packages:
   license_family: MIT
   size: 140476
   timestamp: 1765821981856
-- conda: packages/wlroots_0_18
-  name: wlroots-0-18
-  version: 0.18.3
+- conda: packages/wlroots_0_19
+  name: wlroots-0-19
+  version: 0.19.2
   build: hb0f4dca_0
   subdir: linux-64
   variants:

@@ -386,6 +386,13 @@ auto bind_wayland_socket(wl_display* display) -> Result<std::string> {
                                    "No available goggles sockets (goggles-0..9 all bound)");
 }
 
+void detach_listener(wl_listener& listener) {
+    if (listener.link.next != nullptr && listener.link.prev != nullptr) {
+        wl_list_remove(&listener.link);
+    }
+    wl_list_init(&listener.link);
+}
+
 struct KeyboardDeleter {
     void operator()(wlr_keyboard* kb) const {
         if (kb) {
@@ -902,6 +909,7 @@ auto CompositorServer::Impl::setup_xwayland() -> Result<void> {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create XWayland server");
     }
 
+    wl_list_init(&listeners.new_xwayland_surface.link);
     listeners.new_xwayland_surface.notify = [](wl_listener* listener, void* data) {
         auto* list = reinterpret_cast<Impl::Listeners*>(
             reinterpret_cast<char*>(listener) - offsetof(Impl::Listeners, new_xwayland_surface));
@@ -1107,6 +1115,11 @@ void CompositorServer::stop() {
     impl.pointer_entered_surface = nullptr;
     impl.clear_presented_frame();
     impl.clear_cursor_theme();
+
+    detach_listener(impl.listeners.new_xwayland_surface);
+    detach_listener(impl.listeners.new_pointer_constraint);
+    detach_listener(impl.listeners.new_xdg_popup);
+    detach_listener(impl.listeners.new_xdg_toplevel);
 
     // Destruction order: xwayland before compositor, seat before display
     if (impl.xwayland) {
@@ -2236,7 +2249,8 @@ void CompositorServer::Impl::apply_surface_resize_request(const SurfaceResizeReq
 
     if (xwayland_hooks_entry && xwayland_hooks_entry->xsurface) {
         auto* xsurface = xwayland_hooks_entry->xsurface;
-        wlr_xwayland_surface_set_maximized(xsurface, request.resize.maximized);
+        wlr_xwayland_surface_set_maximized(xsurface, request.resize.maximized,
+                                           request.resize.maximized);
         if (request.resize.width > 0 && request.resize.height > 0) {
             const uint16_t width = static_cast<uint16_t>(
                 std::min<uint32_t>(request.resize.width, std::numeric_limits<uint16_t>::max()));
@@ -2685,8 +2699,7 @@ bool CompositorServer::Impl::render_surface_to_frame(const InputTarget& target) 
         present_height = desired_height;
     }
 
-    int age = 0;
-    wlr_buffer* buffer = wlr_swapchain_acquire(present_swapchain, &age);
+    wlr_buffer* buffer = wlr_swapchain_acquire(present_swapchain);
     if (!buffer) {
         return false;
     }
@@ -2707,8 +2720,6 @@ bool CompositorServer::Impl::render_surface_to_frame(const InputTarget& target) 
         wlr_buffer_unlock(buffer);
         return false;
     }
-
-    wlr_swapchain_set_buffer_submitted(present_swapchain, buffer);
 
     wlr_dmabuf_attributes attribs{};
     if (!wlr_buffer_get_dmabuf(buffer, &attribs)) {
