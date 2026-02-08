@@ -32,7 +32,7 @@ requirements:
     - ${{ compiler('cxx') }}
     - sysroot_linux-64
   host:
-    - sdl3 >=3.2
+    - sdl3 3.2.*
     - libvulkan-headers
 
 about:
