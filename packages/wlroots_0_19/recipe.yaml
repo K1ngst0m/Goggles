@@ -1,0 +1,77 @@
+package:
+  name: wlroots-0-19
+  version: "0.19.2"
+
+source:
+  url: https://github.com/K1ngst0m/Goggles/releases/download/wlroots-0.19.2/wlroots-0.19.2.tar.xz
+  sha256: 7f7e7ead653c15a86b4df267e99cf42d03c7000bf517853ec4f96c5aac149d64
+
+build:
+  number: 0
+  script: |
+    set -e
+
+    # rattler-build extraction layout can vary by backend/version.
+    # Prefer the named source dir, but fall back to current working dir.
+    SRC=wlroots-0.19.2
+    if [ ! -d "$SRC" ]; then
+        SRC=.
+    fi
+
+    # Install to $PREFIX
+    mkdir -p $PREFIX/include $PREFIX/lib $PREFIX/share
+
+    # Copy includes (already in wlroots-0.19 subdirectory)
+    cp -a $SRC/include/* $PREFIX/include/
+
+    # Copy libs (flatten x86_64-linux-gnu directory)
+    cp -a $SRC/lib/x86_64-linux-gnu/* $PREFIX/lib/
+
+    # Copy share (pkgconfig, etc)
+    if [ -d "$SRC/share" ]; then
+        cp -a $SRC/share/* $PREFIX/share/
+    fi
+
+    # Fix pkg-config for conda environment
+    if [ -f "$PREFIX/lib/pkgconfig/wlroots-0.19.pc" ]; then
+        sed -i "s|prefix=.*|prefix=$PREFIX|g" $PREFIX/lib/pkgconfig/wlroots-0.19.pc
+        sed -i '/^Requires\.private/d' $PREFIX/lib/pkgconfig/wlroots-0.19.pc
+        sed -i '/^Version:/a Requires: pixman-1' $PREFIX/lib/pkgconfig/wlroots-0.19.pc
+    else
+        # Create pkg-config file if not present
+        mkdir -p $PREFIX/lib/pkgconfig
+        cat > $PREFIX/lib/pkgconfig/wlroots-0.19.pc <<EOF
+    prefix=$PREFIX
+    exec_prefix=\${prefix}
+    libdir=\${prefix}/lib
+    includedir=\${prefix}/include
+
+    Name: wlroots
+    Description: Modular wayland compositor library
+    Version: 0.19.2
+    Requires: wayland-server xkbcommon pixman-1
+    Libs: -L\${libdir} -lwlroots-0.19
+    Cflags: -I\${includedir}/wlroots-0.19
+    EOF
+    fi
+
+    echo "wlroots-0.19 installed successfully"
+
+requirements:
+  build:
+    - tar
+    - xz
+    - patchelf
+  host:
+    - wayland
+    - libxkbcommon
+    - pixman
+  run:
+    - wayland
+    - libxkbcommon
+    - pixman
+
+about:
+  homepage: https://gitlab.freedesktop.org/wlroots/wlroots
+  license: MIT
+  summary: wlroots 0.19.x compositor library (prebuilt for headless + XWayland)

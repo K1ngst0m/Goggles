@@ -1,7 +1,7 @@
 [package]
-name = "sysroot-i686"
-version = "2.31"
-description = "Minimal 32-bit sysroot for i686 cross-compilation"
+name = "wlroots-0-19"
+version = "0.19.2"
+description = "wlroots 0.19.x compositor library (prebuilt, headless backend + XWayland)"
 authors = ["Goggles Team"]
 license = "MIT"
 

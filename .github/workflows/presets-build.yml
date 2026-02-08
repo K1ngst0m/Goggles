@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  PIXI_VERSION: v0.59.0
+  PIXI_VERSION: v0.63.2
   CCACHE_MAX_SIZE: 500M
 
 concurrency:
@@ -25,7 +25,18 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Pixi
+      - name: Setup Pixi (attempt 1)
+        id: setup_pixi_presets_1
+        continue-on-error: true
+        uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          cache: true
+          manifest-path: pixi.toml
+          locked: true
+
+      - name: Setup Pixi (retry)
+        if: steps.setup_pixi_presets_1.outcome == 'failure'
         uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}

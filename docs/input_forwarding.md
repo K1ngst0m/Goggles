@@ -141,7 +141,7 @@ Dependencies are provided by the Pixi environment (see `pixi.toml`) and a pinned
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| wlroots | 0.18 | Wayland compositor library (headless backend, seat, XWayland) |
+| wlroots | 0.19 | Wayland compositor library (headless backend, seat, XWayland) |
 | wayland-server | Pixi | Wayland protocol server implementation |
 | xkbcommon | Pixi | Keyboard keymap handling for Wayland |
 | SDL3 | Pixi | Viewer window input source |
