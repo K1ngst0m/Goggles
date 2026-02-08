@@ -54,6 +54,11 @@ public:
     [[nodiscard]] auto gpu_uuid() const -> std::string;
 
 private:
+    enum class SessionCaptureMode : uint8_t {
+        direct_vulkan,
+        compositor,
+    };
+
     Application() = default;
 
     void forward_input_event(const SDL_Event& event);
@@ -78,8 +83,12 @@ private:
     void update_surface_resize_for_surfaces(const std::vector<input::SurfaceInfo>& surfaces);
     [[nodiscard]] auto compute_global_filter_chain_enabled() const -> bool;
     [[nodiscard]] auto compute_surface_filter_chain_enabled(uint32_t surface_id) const -> bool;
-    [[nodiscard]] auto compute_global_effect_stage_enabled() const -> bool;
-    [[nodiscard]] auto compute_surface_effect_stage_enabled(uint32_t surface_id) const -> bool;
+    struct StagePolicy {
+        bool prechain_enabled = true;
+        bool effect_stage_enabled = true;
+    };
+    [[nodiscard]] auto compute_stage_policy(bool using_surface_frame) const -> StagePolicy;
+    [[nodiscard]] auto is_direct_vulkan_session() const -> bool;
     void request_surface_resize(uint32_t surface_id, bool maximize);
     void set_surface_filter_enabled(uint32_t surface_id, bool enabled);
     [[nodiscard]] auto is_surface_filter_enabled(uint32_t surface_id) const -> bool;
@@ -99,6 +108,7 @@ private:
     };
     struct SurfaceRuntimeState {
         bool filter_enabled = false;
+        bool filter_explicitly_set = false;
         SurfaceResizeState resize;
         bool has_resize_state = false;
         uint32_t restore_width = 0;
@@ -117,6 +127,7 @@ private:
     bool m_skip_frame = false;
     uint32_t m_pending_format = 0;
     uint64_t m_last_source_frame_number = UINT64_MAX;
+    SessionCaptureMode m_session_capture_mode = SessionCaptureMode::direct_vulkan;
 };
 
 } // namespace app

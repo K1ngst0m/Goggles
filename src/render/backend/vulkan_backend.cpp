@@ -973,6 +973,7 @@ auto VulkanBackend::init_filter_chain() -> Result<void> {
     m_filter_chain =
         GOGGLES_TRY(FilterChain::create(vk_ctx, m_swapchain_format, MAX_FRAMES_IN_FLIGHT,
                                         *m_shader_runtime, m_shader_dir, m_source_resolution));
+    apply_filter_chain_policy();
     return {};
 }
 
@@ -1636,6 +1637,7 @@ void VulkanBackend::check_pending_chain_swap() {
     // Swap in the new chain
     m_filter_chain = std::move(m_pending_filter_chain);
     m_shader_runtime = std::move(m_pending_shader_runtime);
+    apply_filter_chain_policy();
     m_preset_path = m_pending_preset_path;
     m_pending_chain_ready.store(false, std::memory_order_release);
     m_chain_swapped.store(true, std::memory_order_release);
@@ -1660,8 +1662,18 @@ void VulkanBackend::cleanup_deferred_destroys() {
     m_deferred_count = write_idx;
 }
 
-void VulkanBackend::set_shader_enabled(bool enabled) {
-    m_filter_chain->set_bypass(!enabled);
+void VulkanBackend::set_filter_chain_policy(const FilterChainStagePolicy& policy) {
+    m_prechain_policy_enabled = policy.prechain_enabled;
+    m_effect_stage_policy_enabled = policy.effect_stage_enabled;
+    apply_filter_chain_policy();
+}
+
+void VulkanBackend::apply_filter_chain_policy() {
+    if (!m_filter_chain) {
+        return;
+    }
+    m_filter_chain->set_prechain_enabled(m_prechain_policy_enabled);
+    m_filter_chain->set_bypass(!m_effect_stage_policy_enabled);
 }
 
 } // namespace goggles::render

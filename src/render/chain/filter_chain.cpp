@@ -113,7 +113,7 @@ auto FilterChain::create(const VulkanContext& vk_ctx, vk::Format swapchain_forma
     chain->m_num_sync_indices = num_sync_indices;
     chain->m_shader_runtime = &shader_runtime;
     chain->m_shader_dir = shader_dir;
-    chain->m_source_resolution = source_resolution;
+    chain->m_prechain_requested_resolution = source_resolution;
 
     OutputPassConfig output_config{
         .target_format = swapchain_format,
@@ -137,6 +137,8 @@ auto FilterChain::create(const VulkanContext& vk_ctx, vk::Format swapchain_forma
 
         chain->m_prechain_framebuffers.push_back(GOGGLES_TRY(Framebuffer::create(
             vk_ctx.device, vk_ctx.physical_device, vk::Format::eR8G8B8A8Unorm, source_resolution)));
+        chain->m_prechain_resolved_resolution = source_resolution;
+        chain->m_prechain_last_captured_extent = source_resolution;
 
         GOGGLES_LOG_INFO("FilterChain pre-chain enabled: {}x{}", source_resolution.width,
                          source_resolution.height);
@@ -493,11 +495,15 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
     m_last_integer_scale = integer_scale;
     m_last_source_extent = original_extent;
 
+    vk::Image effective_original_image = original_image;
     vk::ImageView effective_original_view = original_view;
     vk::Extent2D effective_original_extent = original_extent;
     if (m_prechain_enabled.load(std::memory_order_relaxed)) {
         GOGGLES_MUST(ensure_prechain_passes(original_extent));
         auto prechain_result = record_prechain(cmd, original_view, original_extent, frame_index);
+        if (!m_prechain_framebuffers.empty()) {
+            effective_original_image = m_prechain_framebuffers.back()->image();
+        }
         effective_original_view = prechain_result.view;
         effective_original_extent = prechain_result.extent;
     }
@@ -583,10 +589,7 @@ void FilterChain::record(vk::CommandBuffer cmd, vk::Image original_image,
                      scale_mode, integer_scale);
 
     if (m_frame_history.is_initialized()) {
-        auto history_image = !m_prechain_framebuffers.empty()
-                                 ? m_prechain_framebuffers.back()->image()
-                                 : original_image;
-        m_frame_history.push(cmd, history_image, effective_original_extent);
+        m_frame_history.push(cmd, effective_original_image, effective_original_extent);
     }
 
     copy_feedback_framebuffers(cmd);
@@ -709,7 +712,9 @@ void FilterChain::clear_parameter_overrides() {
 }
 
 void FilterChain::set_prechain_resolution(uint32_t width, uint32_t height) {
-    m_source_resolution = vk::Extent2D{width, height};
+    m_prechain_requested_resolution = vk::Extent2D{width, height};
+    m_prechain_resolved_resolution = vk::Extent2D{};
+    m_prechain_last_captured_extent = vk::Extent2D{};
 
     // Clear existing prechain passes/framebuffers to force rebuild on next frame
     for (auto& pass : m_prechain_passes) {
@@ -720,7 +725,7 @@ void FilterChain::set_prechain_resolution(uint32_t width, uint32_t height) {
 }
 
 auto FilterChain::get_prechain_resolution() const -> vk::Extent2D {
-    return m_source_resolution;
+    return m_prechain_requested_resolution;
 }
 
 auto FilterChain::get_prechain_parameters() const -> std::vector<ShaderParameter> {
@@ -786,15 +791,15 @@ auto FilterChain::ensure_frame_history(vk::Extent2D extent) -> Result<void> {
 }
 
 auto FilterChain::ensure_prechain_passes(vk::Extent2D captured_extent) -> Result<void> {
-    if (!m_prechain_passes.empty() && !m_prechain_framebuffers.empty()) {
+    if (m_prechain_requested_resolution.width == 0 && m_prechain_requested_resolution.height == 0) {
         return {};
     }
 
-    if (m_source_resolution.width == 0 && m_source_resolution.height == 0) {
+    if (captured_extent.width == 0 || captured_extent.height == 0) {
         return {};
     }
 
-    vk::Extent2D target_resolution = m_source_resolution;
+    vk::Extent2D target_resolution = m_prechain_requested_resolution;
     if (target_resolution.width == 0) {
         target_resolution.width =
             static_cast<uint32_t>(std::round(static_cast<float>(target_resolution.height) *
@@ -809,7 +814,21 @@ auto FilterChain::ensure_prechain_passes(vk::Extent2D captured_extent) -> Result
         target_resolution.height = std::max(1U, target_resolution.height);
     }
 
-    m_source_resolution = target_resolution;
+    const bool has_resources = !m_prechain_passes.empty() && !m_prechain_framebuffers.empty();
+    const bool aspect_dependent =
+        m_prechain_requested_resolution.width == 0 || m_prechain_requested_resolution.height == 0;
+    const bool captured_extent_changed =
+        aspect_dependent && captured_extent != m_prechain_last_captured_extent;
+    const bool target_resolution_changed = target_resolution != m_prechain_resolved_resolution;
+    if (has_resources && !captured_extent_changed && !target_resolution_changed) {
+        return {};
+    }
+
+    for (auto& pass : m_prechain_passes) {
+        pass->shutdown();
+    }
+    m_prechain_passes.clear();
+    m_prechain_framebuffers.clear();
 
     DownsamplePassConfig downsample_config{
         .target_format = vk::Format::eR8G8B8A8Unorm,
@@ -821,6 +840,9 @@ auto FilterChain::ensure_prechain_passes(vk::Extent2D captured_extent) -> Result
 
     m_prechain_framebuffers.push_back(GOGGLES_TRY(Framebuffer::create(
         m_vk_ctx.device, m_vk_ctx.physical_device, vk::Format::eR8G8B8A8Unorm, target_resolution)));
+
+    m_prechain_resolved_resolution = target_resolution;
+    m_prechain_last_captured_extent = captured_extent;
 
     GOGGLES_LOG_INFO("FilterChain pre-chain initialized (aspect-ratio): {}x{} (from {}x{})",
                      target_resolution.width, target_resolution.height, captured_extent.width,
