@@ -103,15 +103,44 @@ auto FilterPass::create(const VulkanContext& vk_ctx, ShaderRuntime& shader_runti
 }
 
 void FilterPass::shutdown() {
-    m_pipeline.reset();
-    m_pipeline_layout.reset();
-    m_descriptor_pool.reset();
-    m_descriptor_layout.reset();
-    m_sampler.reset();
-    m_vertex_buffer.reset();
-    m_vertex_buffer_memory.reset();
-    m_ubo_buffer.reset();
-    m_ubo_memory.reset();
+    if (m_device) {
+        if (m_pipeline) {
+            m_device.destroyPipeline(m_pipeline);
+            m_pipeline = nullptr;
+        }
+        if (m_pipeline_layout) {
+            m_device.destroyPipelineLayout(m_pipeline_layout);
+            m_pipeline_layout = nullptr;
+        }
+        if (m_descriptor_pool) {
+            m_device.destroyDescriptorPool(m_descriptor_pool);
+            m_descriptor_pool = nullptr;
+        }
+        if (m_descriptor_layout) {
+            m_device.destroyDescriptorSetLayout(m_descriptor_layout);
+            m_descriptor_layout = nullptr;
+        }
+        if (m_sampler) {
+            m_device.destroySampler(m_sampler);
+            m_sampler = nullptr;
+        }
+        if (m_vertex_buffer) {
+            m_device.destroyBuffer(m_vertex_buffer);
+            m_vertex_buffer = nullptr;
+        }
+        if (m_vertex_buffer_memory) {
+            m_device.freeMemory(m_vertex_buffer_memory);
+            m_vertex_buffer_memory = nullptr;
+        }
+        if (m_ubo_buffer) {
+            m_device.destroyBuffer(m_ubo_buffer);
+            m_ubo_buffer = nullptr;
+        }
+        if (m_ubo_memory) {
+            m_device.freeMemory(m_ubo_memory);
+            m_ubo_memory = nullptr;
+        }
+    }
     m_descriptor_sets.clear();
     m_push_data.clear();
     m_parameters.clear();
@@ -162,7 +191,7 @@ void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
     vk::DescriptorBufferInfo ubo_info{};
 
     if (m_has_ubo && m_ubo_buffer && m_merged_reflection.ubo.has_value()) {
-        ubo_info.buffer = *m_ubo_buffer;
+        ubo_info.buffer = m_ubo_buffer;
         ubo_info.offset = 0;
         ubo_info.range = m_merged_reflection.ubo->total_size;
 
@@ -180,7 +209,7 @@ void FilterPass::update_descriptor(uint32_t frame_index, vk::ImageView source_vi
 
     for (const auto& tex : m_merged_reflection.textures) {
         vk::ImageView view = source_view;
-        vk::Sampler sampler = *m_sampler;
+        vk::Sampler sampler = m_sampler;
 
         auto it = m_texture_bindings.find(tex.name);
         if (it != m_texture_bindings.end()) {
@@ -287,13 +316,13 @@ void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     rendering_info.pColorAttachments = &color_attachment;
 
     cmd.beginRendering(rendering_info);
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline_layout, 0,
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0,
                            m_descriptor_sets[ctx.frame_index], {});
 
     if (m_has_push_constants && m_push_constant_size > 0) {
         build_push_constants();
-        cmd.pushConstants(*m_pipeline_layout,
+        cmd.pushConstants(m_pipeline_layout,
                           vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
                           m_push_constant_size, m_push_data.data());
     }
@@ -314,7 +343,7 @@ void FilterPass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
 
     if (m_has_vertex_inputs && m_vertex_buffer) {
         vk::DeviceSize offset = 0;
-        cmd.bindVertexBuffers(0, *m_vertex_buffer, offset);
+        cmd.bindVertexBuffers(0, m_vertex_buffer, offset);
         cmd.draw(6, 1, 0, 0);
     } else {
         cmd.draw(3, 1, 0, 0);
@@ -348,13 +377,13 @@ auto FilterPass::create_sampler(FilterMode filter_mode, bool mipmap, WrapMode wr
     create_info.borderColor = vk::BorderColor::eFloatTransparentBlack;
     create_info.unnormalizedCoordinates = VK_FALSE;
 
-    auto [result, sampler] = m_device.createSamplerUnique(create_info);
+    auto [result, sampler] = m_device.createSampler(create_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create sampler: " + vk::to_string(result));
     }
 
-    m_sampler = std::move(sampler);
+    m_sampler = sampler;
     return {};
 }
 
@@ -366,13 +395,13 @@ auto FilterPass::create_vertex_buffer() -> Result<void> {
     buffer_info.usage = vk::BufferUsageFlagBits::eVertexBuffer;
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    auto [buf_result, buffer] = m_device.createBufferUnique(buffer_info);
+    auto [buf_result, buffer] = m_device.createBuffer(buffer_info);
     if (buf_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create vertex buffer: " + vk::to_string(buf_result));
     }
 
-    auto mem_reqs = m_device.getBufferMemoryRequirements(*buffer);
+    auto mem_reqs = m_device.getBufferMemoryRequirements(buffer);
 
     vk::MemoryAllocateInfo alloc_info{};
     alloc_info.allocationSize = mem_reqs.size;
@@ -380,30 +409,30 @@ auto FilterPass::create_vertex_buffer() -> Result<void> {
         find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
                                                       vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
+    auto [mem_result, memory] = m_device.allocateMemory(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate vertex buffer memory: " +
                                     vk::to_string(mem_result));
     }
 
-    auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
+    auto bind_result = m_device.bindBufferMemory(buffer, memory, 0);
     if (bind_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to bind vertex buffer memory: " +
                                     vk::to_string(bind_result));
     }
 
-    auto [map_result, data] = m_device.mapMemory(*memory, 0, buffer_size);
+    auto [map_result, data] = m_device.mapMemory(memory, 0, buffer_size);
     if (map_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to map vertex buffer memory: " + vk::to_string(map_result));
     }
     std::memcpy(data, FULLSCREEN_QUAD_VERTICES.data(), buffer_size);
-    m_device.unmapMemory(*memory);
+    m_device.unmapMemory(memory);
 
-    m_vertex_buffer = std::move(buffer);
-    m_vertex_buffer_memory = std::move(memory);
+    m_vertex_buffer = buffer;
+    m_vertex_buffer_memory = memory;
     return {};
 }
 
@@ -424,13 +453,13 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
     buffer_info.usage = vk::BufferUsageFlagBits::eUniformBuffer;
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    auto [buf_result, buffer] = m_device.createBufferUnique(buffer_info);
+    auto [buf_result, buffer] = m_device.createBuffer(buffer_info);
     if (buf_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create UBO buffer: " + vk::to_string(buf_result));
     }
 
-    auto mem_reqs = m_device.getBufferMemoryRequirements(*buffer);
+    auto mem_reqs = m_device.getBufferMemoryRequirements(buffer);
 
     vk::MemoryAllocateInfo alloc_info{};
     alloc_info.allocationSize = mem_reqs.size;
@@ -438,19 +467,19 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
         find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
                                                       vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
+    auto [mem_result, memory] = m_device.allocateMemory(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate UBO memory: " + vk::to_string(mem_result));
     }
 
-    auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
+    auto bind_result = m_device.bindBufferMemory(buffer, memory, 0);
     if (bind_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to bind UBO memory: " + vk::to_string(bind_result));
     }
 
-    auto [map_result, data] = m_device.mapMemory(*memory, 0, m_ubo_size);
+    auto [map_result, data] = m_device.mapMemory(memory, 0, m_ubo_size);
     if (map_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to map UBO memory: " + vk::to_string(map_result));
@@ -458,10 +487,10 @@ auto FilterPass::create_ubo_buffer() -> Result<void> {
 
     auto ubo_data = m_binder.get_ubo();
     std::memcpy(data, &ubo_data, std::min(m_ubo_size, sizeof(ubo_data)));
-    m_device.unmapMemory(*memory);
+    m_device.unmapMemory(memory);
 
-    m_ubo_buffer = std::move(buffer);
-    m_ubo_memory = std::move(memory);
+    m_ubo_buffer = buffer;
+    m_ubo_memory = memory;
 
     GOGGLES_LOG_DEBUG("UBO buffer created, size={}, members={}", m_ubo_size,
                       m_ubo_member_offsets.size());
@@ -518,13 +547,13 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
     layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
     layout_info.pBindings = bindings.data();
 
-    auto [layout_result, layout] = m_device.createDescriptorSetLayoutUnique(layout_info);
+    auto [layout_result, layout] = m_device.createDescriptorSetLayout(layout_info);
     if (layout_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create descriptor set layout: " +
                                     vk::to_string(layout_result));
     }
-    m_descriptor_layout = std::move(layout);
+    m_descriptor_layout = layout;
 
     std::vector<vk::DescriptorPoolSize> pool_sizes;
 
@@ -546,17 +575,17 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
     pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
     pool_info.pPoolSizes = pool_sizes.data();
 
-    auto [pool_result, pool] = m_device.createDescriptorPoolUnique(pool_info);
+    auto [pool_result, pool] = m_device.createDescriptorPool(pool_info);
     if (pool_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create descriptor pool: " + vk::to_string(pool_result));
     }
-    m_descriptor_pool = std::move(pool);
+    m_descriptor_pool = pool;
 
-    std::vector<vk::DescriptorSetLayout> layouts(m_num_sync_indices, *m_descriptor_layout);
+    std::vector<vk::DescriptorSetLayout> layouts(m_num_sync_indices, m_descriptor_layout);
 
     vk::DescriptorSetAllocateInfo alloc_info{};
-    alloc_info.descriptorPool = *m_descriptor_pool;
+    alloc_info.descriptorPool = m_descriptor_pool;
     alloc_info.descriptorSetCount = m_num_sync_indices;
     alloc_info.pSetLayouts = layouts.data();
 
@@ -574,7 +603,7 @@ auto FilterPass::create_descriptor_resources() -> Result<void> {
 auto FilterPass::create_pipeline_layout() -> Result<void> {
     vk::PipelineLayoutCreateInfo create_info{};
     create_info.setLayoutCount = 1;
-    create_info.pSetLayouts = &*m_descriptor_layout;
+    create_info.pSetLayouts = &m_descriptor_layout;
 
     vk::PushConstantRange push_range{};
     if (m_has_push_constants && m_push_constant_size > 0) {
@@ -587,13 +616,13 @@ auto FilterPass::create_pipeline_layout() -> Result<void> {
         GOGGLES_LOG_DEBUG("Pipeline layout push constant range: {} bytes", m_push_constant_size);
     }
 
-    auto [result, layout] = m_device.createPipelineLayoutUnique(create_info);
+    auto [result, layout] = m_device.createPipelineLayout(create_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create pipeline layout: " + vk::to_string(result));
     }
 
-    m_pipeline_layout = std::move(layout);
+    m_pipeline_layout = layout;
     return {};
 }
 
@@ -605,7 +634,7 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
     vert_module_info.codeSize = vertex_spirv.size() * sizeof(uint32_t);
     vert_module_info.pCode = vertex_spirv.data();
 
-    auto [vert_mod_result, vert_module] = m_device.createShaderModuleUnique(vert_module_info);
+    auto [vert_mod_result, vert_module] = m_device.createShaderModule(vert_module_info);
     if (vert_mod_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create vertex shader module: " +
@@ -616,8 +645,9 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
     frag_module_info.codeSize = fragment_spirv.size() * sizeof(uint32_t);
     frag_module_info.pCode = fragment_spirv.data();
 
-    auto [frag_mod_result, frag_module] = m_device.createShaderModuleUnique(frag_module_info);
+    auto [frag_mod_result, frag_module] = m_device.createShaderModule(frag_module_info);
     if (frag_mod_result != vk::Result::eSuccess) {
+        m_device.destroyShaderModule(vert_module);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create fragment shader module: " +
                                     vk::to_string(frag_mod_result));
@@ -625,10 +655,10 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> stages{};
     stages[0].stage = vk::ShaderStageFlagBits::eVertex;
-    stages[0].module = *vert_module;
+    stages[0].module = vert_module;
     stages[0].pName = "main";
     stages[1].stage = vk::ShaderStageFlagBits::eFragment;
-    stages[1].module = *frag_module;
+    stages[1].module = frag_module;
     stages[1].pName = "main";
 
     vk::PipelineVertexInputStateCreateInfo vertex_input{};
@@ -711,15 +741,17 @@ auto FilterPass::create_pipeline(const std::vector<uint32_t>& vertex_spirv,
     create_info.pMultisampleState = &multisample;
     create_info.pColorBlendState = &color_blend;
     create_info.pDynamicState = &dynamic_state;
-    create_info.layout = *m_pipeline_layout;
+    create_info.layout = m_pipeline_layout;
 
-    auto [result, pipelines] = m_device.createGraphicsPipelinesUnique(nullptr, create_info);
+    auto [result, pipelines] = m_device.createGraphicsPipelines(nullptr, create_info);
+    m_device.destroyShaderModule(frag_module);
+    m_device.destroyShaderModule(vert_module);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create graphics pipeline: " + vk::to_string(result));
     }
 
-    m_pipeline = std::move(pipelines[0]);
+    m_pipeline = pipelines[0];
     return {};
 }
 
@@ -728,7 +760,7 @@ auto FilterPass::update_ubo_parameters() -> Result<void> {
         return {};
     }
 
-    auto [map_result, data] = m_device.mapMemory(*m_ubo_memory, 0, m_ubo_size);
+    auto [map_result, data] = m_device.mapMemory(m_ubo_memory, 0, m_ubo_size);
     if (map_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to map UBO memory: " + vk::to_string(map_result));
@@ -749,7 +781,7 @@ auto FilterPass::update_ubo_parameters() -> Result<void> {
         }
     }
 
-    m_device.unmapMemory(*m_ubo_memory);
+    m_device.unmapMemory(m_ubo_memory);
     return {};
 }
 
@@ -758,7 +790,7 @@ void FilterPass::update_ubo_semantics() {
         return;
     }
 
-    auto [map_result, data] = m_device.mapMemory(*m_ubo_memory, 0, m_ubo_size);
+    auto [map_result, data] = m_device.mapMemory(m_ubo_memory, 0, m_ubo_size);
     if (map_result != vk::Result::eSuccess) {
         return;
     }
@@ -796,7 +828,7 @@ void FilterPass::update_ubo_semantics() {
         }
     }
 
-    m_device.unmapMemory(*m_ubo_memory);
+    m_device.unmapMemory(m_ubo_memory);
 }
 
 } // namespace goggles::render

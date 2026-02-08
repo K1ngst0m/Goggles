@@ -73,14 +73,14 @@ auto TextureLoader::create_staging_buffer(vk::DeviceSize size, const uint8_t* pi
     buffer_info.usage = vk::BufferUsageFlagBits::eTransferSrc;
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    auto [buffer_result, buffer] = m_device.createBufferUnique(buffer_info);
+    auto [buffer_result, buffer] = m_device.createBuffer(buffer_info);
     if (buffer_result != vk::Result::eSuccess) {
         return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "Failed to create staging buffer: " +
                                                 vk::to_string(buffer_result));
     }
 
-    auto mem_reqs = m_device.getBufferMemoryRequirements(*buffer);
+    auto mem_reqs = m_device.getBufferMemoryRequirements(buffer);
     uint32_t mem_type =
         find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
                                                       vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -93,30 +93,35 @@ auto TextureLoader::create_staging_buffer(vk::DeviceSize size, const uint8_t* pi
     alloc_info.allocationSize = mem_reqs.size;
     alloc_info.memoryTypeIndex = mem_type;
 
-    auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
+    auto [mem_result, memory] = m_device.allocateMemory(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
+        m_device.destroyBuffer(buffer);
         return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "Failed to allocate staging memory: " +
                                                 vk::to_string(mem_result));
     }
 
-    auto bind_result = m_device.bindBufferMemory(*buffer, *memory, 0);
+    auto bind_result = m_device.bindBufferMemory(buffer, memory, 0);
     if (bind_result != vk::Result::eSuccess) {
+        m_device.freeMemory(memory);
+        m_device.destroyBuffer(buffer);
         return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "Failed to bind staging buffer memory: " +
                                                 vk::to_string(bind_result));
     }
 
-    auto [map_result, data] = m_device.mapMemory(*memory, 0, size);
+    auto [map_result, data] = m_device.mapMemory(memory, 0, size);
     if (map_result != vk::Result::eSuccess) {
+        m_device.freeMemory(memory);
+        m_device.destroyBuffer(buffer);
         return make_error<StagingResources>(ErrorCode::vulkan_init_failed,
                                             "Failed to map staging memory: " +
                                                 vk::to_string(map_result));
     }
     std::memcpy(data, pixels, size);
-    m_device.unmapMemory(*memory);
+    m_device.unmapMemory(memory);
 
-    return StagingResources{.buffer = std::move(buffer), .memory = std::move(memory)};
+    return StagingResources{.buffer = buffer, .memory = memory};
 }
 
 auto TextureLoader::create_texture_image(ImageSize size, uint32_t mip_levels, bool linear)
@@ -134,13 +139,13 @@ auto TextureLoader::create_texture_image(ImageSize size, uint32_t mip_levels, bo
     image_info.sharingMode = vk::SharingMode::eExclusive;
     image_info.initialLayout = vk::ImageLayout::eUndefined;
 
-    auto [image_result, image] = m_device.createImageUnique(image_info);
+    auto [image_result, image] = m_device.createImage(image_info);
     if (image_result != vk::Result::eSuccess) {
         return make_error<ImageResources>(ErrorCode::vulkan_init_failed,
                                           "Failed to create image: " + vk::to_string(image_result));
     }
 
-    auto mem_reqs = m_device.getImageMemoryRequirements(*image);
+    auto mem_reqs = m_device.getImageMemoryRequirements(image);
     uint32_t mem_type =
         find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
     if (mem_type == UINT32_MAX) {
@@ -152,21 +157,24 @@ auto TextureLoader::create_texture_image(ImageSize size, uint32_t mip_levels, bo
     alloc_info.allocationSize = mem_reqs.size;
     alloc_info.memoryTypeIndex = mem_type;
 
-    auto [mem_result, memory] = m_device.allocateMemoryUnique(alloc_info);
+    auto [mem_result, memory] = m_device.allocateMemory(alloc_info);
     if (mem_result != vk::Result::eSuccess) {
+        m_device.destroyImage(image);
         return make_error<ImageResources>(ErrorCode::vulkan_init_failed,
                                           "Failed to allocate image memory: " +
                                               vk::to_string(mem_result));
     }
 
-    auto bind_result = m_device.bindImageMemory(*image, *memory, 0);
+    auto bind_result = m_device.bindImageMemory(image, memory, 0);
     if (bind_result != vk::Result::eSuccess) {
+        m_device.freeMemory(memory);
+        m_device.destroyImage(image);
         return make_error<ImageResources>(ErrorCode::vulkan_init_failed,
                                           "Failed to bind image memory: " +
                                               vk::to_string(bind_result));
     }
 
-    return ImageResources{.image = std::move(image), .memory = std::move(memory)};
+    return ImageResources{.image = image, .memory = memory};
 }
 
 auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Image image,
@@ -177,17 +185,18 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
     cmd_alloc_info.level = vk::CommandBufferLevel::ePrimary;
     cmd_alloc_info.commandBufferCount = 1;
 
-    auto [cmd_result, cmd_buffers] = m_device.allocateCommandBuffersUnique(cmd_alloc_info);
+    auto [cmd_result, cmd_buffers] = m_device.allocateCommandBuffers(cmd_alloc_info);
     if (cmd_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate command buffer: " + vk::to_string(cmd_result));
     }
-    auto& cmd = cmd_buffers[0];
+    auto cmd = cmd_buffers[0];
 
     vk::CommandBufferBeginInfo begin_info{};
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    auto begin_result = cmd->begin(begin_info);
+    auto begin_result = cmd.begin(begin_info);
     if (begin_result != vk::Result::eSuccess) {
+        m_device.freeCommandBuffers(m_cmd_pool, cmd);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to begin command buffer: " + vk::to_string(begin_result));
     }
@@ -206,8 +215,8 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
     barrier.srcAccessMask = {};
     barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
 
-    cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                         vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, barrier);
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+                        {}, {}, {}, barrier);
 
     vk::BufferImageCopy region{};
     region.bufferOffset = 0;
@@ -220,32 +229,34 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
     region.imageOffset = vk::Offset3D{0, 0, 0};
     region.imageExtent = vk::Extent3D{size.width, size.height, 1};
 
-    cmd->copyBufferToImage(staging_buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
+    cmd.copyBufferToImage(staging_buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
 
     if (mip_levels > 1) {
-        generate_mipmaps(*cmd, image, format, vk::Extent2D{size.width, size.height}, mip_levels);
+        generate_mipmaps(cmd, image, format, vk::Extent2D{size.width, size.height}, mip_levels);
     } else {
         barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
         barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
-        cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                             vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
     }
 
-    auto end_result = cmd->end();
+    auto end_result = cmd.end();
     if (end_result != vk::Result::eSuccess) {
+        m_device.freeCommandBuffers(m_cmd_pool, cmd);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to end command buffer: " + vk::to_string(end_result));
     }
 
     vk::SubmitInfo submit_info{};
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &(*cmd);
+    submit_info.pCommandBuffers = &cmd;
 
     auto submit_result = m_queue.submit(1, &submit_info, nullptr);
     if (submit_result != vk::Result::eSuccess) {
+        m_device.freeCommandBuffers(m_cmd_pool, cmd);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to submit transfer command buffer: " +
                                     vk::to_string(submit_result));
@@ -253,9 +264,12 @@ auto TextureLoader::record_and_submit_transfer(vk::Buffer staging_buffer, vk::Im
 
     auto wait_result = m_queue.waitIdle();
     if (wait_result != vk::Result::eSuccess) {
+        m_device.freeCommandBuffers(m_cmd_pool, cmd);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to wait for queue idle: " + vk::to_string(wait_result));
     }
+
+    m_device.freeCommandBuffers(m_cmd_pool, cmd);
 
     return {};
 }
@@ -267,14 +281,18 @@ auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_
     vk::Format format = linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb;
 
     auto staging = GOGGLES_TRY(create_staging_buffer(image_size, pixels));
-    auto image_resources =
-        GOGGLES_TRY(create_texture_image(ImageSize{width, height}, mip_levels, linear));
+    auto image_resources = GOGGLES_TRY(
+        create_texture_image(ImageSize{.width = width, .height = height}, mip_levels, linear));
 
-    GOGGLES_TRY(record_and_submit_transfer(*staging.buffer, *image_resources.image,
-                                           ImageSize{width, height}, mip_levels, format));
+    auto transfer_result =
+        record_and_submit_transfer(staging.buffer, image_resources.image,
+                                   ImageSize{.width = width, .height = height}, mip_levels, format);
+    m_device.freeMemory(staging.memory);
+    m_device.destroyBuffer(staging.buffer);
+    GOGGLES_TRY(transfer_result);
 
     vk::ImageViewCreateInfo view_info{};
-    view_info.image = *image_resources.image;
+    view_info.image = image_resources.image;
     view_info.viewType = vk::ImageViewType::e2D;
     view_info.format = format;
     view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
@@ -283,17 +301,19 @@ auto TextureLoader::upload_to_gpu(const uint8_t* pixels, uint32_t width, uint32_
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = 1;
 
-    auto [view_result, view] = m_device.createImageViewUnique(view_info);
+    auto [view_result, view] = m_device.createImageView(view_info);
     if (view_result != vk::Result::eSuccess) {
+        m_device.freeMemory(image_resources.memory);
+        m_device.destroyImage(image_resources.image);
         return make_error<TextureData>(ErrorCode::vulkan_init_failed,
                                        "Failed to create image view: " +
                                            vk::to_string(view_result));
     }
 
     return TextureData{
-        .image = std::move(image_resources.image),
-        .memory = std::move(image_resources.memory),
-        .view = std::move(view),
+        .image = image_resources.image,
+        .memory = image_resources.memory,
+        .view = view,
         .extent = vk::Extent2D{width, height},
         .mip_levels = mip_levels,
     };

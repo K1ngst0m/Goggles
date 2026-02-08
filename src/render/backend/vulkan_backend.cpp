@@ -306,7 +306,7 @@ void VulkanBackend::shutdown() {
     }
 
     if (m_device) {
-        auto wait_result = m_device->waitIdle();
+        auto wait_result = m_device.waitIdle();
         if (wait_result != vk::Result::eSuccess) {
             GOGGLES_LOG_WARN("waitIdle failed during shutdown: {}", vk::to_string(wait_result));
         }
@@ -323,11 +323,20 @@ void VulkanBackend::shutdown() {
 
     if (m_device) {
         for (auto& frame : m_frames) {
-            m_device->destroyFence(frame.in_flight_fence);
-            m_device->destroySemaphore(frame.image_available_sem);
+            m_device.destroyFence(frame.in_flight_fence);
+            m_device.destroySemaphore(frame.image_available_sem);
         }
         for (auto sem : m_render_finished_sems) {
-            m_device->destroySemaphore(sem);
+            m_device.destroySemaphore(sem);
+        }
+        for (auto view : m_swapchain_image_views) {
+            m_device.destroyImageView(view);
+        }
+        if (m_swapchain) {
+            m_device.destroySwapchainKHR(m_swapchain);
+        }
+        if (m_command_pool) {
+            m_device.destroyCommandPool(m_command_pool);
         }
     }
     m_frames = {};
@@ -335,12 +344,19 @@ void VulkanBackend::shutdown() {
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
 
-    m_command_pool.reset();
-    m_swapchain.reset();
-    m_device.reset();
-    m_surface.reset();
+    if (m_device) {
+        m_device.destroy();
+        m_device = nullptr;
+    }
+    if (m_instance && m_surface) {
+        m_instance.destroySurfaceKHR(m_surface);
+        m_surface = nullptr;
+    }
     m_debug_messenger.reset();
-    m_instance.reset();
+    if (m_instance) {
+        m_instance.destroy();
+        m_instance = nullptr;
+    }
 
     GOGGLES_LOG_INFO("Vulkan backend shutdown");
 }
@@ -390,14 +406,14 @@ auto VulkanBackend::create_instance(bool enable_validation) -> Result<void> {
     create_info.enabledLayerCount = static_cast<uint32_t>(layers.size());
     create_info.ppEnabledLayerNames = layers.data();
 
-    auto [result, instance] = vk::createInstanceUnique(create_info);
+    auto [result, instance] = vk::createInstance(create_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create Vulkan instance: " + vk::to_string(result));
     }
 
-    m_instance = std::move(instance);
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(*m_instance);
+    m_instance = instance;
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_instance);
 
     GOGGLES_LOG_DEBUG("Vulkan instance created with {} extensions, {} layers", extensions.size(),
                       layers.size());
@@ -409,7 +425,7 @@ auto VulkanBackend::create_debug_messenger() -> Result<void> {
         return {};
     }
 
-    auto messenger_result = VulkanDebugMessenger::create(*m_instance);
+    auto messenger_result = VulkanDebugMessenger::create(m_instance);
     if (!messenger_result) {
         GOGGLES_LOG_WARN("Failed to create debug messenger: {}", messenger_result.error().message);
         return {};
@@ -421,18 +437,18 @@ auto VulkanBackend::create_debug_messenger() -> Result<void> {
 
 auto VulkanBackend::create_surface(SDL_Window* window) -> Result<void> {
     VkSurfaceKHR raw_surface = VK_NULL_HANDLE;
-    if (!SDL_Vulkan_CreateSurface(window, *m_instance, nullptr, &raw_surface)) {
+    if (!SDL_Vulkan_CreateSurface(window, m_instance, nullptr, &raw_surface)) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 std::string("SDL_Vulkan_CreateSurface failed: ") + SDL_GetError());
     }
 
-    m_surface = vk::UniqueSurfaceKHR(raw_surface, *m_instance);
+    m_surface = raw_surface;
     GOGGLES_LOG_DEBUG("Vulkan surface created");
     return {};
 }
 
 auto VulkanBackend::select_physical_device() -> Result<void> {
-    auto [result, devices] = m_instance->enumeratePhysicalDevices();
+    auto [result, devices] = m_instance.enumeratePhysicalDevices();
     if (result != vk::Result::eSuccess || devices.empty()) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "No Vulkan devices found");
     }
@@ -450,7 +466,7 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
         for (uint32_t i = 0; i < queue_families.size(); ++i) {
             const auto& family = queue_families[i];
             if (family.queueFlags & vk::QueueFlagBits::eGraphics) {
-                auto [res, supported] = device.getSurfaceSupportKHR(i, *m_surface);
+                auto [res, supported] = device.getSurfaceSupportKHR(i, m_surface);
                 if (res == vk::Result::eSuccess && supported) {
                     graphics_family = i;
                     break;
@@ -650,15 +666,15 @@ auto VulkanBackend::create_device() -> Result<void> {
     create_info.enabledExtensionCount = static_cast<uint32_t>(extension_count);
     create_info.ppEnabledExtensionNames = extensions.data();
 
-    auto [result, device] = m_physical_device.createDeviceUnique(create_info);
+    auto [result, device] = m_physical_device.createDevice(create_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create logical device: " + vk::to_string(result));
     }
 
-    m_device = std::move(device);
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(*m_device);
-    m_graphics_queue = m_device->getQueue(m_graphics_queue_family, 0);
+    m_device = device;
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_device);
+    m_graphics_queue = m_device.getQueue(m_graphics_queue_family, 0);
 
     GOGGLES_LOG_DEBUG("Vulkan device created");
     return {};
@@ -668,13 +684,13 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
     -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    auto [cap_result, capabilities] = m_physical_device.getSurfaceCapabilitiesKHR(*m_surface);
+    auto [cap_result, capabilities] = m_physical_device.getSurfaceCapabilitiesKHR(m_surface);
     if (cap_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to query surface capabilities");
     }
 
-    auto [fmt_result, formats] = m_physical_device.getSurfaceFormatsKHR(*m_surface);
+    auto [fmt_result, formats] = m_physical_device.getSurfaceFormatsKHR(m_surface);
     if (fmt_result != vk::Result::eSuccess || formats.empty()) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to query surface formats");
     }
@@ -704,7 +720,7 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
     }
 
     vk::SwapchainCreateInfoKHR create_info{};
-    create_info.surface = *m_surface;
+    create_info.surface = m_surface;
     create_info.minImageCount = image_count;
     create_info.imageFormat = chosen_format.format;
     create_info.imageColorSpace = chosen_format.colorSpace;
@@ -716,7 +732,7 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
     create_info.preTransform = capabilities.currentTransform;
     create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
 
-    auto [pm_result, present_modes] = m_physical_device.getSurfacePresentModesKHR(*m_surface);
+    auto [pm_result, present_modes] = m_physical_device.getSurfacePresentModesKHR(m_surface);
     vk::PresentModeKHR chosen_mode = vk::PresentModeKHR::eFifo;
     bool mailbox_supported = false;
     if (pm_result == vk::Result::eSuccess) {
@@ -737,17 +753,17 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
     create_info.presentMode = chosen_mode;
     create_info.clipped = VK_TRUE;
 
-    auto [result, swapchain] = m_device->createSwapchainKHRUnique(create_info);
+    auto [result, swapchain] = m_device.createSwapchainKHR(create_info);
     if (result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create swapchain: " + vk::to_string(result));
     }
 
-    m_swapchain = std::move(swapchain);
+    m_swapchain = swapchain;
     m_swapchain_format = chosen_format.format;
     m_swapchain_extent = extent;
 
-    auto [img_result, images] = m_device->getSwapchainImagesKHR(*m_swapchain);
+    auto [img_result, images] = m_device.getSwapchainImagesKHR(m_swapchain);
     if (img_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to get swapchain images");
     }
@@ -765,11 +781,11 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
         view_info.subresourceRange.baseArrayLayer = 0;
         view_info.subresourceRange.layerCount = 1;
 
-        auto [view_result, view] = m_device->createImageViewUnique(view_info);
+        auto [view_result, view] = m_device.createImageView(view_info);
         if (view_result != vk::Result::eSuccess) {
             return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create image view");
         }
-        m_swapchain_image_views.push_back(std::move(view));
+        m_swapchain_image_views.push_back(view);
     }
 
     m_present_id = 0;
@@ -781,9 +797,17 @@ auto VulkanBackend::create_swapchain(uint32_t width, uint32_t height, vk::Format
 }
 
 void VulkanBackend::cleanup_swapchain() {
+    if (m_device) {
+        for (auto view : m_swapchain_image_views) {
+            m_device.destroyImageView(view);
+        }
+        if (m_swapchain) {
+            m_device.destroySwapchainKHR(m_swapchain);
+        }
+    }
     m_swapchain_image_views.clear();
     m_swapchain_images.clear();
-    m_swapchain.reset();
+    m_swapchain = nullptr;
 }
 
 auto VulkanBackend::recreate_swapchain(uint32_t width, uint32_t height, vk::Format source_format)
@@ -805,7 +829,7 @@ auto VulkanBackend::recreate_swapchain(uint32_t width, uint32_t height, vk::Form
         }
     }
 
-    VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost,
+    VK_TRY(m_device.waitIdle(), ErrorCode::vulkan_device_lost,
            "waitIdle failed before swapchain recreation");
 
     if (recreate_filter_chain) {
@@ -842,7 +866,7 @@ void VulkanBackend::wait_all_frames() {
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         fences[i] = m_frames[i].in_flight_fence;
     }
-    auto result = m_device->waitForFences(fences, VK_TRUE, UINT64_MAX);
+    auto result = m_device.waitForFences(fences, VK_TRUE, UINT64_MAX);
     if (result != vk::Result::eSuccess) {
         GOGGLES_LOG_WARN("wait_all_frames failed: {}", vk::to_string(result));
     }
@@ -875,18 +899,18 @@ auto VulkanBackend::create_command_resources() -> Result<void> {
     pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
     pool_info.queueFamilyIndex = m_graphics_queue_family;
 
-    auto [pool_result, pool] = m_device->createCommandPoolUnique(pool_info);
+    auto [pool_result, pool] = m_device.createCommandPool(pool_info);
     if (pool_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create command pool");
     }
-    m_command_pool = std::move(pool);
+    m_command_pool = pool;
 
     vk::CommandBufferAllocateInfo alloc_info{};
-    alloc_info.commandPool = *m_command_pool;
+    alloc_info.commandPool = m_command_pool;
     alloc_info.level = vk::CommandBufferLevel::ePrimary;
     alloc_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 
-    auto [alloc_result, buffers] = m_device->allocateCommandBuffers(alloc_info);
+    auto [alloc_result, buffers] = m_device.allocateCommandBuffers(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate command buffers");
@@ -907,14 +931,14 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
 
     for (auto& frame : m_frames) {
         {
-            auto [result, fence] = m_device->createFence(fence_info);
+            auto [result, fence] = m_device.createFence(fence_info);
             if (result != vk::Result::eSuccess) {
                 return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create fence");
             }
             frame.in_flight_fence = fence;
         }
         {
-            auto [result, sem] = m_device->createSemaphore(sem_info);
+            auto [result, sem] = m_device.createSemaphore(sem_info);
             if (result != vk::Result::eSuccess) {
                 return make_error<void>(ErrorCode::vulkan_init_failed,
                                         "Failed to create semaphore");
@@ -925,7 +949,7 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
 
     m_render_finished_sems.resize(m_swapchain_images.size());
     for (auto& sem : m_render_finished_sems) {
-        auto [result, new_sem] = m_device->createSemaphore(sem_info);
+        auto [result, new_sem] = m_device.createSemaphore(sem_info);
         if (result != vk::Result::eSuccess) {
             return make_error<void>(ErrorCode::vulkan_init_failed,
                                     "Failed to create render finished semaphore");
@@ -942,9 +966,9 @@ auto VulkanBackend::init_filter_chain() -> Result<void> {
 
     m_shader_runtime = GOGGLES_TRY(ShaderRuntime::create(m_cache_dir));
 
-    VulkanContext vk_ctx{.device = *m_device,
+    VulkanContext vk_ctx{.device = m_device,
                          .physical_device = m_physical_device,
-                         .command_pool = *m_command_pool,
+                         .command_pool = m_command_pool,
                          .graphics_queue = m_graphics_queue};
     m_filter_chain =
         GOGGLES_TRY(FilterChain::create(vk_ctx, m_swapchain_format, MAX_FRAMES_IN_FLIGHT,
@@ -984,14 +1008,14 @@ auto VulkanBackend::import_external_image(const util::ExternalImage& frame) -> R
                                             frame.modifier));
     }
 
-    VK_TRY(m_device->waitIdle(), ErrorCode::vulkan_device_lost, "waitIdle failed before reimport");
+    VK_TRY(m_device.waitIdle(), ErrorCode::vulkan_device_lost, "waitIdle failed before reimport");
     cleanup_imported_image();
 
     auto vk_format = frame.format;
     DmabufImageCreateChain chain{};
     init_dmabuf_image_create_chain(frame, vk_format, &chain);
 
-    auto [img_result, image] = m_device->createImage(chain.image_info);
+    auto [img_result, image] = m_device.createImage(chain.image_info);
     if (img_result != vk::Result::eSuccess) {
         return make_error<void>(
             ErrorCode::vulkan_init_failed,
@@ -1007,10 +1031,10 @@ auto VulkanBackend::import_external_image(const util::ExternalImage& frame) -> R
     vk::MemoryRequirements2 mem_reqs2{};
     mem_reqs2.pNext = &dedicated_reqs;
 
-    m_device->getImageMemoryRequirements2(&mem_reqs_info, &mem_reqs2);
+    m_device.getImageMemoryRequirements2(&mem_reqs_info, &mem_reqs2);
     auto mem_reqs = mem_reqs2.memoryRequirements;
 
-    auto fd_type_bits_result = get_dmabuf_memory_type_bits(*m_device, frame.handle.get());
+    auto fd_type_bits_result = get_dmabuf_memory_type_bits(m_device, frame.handle.get());
     if (!fd_type_bits_result) {
         cleanup_imported_image();
         return make_error<void>(fd_type_bits_result.error().code,
@@ -1035,7 +1059,7 @@ auto VulkanBackend::import_external_image(const util::ExternalImage& frame) -> R
     }
 
     auto mem_result =
-        allocate_imported_dmabuf_memory(*m_device, m_import.image, mem_reqs.size, mem_type_index,
+        allocate_imported_dmabuf_memory(m_device, m_import.image, mem_reqs.size, mem_type_index,
                                         std::move(import_fd), dedicated_reqs);
     if (!mem_result) {
         cleanup_imported_image();
@@ -1044,14 +1068,14 @@ auto VulkanBackend::import_external_image(const util::ExternalImage& frame) -> R
     auto memory = mem_result.value();
     m_import.memory = memory;
 
-    auto bind_result = m_device->bindImageMemory(m_import.image, m_import.memory, 0);
+    auto bind_result = m_device.bindImageMemory(m_import.image, m_import.memory, 0);
     if (bind_result != vk::Result::eSuccess) {
         cleanup_imported_image();
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to bind DMA-BUF memory: " + vk::to_string(bind_result));
     }
 
-    auto view_result = create_imported_image_view(*m_device, m_import.image, vk_format);
+    auto view_result = create_imported_image_view(m_device, m_import.image, vk_format);
     if (!view_result) {
         cleanup_imported_image();
         return make_error<void>(view_result.error().code, view_result.error().message);
@@ -1067,15 +1091,15 @@ auto VulkanBackend::import_external_image(const util::ExternalImage& frame) -> R
 void VulkanBackend::cleanup_imported_image() {
     if (m_device) {
         if (m_import.view) {
-            m_device->destroyImageView(m_import.view);
+            m_device.destroyImageView(m_import.view);
             m_import.view = nullptr;
         }
         if (m_import.memory) {
-            m_device->freeMemory(m_import.memory);
+            m_device.freeMemory(m_import.memory);
             m_import.memory = nullptr;
         }
         if (m_import.image) {
-            m_device->destroyImage(m_import.image);
+            m_device.destroyImage(m_import.image);
             m_import.image = nullptr;
         }
     }
@@ -1092,12 +1116,12 @@ auto VulkanBackend::import_sync_semaphores(util::UniqueFd frame_ready_fd,
     vk::SemaphoreCreateInfo sem_info{};
     sem_info.pNext = &timeline_info;
 
-    auto [res1, ready_sem] = m_device->createSemaphore(sem_info);
+    auto [res1, ready_sem] = m_device.createSemaphore(sem_info);
     VK_TRY(res1, ErrorCode::vulkan_init_failed, "Failed to create frame_ready semaphore");
 
-    auto [res2, consumed_sem] = m_device->createSemaphore(sem_info);
+    auto [res2, consumed_sem] = m_device.createSemaphore(sem_info);
     if (res2 != vk::Result::eSuccess) {
-        m_device->destroySemaphore(ready_sem);
+        m_device.destroySemaphore(ready_sem);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create frame_consumed semaphore");
     }
@@ -1110,10 +1134,10 @@ auto VulkanBackend::import_sync_semaphores(util::UniqueFd frame_ready_fd,
     import_info.semaphore = ready_sem;
     import_info.fd = frame_ready_fd.get();
     auto import_res = static_cast<vk::Result>(
-        VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(*m_device, &import_info));
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(m_device, &import_info));
     if (import_res != vk::Result::eSuccess) {
-        m_device->destroySemaphore(ready_sem);
-        m_device->destroySemaphore(consumed_sem);
+        m_device.destroySemaphore(ready_sem);
+        m_device.destroySemaphore(consumed_sem);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to import frame_ready semaphore FD");
     }
@@ -1122,10 +1146,10 @@ auto VulkanBackend::import_sync_semaphores(util::UniqueFd frame_ready_fd,
     import_info.semaphore = consumed_sem;
     import_info.fd = frame_consumed_fd.get();
     import_res = static_cast<vk::Result>(
-        VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(*m_device, &import_info));
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(m_device, &import_info));
     if (import_res != vk::Result::eSuccess) {
-        m_device->destroySemaphore(ready_sem);
-        m_device->destroySemaphore(consumed_sem);
+        m_device.destroySemaphore(ready_sem);
+        m_device.destroySemaphore(consumed_sem);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to import frame_consumed semaphore FD");
     }
@@ -1144,14 +1168,14 @@ auto VulkanBackend::import_sync_semaphores(util::UniqueFd frame_ready_fd,
 void VulkanBackend::cleanup_sync_semaphores() {
     if (m_device) {
         if (m_frame_ready_sem || m_frame_consumed_sem) {
-            static_cast<void>(m_device->waitIdle());
+            static_cast<void>(m_device.waitIdle());
         }
         if (m_frame_ready_sem) {
-            m_device->destroySemaphore(m_frame_ready_sem);
+            m_device.destroySemaphore(m_frame_ready_sem);
             m_frame_ready_sem = nullptr;
         }
         if (m_frame_consumed_sem) {
-            m_device->destroySemaphore(m_frame_consumed_sem);
+            m_device.destroySemaphore(m_frame_consumed_sem);
             m_frame_consumed_sem = nullptr;
         }
     }
@@ -1170,14 +1194,14 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
 
     auto& frame = m_frames[m_current_frame];
 
-    auto wait_result = m_device->waitForFences(frame.in_flight_fence, VK_TRUE, UINT64_MAX);
+    auto wait_result = m_device.waitForFences(frame.in_flight_fence, VK_TRUE, UINT64_MAX);
     if (wait_result != vk::Result::eSuccess) {
         return make_error<uint32_t>(ErrorCode::vulkan_device_lost, "Fence wait failed");
     }
 
     uint32_t image_index = 0;
     auto result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkAcquireNextImageKHR(
-        *m_device, *m_swapchain, UINT64_MAX, frame.image_available_sem, nullptr, &image_index));
+        m_device, m_swapchain, UINT64_MAX, frame.image_available_sem, nullptr, &image_index));
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
         m_needs_resize = true;
@@ -1190,7 +1214,7 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
                                     "Failed to acquire swapchain image: " + vk::to_string(result));
     }
 
-    auto reset_result = m_device->resetFences(frame.in_flight_fence);
+    auto reset_result = m_device.resetFences(frame.in_flight_fence);
     if (reset_result != vk::Result::eSuccess) {
         return make_error<uint32_t>(ErrorCode::vulkan_device_lost,
                                     "Fence reset failed: " + vk::to_string(reset_result));
@@ -1243,11 +1267,11 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
                         {}, {}, {}, barriers);
 
     m_filter_chain->record(cmd, m_import.image, m_import.view, m_import_extent,
-                           *m_swapchain_image_views[image_index], m_swapchain_extent,
+                           m_swapchain_image_views[image_index], m_swapchain_extent,
                            m_current_frame, m_scale_mode, m_integer_scale);
 
     if (ui_callback) {
-        ui_callback(cmd, *m_swapchain_image_views[image_index], m_swapchain_extent);
+        ui_callback(cmd, m_swapchain_image_views[image_index], m_swapchain_extent);
     }
 
     dst_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
@@ -1289,7 +1313,7 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
                         vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {}, barrier);
 
     vk::RenderingAttachmentInfo color_attachment{};
-    color_attachment.imageView = *m_swapchain_image_views[image_index];
+    color_attachment.imageView = m_swapchain_image_views[image_index];
     color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
     color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
     color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
@@ -1306,7 +1330,7 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     cmd.endRendering();
 
     if (ui_callback) {
-        ui_callback(cmd, *m_swapchain_image_views[image_index], m_swapchain_extent);
+        ui_callback(cmd, m_swapchain_image_views[image_index], m_swapchain_extent);
     }
 
     barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
@@ -1335,7 +1359,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<void> {
         wait_info.pValues = &m_last_frame_number;
 
         constexpr uint64_t TIMEOUT_NS = 100'000'000;
-        auto wait_result = m_device->waitSemaphores(wait_info, TIMEOUT_NS);
+        auto wait_result = m_device.waitSemaphores(wait_info, TIMEOUT_NS);
         if (wait_result == vk::Result::eTimeout) {
             if (m_sync_wait_succeeded) {
                 GOGGLES_LOG_WARN("Timeout waiting for frame_ready semaphore, layer disconnected?");
@@ -1394,7 +1418,7 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<void> {
     present_info.waitSemaphoreCount = 1;
     present_info.pWaitSemaphores = &render_finished_sem;
     present_info.swapchainCount = 1;
-    present_info.pSwapchains = &*m_swapchain;
+    present_info.pSwapchains = &m_swapchain;
     present_info.pImageIndices = &image_index;
 
     vk::PresentIdKHR present_id{};
@@ -1439,7 +1463,7 @@ auto VulkanBackend::apply_present_wait(uint64_t present_id) -> Result<void> {
     const uint64_t timeout_ns =
         std::min(MAX_TIMEOUT_NS, static_cast<uint64_t>(1'000'000'000ULL / m_target_fps));
     auto wait_result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkWaitForPresentKHR(
-        *m_device, *m_swapchain, present_id, timeout_ns));
+        m_device, m_swapchain, present_id, timeout_ns));
     if (wait_result == vk::Result::eSuccess || wait_result == vk::Result::eTimeout ||
         wait_result == vk::Result::eSuboptimalKHR) {
         return {};
@@ -1527,9 +1551,9 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
     auto swapchain_format = m_swapchain_format;
     auto shader_dir = m_shader_dir;
     auto cache_dir = m_cache_dir;
-    auto device = *m_device;
+    auto device = m_device;
     auto physical_device = m_physical_device;
-    auto command_pool = *m_command_pool;
+    auto command_pool = m_command_pool;
     auto graphics_queue = m_graphics_queue;
     auto source_resolution = m_source_resolution;
 

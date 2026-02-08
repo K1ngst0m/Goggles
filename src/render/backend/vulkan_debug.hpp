@@ -9,12 +9,12 @@ namespace goggles::render {
 class VulkanDebugMessenger {
 public:
     VulkanDebugMessenger() = default;
-    ~VulkanDebugMessenger() = default;
+    ~VulkanDebugMessenger();
 
     VulkanDebugMessenger(const VulkanDebugMessenger&) = delete;
     VulkanDebugMessenger& operator=(const VulkanDebugMessenger&) = delete;
-    VulkanDebugMessenger(VulkanDebugMessenger&&) noexcept = default;
-    VulkanDebugMessenger& operator=(VulkanDebugMessenger&&) noexcept = default;
+    VulkanDebugMessenger(VulkanDebugMessenger&& other) noexcept;
+    VulkanDebugMessenger& operator=(VulkanDebugMessenger&& other) noexcept;
 
     /// @brief Creates a debug messenger for `instance`.
     /// @return An active messenger or an error.
@@ -24,9 +24,11 @@ public:
     [[nodiscard]] auto is_active() const -> bool { return static_cast<bool>(m_messenger); }
 
 private:
-    explicit VulkanDebugMessenger(vk::UniqueDebugUtilsMessengerEXT messenger);
+    VulkanDebugMessenger(vk::Instance instance, vk::DebugUtilsMessengerEXT messenger);
+    void reset();
 
-    vk::UniqueDebugUtilsMessengerEXT m_messenger;
+    vk::Instance m_instance;
+    vk::DebugUtilsMessengerEXT m_messenger;
 };
 
 /// @brief Returns true if Vulkan validation layers appear to be available.

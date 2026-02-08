@@ -34,8 +34,40 @@ debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
 
 } // namespace
 
-VulkanDebugMessenger::VulkanDebugMessenger(vk::UniqueDebugUtilsMessengerEXT messenger)
-    : m_messenger(std::move(messenger)) {}
+VulkanDebugMessenger::~VulkanDebugMessenger() {
+    reset();
+}
+
+VulkanDebugMessenger::VulkanDebugMessenger(vk::Instance instance,
+                                           vk::DebugUtilsMessengerEXT messenger)
+    : m_instance(instance), m_messenger(messenger) {}
+
+VulkanDebugMessenger::VulkanDebugMessenger(VulkanDebugMessenger&& other) noexcept
+    : m_instance(other.m_instance), m_messenger(other.m_messenger) {
+    other.m_instance = nullptr;
+    other.m_messenger = nullptr;
+}
+
+auto VulkanDebugMessenger::operator=(VulkanDebugMessenger&& other) noexcept
+    -> VulkanDebugMessenger& {
+    if (this == &other) {
+        return *this;
+    }
+    reset();
+    m_instance = other.m_instance;
+    m_messenger = other.m_messenger;
+    other.m_instance = nullptr;
+    other.m_messenger = nullptr;
+    return *this;
+}
+
+void VulkanDebugMessenger::reset() {
+    if (m_instance && m_messenger) {
+        m_instance.destroyDebugUtilsMessengerEXT(m_messenger);
+        m_messenger = nullptr;
+    }
+    m_instance = nullptr;
+}
 
 auto VulkanDebugMessenger::create(vk::Instance instance) -> Result<VulkanDebugMessenger> {
     GOGGLES_PROFILE_FUNCTION();
@@ -50,7 +82,7 @@ auto VulkanDebugMessenger::create(vk::Instance instance) -> Result<VulkanDebugMe
     create_info.pfnUserCallback = debug_callback;
     create_info.pUserData = nullptr;
 
-    auto [result, messenger] = instance.createDebugUtilsMessengerEXTUnique(create_info);
+    auto [result, messenger] = instance.createDebugUtilsMessengerEXT(create_info);
     if (result != vk::Result::eSuccess) {
         return make_error<VulkanDebugMessenger>(ErrorCode::vulkan_init_failed,
                                                 "Failed to create debug messenger: " +
@@ -58,7 +90,7 @@ auto VulkanDebugMessenger::create(vk::Instance instance) -> Result<VulkanDebugMe
     }
 
     GOGGLES_LOG_DEBUG("Vulkan debug messenger created");
-    return VulkanDebugMessenger(std::move(messenger));
+    return VulkanDebugMessenger(instance, messenger);
 }
 
 auto is_validation_layer_available() -> bool {

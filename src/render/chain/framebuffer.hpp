@@ -26,8 +26,8 @@ public:
     /// @brief Releases image and view resources.
     void shutdown();
 
-    [[nodiscard]] auto view() const -> vk::ImageView { return *m_view; }
-    [[nodiscard]] auto image() const -> vk::Image { return *m_image; }
+    [[nodiscard]] auto view() const -> vk::ImageView { return m_view; }
+    [[nodiscard]] auto image() const -> vk::Image { return m_image; }
     [[nodiscard]] auto format() const -> vk::Format { return m_format; }
     [[nodiscard]] auto extent() const -> vk::Extent2D { return m_extent; }
 
@@ -42,9 +42,9 @@ private:
     vk::Format m_format = vk::Format::eUndefined;
     vk::Extent2D m_extent;
 
-    vk::UniqueImage m_image;
-    vk::UniqueDeviceMemory m_memory;
-    vk::UniqueImageView m_view;
+    vk::Image m_image;
+    vk::DeviceMemory m_memory;
+    vk::ImageView m_view;
 };
 
 } // namespace goggles::render

@@ -29,7 +29,7 @@ struct ParameterInfo {
 /// @brief Texture plus sampler bound into a filter chain.
 struct LoadedTexture {
     TextureData data;
-    vk::UniqueSampler sampler;
+    vk::Sampler sampler;
 };
 
 /// @brief Viewport and source extents used for framebuffer sizing.
@@ -120,7 +120,8 @@ private:
 
     [[nodiscard]] auto load_preset_textures() -> Result<void>;
     [[nodiscard]] auto create_texture_sampler(const TextureConfig& config) const
-        -> Result<vk::UniqueSampler>;
+        -> Result<vk::Sampler>;
+    void cleanup_texture_registry();
 
     void bind_pass_textures(FilterPass& pass, size_t pass_index, vk::ImageView original_view,
                             vk::Extent2D original_extent, vk::ImageView source_view);
