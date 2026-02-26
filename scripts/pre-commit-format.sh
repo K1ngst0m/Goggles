@@ -28,7 +28,28 @@ format_cpp() {
 }
 
 format_toml() {
-    mapfile -d '' -t staged_toml < <(git diff --cached --name-only -z --diff-filter=d | grep -zE '\.toml$' || true)
+    local -a staged_toml_all=()
+    local -a staged_toml=()
+    local -a skipped_toml=()
+    local file
+
+    mapfile -d '' -t staged_toml_all < <(git diff --cached --name-only -z --diff-filter=d | grep -zE '\.toml$' || true)
+    if ((${#staged_toml_all[@]} == 0)); then
+        return
+    fi
+
+    for file in "${staged_toml_all[@]}"; do
+        # Test fixtures may intentionally contain malformed TOML.
+        if [[ "$file" == *"/test_data/"* ]]; then
+            skipped_toml+=("$file")
+            continue
+        fi
+        staged_toml+=("$file")
+    done
+
+    if ((${#skipped_toml[@]} > 0)); then
+        echo "[pre-commit] Skipping TOML fixtures under test_data (${#skipped_toml[@]})"
+    fi
     if ((${#staged_toml[@]} == 0)); then
         return
     fi

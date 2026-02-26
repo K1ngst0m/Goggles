@@ -319,12 +319,14 @@ void VulkanBackend::shutdown() {
         m_shader_runtime->shutdown();
     }
     cleanup_imported_image();
-    cleanup_sync_semaphores();
 
     if (m_device) {
         for (auto& frame : m_frames) {
             m_device.destroyFence(frame.in_flight_fence);
             m_device.destroySemaphore(frame.image_available_sem);
+            if (frame.pending_acquire_sync_sem) {
+                m_device.destroySemaphore(frame.pending_acquire_sync_sem);
+            }
         }
         for (auto sem : m_render_finished_sems) {
             m_device.destroySemaphore(sem);
@@ -621,10 +623,6 @@ auto VulkanBackend::create_device() -> Result<void> {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "shaderDrawParameters not supported (required for vertex shaders)");
     }
-    if (!vk12_features.timelineSemaphore) {
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Timeline semaphores not supported (required for frame sync)");
-    }
     if (!vk13_features.dynamicRendering) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Dynamic rendering not supported (required for Vulkan 1.3)");
@@ -633,7 +631,6 @@ auto VulkanBackend::create_device() -> Result<void> {
     vk::PhysicalDeviceVulkan11Features vk11_enable{};
     vk11_enable.shaderDrawParameters = VK_TRUE;
     vk::PhysicalDeviceVulkan12Features vk12_enable{};
-    vk12_enable.timelineSemaphore = VK_TRUE;
     vk::PhysicalDeviceVulkan13Features vk13_enable{};
     vk13_enable.dynamicRendering = VK_TRUE;
     vk::PhysicalDevicePresentIdFeaturesKHR present_id_enable{};
@@ -1106,86 +1103,6 @@ void VulkanBackend::cleanup_imported_image() {
     }
 }
 
-auto VulkanBackend::import_sync_semaphores(util::UniqueFd frame_ready_fd,
-                                           util::UniqueFd frame_consumed_fd) -> Result<void> {
-    cleanup_sync_semaphores();
-
-    vk::SemaphoreTypeCreateInfo timeline_info{};
-    timeline_info.semaphoreType = vk::SemaphoreType::eTimeline;
-    timeline_info.initialValue = 0;
-
-    vk::SemaphoreCreateInfo sem_info{};
-    sem_info.pNext = &timeline_info;
-
-    auto [res1, ready_sem] = m_device.createSemaphore(sem_info);
-    VK_TRY(res1, ErrorCode::vulkan_init_failed, "Failed to create frame_ready semaphore");
-
-    auto [res2, consumed_sem] = m_device.createSemaphore(sem_info);
-    if (res2 != vk::Result::eSuccess) {
-        m_device.destroySemaphore(ready_sem);
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to create frame_consumed semaphore");
-    }
-
-    VkImportSemaphoreFdInfoKHR import_info{};
-    import_info.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
-    import_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
-    import_info.flags = 0;
-
-    import_info.semaphore = ready_sem;
-    import_info.fd = frame_ready_fd.get();
-    auto import_res = static_cast<vk::Result>(
-        VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(m_device, &import_info));
-    if (import_res != vk::Result::eSuccess) {
-        m_device.destroySemaphore(ready_sem);
-        m_device.destroySemaphore(consumed_sem);
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to import frame_ready semaphore FD");
-    }
-    frame_ready_fd.release();
-
-    import_info.semaphore = consumed_sem;
-    import_info.fd = frame_consumed_fd.get();
-    import_res = static_cast<vk::Result>(
-        VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(m_device, &import_info));
-    if (import_res != vk::Result::eSuccess) {
-        m_device.destroySemaphore(ready_sem);
-        m_device.destroySemaphore(consumed_sem);
-        return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to import frame_consumed semaphore FD");
-    }
-    frame_consumed_fd.release();
-
-    m_frame_ready_sem = ready_sem;
-    m_frame_consumed_sem = consumed_sem;
-    m_sync_semaphores_imported = true;
-    m_last_frame_number = 0;
-    m_sync_wait_succeeded = false;
-
-    GOGGLES_LOG_INFO("Cross-process sync semaphores imported");
-    return {};
-}
-
-void VulkanBackend::cleanup_sync_semaphores() {
-    if (m_device) {
-        if (m_frame_ready_sem || m_frame_consumed_sem) {
-            static_cast<void>(m_device.waitIdle());
-        }
-        if (m_frame_ready_sem) {
-            m_device.destroySemaphore(m_frame_ready_sem);
-            m_frame_ready_sem = nullptr;
-        }
-        if (m_frame_consumed_sem) {
-            m_device.destroySemaphore(m_frame_consumed_sem);
-            m_frame_consumed_sem = nullptr;
-        }
-    }
-    m_sync_semaphores_imported = false;
-    m_last_frame_number = 0;
-    m_last_signaled_frame = 0;
-    m_sync_wait_succeeded = false;
-}
-
 auto VulkanBackend::get_prechain_resolution() const -> vk::Extent2D {
     return m_source_resolution;
 }
@@ -1198,6 +1115,12 @@ auto VulkanBackend::acquire_next_image() -> Result<uint32_t> {
     auto wait_result = m_device.waitForFences(frame.in_flight_fence, VK_TRUE, UINT64_MAX);
     if (wait_result != vk::Result::eSuccess) {
         return make_error<uint32_t>(ErrorCode::vulkan_device_lost, "Fence wait failed");
+    }
+
+    // GPU finished with this frame slot — safe to destroy deferred sync semaphore
+    if (frame.pending_acquire_sync_sem) {
+        m_device.destroySemaphore(frame.pending_acquire_sync_sem);
+        frame.pending_acquire_sync_sem = nullptr;
     }
 
     uint32_t image_index = 0;
@@ -1347,72 +1270,69 @@ auto VulkanBackend::record_clear_commands(vk::CommandBuffer cmd, uint32_t image_
     return {};
 }
 
-auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<void> {
+auto VulkanBackend::submit_and_present(uint32_t image_index, util::UniqueFd sync_fd)
+    -> Result<void> {
     GOGGLES_PROFILE_SCOPE("SubmitPresent");
 
     auto& frame = m_frames[m_current_frame];
     vk::Semaphore render_finished_sem = m_render_finished_sems[image_index];
 
-    if (m_sync_semaphores_imported && m_last_frame_number > 0) {
-        vk::SemaphoreWaitInfo wait_info{};
-        wait_info.semaphoreCount = 1;
-        wait_info.pSemaphores = &m_frame_ready_sem;
-        wait_info.pValues = &m_last_frame_number;
+    // Import sync_fd as a temporary binary semaphore for GPU-side acquire wait
+    vk::Semaphore acquire_sync_sem;
+    bool have_acquire_sync = false;
 
-        constexpr uint64_t TIMEOUT_NS = 100'000'000;
-        auto wait_result = m_device.waitSemaphores(wait_info, TIMEOUT_NS);
-        if (wait_result == vk::Result::eTimeout) {
-            if (m_sync_wait_succeeded) {
-                GOGGLES_LOG_WARN("Timeout waiting for frame_ready semaphore, layer disconnected?");
+    if (sync_fd.valid()) {
+        vk::SemaphoreCreateInfo sem_ci{};
+        auto [sem_res, sem] = m_device.createSemaphore(sem_ci);
+        if (sem_res == vk::Result::eSuccess) {
+            VkImportSemaphoreFdInfoKHR import_info{};
+            import_info.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
+            import_info.semaphore = sem;
+            import_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+            import_info.fd = sync_fd.get();
+            import_info.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT;
+
+            auto import_res = static_cast<vk::Result>(
+                VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(m_device, &import_info));
+            if (import_res == vk::Result::eSuccess) {
+                sync_fd.release();
+                acquire_sync_sem = sem;
+                have_acquire_sync = true;
+            } else {
+                m_device.destroySemaphore(sem);
+                GOGGLES_LOG_WARN("Failed to import sync_fd as semaphore");
             }
-            cleanup_sync_semaphores();
-        } else if (wait_result != vk::Result::eSuccess) {
-            return make_error<void>(ErrorCode::vulkan_device_lost,
-                                    "Semaphore wait failed: " + vk::to_string(wait_result));
-        } else {
-            m_sync_wait_succeeded = true;
         }
     }
 
-    std::array<vk::Semaphore, 1> wait_sems = {frame.image_available_sem};
-    std::array<vk::PipelineStageFlags, 1> wait_stages = {
-        vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    std::array<vk::Semaphore, 2> wait_sems;
+    std::array<vk::PipelineStageFlags, 2> wait_stages;
+    uint32_t wait_count = 1;
+    wait_sems[0] = frame.image_available_sem;
+    wait_stages[0] = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+
+    if (have_acquire_sync) {
+        wait_sems[wait_count] = acquire_sync_sem;
+        wait_stages[wait_count] = vk::PipelineStageFlagBits::eFragmentShader;
+        wait_count++;
+    }
 
     vk::SubmitInfo submit_info{};
-    submit_info.waitSemaphoreCount = static_cast<uint32_t>(wait_sems.size());
+    submit_info.waitSemaphoreCount = wait_count;
     submit_info.pWaitSemaphores = wait_sems.data();
     submit_info.pWaitDstStageMask = wait_stages.data();
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &frame.command_buffer;
-
-    std::array<vk::Semaphore, 2> signal_sems;
-    std::array<uint64_t, 2> signal_values = {0, 0};
-    vk::TimelineSemaphoreSubmitInfo timeline_info{};
-
-    bool should_signal_timeline =
-        m_sync_semaphores_imported && m_last_frame_number > m_last_signaled_frame;
-
-    if (should_signal_timeline) {
-        signal_sems = {render_finished_sem, m_frame_consumed_sem};
-        signal_values = {0, m_last_frame_number};
-        timeline_info.signalSemaphoreValueCount = static_cast<uint32_t>(signal_values.size());
-        timeline_info.pSignalSemaphoreValues = signal_values.data();
-        submit_info.pNext = &timeline_info;
-        submit_info.signalSemaphoreCount = 2;
-    } else {
-        signal_sems[0] = render_finished_sem;
-        submit_info.signalSemaphoreCount = 1;
-    }
-    submit_info.pSignalSemaphores = signal_sems.data();
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = &render_finished_sem;
 
     auto submit_result = m_graphics_queue.submit(submit_info, frame.in_flight_fence);
     if (submit_result != vk::Result::eSuccess) {
+        if (have_acquire_sync) {
+            m_device.destroySemaphore(acquire_sync_sem);
+        }
         return make_error<void>(ErrorCode::vulkan_device_lost,
                                 "Queue submit failed: " + vk::to_string(submit_result));
-    }
-
-    if (should_signal_timeline) {
-        m_last_signaled_frame = m_last_frame_number;
     }
 
     vk::PresentInfoKHR present_info{};
@@ -1436,8 +1356,16 @@ auto VulkanBackend::submit_and_present(uint32_t image_index) -> Result<void> {
         present_result == vk::Result::eSuboptimalKHR) {
         m_needs_resize = true;
     } else if (present_result != vk::Result::eSuccess) {
+        if (have_acquire_sync) {
+            m_device.destroySemaphore(acquire_sync_sem);
+        }
         return make_error<void>(ErrorCode::vulkan_device_lost,
                                 "Present failed: " + vk::to_string(present_result));
+    }
+
+    // Defer semaphore destruction until the in-flight fence signals
+    if (have_acquire_sync) {
+        frame.pending_acquire_sync_sem = acquire_sync_sem;
     }
 
     if (m_target_fps == 0) {
@@ -1516,7 +1444,6 @@ auto VulkanBackend::render(const util::ExternalImageFrame* frame,
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
 
     if (frame) {
-        m_last_frame_number = frame->frame_number;
         GOGGLES_TRY(import_external_image(frame->image));
         GOGGLES_TRY(record_render_commands(m_frames[m_current_frame].command_buffer, image_index,
                                            ui_callback));
@@ -1525,7 +1452,12 @@ auto VulkanBackend::render(const util::ExternalImageFrame* frame,
                                           ui_callback));
     }
 
-    return submit_and_present(image_index);
+    util::UniqueFd acquire_fd;
+    if (frame && frame->sync_fd.valid()) {
+        acquire_fd = util::UniqueFd::dup_from(frame->sync_fd.get());
+    }
+
+    return submit_and_present(image_index, std::move(acquire_fd));
 }
 
 auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_path) -> Result<void> {

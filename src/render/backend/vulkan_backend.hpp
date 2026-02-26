@@ -115,13 +115,6 @@ public:
     [[nodiscard]] auto gpu_index() const -> uint32_t { return m_gpu_index; }
     [[nodiscard]] auto gpu_uuid() const -> const std::string& { return m_gpu_uuid; }
 
-    /// @brief Imports sync semaphores from the capture layer.
-    /// @return Success or an error.
-    [[nodiscard]] auto import_sync_semaphores(util::UniqueFd frame_ready_fd,
-                                              util::UniqueFd frame_consumed_fd) -> Result<void>;
-    /// @brief Releases imported semaphores, if any.
-    void cleanup_sync_semaphores();
-
     [[nodiscard]] auto consume_chain_swapped() -> bool {
         return m_chain_swapped.exchange(false, std::memory_order_acq_rel);
     }
@@ -156,7 +149,8 @@ private:
     [[nodiscard]] auto record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index,
                                              const UiRenderCallback& ui_callback = nullptr)
         -> Result<void>;
-    [[nodiscard]] auto submit_and_present(uint32_t image_index) -> Result<void>;
+    [[nodiscard]] auto submit_and_present(uint32_t image_index, util::UniqueFd sync_fd = {})
+        -> Result<void>;
 
     [[nodiscard]] static auto is_srgb_format(vk::Format format) -> bool;
 
@@ -167,11 +161,6 @@ private:
     vk::Queue m_graphics_queue;
     std::unique_ptr<ShaderRuntime> m_shader_runtime;
     std::unique_ptr<FilterChain> m_filter_chain;
-    vk::Semaphore m_frame_ready_sem;
-    vk::Semaphore m_frame_consumed_sem;
-    uint64_t m_last_frame_number = 0;
-    uint64_t m_last_signaled_frame = 0;
-    bool m_sync_wait_succeeded = false;
 
     vk::Instance m_instance;
     vk::Device m_device;
@@ -202,6 +191,7 @@ private:
         vk::CommandBuffer command_buffer;
         vk::Fence in_flight_fence;
         vk::Semaphore image_available_sem;
+        vk::Semaphore pending_acquire_sync_sem;
     };
     std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> m_frames{};
 
@@ -218,7 +208,6 @@ private:
     bool m_enable_validation = false;
     ScaleMode m_scale_mode = ScaleMode::stretch;
     bool m_needs_resize = false;
-    bool m_sync_semaphores_imported = false;
     bool m_present_wait_supported = false;
     bool m_prechain_policy_enabled = true;
     bool m_effect_stage_policy_enabled = true;

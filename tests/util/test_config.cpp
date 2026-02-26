@@ -9,10 +9,6 @@ using namespace goggles;
 TEST_CASE("default_config returns expected values", "[config]") {
     auto config = default_config();
 
-    SECTION("Capture defaults") {
-        REQUIRE(config.capture.backend == "vulkan_layer");
-    }
-
     SECTION("Shader defaults") {
         REQUIRE(config.shader.preset.empty());
     }
@@ -45,10 +41,6 @@ TEST_CASE("load_config parses valid configuration", "[config]") {
     REQUIRE(result.has_value());
     auto config = result.value();
 
-    SECTION("Capture section") {
-        REQUIRE(config.capture.backend == "vulkan_layer");
-    }
-
     SECTION("Shader section") {
         REQUIRE(config.shader.preset == "shaders/test.glsl");
     }
@@ -72,25 +64,14 @@ TEST_CASE("load_config uses defaults for partial configuration", "[config]") {
     auto config = result.value();
 
     SECTION("Uses defaults for missing sections") {
-        REQUIRE(config.capture.backend == "vulkan_layer"); // default
-        REQUIRE(config.shader.preset.empty());             // default
-        REQUIRE(config.logging.level == "info");           // default
-        REQUIRE(config.logging.file.empty());              // default
+        REQUIRE(config.shader.preset.empty());   // default
+        REQUIRE(config.logging.level == "info"); // default
+        REQUIRE(config.logging.file.empty());    // default
     }
 
     SECTION("Uses provided values") {
         REQUIRE(config.render.vsync == true); // from file
     }
-}
-
-TEST_CASE("load_config validates backend values", "[config]") {
-    auto result = load_config("util/test_data/invalid_config.toml");
-
-    REQUIRE(!result.has_value());
-    REQUIRE(result.error().code == ErrorCode::invalid_config);
-    REQUIRE(result.error().message.find("Invalid capture backend") != std::string::npos);
-    REQUIRE(result.error().message.find("invalid_backend") != std::string::npos);
-    REQUIRE(result.error().message.find("vulkan_layer or compositor") != std::string::npos);
 }
 
 TEST_CASE("load_config validates target_fps values", "[config]") {
@@ -164,25 +145,6 @@ TEST_CASE("load_config accepts all valid log levels", "[config]") {
 
         REQUIRE(result.has_value());
         REQUIRE(result.value().logging.level == level);
-
-        // Clean up
-        std::filesystem::remove(temp_config);
-    }
-}
-
-TEST_CASE("load_config accepts both valid backends", "[config]") {
-    const std::vector<std::string> valid_backends = {"vulkan_layer", "compositor"};
-
-    for (const auto& backend : valid_backends) {
-        const std::string temp_config = "util/test_data/backend_" + backend + ".toml";
-        std::ofstream file(temp_config);
-        file << "[capture]\nbackend = \"" << backend << "\"\n";
-        file.close();
-
-        auto result = load_config(temp_config);
-
-        REQUIRE(result.has_value());
-        REQUIRE(result.value().capture.backend == backend);
 
         // Clean up
         std::filesystem::remove(temp_config);

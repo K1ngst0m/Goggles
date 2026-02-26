@@ -33,9 +33,6 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
     app.add_option("--gpu", options.gpu_selector,
                    "Select GPU by index (e.g. 0) or name substring (e.g. AMD)");
     app.add_flag("--detach", options.detach, "Viewer-only mode (do not launch target app)");
-    app.add_flag("--wsi-proxy", options.wsi_proxy,
-                 "Default mode only: enable WSI proxy mode (sets GOGGLES_WSI_PROXY=1 for launched "
-                 "app; virtualizes window and swapchain)");
     app.add_option("--app-width", options.app_width,
                    "Source resolution width (also sets GOGGLES_WIDTH for launched app)")
         ->check(CLI::Range(1u, 16384u));
@@ -61,10 +58,6 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
 
 [[nodiscard]] auto validate_detach_mode(const CliOptions& options) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
-    if (options.wsi_proxy) {
-        return make_error<void>(ErrorCode::parse_error,
-                                "--wsi-proxy is not supported with --detach");
-    }
     if (options.app_width != 0 || options.app_height != 0) {
         return make_error<void>(ErrorCode::parse_error,
                                 "--app-width/--app-height are not supported with --detach");

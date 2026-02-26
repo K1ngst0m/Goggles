@@ -70,8 +70,8 @@ if (auto* f = queue.try_pop()) { process(*f); }
 
 ## How They Connect
 
-**Capture → Process → Encode Pipeline:**
-1. Capture thread produces frame metadata
+**Compositor Frame → Process → Encode Pipeline:**
+1. Compositor delivers frame via `ExternalImageFrame` (DMA-BUF + sync fence)
 2. SPSC queue transfers to worker (zero-copy, pointer passing)
 3. Worker processes and passes to next stage
 4. Main thread coordinates, never blocks

@@ -25,22 +25,14 @@ VK_ADD_LAYER_PATH = "$CONDA_PREFIX/share/vulkan/explicit_layer.d"
 cmd = "bash scripts/ensure-init.sh"
 
 [tasks.build]
-description = "Build 64-bit app + layer"
+description = "Build 64-bit app"
 cmd = "bash scripts/task/build.sh"
 depends-on = ["_check-init"]
-
-[tasks.build-i686]
-description = "Build 32-bit layer only"
-cmd = "bash scripts/task/build-i686.sh"
 
 [tasks.build-all-presets]
 description = "Build all CMake presets (including i686)"
 cmd = "bash scripts/task/build-all-presets.sh"
 depends-on = ["_check-init"]
-
-[tasks.install-manifests]
-description = "Install Vulkan layer manifests"
-cmd = "bash scripts/task/install-manifests.sh"
 
 [tasks.test]
 description = "Run tests"
@@ -51,7 +43,7 @@ description = "Build full dev environment"
 cmd = "bash scripts/task/dev.sh"
 
 [tasks.start]
-description = "Launch app with capture + viewer"
+description = "Launch app inside compositor + viewer"
 cmd = "bash scripts/task/start.sh"
 
 [tasks.profile]
@@ -73,10 +65,6 @@ cmd = "bash scripts/task/appimage_build.sh"
 [tasks.appimage]
 description = "Build Goggles AppImage (viewer + multiarch layer)"
 cmd = "bash scripts/task/appimage.sh"
-
-[tasks.vulkan-layer-check]
-description = "Check Vulkan loader discovers Goggles layer (64-bit)"
-cmd = "bash scripts/task/vulkan_layer_check.sh"
 
 [tasks.init]
 description = "First-time project setup"
@@ -155,7 +143,6 @@ xcb-util-renderutil = "*"
 
 # Local packages
 tracy = { path = "packages/tracy" }
-sysroot-i686 = { path = "packages/sysroot-i686" }
 expected-lite = { path = "packages/expected-lite" }
 stb = { path = "packages/stb" }
 bs-thread-pool = { path = "packages/bs-thread-pool" }

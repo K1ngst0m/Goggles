@@ -15,9 +15,8 @@ Verify compatibility with RetroArch shader presets
 Minimize end-to-end latency while maintaining code quality
 
 **Example Areas** (tasks uncertain, use Tracy for measurement):
-- vkQueuePresentKHR interception overhead
-- DMA-BUF export and copy operations
-- Unix socket transmission
+- Compositor frame delivery latency
+- DMA-BUF import overhead
 - Shader pass execution time
 - Uniform buffer updates
 - Render pass barriers/transitions
@@ -85,7 +84,7 @@ Extend nested compositor to support broader app compatibility
 
 ## === Phase 2: Network Streaming ===
 
-Extend local IPC streaming to network-capable streaming with encoding and transport.
+Extend local frame capture to network-capable streaming with encoding and transport.
 
 **Potential Approaches:**
 - GStreamer pipeline integration for encoding (H.264/H.265/AV1)

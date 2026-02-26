@@ -57,31 +57,6 @@ auto parse_paths(const toml::value& data, Config& config) -> Result<void> {
     }
 }
 
-auto parse_capture(const toml::value& data, Config& config) -> Result<void> {
-    GOGGLES_PROFILE_FUNCTION();
-    try {
-        if (!data.contains("capture")) {
-            return {};
-        }
-        const auto capture = toml::find(data, "capture");
-        if (!capture.contains("backend")) {
-            return {};
-        }
-
-        config.capture.backend = toml::find<std::string>(capture, "backend");
-        if (config.capture.backend != "vulkan_layer" && config.capture.backend != "compositor") {
-            return make_error<void>(ErrorCode::invalid_config,
-                                    "Invalid capture backend: " + config.capture.backend +
-                                        " (expected: vulkan_layer or compositor)");
-        }
-
-        return {};
-    } catch (const std::exception& e) {
-        return make_error<void>(ErrorCode::invalid_config,
-                                "Invalid [capture] configuration: " + std::string(e.what()));
-    }
-}
-
 auto parse_shader(const toml::value& data, Config& config) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
     try {
@@ -221,7 +196,6 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
     Config config = default_config();
 
     GOGGLES_TRY(parse_paths(data, config));
-    GOGGLES_TRY(parse_capture(data, config));
     GOGGLES_TRY(parse_shader(data, config));
     GOGGLES_TRY(parse_render(data, config));
     GOGGLES_TRY(parse_logging(data, config));

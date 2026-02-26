@@ -18,14 +18,6 @@
 # runtime_dir = ""   # Overrides ${XDG_RUNTIME_DIR}/goggles (or temp fallback)
 
 # =============================================================================
-# Capture Settings
-# =============================================================================
-[capture]
-# Backend to use for frame capture.
-# Options: "vulkan_layer" (primary), "compositor" (fallback)
-backend = "vulkan_layer"
-
-# =============================================================================
 # Shader Settings
 # =============================================================================
 [shader]
@@ -45,7 +37,7 @@ target_fps = 60
 enable_validation = false
 
 # Display scaling mode: "fit" | "fill" | "stretch" | "integer" | "dynamic"
-# dynamic: request source to match viewer resolution (WSI proxy mode only)
+# dynamic: request source to match viewer resolution
 scale_mode = "fill"
 integer_scale = 0
 # Optional GPU selector: index ("0") or case-insensitive name substring ("AMD")

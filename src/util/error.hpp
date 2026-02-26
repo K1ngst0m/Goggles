@@ -23,8 +23,6 @@ enum class ErrorCode : std::uint8_t {
     vulkan_device_lost,
     shader_compile_failed,
     shader_load_failed,
-    capture_init_failed,
-    capture_frame_failed,
     input_init_failed,
     input_socket_send_failed,
     invalid_data,
@@ -92,10 +90,6 @@ make_result_ptr_error(ErrorCode code, std::string message,
         return "shader_compile_failed";
     case ErrorCode::shader_load_failed:
         return "shader_load_failed";
-    case ErrorCode::capture_init_failed:
-        return "capture_init_failed";
-    case ErrorCode::capture_frame_failed:
-        return "capture_frame_failed";
     case ErrorCode::input_init_failed:
         return "input_init_failed";
     case ErrorCode::input_socket_send_failed:

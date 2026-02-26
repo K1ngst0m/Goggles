@@ -37,11 +37,6 @@ target_sources(goggles_tests PRIVATE
     render/test_filter_chain.cpp
     render/test_shader_validation.cpp
 
-    # Capture module tests
-    capture/test_capture_protocol.cpp
-    capture/test_capture_receiver.cpp
-    capture/test_vk_layer_logging.cpp
-
     # Future: Pipeline module tests (when implemented)
     # pipeline/graph/test_pipeline_graph.cpp
 )
@@ -55,7 +50,6 @@ target_include_directories(goggles_tests PRIVATE
 target_link_libraries(goggles_tests PRIVATE
     goggles_util
     goggles_render
-    goggles_capture
     CLI11::CLI11
     Catch2::Catch2WithMain
 )

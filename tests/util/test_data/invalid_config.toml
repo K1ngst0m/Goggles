@@ -1,10 +1,7 @@
 # Invalid test configuration file
 
-[capture]
-backend = "invalid_backend"  # Invalid backend
-
 [render]
-target_fps = -10  # Invalid FPS value
+target_fps = -10 # Invalid FPS value
 
 [logging]
-level = "invalid_level"  # Invalid log level
+level = "invalid_level" # Invalid log level

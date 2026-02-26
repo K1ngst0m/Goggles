@@ -1,8 +1,5 @@
 # Valid test configuration file
 
-[capture]
-backend = "vulkan_layer"
-
 [shader]
 preset = "shaders/test.glsl"
 

@@ -44,7 +44,7 @@ Options:
   -h, --help            Show this help
 
 Notes:
-  - Default mode (no --detach) launches the target app with capture + input forwarding enabled.
+  - Default mode (no --detach) launches the target app inside the nested compositor.
   - Use '--detach' to start viewer-only mode (manual app launch).
   - When launching an app, '--' is required to separate Goggles args from app args.
 

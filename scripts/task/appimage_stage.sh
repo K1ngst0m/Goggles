@@ -61,17 +61,12 @@ copy_git_tracked_paths() {
 }
 
 BUILD_DIR="$REPO_ROOT/build/$PRESET"
-BUILD_I686_DIR="$REPO_ROOT/build/${PRESET}-i686"
 
 GOGGLES_BIN="$BUILD_DIR/bin/goggles"
 GOGGLES_REAPER_BIN="$BUILD_DIR/bin/goggles-reaper"
-LAYER64="$BUILD_DIR/lib/x86_64/libgoggles_vklayer.so"
-LAYER32="$BUILD_I686_DIR/lib/i386/libgoggles_vklayer.so"
 
 [[ -x "$GOGGLES_BIN" ]] || die "Missing built viewer binary: $GOGGLES_BIN"
 [[ -x "$GOGGLES_REAPER_BIN" ]] || die "Missing built reaper binary: $GOGGLES_REAPER_BIN"
-[[ -f "$LAYER64" ]] || die "Missing built 64-bit layer: $LAYER64"
-[[ -f "$LAYER32" ]] || die "Missing built 32-bit layer: $LAYER32"
 
 OUT_ROOT="$REPO_ROOT/dist/appimage"
 APPDIR="$OUT_ROOT/Goggles.AppDir"
@@ -82,9 +77,7 @@ mkdir -p \
   "$APPDIR/usr/lib" \
   "$APPDIR/usr/share/goggles/config" \
   "$APPDIR/usr/share/goggles/assets" \
-  "$APPDIR/usr/share/goggles/shaders" \
-  "$APPDIR/usr/share/goggles/vulkan-layers/x86_64" \
-  "$APPDIR/usr/share/goggles/vulkan-layers/i386"
+  "$APPDIR/usr/share/goggles/shaders"
 
 cp -f "$REPO_ROOT/platform/linux/appimage/AppRun" "$APPDIR/AppRun"
 cp -f "$REPO_ROOT/platform/linux/appimage/goggles.desktop" "$APPDIR/goggles.desktop"
@@ -100,9 +93,6 @@ cp -f "$REPO_ROOT/config/goggles.template.toml" \
 
 # Package only git-tracked resources (avoid shipping locally-downloaded shader packs).
 copy_git_tracked_paths "$APPDIR/usr/share/goggles" assets shaders
-
-cp -f "$LAYER64" "$APPDIR/usr/share/goggles/vulkan-layers/x86_64/libgoggles_vklayer.so"
-cp -f "$LAYER32" "$APPDIR/usr/share/goggles/vulkan-layers/i386/libgoggles_vklayer.so"
 
 echo "$VERSION" >"$APPDIR/usr/share/goggles/VERSION"
 

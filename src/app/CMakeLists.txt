@@ -13,7 +13,6 @@ target_include_directories(goggles PRIVATE
 target_link_libraries(goggles PRIVATE
     goggles_util
     goggles_render
-    goggles_capture
     goggles_ui
     goggles_compositor
     SDL3::SDL3

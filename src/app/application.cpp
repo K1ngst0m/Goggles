@@ -2,7 +2,6 @@
 
 #include <SDL3/SDL.h>
 #include <algorithm>
-#include <capture/capture_receiver.hpp>
 #include <compositor/compositor_server.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -18,7 +17,6 @@
 #include <util/logging.hpp>
 #include <util/paths.hpp>
 #include <util/profiling.hpp>
-#include <util/unique_fd.hpp>
 #include <utility>
 #include <vector>
 
@@ -174,21 +172,6 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
     m_imgui_layer->set_prechain_scale_mode_callback([this](ScaleMode mode, uint32_t integer_scale) {
         m_vulkan_backend->set_scale_mode(mode);
         m_vulkan_backend->set_integer_scale(integer_scale);
-
-        if (mode != ScaleMode::dynamic) {
-            return;
-        }
-
-        m_initial_resolution_sent = false;
-        if (!m_capture_receiver || !m_capture_receiver->is_connected()) {
-            return;
-        }
-
-        auto extent = m_vulkan_backend->swapchain_extent();
-        if (extent.width > 0 && extent.height > 0) {
-            m_capture_receiver->request_resolution(extent.width, extent.height);
-            m_initial_resolution_sent = true;
-        }
     });
 
     auto prechain_res = m_vulkan_backend->get_prechain_resolution();
@@ -198,11 +181,6 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
         m_vulkan_backend->filter_chain()->get_prechain_parameters());
 
     update_ui_parameters(*m_vulkan_backend, *m_imgui_layer);
-    return Result<void>{};
-}
-
-auto Application::init_capture_receiver() -> Result<void> {
-    m_capture_receiver = GOGGLES_TRY(CaptureReceiver::create());
     return Result<void>{};
 }
 
@@ -232,15 +210,11 @@ auto Application::init_compositor_server(const util::AppDirs& app_dirs) -> Resul
 auto Application::create(const Config& config, const util::AppDirs& app_dirs)
     -> ResultPtr<Application> {
     auto app = std::unique_ptr<Application>(new Application());
-    app->m_session_capture_mode = config.capture.backend == "compositor"
-                                      ? SessionCaptureMode::compositor
-                                      : SessionCaptureMode::direct_vulkan;
 
     GOGGLES_MUST(app->init_sdl());
     GOGGLES_MUST(app->init_vulkan_backend(config, app_dirs));
     GOGGLES_MUST(app->init_imgui_layer(app_dirs));
     GOGGLES_MUST(app->init_shader_system(config, app_dirs));
-    GOGGLES_MUST(app->init_capture_receiver());
     GOGGLES_MUST(app->init_compositor_server(app_dirs));
 
     return make_result_ptr(std::move(app));
@@ -253,7 +227,6 @@ Application::~Application() {
 void Application::shutdown() {
     // Destroy in reverse order of creation
     m_imgui_layer.reset();
-    m_capture_receiver.reset();
     m_compositor_server.reset();
     m_vulkan_backend.reset();
 
@@ -383,40 +356,10 @@ void Application::forward_input_event(const SDL_Event& event) {
 // Frame Processing
 // =============================================================================
 
-void Application::handle_sync_semaphores() {
-    if (!m_capture_receiver->semaphores_updated()) {
-        return;
-    }
-
-    // Dup fds because Vulkan import takes ownership
-    auto ready_fd = util::UniqueFd::dup_from(m_capture_receiver->get_frame_ready_fd());
-    auto consumed_fd = util::UniqueFd::dup_from(m_capture_receiver->get_frame_consumed_fd());
-
-    if (!ready_fd || !consumed_fd) {
-        GOGGLES_LOG_ERROR("Failed to dup semaphore fds (ready_fd={}, consumed_fd={})",
-                          m_capture_receiver->get_frame_ready_fd(),
-                          m_capture_receiver->get_frame_consumed_fd());
-        return;
-    }
-
-    auto import_result =
-        m_vulkan_backend->import_sync_semaphores(std::move(ready_fd), std::move(consumed_fd));
-    if (!import_result) {
-        GOGGLES_LOG_ERROR("Failed to import sync semaphores: {}", import_result.error().message);
-    } else {
-        GOGGLES_LOG_INFO("Sync semaphores imported successfully");
-    }
-    m_capture_receiver->clear_sync_semaphores();
-    m_capture_receiver->clear_semaphores_updated();
-}
-
 void Application::sync_prechain_ui() {
     auto& prechain = m_imgui_layer->state().prechain;
     if (prechain.target_width == 0 && prechain.target_height == 0) {
         vk::Extent2D initial_resolution{};
-        if (is_direct_vulkan_session()) {
-            initial_resolution = m_vulkan_backend->swapchain_extent();
-        }
         if (initial_resolution.width == 0 || initial_resolution.height == 0) {
             initial_resolution = m_vulkan_backend->get_captured_extent();
         }
@@ -444,8 +387,7 @@ void Application::sync_surface_filters(std::vector<input::SurfaceInfo>& surfaces
     for (auto& surface : surfaces) {
         seen.insert(surface.id);
         auto it = m_surface_state.find(surface.id);
-        const bool default_filter_enabled =
-            is_direct_vulkan_session() || surface.capture_path == input::SurfaceCapturePath::vulkan;
+        const bool default_filter_enabled = false;
         if (it == m_surface_state.end()) {
             SurfaceRuntimeState state{};
             state.filter_enabled = default_filter_enabled;
@@ -515,10 +457,6 @@ auto Application::compute_stage_policy(bool using_surface_frame) const -> Applic
     return policy;
 }
 
-auto Application::is_direct_vulkan_session() const -> bool {
-    return m_session_capture_mode == SessionCaptureMode::direct_vulkan;
-}
-
 void Application::set_surface_filter_enabled(uint32_t surface_id, bool enabled) {
     if (surface_id == 0) {
         return;
@@ -585,10 +523,6 @@ void Application::update_surface_resize_for_surfaces(
     for (const auto& surface : surfaces) {
         const bool surface_enabled = is_surface_filter_enabled(surface.id);
         bool should_maximize = !(global_enabled && surface_enabled);
-        if (is_direct_vulkan_session() && surface.is_input_target && global_enabled &&
-            surface_enabled) {
-            should_maximize = true;
-        }
         request_surface_resize(surface.id, should_maximize);
     }
 }
@@ -629,15 +563,6 @@ void Application::handle_swapchain_changes() {
         } else {
             GOGGLES_LOG_ERROR("Swapchain rebuild failed: {}", result.error().message);
         }
-
-        if (fmt == vk::Format::eUndefined &&
-            m_vulkan_backend->get_scale_mode() == ScaleMode::dynamic &&
-            m_capture_receiver->is_connected()) {
-            auto extent = m_vulkan_backend->swapchain_extent();
-            if (extent.width > 0 && extent.height > 0) {
-                m_capture_receiver->request_resolution(extent.width, extent.height);
-            }
-        }
     }
 }
 
@@ -646,21 +571,7 @@ void Application::update_frame_sources() {
         return;
     }
 
-    m_capture_receiver->poll_frame();
-
-    // Send initial resolution request once connected
-    if (m_vulkan_backend->get_scale_mode() == ScaleMode::dynamic && !m_initial_resolution_sent &&
-        m_capture_receiver->is_connected()) {
-        auto extent = m_vulkan_backend->swapchain_extent();
-        if (extent.width > 0 && extent.height > 0) {
-            m_capture_receiver->request_resolution(extent.width, extent.height);
-            m_initial_resolution_sent = true;
-        }
-    }
-
-    handle_sync_semaphores();
-
-    if (!m_capture_receiver->has_frame() && m_compositor_server) {
+    if (m_compositor_server) {
         uint64_t last_surface_frame_number = m_surface_frame ? m_surface_frame->frame_number : 0;
         auto surface_frame = m_compositor_server->get_presented_frame(last_surface_frame_number);
         if (surface_frame) {
@@ -668,24 +579,13 @@ void Application::update_frame_sources() {
         }
     }
 
-    // Check if captured frame requires format rebuild
-    if (m_capture_receiver->has_frame()) {
-        auto& frame = m_capture_receiver->get_frame();
-        auto target_format =
-            render::VulkanBackend::get_matching_swapchain_format(frame.image.format);
-        if (target_format != m_vulkan_backend->swapchain_format()) {
-            m_pending_format = static_cast<uint32_t>(frame.image.format);
-            m_skip_frame = true;
-            return;
-        }
-    } else if (m_surface_frame) {
+    if (m_surface_frame) {
         if (m_surface_frame->image.format != vk::Format::eUndefined) {
             auto target_format =
                 render::VulkanBackend::get_matching_swapchain_format(m_surface_frame->image.format);
             if (target_format != m_vulkan_backend->swapchain_format()) {
                 m_pending_format = static_cast<uint32_t>(m_surface_frame->image.format);
                 m_skip_frame = true;
-                return;
             }
         }
     }
@@ -733,22 +633,15 @@ void Application::render_frame() {
 
     const util::ExternalImageFrame* source_frame = nullptr;
     uint64_t source_frame_number = 0;
-    bool using_surface_frame = false;
 
-    if (m_capture_receiver->has_frame()) {
-        source_frame = &m_capture_receiver->get_frame();
-        source_frame_number = source_frame->frame_number;
-    } else if (m_surface_frame) {
+    if (m_surface_frame) {
         if (m_surface_frame->image.format == vk::Format::eUndefined) {
             GOGGLES_LOG_DEBUG("Skipping surface frame with unsupported DRM format");
         } else if (m_surface_frame->image.modifier == util::DRM_FORMAT_MOD_INVALID) {
             GOGGLES_LOG_DEBUG("Skipping surface frame with invalid DMA-BUF modifier");
-        } else {
-            if (m_surface_frame->image.handle) {
-                source_frame = &m_surface_frame.value();
-                source_frame_number = m_surface_frame->frame_number;
-                using_surface_frame = true;
-            }
+        } else if (m_surface_frame->image.handle) {
+            source_frame = &m_surface_frame.value();
+            source_frame_number = m_surface_frame->frame_number;
         }
     }
 
@@ -760,7 +653,7 @@ void Application::render_frame() {
         GOGGLES_PROFILE_VALUE("goggles_source_frame", static_cast<double>(source_frame_number));
     }
 
-    auto policy = compute_stage_policy(using_surface_frame);
+    auto policy = compute_stage_policy(true);
     m_vulkan_backend->set_filter_chain_policy(
         {.prechain_enabled = policy.prechain_enabled,
          .effect_stage_enabled = policy.effect_stage_enabled});

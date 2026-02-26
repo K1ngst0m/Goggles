@@ -1,7 +1,4 @@
 # Malformed TOML file
 
-[capture
-backend = "vulkan_layer"  # Missing closing bracket
-
-[render]
+[render
 target_fps = "not_a_number"  # Wrong type

@@ -47,10 +47,6 @@ struct Config {
         std::string runtime_dir;
     } paths;
 
-    struct Capture {
-        std::string backend = "vulkan_layer";
-    } capture;
-
     struct Shader {
         std::string preset;
     } shader;

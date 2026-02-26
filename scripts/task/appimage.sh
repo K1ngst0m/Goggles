@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
 Usage:
   pixi run appimage [-p PRESET]
 
-Builds Goggles (viewer + 32-bit/64-bit Vulkan layer) and produces an AppImage under dist/.
+Builds Goggles (viewer) and produces an AppImage under dist/.
 EOF
       exit 0
       ;;
@@ -41,11 +41,8 @@ done
 
 cd "$REPO_ROOT"
 
-echo "Building preset '${PRESET}' (64-bit app + 64-bit layer)..."
+echo "Building preset '${PRESET}'..."
 "$SCRIPT_DIR/build.sh" -p "$PRESET"
-
-echo "Building preset '${PRESET}-i686' (32-bit layer)..."
-"$SCRIPT_DIR/build-i686.sh" -p "$PRESET"
 
 echo "Staging AppDir..."
 "$SCRIPT_DIR/appimage_stage.sh" -p "$PRESET"

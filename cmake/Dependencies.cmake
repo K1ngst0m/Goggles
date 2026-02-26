@@ -19,12 +19,6 @@ if(ENABLE_PROFILING)
     endif()
 endif()
 
-# Layer-only builds skip most dependencies
-if(GOGGLES_LAYER_ONLY)
-    find_package(Vulkan REQUIRED)
-    return()
-endif()
-
 # ============================================================================
 # Core Dependencies (provided by Pixi)
 # ============================================================================

@@ -2,7 +2,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/K1ngst0m/Goggles)
 
-A hooking-based frame streaming tool with support for RetroArch shader processing.
+A real-time shader post-processing tool that runs target apps inside a nested compositor and applies shader effects.
 
 | zfast-crt |
 | :---: |
@@ -12,8 +12,7 @@ A hooking-based frame streaming tool with support for RetroArch shader processin
 | :---: |
 | ![showcase_crt_royale](showcase-crt-royale.png)|
 
-Goggles captures Vulkan frames, runs a shader filter chain, and can optionally forward input via a
-nested compositor.
+Goggles runs target apps inside a nested Wayland compositor, applies a shader filter chain, and forwards input.
 
 ## Shader Preset Compatibility Database
 
@@ -42,8 +41,6 @@ Build output:
 ```
 build/<preset>/
 ├── bin/goggles
-├── lib/x86_64/libgoggles_vklayer.so
-└── share/vulkan/implicit_layer.d/
 ```
 
 ## Usage
@@ -57,11 +54,6 @@ as Goggles options. The preset defaults to `debug`.
 pixi run start -- vkcube --wsi xcb                            # preset=debug
 pixi run start -p release -- vkcube --wsi xcb                 # preset=release
 pixi run start -p profile --app-width 480 --app-height 240 -- vkcube --wsi xcb
-
-# Viewer-only mode (manual target launch)
-pixi run dev                                 # 1. Build the project
-./build/debug/bin/goggles --detach           # 2. Run goggles viewer
-GOGGLES_CAPTURE=1 vkcube --wsi xcb           # 3. Run target app with capture enabled
 ```
 
 In default mode, Goggles exits when the target app exits. If the viewer window is closed early,

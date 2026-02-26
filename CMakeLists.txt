@@ -8,20 +8,13 @@ add_compile_definitions(GOGGLES_VERSION_MINOR=${PROJECT_VERSION_MINOR})
 add_compile_definitions(GOGGLES_VERSION_PATCH=${PROJECT_VERSION_PATCH})
 add_compile_definitions(GOGGLES_PROJECT_NAME="Goggles")
 
-# Layer-only build option (for multiarch layer builds)
-option(GOGGLES_LAYER_ONLY "Build only the Vulkan capture layer" OFF)
-
 # Load modular configuration
 include(cmake/Dependencies.cmake)
 include(cmake/CompilerConfig.cmake)
 include(cmake/CodeQuality.cmake)
 
 # Project structure
-if(GOGGLES_LAYER_ONLY)
-    add_subdirectory(src/capture)
-else()
-    add_subdirectory(src)
+add_subdirectory(src)
 
-    enable_testing()
-    add_subdirectory(tests)
-endif()
+enable_testing()
+add_subdirectory(tests)

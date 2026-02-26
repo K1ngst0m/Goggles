@@ -4,16 +4,14 @@ Goggles Pixi Tasks
 ══════════════════
 
 Build Commands
-  pixi run dev [-p PRESET]                Build full dev environment
-  pixi run build [-p PRESET]              Build 64-bit app + layer
-  pixi run build-i686 [-p PRESET]         Build 32-bit layer only
-  pixi run build-all-presets              Build all CMake presets (incl. i686)
+  pixi run dev [-p PRESET]                Build the project
+  pixi run build [-p PRESET]              Build 64-bit app
+  pixi run build-all-presets              Build all CMake presets
   pixi run test [-p PRESET]               Run tests
-  pixi run install-manifests [-p PRESET]  Install Vulkan layer manifests
 
 Run Commands
   pixi run start [-p PRESET] [--] <APP> [APP_ARGS...]
-                                          Launch app with capture + viewer
+                                          Launch app inside nested compositor
   pixi run profile [-p PRESET] [goggles_args...] -- <APP> [APP_ARGS...]
                                           Run dual-process Tracy profile session
 
@@ -31,7 +29,7 @@ Options
 Examples
   pixi run build                          Build with default preset (debug)
   pixi run build -p release               Build with release preset
-  pixi run start vkcube                   Run vkcube with capture
+  pixi run start vkcube                   Run vkcube in the compositor
   pixi run start -p release vkcube        Run with release build
   pixi run profile -- vkcube              Capture + merge Tracy traces
 EOF

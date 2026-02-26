@@ -6,60 +6,37 @@ High-level overview of the Goggles codebase for maintainers. Start here to under
 
 ## System Context
 
-Goggles captures frames from Vulkan applications and applies real-time shader effects before display.
+Goggles runs target applications inside a nested compositor and applies real-time shader effects before display.
 
 ```mermaid
 flowchart TB
-  %% High-level overview: frame path + optional input forwarding.
-
-  subgraph AppProc["Target application process"]
-    App["Target application (Vulkan)"]
-    Layer["Vulkan capture layer"]
-    App --> Layer
+  subgraph Goggles["Goggles process"]
+    Compositor["CompositorServer (wlroots headless + XWayland)"]
+    App["Target application"]
+    App -->|"Wayland surface commit"| Compositor
+    Compositor -->|"DMA-BUF + explicit sync"| Render["VulkanBackend"]
+    Render --> Chain["FilterChain"]
+    Chain --> Window["Viewer window (SDL + swapchain)"]
   end
 
-  subgraph IPC["Cross-process transport"]
-    Socket["Unix socket (frames + metadata)"]
-    Sync["Sync handles (frame_ready / frame_consumed)"]
-  end
-
-  subgraph Goggles["Goggles viewer process"]
-    Receiver["CaptureReceiver"]
-    Render["VulkanBackend"]
-    Chain["FilterChain"]
-    Window["Viewer window (SDL + swapchain)"]
-    Receiver --> Render --> Chain --> Window
-  end
-
-  Layer --> Socket --> Receiver
-  Layer --> Sync --> Render
-
-  subgraph Input["Optional: input forwarding"]
-    Window -->|"keyboard/mouse"| Compositor["CompositorServer"]
-    Compositor --> Nested["Nested compositor (wlroots headless + XWayland)"]
-    App <-->|"client connection"| Nested
+  subgraph Input["Input forwarding"]
+    Window -->|"keyboard/mouse"| Compositor
   end
 ```
 
 ## Module Overview
 
-### `src/capture/` - Frame Capture
+### `src/compositor/` - Compositor Server
 
-**Responsibility:** Intercept frames from target applications and deliver to the Goggles app.
+**Responsibility:** Run target applications inside a nested Wayland compositor and export frames to the render backend.
 
 | Component | Purpose |
 |-----------|---------|
-| `vk_layer/` | Vulkan layer injected into target app |
-| `capture_receiver.*` | App-side socket receiver |
-| `capture_protocol.hpp` | IPC message format |
-
-**Key constraint:** Layer code runs in the target app's process. Must be minimal, no blocking, C API only.
-
-See: [dmabuf_sharing.md](dmabuf_sharing.md)
+| `compositor_server.*` | wlroots headless compositor, surface management, frame export |
 
 ### `src/render/` - Rendering Pipeline
 
-**Responsibility:** Import captured frames, apply shader effects, present to display.
+**Responsibility:** Import compositor frames, apply shader effects, present to display.
 
 | Component | Purpose |
 |-----------|---------|
@@ -94,37 +71,33 @@ See: [threading.md](threading.md)
 
 ```
 1. Target app renders frame
-   └─▶ present call intercepted by capture layer
+   └─▶ Wayland surface commit to nested compositor
 
-2. Capture layer exports swapchain image as DMA-BUF
-   └─▶ Sends fd + metadata over Unix socket
-   └─▶ Signals frame_ready timeline semaphore
+2. CompositorServer receives surface buffer
+   └─▶ Extracts DMA-BUF + explicit sync fence
+   └─▶ Passes to VulkanBackend as ExternalImageFrame
 
-3. Goggles app receives DMA-BUF
-   └─▶ Waits on frame_ready semaphore (GPU sync)
-   └─▶ CaptureReceiver imports into VulkanBackend
+3. VulkanBackend imports DMA-BUF
+   └─▶ Waits on acquire fence (explicit sync)
+   └─▶ Creates Vulkan image for shader sampling
 
 4. Filter chain processes frame
    └─▶ Pass 0 → Pass 1 → ... → Pass N (shader effects)
 
 5. Final pass renders to swapchain
-   └─▶ Signals frame_consumed semaphore (back-pressure)
+   └─▶ Signals release fence to compositor
    └─▶ Displayed on screen
-
-6. Capture layer waits on frame_consumed before next frame
-   └─▶ Prevents overwriting frame still in use
 ```
 
 ## Key Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| Vulkan layer injection | Zero-copy frame access, works with any Vulkan app |
+| Nested compositor | Single-process architecture, captures any Wayland/X11 client |
 | DMA-BUF sharing | GPU-to-GPU transfer without CPU copies |
-| Timeline semaphore sync | Cross-process GPU synchronization without CPU polling |
+| Explicit sync (wp_linux_drm_syncobj_v1) | GPU-to-GPU synchronization without CPU polling |
 | RetroArch shader format | Leverage existing shader ecosystem |
 | Single-threaded render loop | Simplicity; threading added only when profiling justifies |
-| C API in layer, C++ in app | Layer must be minimal; app benefits from type safety |
 
 ## Topic Docs
 

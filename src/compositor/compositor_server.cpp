@@ -53,6 +53,8 @@ extern "C" {
 #define namespace namespace_
 #include <wlr/types/wlr_layer_shell_v1.h>
 #undef namespace
+#include <wlr/render/drm_syncobj.h>
+#include <wlr/types/wlr_linux_drm_syncobj_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
@@ -543,7 +545,7 @@ struct CompositorServer::Impl {
     wlr_surface* keyboard_entered_surface = nullptr;
     wlr_surface* pointer_entered_surface = nullptr;
     wlr_swapchain* present_swapchain = nullptr;
-    std::array<uint64_t, 1> present_modifiers{};
+    std::vector<uint64_t> present_modifiers;
     double cursor_x = 0.0;
     double cursor_y = 0.0;
     wlr_surface* cursor_surface = nullptr;
@@ -559,6 +561,7 @@ struct CompositorServer::Impl {
     std::vector<XWaylandSurfaceHooks*> xwayland_hooks;
     std::vector<LayerSurfaceHooks*> layer_hooks;
     wlr_layer_shell_v1* layer_shell = nullptr;
+    wlr_linux_drm_syncobj_manager_v1* syncobj_manager = nullptr;
     wlr_drm_format present_format{};
     std::string wayland_socket_name;
     mutable std::mutex hooks_mutex;
@@ -824,6 +827,15 @@ auto CompositorServer::Impl::create_compositor() -> Result<void> {
     if (!compositor) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to create compositor");
     }
+
+    int drm_fd = wlr_renderer_get_drm_fd(renderer);
+    if (drm_fd >= 0) {
+        syncobj_manager = wlr_linux_drm_syncobj_manager_v1_create(display, 1, drm_fd);
+        if (syncobj_manager) {
+            GOGGLES_LOG_INFO("Compositor: explicit sync (wp_linux_drm_syncobj_v1) enabled");
+        }
+    }
+
     return {};
 }
 
@@ -1004,8 +1016,31 @@ auto CompositorServer::Impl::setup_output() -> Result<void> {
     wlr_output_commit_state(output, &state);
     wlr_output_state_finish(&state);
 
-    present_modifiers = {util::DRM_FORMAT_MOD_LINEAR};
-    present_format.format = util::DRM_FORMAT_XRGB8888;
+    // Negotiate format from DRM allocator capabilities instead of hardcoding
+    const wlr_drm_format_set* primary_formats =
+        wlr_output_get_primary_formats(output, allocator->buffer_caps);
+
+    const wlr_drm_format* selected = nullptr;
+    if (primary_formats) {
+        constexpr std::array<uint32_t, 2> PREFERRED_FORMATS = {
+            util::DRM_FORMAT_XRGB8888,
+            util::DRM_FORMAT_ARGB8888,
+        };
+        for (uint32_t fmt : PREFERRED_FORMATS) {
+            selected = wlr_drm_format_set_get(primary_formats, fmt);
+            if (selected) {
+                break;
+            }
+        }
+    }
+
+    if (selected && selected->len > 0) {
+        present_modifiers.assign(selected->modifiers, selected->modifiers + selected->len);
+        present_format.format = selected->format;
+    } else {
+        present_modifiers = {util::DRM_FORMAT_MOD_LINEAR};
+        present_format.format = util::DRM_FORMAT_XRGB8888;
+    }
     present_format.len = present_modifiers.size();
     present_format.capacity = present_modifiers.size();
     present_format.modifiers = present_modifiers.data();
@@ -1278,6 +1313,10 @@ auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
     frame.image.handle = stored.image.handle.dup();
     if (!frame.image.handle) {
         return std::nullopt;
+    }
+    if (stored.sync_fd.valid()) {
+        frame.sync_fd = stored.sync_fd.dup();
+        frame.sync_point = stored.sync_point;
     }
     return frame;
 }
@@ -3091,6 +3130,23 @@ bool CompositorServer::Impl::render_surface_to_frame(const InputTarget& target) 
     frame.image.handle = std::move(dup_fd);
     frame.image.handle_type = util::ExternalHandleType::dmabuf;
     frame.frame_number = ++presented_frame_number;
+
+    // Extract explicit sync acquire fence if the client uses syncobj
+    wlr_linux_drm_syncobj_surface_v1_state* syncobj_state =
+        wlr_linux_drm_syncobj_v1_get_surface_state(root_surface);
+    if (syncobj_state && syncobj_state->acquire_timeline) {
+        int sync_file = wlr_drm_syncobj_timeline_export_sync_file(syncobj_state->acquire_timeline,
+                                                                  syncobj_state->acquire_point);
+        if (sync_file >= 0) {
+            frame.sync_fd = util::UniqueFd{sync_file};
+            frame.sync_point = syncobj_state->acquire_point;
+        }
+    }
+
+    // Signal release point so the client knows when the compositor finishes reading
+    if (syncobj_state && syncobj_state->release_timeline) {
+        wlr_linux_drm_syncobj_v1_state_signal_release_with_buffer(syncobj_state, buffer);
+    }
 
     presented_frame = std::move(frame);
     presented_surface = root_surface;

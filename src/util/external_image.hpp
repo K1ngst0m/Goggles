@@ -22,6 +22,8 @@ struct ExternalImage {
 struct ExternalImageFrame {
     ExternalImage image;
     uint64_t frame_number = 0;
+    util::UniqueFd sync_fd;
+    uint64_t sync_point = 0;
 };
 
 } // namespace goggles::util

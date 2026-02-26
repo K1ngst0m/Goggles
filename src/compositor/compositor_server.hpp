@@ -15,7 +15,7 @@ namespace goggles::input {
 enum class InputEventType : std::uint8_t { key, pointer_motion, pointer_button, pointer_axis };
 
 /// @brief Capture path used to source a surface.
-enum class SurfaceCapturePath : std::uint8_t { vulkan, compositor };
+enum class SurfaceCapturePath : std::uint8_t { compositor };
 
 /// @brief Metadata for a connected surface.
 struct SurfaceInfo {

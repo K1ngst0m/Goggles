@@ -158,7 +158,6 @@ environments:
       - conda: packages/imgui
       - conda: packages/slang-shaders
       - conda: packages/stb
-      - conda: packages/sysroot-i686
       - conda: packages/tracy
       - conda: packages/wlroots_0_19
   lint:
@@ -1602,13 +1601,6 @@ packages:
   variants:
     target_platform: linux-64
   license: MIT
-- conda: packages/sysroot-i686
-  name: sysroot-i686
-  version: '2.31'
-  build: hb0f4dca_1
-  subdir: linux-64
-  variants:
-    target_platform: linux-64
 - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
   sha256: c47299fe37aebb0fcf674b3be588e67e4afb86225be4b0d452c7eb75c086b851
   md5: 13dc3adbc692664cd3beabd216434749

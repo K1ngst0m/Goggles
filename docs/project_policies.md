@@ -22,7 +22,7 @@ If rules conflict:
 
 1. This document takes precedence over all other guidance files.
 2. Section text takes precedence over summaries/checklists.
-3. Narrower-scope rules (for example, capture layer) take precedence within that scope.
+3. Narrower-scope rules (for example, compositor) take precedence within that scope.
 
 ### 1.4 Allowed exceptions
 
@@ -43,13 +43,12 @@ Implicit exceptions MUST NOT be used.
 3. Errors MUST be handled or propagated; silent failure MUST NOT occur.
 4. Errors SHOULD be logged once at subsystem boundaries; duplicate cascading logs MUST NOT occur.
 5. App-side Vulkan code MUST use `vk::` (vulkan-hpp), not raw `Vk*` handles.
-6. Capture layer code in `src/capture/vk_layer/` MUST use raw Vulkan C API.
-7. Vulkan `vk::Result` returns MUST be checked explicitly (no `static_cast<void>(...)`).
-8. Application code MUST NOT use raw `new`/`delete`.
-9. Owned file descriptors MUST use `goggles::util::UniqueFd`.
-10. Code comments MUST explain non-obvious why; narration comments MUST NOT be used.
-11. Build/test workflows MUST use Pixi tasks and CMake/CTest presets.
-12. Real-time render-path work MUST use `goggles::util::JobSystem`; direct `std::thread`/`std::jthread` MUST NOT be used for pipeline/render work.
+6. Vulkan `vk::Result` returns MUST be checked explicitly (no `static_cast<void>(...)`).
+7. Application code MUST NOT use raw `new`/`delete`.
+8. Owned file descriptors MUST use `goggles::util::UniqueFd`.
+9. Code comments MUST explain non-obvious why; narration comments MUST NOT be used.
+10. Build/test workflows MUST use Pixi tasks and CMake/CTest presets.
+11. Real-time render-path work MUST use `goggles::util::JobSystem`; direct `std::thread`/`std::jthread` MUST NOT be used for pipeline/render work.
 
 ---
 
@@ -84,7 +83,7 @@ Implicit exceptions MUST NOT be used.
 
 ## 4. Logging Policy
 
-**Applies to:** app, capture layer  
+**Applies to:** app
 **Enforced by:** review, runtime behavior
 
 ### 4.1 Logging backend
@@ -96,22 +95,10 @@ Implicit exceptions MUST NOT be used.
 
 Valid levels are: `trace`, `debug`, `info`, `warn`, `error`, `critical`.
 
-### 4.3 Capture layer constraints
-
-For `src/capture/vk_layer/`:
-
-- Logging MUST be off by default.
-- Logging MUST be enabled explicitly via `GOGGLES_DEBUG_LOG=1`.
-- Level filtering MUST use `GOGGLES_DEBUG_LOG_LEVEL`.
-- Log prefix MUST be `[goggles_vklayer]`.
-- Blocking operations and file I/O in hot paths MUST NOT be used.
-- Logging in `vkQueuePresentKHR` MUST NOT be used.
-- Layer logging MUST use the minimal vk-layer backend (`write(2)` path), not app-global logger.
-
-### 4.4 Initialization
+### 4.3 Initialization
 
 - The app MUST initialize one global logger at startup.
-- App `[logging].*` config applies only to app logger, not vk-layer logger.
+- App `[logging].*` config applies only to the app logger.
 
 ---
 
@@ -157,7 +144,7 @@ For `src/capture/vk_layer/`:
 
 ## 6. Ownership, Lifetime, and Vulkan Policy
 
-**Applies to:** app code, capture layer (exceptions noted)  
+**Applies to:** app code
 **Enforced by:** review, clang-tidy (partial)
 
 ### 6.1 Ownership model
@@ -176,7 +163,6 @@ For `src/capture/vk_layer/`:
 
 - Application code MUST use vulkan-hpp `vk::` APIs.
 - Application code MUST NOT use raw `Vk*` handles directly.
-- Capture layer code in `src/capture/vk_layer/` MUST use raw Vulkan C API.
 
 ### 6.4 Vulkan lifetime model
 
@@ -201,7 +187,7 @@ For `src/capture/vk_layer/`:
 
 ## 7. Threading and Real-Time Policy
 
-**Applies to:** render path, capture layer, background work  
+**Applies to:** render path, background work
 **Enforced by:** review, profiling, architecture checks
 
 ### 7.1 Default model
@@ -222,12 +208,6 @@ Per-frame real-time code paths MUST NOT:
 - Concurrent pipeline/render work MUST use `goggles::util::JobSystem`.
 - Direct `std::thread` or `std::jthread` usage for pipeline/render work MUST NOT be used.
 - External integration code outside real-time path MAY use `std::jthread` with RAII-safe lifecycle.
-
-### 7.4 Capture layer threading
-
-- Capture hooks run on host application threads; implementation MUST assume no thread ownership control.
-- Hooks MUST NOT block, especially present-path hooks.
-- Shared layer state MUST be synchronized correctly.
 
 ---
 
@@ -412,7 +392,7 @@ auto backend = GOGGLES_TRY(VulkanBackend::create(...));
 ## Appendix B: Rationale (Compact)
 
 - Compact normative rules reduce review ambiguity and improve agent behavior.
-- Explicit Vulkan and capture-layer splits prevent incorrect API/lifetime usage.
+- Explicit Vulkan lifetime rules prevent incorrect API/lifetime usage.
 - Strong error handling policy improves diagnosability and operational safety.
 - Minimal comments and naming consistency improve long-term maintainability.
 - Preset-based builds and pinned dependencies improve reproducibility.
