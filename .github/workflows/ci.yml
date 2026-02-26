@@ -11,8 +11,7 @@ permissions:
 
 env:
   PIXI_VERSION: v0.63.2
-  PIXI_ENV: lint
-  CCACHE_MAX_SIZE: 500M
+  CCACHE_MAX_SIZE: 2G
 
 # Cancel in-progress runs when a new run is triggered for the same branch/PR
 concurrency:
@@ -26,32 +25,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Pixi (attempt 1)
-        id: setup_pixi_format_1
-        continue-on-error: true
+      - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           cache: true
           manifest-path: pixi.toml
-          environments: ${{ env.PIXI_ENV }}
-          locked: true
-
-      - name: Setup Pixi (retry)
-        if: steps.setup_pixi_format_1.outcome == 'failure'
-        uses: prefix-dev/setup-pixi@v0.9.3
-        with:
-          pixi-version: ${{ env.PIXI_VERSION }}
-          cache: true
-          manifest-path: pixi.toml
-          environments: ${{ env.PIXI_ENV }}
+          environments: lint
           locked: true
 
       - name: Run clang-format
-        run: git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 pixi run -e ${{ env.PIXI_ENV }} clang-format -i
+        run: git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 pixi run -e lint clang-format -i
 
       - name: Run taplo (TOML format)
-        run: git ls-files -z '*.toml' | grep -zv 'test_data/' | xargs -0 pixi run -e ${{ env.PIXI_ENV }} taplo fmt
+        run: git ls-files -z '*.toml' | grep -zv 'test_data/' | xargs -0 pixi run -e lint taplo fmt
 
       - name: Check for formatting changes
         run: |
@@ -64,38 +51,28 @@ jobs:
           fi
 
   build-and-test:
-    name: Build and Test (test preset)
+    name: Build and Test
     runs-on: ubuntu-latest
-    needs: format-check
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Setup Pixi (attempt 1)
-        id: setup_pixi_build_1
-        continue-on-error: true
+      - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           cache: true
           manifest-path: pixi.toml
-
-      - name: Setup Pixi (retry)
-        if: steps.setup_pixi_build_1.outcome == 'failure'
-        uses: prefix-dev/setup-pixi@v0.9.3
-        with:
-          pixi-version: ${{ env.PIXI_VERSION }}
-          cache: true
-          manifest-path: pixi.toml
+          locked: true
 
       - name: Setup ccache
-        uses: actions/cache@v4
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-pixi-ccache-${{ github.sha }}
+          key: ${{ runner.os }}-ccache-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pixi-ccache-
+            ${{ runner.os }}-ccache-${{ github.ref_name }}-
+            ${{ runner.os }}-ccache-main-
+            ${{ runner.os }}-ccache-
+          max-size: ${{ env.CCACHE_MAX_SIZE }}
 
       - name: Configure ccache
         run: |
@@ -103,49 +80,43 @@ jobs:
           pixi run ccache --set-config=compression=true
           pixi run ccache --zero-stats
 
-      - name: Build (test preset)
-        run: pixi run build -p test
+      - name: Build (ASAN preset)
+        run: pixi run build -p asan
 
-      - name: Run Tests (test preset)
-        run: pixi run test -p test
+      - name: Run Tests
+        run: pixi run test -p asan
 
       - name: Show ccache statistics
         if: always()
         run: pixi run ccache --show-stats
 
   static-analysis:
-    name: Static Analysis (clang-tidy)
+    name: Static Analysis
     runs-on: ubuntu-latest
-    needs: format-check
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Pixi (attempt 1)
-        id: setup_pixi_tidy_1
-        continue-on-error: true
+      - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           cache: true
           manifest-path: pixi.toml
-
-      - name: Setup Pixi (retry)
-        if: steps.setup_pixi_tidy_1.outcome == 'failure'
-        uses: prefix-dev/setup-pixi@v0.9.3
-        with:
-          pixi-version: ${{ env.PIXI_VERSION }}
-          cache: true
-          manifest-path: pixi.toml
+          locked: true
 
       - name: Setup ccache
-        uses: actions/cache@v4
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-pixi-ccache-tidy-${{ github.sha }}
+          key: ${{ runner.os }}-ccache-tidy-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pixi-ccache-tidy-
+            ${{ runner.os }}-ccache-tidy-${{ github.ref_name }}-
+            ${{ runner.os }}-ccache-tidy-main-
+            ${{ runner.os }}-ccache-tidy-
+            ${{ runner.os }}-ccache-main-
+            ${{ runner.os }}-ccache-
+          max-size: ${{ env.CCACHE_MAX_SIZE }}
 
       - name: Configure ccache
         run: |
@@ -153,7 +124,25 @@ jobs:
           pixi run ccache --set-config=compression=true
           pixi run ccache --zero-stats
 
-      - name: Build with clang-tidy (quality preset)
+      # Only run clang-tidy on changed files for PRs, full scan on main
+      - name: Run clang-tidy on changed files (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Get list of changed .cpp/.hpp files
+          changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(cpp|hpp|c|h)$' || true)
+          if [ -n "$changed_files" ]; then
+            echo "Running clang-tidy on changed files:"
+            echo "$changed_files"
+            # Build compile_commands first
+            pixi run cmake --preset quality
+            # Run clang-tidy only on changed files
+            echo "$changed_files" | xargs -I {} pixi run clang-tidy -p build/quality {}
+          else
+            echo "No C++ files changed, skipping clang-tidy"
+          fi
+
+      - name: Build with clang-tidy (full scan on main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: pixi run build -p quality
 
       - name: Show ccache statistics
