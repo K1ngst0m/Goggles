@@ -112,8 +112,16 @@ static auto spawn_target_app(const std::vector<std::string>& command,
     argv.push_back(nullptr);
 
     pid_t pid = -1;
-    const int rc =
-        posix_spawn(&pid, reaper_path.c_str(), nullptr, nullptr, argv.data(), envp.data());
+    // Reset the signal mask in the child so blocked signals in the parent
+    // (e.g. SIGTERM blocked for headless signalfd) don't affect the reaper.
+    posix_spawnattr_t attr{};
+    posix_spawnattr_init(&attr);
+    sigset_t empty_mask{};
+    sigemptyset(&empty_mask);
+    posix_spawnattr_setsigmask(&attr, &empty_mask);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK);
+    const int rc = posix_spawn(&pid, reaper_path.c_str(), nullptr, &attr, argv.data(), envp.data());
+    posix_spawnattr_destroy(&attr);
     if (rc != 0) {
         return goggles::make_error<pid_t>(goggles::ErrorCode::unknown_error,
                                           std::string("posix_spawn() failed: ") +
@@ -359,7 +367,8 @@ static auto log_config_summary(const goggles::Config& config) -> void {
 }
 
 static auto run_headless_mode(goggles::app::Application& app,
-                              const goggles::app::CliOptions& cli_opts) -> int {
+                              const goggles::app::CliOptions& cli_opts,
+                              goggles::util::UniqueFd signal_fd) -> int {
     const auto x11_display = app.x11_display();
     const auto wayland_display = app.wayland_display();
 
@@ -373,17 +382,10 @@ static auto run_headless_mode(goggles::app::Application& app,
     pid_t child_pid = spawn_result.value();
     GOGGLES_LOG_INFO("Launched target app in headless mode (pid={})", child_pid);
 
-    auto signal_fd_result = create_signal_fd();
-    if (!signal_fd_result) {
-        GOGGLES_LOG_CRITICAL("Failed to create signal fd: {}", signal_fd_result.error().message);
-        terminate_child(child_pid);
-        return EXIT_FAILURE;
-    }
-
     auto headless_result = app.run_headless({
         .frames = cli_opts.frames,
         .output = cli_opts.output_path,
-        .signal_fd = signal_fd_result.value().get(),
+        .signal_fd = signal_fd.get(),
         .child_pid = child_pid,
     });
 
@@ -397,6 +399,49 @@ static auto run_headless_mode(goggles::app::Application& app,
 
     GOGGLES_LOG_INFO("Headless run completed successfully");
     return EXIT_SUCCESS;
+}
+
+static auto run_windowed_mode(goggles::app::Application& app,
+                              const goggles::app::CliOptions& cli_opts) -> int {
+    const auto x11_display = app.x11_display();
+    const auto wayland_display = app.wayland_display();
+
+    auto spawn_result = spawn_target_app(cli_opts.app_command, x11_display, wayland_display,
+                                         cli_opts.app_width, cli_opts.app_height, app.gpu_uuid());
+    if (!spawn_result) {
+        GOGGLES_LOG_CRITICAL("Failed to launch target app: {} ({})", spawn_result.error().message,
+                             goggles::error_code_name(spawn_result.error().code));
+        return EXIT_FAILURE;
+    }
+    const pid_t child_pid = spawn_result.value();
+    GOGGLES_LOG_INFO("Launched target app (pid={})", child_pid);
+
+    int child_status = 0;
+    bool child_exited = false;
+
+    while (app.is_running()) {
+        app.process_event();
+        app.tick_frame();
+
+        if (!child_exited) {
+            const pid_t result = waitpid(child_pid, &child_status, WNOHANG);
+            if (result == child_pid) {
+                child_exited = true;
+                push_quit_event();
+            }
+        }
+    }
+
+    if (!child_exited) {
+        GOGGLES_LOG_INFO("Viewer exited; terminating target app (pid={})", child_pid);
+        terminate_child(child_pid);
+        return EXIT_FAILURE;
+    }
+
+    if (WIFEXITED(child_status)) {
+        return WEXITSTATUS(child_status);
+    }
+    return EXIT_FAILURE;
 }
 
 static auto run_app(int argc, char** argv) -> int {
@@ -481,6 +526,21 @@ static auto run_app(int argc, char** argv) -> int {
     apply_log_file(config, loaded_config.source_path);
     log_config_summary(config);
 
+    // Block SIGTERM/SIGINT before spawning any threads so that all threads
+    // inherit the blocked mask. This ensures signals are only delivered via
+    // the signalfd in the headless render loop, not as raw signals to
+    // background compositor/render threads.
+    goggles::util::UniqueFd headless_signal_fd{};
+    if (cli_opts.headless) {
+        auto signal_fd_result = create_signal_fd();
+        if (!signal_fd_result) {
+            GOGGLES_LOG_CRITICAL("Failed to create signal fd: {}",
+                                 signal_fd_result.error().message);
+            return EXIT_FAILURE;
+        }
+        headless_signal_fd = std::move(signal_fd_result.value());
+    }
+
     auto app_result = cli_opts.headless
                           ? goggles::app::Application::create_headless(config, app_dirs)
                           : goggles::app::Application::create(config, app_dirs);
@@ -490,61 +550,13 @@ static auto run_app(int argc, char** argv) -> int {
         return EXIT_FAILURE;
     }
 
-    {
-        auto app = std::move(app_result.value());
+    auto app = std::move(app_result.value());
 
-        pid_t child_pid = -1;
-        int child_status = 0;
-        bool child_exited = false;
-
-        if (cli_opts.headless) {
-            return run_headless_mode(*app, cli_opts);
-        }
-
-        const auto x11_display = app->x11_display();
-        const auto wayland_display = app->wayland_display();
-
-        auto spawn_result =
-            spawn_target_app(cli_opts.app_command, x11_display, wayland_display, cli_opts.app_width,
-                             cli_opts.app_height, app->gpu_uuid());
-        if (!spawn_result) {
-            GOGGLES_LOG_CRITICAL("Failed to launch target app: {} ({})",
-                                 spawn_result.error().message,
-                                 goggles::error_code_name(spawn_result.error().code));
-            return EXIT_FAILURE;
-        }
-        child_pid = spawn_result.value();
-        GOGGLES_LOG_INFO("Launched target app (pid={})", child_pid);
-
-        while (app->is_running()) {
-            app->process_event();
-            app->tick_frame();
-
-            if (child_pid > 0 && !child_exited) {
-                pid_t result = waitpid(child_pid, &child_status, WNOHANG);
-                if (result == child_pid) {
-                    child_exited = true;
-                    push_quit_event();
-                }
-            }
-        }
-
-        if (child_pid > 0 && !child_exited) {
-            GOGGLES_LOG_INFO("Viewer exited; terminating target app (pid={})", child_pid);
-            terminate_child(child_pid);
-            return EXIT_FAILURE;
-        }
-
-        if (child_pid > 0 && child_exited) {
-            if (WIFEXITED(child_status)) {
-                return WEXITSTATUS(child_status);
-            }
-            return EXIT_FAILURE;
-        }
-        GOGGLES_LOG_INFO("Shutting down...");
+    if (cli_opts.headless) {
+        return run_headless_mode(*app, cli_opts, std::move(headless_signal_fd));
     }
-    GOGGLES_LOG_INFO("Goggles terminated successfully");
-    return EXIT_SUCCESS;
+
+    return run_windowed_mode(*app, cli_opts);
 }
 
 auto main(int argc, char** argv) -> int {

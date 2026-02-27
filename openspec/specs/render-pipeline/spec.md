@@ -1377,41 +1377,87 @@ The Pre-Chain stage UI SHALL expose controls for the viewer scale mode.
 
 ### Requirement: Per-Surface Filter Chain Routing
 The render pipeline SHALL honor a per-surface filter-chain enable flag and a session-wide global
-enable flag when deciding whether to execute the filter chain for a frame.
+enable flag when deciding whether to execute prechain and effect processing for a frame.
 
 The effect stage SHALL also respect `Shader Controls -> Effect Stage (RetroArch) -> Enable Shader`.
 
-When the global flag is disabled, the pipeline SHALL bypass the filter chain for all surfaces and
-render captured surfaces using a compositor-style maximize resize so the client re-renders at the
-window size (no stretch-blit).
-
-When the global flag is enabled but the per-surface flag is disabled, the pipeline SHALL bypass the
-filter chain for that surface and render it using a compositor-style maximize resize so the client
+When the global flag is disabled, the pipeline SHALL bypass prechain and effect stages for all
+surfaces and render captured surfaces using a compositor-style maximize resize so the client
 re-renders at the window size (no stretch-blit).
 
-The per-surface mode SHALL apply to the entire xdg_toplevel surface, including all popups and subsurfaces belonging to that toplevel.
+When the global flag is enabled but the per-surface flag is disabled, the pipeline SHALL bypass
+prechain and effect stages for that surface and render it using a compositor-style maximize resize
+so the client re-renders at the window size (no stretch-blit).
+
+The postchain output blit SHALL remain active for presentation in all modes, including global
+bypass mode.
+
+The per-surface mode SHALL apply to the entire xdg_toplevel surface, including all popups and
+subsurfaces belonging to that toplevel.
+
+The runtime SHALL resolve the effective stage policy once per frame and apply it atomically so
+prechain/effect stage state cannot diverge during toggle transitions.
+
+The runtime SHALL preserve the active policy across filter-chain recreation and async chain swap so
+new chain instances start with the same effective stage policy before rendering their first frame.
+
+The runtime SHALL avoid startup-order-dependent behavior between source capture arrival, compositor
+resize requests, and prechain target initialization.
+
+In direct Vulkan capture sessions, the default prechain target initialization SHALL use viewer
+swapchain extent unless the user/config explicitly sets a prechain resolution.
+
+Compositor maximize/restore requests tied to filter policy SHALL be emitted on effective policy
+transitions (or surface topology changes), not as unconditional periodic requests.
 
 #### Scenario: Default uses filter chain
 - **GIVEN** a surface has no explicit override
 - **WHEN** a frame is rendered for that surface
-- **THEN** the filter chain SHALL be executed for that frame
+- **THEN** prechain and effect stages SHALL execute for that frame
 
 #### Scenario: Bypass filter chain for a surface
 - **GIVEN** a surface has filter-chain disabled
 - **WHEN** a frame is rendered for that surface
-- **THEN** the filter chain SHALL be bypassed
+- **THEN** prechain and effect stages SHALL be bypassed
 - **AND** the surface SHALL be rendered via a maximize-style resize without stretch-blit
+- **AND** the postchain output blit SHALL still present the frame
 
 #### Scenario: Global bypass overrides per-surface
 - **GIVEN** the global filter-chain flag is disabled
 - **WHEN** a frame is rendered for any surface
-- **THEN** the filter chain SHALL be bypassed
+- **THEN** prechain and effect stages SHALL be bypassed
 - **AND** the surface SHALL be rendered via a maximize-style resize without stretch-blit
+- **AND** the postchain output blit SHALL still present the frame
+
+#### Scenario: Effect stage toggle only affects effect stage
+- **GIVEN** global and per-surface filter-chain flags are enabled
+- **AND** `Enable Shader` is disabled
+- **WHEN** a frame is rendered
+- **THEN** prechain SHALL execute
+- **AND** effect stage SHALL be bypassed
+- **AND** postchain output blit SHALL present the frame
 
 #### Scenario: Popup inherits parent mode
 - **GIVEN** an xdg_toplevel surface has filter-chain disabled
 - **WHEN** a popup or subsurface belonging to that toplevel is rendered
-- **THEN** the popup SHALL be rendered with filter-chain bypass and maximize-style resize without stretch-blit
+- **THEN** the popup SHALL be rendered with prechain/effect bypass and maximize-style resize without stretch-blit
+
+#### Scenario: Async chain swap keeps active policy
+- **GIVEN** the runtime has an active effective stage policy
+- **WHEN** an async shader reload completes and swaps in a new chain instance
+- **THEN** the new chain SHALL use the active effective stage policy on its first rendered frame
+- **AND** no frame SHALL be rendered with default stage policy values
+
+#### Scenario: Direct Vulkan startup is deterministic
+- **GIVEN** the session uses direct Vulkan capture
+- **WHEN** the application starts and filter chain is enabled
+- **THEN** prechain default target initialization SHALL use viewer swapchain extent
+- **AND** startup SHALL not depend on first-arrival source-frame extent
+
+#### Scenario: Resize requests do not oscillate during startup
+- **GIVEN** startup state is settling and surfaces are enumerating
+- **WHEN** effective filter policy for a surface has not changed
+- **THEN** the runtime SHALL NOT repeatedly emit contradictory maximize/restore resize requests
 
 ### Requirement: Pass Initialization Interface
 
@@ -1437,4 +1483,58 @@ All render pass classes SHALL use a consistent initialization pattern with typed
 - **WHEN** `FilterPass::init()` is called with `VulkanContext`, `ShaderRuntime`, and config
 - **THEN** the pass SHALL compile shaders and create pipeline from the config
 - **AND** the signature SHALL be `init(const VulkanContext&, ShaderRuntime&, const FilterPassConfig&)`
+
+### Requirement: Surfaceless VulkanBackend Factory
+`VulkanBackend` SHALL provide a `create_headless(RenderSettings) -> ResultPtr<VulkanBackend>` static factory that creates a Vulkan instance, selects a physical device, and creates a logical device and queue without requiring a `vk::SurfaceKHR`. This factory SHALL NOT create a swapchain, present semaphores, or frame-pacing resources.
+
+#### Scenario: Headless factory succeeds without display
+- **GIVEN** a GPU supporting DMA-BUF import and external memory extensions is available
+- **WHEN** `VulkanBackend::create_headless(settings)` is called
+- **THEN** it SHALL return a valid `VulkanBackend` instance
+- **AND** the instance SHALL hold no `vk::SurfaceKHR` or swapchain
+
+#### Scenario: Device selection without present support
+- **GIVEN** headless mode is active
+- **WHEN** a physical device is selected
+- **THEN** the device SHALL be required to support `VK_EXT_external_memory_dma_buf`, `VK_EXT_image_drm_format_modifier`, and `VK_KHR_external_semaphore_fd`
+- **AND** surface present support SHALL NOT be a selection criterion
+
+### Requirement: Offscreen Render Target Allocation
+When operating in headless mode, `VulkanBackend` SHALL allocate a single `vk::Image` with format `eR8G8B8A8Unorm`, tiling `eOptimal`, and usage `eColorAttachment | eTransferSrc` as the render target. This image SHALL be used as the target passed to `FilterChain::record()` in place of a swapchain image view.
+
+#### Scenario: Offscreen image created at initialization
+- **GIVEN** `VulkanBackend::create_headless()` completes
+- **WHEN** the first render call is made
+- **THEN** the offscreen image SHALL exist in device-local memory
+- **AND** its format SHALL be `eR8G8B8A8Unorm`
+- **AND** its dimensions SHALL match the configured compositor output resolution
+
+#### Scenario: Filter chain writes to offscreen image
+- **GIVEN** headless mode is active and a compositor frame has been imported
+- **WHEN** `render()` is called
+- **THEN** `FilterChain::record()` SHALL receive the offscreen image view as its render target
+- **AND** no swapchain image view SHALL be passed
+
+### Requirement: Headless Frame Submission Without Present
+In headless mode, frame submission SHALL queue render commands and wait on a fence for GPU completion. `vkQueuePresentKHR` SHALL NOT be called. Frame pacing via `throttle_present` or `vkWaitForPresentKHR` SHALL NOT be applied.
+
+#### Scenario: Fence-based synchronization replaces present
+- **GIVEN** headless mode is active
+- **WHEN** a frame's render commands are submitted
+- **THEN** `vkWaitForFences` SHALL be called to synchronize before the next frame
+- **AND** `vkQueuePresentKHR` SHALL NOT be called
+
+### Requirement: Offscreen Image Readback to PNG
+`VulkanBackend` SHALL expose `readback_to_png(std::filesystem::path) -> tl::expected<void, Error>` that copies the offscreen image to a host-visible staging buffer and writes a PNG via `stb_image_write_png`. The image SHALL be transitioned to `eTransferSrcOptimal` before copy and back to `eColorAttachmentOptimal` after.
+
+#### Scenario: Successful readback and PNG write
+- **GIVEN** headless mode has completed N render frames
+- **WHEN** `readback_to_png("/tmp/out.png")` is called
+- **THEN** a valid PNG file SHALL be written to `/tmp/out.png`
+- **AND** the image dimensions SHALL match the offscreen image extent
+
+#### Scenario: Staging buffer invalidated before CPU read
+- **GIVEN** the staging buffer memory type is not `eHostCoherent`
+- **WHEN** the GPU-to-buffer copy completes
+- **THEN** `vkInvalidateMappedMemoryRanges` SHALL be called before the CPU reads the buffer
 

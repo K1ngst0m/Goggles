@@ -351,6 +351,7 @@ auto Application::run_headless(const HeadlessRunContext& ctx) -> Result<void> {
         }
 
         m_surface_frame = std::move(*surface_frame);
+        last_frame_number = m_surface_frame->frame_number;
 
         if (!m_surface_frame->image.handle) {
             continue;
@@ -361,8 +362,6 @@ auto Application::run_headless(const HeadlessRunContext& ctx) -> Result<void> {
         if (m_surface_frame->image.modifier == util::DRM_FORMAT_MOD_INVALID) {
             continue;
         }
-
-        last_frame_number = m_surface_frame->frame_number;
 
         auto render_result = m_vulkan_backend->render(&m_surface_frame.value(), nullptr);
         if (!render_result) {

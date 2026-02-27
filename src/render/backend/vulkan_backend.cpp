@@ -1943,15 +1943,13 @@ auto VulkanBackend::submit_headless(vk::CommandBuffer cmd, const util::ExternalI
             vk::SemaphoreCreateInfo sem_ci{};
             auto [sem_res, sem] = m_device.createSemaphore(sem_ci);
             if (sem_res == vk::Result::eSuccess) {
-                VkImportSemaphoreFdInfoKHR import_info{};
-                import_info.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
+                vk::ImportSemaphoreFdInfoKHR import_info;
                 import_info.semaphore = sem;
-                import_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+                import_info.handleType = vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd;
                 import_info.fd = sync_dup.get();
-                import_info.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT;
+                import_info.flags = vk::SemaphoreImportFlagBits::eTemporary;
 
-                auto import_res = static_cast<vk::Result>(
-                    VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(m_device, &import_info));
+                auto import_res = m_device.importSemaphoreFdKHR(import_info);
                 if (import_res == vk::Result::eSuccess) {
                     sync_dup.release();
                     acquire_sync_sem = sem;

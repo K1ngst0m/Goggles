@@ -223,3 +223,33 @@ add_test(NAME goggles_test_headless_child_exit
 
 set_property(TEST goggles_test_headless_child_exit
     PROPERTY WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# Integration test: headless mode end-to-end (disabled in CI — requires display server + GPU)
+add_test(NAME goggles_headless_integration
+         COMMAND $<TARGET_FILE:goggles>
+             --headless --frames 3 --output /tmp/goggles_headless_test.png
+             -- /home/kingstom/workspaces/vksdk/1.4.328.1/x86_64/bin/vkcube)
+
+set_property(TEST goggles_headless_integration
+    PROPERTY WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+set_property(TEST goggles_headless_integration
+    PROPERTY TIMEOUT 60)
+
+set_property(TEST goggles_headless_integration
+    PROPERTY ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+# Verify the output PNG was written (depends on the run test passing first)
+add_test(NAME goggles_headless_integration_png_exists
+         COMMAND ${CMAKE_COMMAND} -E md5sum /tmp/goggles_headless_test.png)
+
+set_property(TEST goggles_headless_integration_png_exists
+    PROPERTY DEPENDS goggles_headless_integration)
+
+set_property(TEST goggles_headless_integration_png_exists
+    PROPERTY TIMEOUT 10)
+
+if(DEFINED ENV{CI} OR DEFINED ENV{GITHUB_ACTIONS})
+    set_property(TEST goggles_headless_integration PROPERTY DISABLED TRUE)
+    set_property(TEST goggles_headless_integration_png_exists PROPERTY DISABLED TRUE)
+endif()
