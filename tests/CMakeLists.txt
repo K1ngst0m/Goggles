@@ -210,3 +210,16 @@ add_test(NAME goggles_test_child_death_signal
 
 set_property(TEST goggles_test_child_death_signal
     PROPERTY WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# Integration test: validates waitid(WNOWAIT) child-exit detection for headless mode
+add_executable(goggles_test_headless_child_exit
+    app/test_headless_child_exit.cpp
+)
+
+goggles_enable_sanitizers(goggles_test_headless_child_exit)
+
+add_test(NAME goggles_test_headless_child_exit
+         COMMAND goggles_test_headless_child_exit)
+
+set_property(TEST goggles_test_headless_child_exit
+    PROPERTY WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

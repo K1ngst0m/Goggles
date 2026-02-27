@@ -3,6 +3,7 @@
 add_library(goggles_render_backend_obj OBJECT
     vulkan_backend.cpp
     vulkan_debug.cpp
+    stb_image_write_impl.cpp
 )
 
 target_include_directories(goggles_render_backend_obj PUBLIC

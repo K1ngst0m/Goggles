@@ -2,15 +2,21 @@
 
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <chrono>
 #include <compositor/compositor_server.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <poll.h>
 #include <ranges>
 #include <render/backend/vulkan_backend.hpp>
 #include <render/chain/filter_chain.hpp>
 #include <string>
 #include <string_view>
+#include <sys/signalfd.h>
+#include <sys/wait.h>
+#include <thread>
 #include <ui/imgui_layer.hpp>
+#include <unistd.h>
 #include <unordered_set>
 #include <util/config.hpp>
 #include <util/drm_fourcc.hpp>
@@ -207,6 +213,19 @@ auto Application::init_compositor_server(const util::AppDirs& app_dirs) -> Resul
     return Result<void>{};
 }
 
+auto Application::init_compositor_server_headless(const util::AppDirs& app_dirs) -> Result<void> {
+    GOGGLES_LOG_INFO("Initializing compositor server (headless)...");
+    auto cursor_env_result = configure_cursor_theme_env(app_dirs);
+    if (!cursor_env_result) {
+        GOGGLES_LOG_WARN("Cursor theme setup failed: {}", cursor_env_result.error().message);
+    }
+    m_compositor_server = GOGGLES_MUST(input::CompositorServer::create());
+    GOGGLES_LOG_INFO("Compositor server (headless): DISPLAY={} WAYLAND_DISPLAY={}",
+                     m_compositor_server->x11_display(), m_compositor_server->wayland_display());
+    // No imgui callbacks in headless mode.
+    return Result<void>{};
+}
+
 auto Application::create(const Config& config, const util::AppDirs& app_dirs)
     -> ResultPtr<Application> {
     auto app = std::unique_ptr<Application>(new Application());
@@ -216,6 +235,30 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs)
     GOGGLES_MUST(app->init_imgui_layer(app_dirs));
     GOGGLES_MUST(app->init_shader_system(config, app_dirs));
     GOGGLES_MUST(app->init_compositor_server(app_dirs));
+
+    return make_result_ptr(std::move(app));
+}
+
+auto Application::create_headless(const Config& config, const util::AppDirs& app_dirs)
+    -> ResultPtr<Application> {
+    auto app = std::unique_ptr<Application>(new Application());
+
+    render::RenderSettings render_settings{
+        .scale_mode = config.render.scale_mode,
+        .integer_scale = config.render.integer_scale,
+        .target_fps = config.render.target_fps,
+        .gpu_selector = config.render.gpu_selector,
+        .source_width = config.render.source_width,
+        .source_height = config.render.source_height,
+    };
+
+    app->m_vulkan_backend = GOGGLES_MUST(render::VulkanBackend::create_headless(
+        config.render.enable_validation, util::resource_path(app_dirs, "shaders"),
+        util::cache_path(app_dirs, "shaders"), render_settings));
+
+    app->m_vulkan_backend->load_shader_preset(config.shader.preset);
+
+    GOGGLES_MUST(app->init_compositor_server_headless(app_dirs));
 
     return make_result_ptr(std::move(app));
 }
@@ -250,6 +293,91 @@ void Application::run() {
         process_event();
         tick_frame();
     }
+}
+
+auto Application::run_headless(const HeadlessRunContext& ctx) -> Result<void> {
+    GOGGLES_LOG_INFO("Headless mode: capturing {} frames, output: {}", ctx.frames,
+                     ctx.output.string());
+
+    if (!m_vulkan_backend) {
+        return make_error<void>(ErrorCode::unknown_error, "Vulkan backend not initialized");
+    }
+
+    if (ctx.frames == 0) {
+        return make_error<void>(ErrorCode::invalid_config, "frames must be greater than 0");
+    }
+
+    uint32_t delivered_frames = 0;
+    uint64_t last_frame_number = 0;
+
+    while (delivered_frames < ctx.frames) {
+        struct pollfd pfd{};
+        pfd.fd = ctx.signal_fd;
+        pfd.events = POLLIN;
+        const int poll_result = poll(&pfd, 1, 0);
+        if (poll_result > 0) {
+            struct signalfd_siginfo siginfo{};
+            const auto bytes = read(ctx.signal_fd, &siginfo, sizeof(siginfo));
+            if (bytes == sizeof(siginfo)) {
+                GOGGLES_LOG_INFO("Signal {} received, shutting down headless mode",
+                                 siginfo.ssi_signo);
+                return make_error<void>(ErrorCode::unknown_error, "Interrupted by signal");
+            }
+        }
+
+        // Peek at child status without reaping — terminate_child() in main.cpp
+        // handles the actual reap, so consuming the zombie here would leave it
+        // sending SIGTERM to a potentially-recycled PID.
+        if (ctx.child_pid > 0) {
+            siginfo_t info{};
+            int ret =
+                waitid(P_PID, static_cast<id_t>(ctx.child_pid), &info, WEXITED | WNOHANG | WNOWAIT);
+            if (ret == 0 && info.si_pid != 0) {
+                GOGGLES_LOG_ERROR(
+                    "Target app exited before delivering all frames ({}/{} delivered)",
+                    delivered_frames, ctx.frames);
+                return make_error<void>(ErrorCode::unknown_error, "Target app exited prematurely");
+            }
+        }
+
+        if (!m_compositor_server) {
+            return make_error<void>(ErrorCode::unknown_error, "Compositor server not initialized");
+        }
+
+        auto surface_frame = m_compositor_server->get_presented_frame(last_frame_number);
+        if (!surface_frame) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
+
+        m_surface_frame = std::move(*surface_frame);
+
+        if (!m_surface_frame->image.handle) {
+            continue;
+        }
+        if (m_surface_frame->image.format == vk::Format::eUndefined) {
+            continue;
+        }
+        if (m_surface_frame->image.modifier == util::DRM_FORMAT_MOD_INVALID) {
+            continue;
+        }
+
+        last_frame_number = m_surface_frame->frame_number;
+
+        auto render_result = m_vulkan_backend->render(&m_surface_frame.value(), nullptr);
+        if (!render_result) {
+            GOGGLES_LOG_ERROR("Headless render failed: {}", render_result.error().message);
+            continue;
+        }
+
+        ++delivered_frames;
+        GOGGLES_LOG_DEBUG("Headless frame {}/{} delivered", delivered_frames, ctx.frames);
+    }
+
+    GOGGLES_LOG_INFO("Capturing final frame to PNG...");
+    GOGGLES_TRY(m_vulkan_backend->readback_to_png(ctx.output));
+
+    return Result<void>{};
 }
 
 void Application::process_event() {

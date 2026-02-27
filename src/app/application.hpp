@@ -2,9 +2,11 @@
 
 #include <compositor/compositor_server.hpp>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <sys/types.h>
 #include <unordered_map>
 #include <util/config.hpp>
 #include <util/error.hpp>
@@ -32,6 +34,9 @@ class Application {
 public:
     [[nodiscard]] static auto create(const Config& config, const util::AppDirs& app_dirs)
         -> ResultPtr<Application>;
+    /// @brief Creates a headless Application without SDL window or ImGui.
+    [[nodiscard]] static auto create_headless(const Config& config, const util::AppDirs& app_dirs)
+        -> ResultPtr<Application>;
 
     ~Application();
 
@@ -43,6 +48,14 @@ public:
     void shutdown();
 
     void run();
+    struct HeadlessRunContext {
+        uint32_t frames;
+        std::filesystem::path output;
+        int signal_fd;
+        pid_t child_pid;
+    };
+    /// @brief Runs the headless frame capture loop.
+    [[nodiscard]] auto run_headless(const HeadlessRunContext& ctx) -> Result<void>;
     void process_event();
     void tick_frame();
 
@@ -63,6 +76,8 @@ private:
     [[nodiscard]] auto init_shader_system(const Config& config, const util::AppDirs& app_dirs)
         -> Result<void>;
     [[nodiscard]] auto init_compositor_server(const util::AppDirs& app_dirs) -> Result<void>;
+    [[nodiscard]] auto init_compositor_server_headless(const util::AppDirs& app_dirs)
+        -> Result<void>;
     void handle_swapchain_changes();
     void update_frame_sources();
     void sync_ui_state();

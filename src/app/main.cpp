@@ -12,9 +12,11 @@
 #include <exception>
 #include <filesystem>
 #include <optional>
+#include <poll.h>
 #include <spawn.h>
 #include <string>
 #include <string_view>
+#include <sys/signalfd.h>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -23,6 +25,7 @@
 #include <util/logging.hpp>
 #include <util/paths.hpp>
 #include <util/profiling.hpp>
+#include <util/unique_fd.hpp>
 #include <vector>
 
 static auto get_exe_dir() -> std::filesystem::path {
@@ -335,6 +338,67 @@ static auto log_config_summary(const goggles::Config& config) -> void {
     GOGGLES_LOG_DEBUG("  Log level: {}", config.logging.level);
 }
 
+[[nodiscard]] static auto create_signal_fd() -> goggles::Result<goggles::util::UniqueFd> {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGTERM);
+    sigaddset(&mask, SIGINT);
+    if (sigprocmask(SIG_BLOCK, &mask, nullptr) < 0) {
+        return goggles::make_error<goggles::util::UniqueFd>(goggles::ErrorCode::unknown_error,
+                                                            std::string("sigprocmask failed: ") +
+                                                                std::strerror(errno));
+    }
+
+    const int fd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
+    if (fd < 0) {
+        return goggles::make_error<goggles::util::UniqueFd>(goggles::ErrorCode::unknown_error,
+                                                            std::string("signalfd failed: ") +
+                                                                std::strerror(errno));
+    }
+    return goggles::util::UniqueFd{fd};
+}
+
+static auto run_headless_mode(goggles::app::Application& app,
+                              const goggles::app::CliOptions& cli_opts) -> int {
+    const auto x11_display = app.x11_display();
+    const auto wayland_display = app.wayland_display();
+
+    auto spawn_result = spawn_target_app(cli_opts.app_command, x11_display, wayland_display,
+                                         cli_opts.app_width, cli_opts.app_height, app.gpu_uuid());
+    if (!spawn_result) {
+        GOGGLES_LOG_CRITICAL("Failed to launch target app: {} ({})", spawn_result.error().message,
+                             goggles::error_code_name(spawn_result.error().code));
+        return EXIT_FAILURE;
+    }
+    pid_t child_pid = spawn_result.value();
+    GOGGLES_LOG_INFO("Launched target app in headless mode (pid={})", child_pid);
+
+    auto signal_fd_result = create_signal_fd();
+    if (!signal_fd_result) {
+        GOGGLES_LOG_CRITICAL("Failed to create signal fd: {}", signal_fd_result.error().message);
+        terminate_child(child_pid);
+        return EXIT_FAILURE;
+    }
+
+    auto headless_result = app.run_headless({
+        .frames = cli_opts.frames,
+        .output = cli_opts.output_path,
+        .signal_fd = signal_fd_result.value().get(),
+        .child_pid = child_pid,
+    });
+
+    terminate_child(child_pid);
+
+    if (!headless_result) {
+        GOGGLES_LOG_ERROR("Headless run failed: {} ({})", headless_result.error().message,
+                          goggles::error_code_name(headless_result.error().code));
+        return EXIT_FAILURE;
+    }
+
+    GOGGLES_LOG_INFO("Headless run completed successfully");
+    return EXIT_SUCCESS;
+}
+
 static auto run_app(int argc, char** argv) -> int {
     GOGGLES_PROFILE_FUNCTION();
     auto cli_result = goggles::app::parse_cli(argc, argv);
@@ -417,7 +481,9 @@ static auto run_app(int argc, char** argv) -> int {
     apply_log_file(config, loaded_config.source_path);
     log_config_summary(config);
 
-    auto app_result = goggles::app::Application::create(config, app_dirs);
+    auto app_result = cli_opts.headless
+                          ? goggles::app::Application::create_headless(config, app_dirs)
+                          : goggles::app::Application::create(config, app_dirs);
     if (!app_result) {
         GOGGLES_LOG_CRITICAL("Failed to initialize app: {} ({})", app_result.error().message,
                              goggles::error_code_name(app_result.error().code));
@@ -430,6 +496,10 @@ static auto run_app(int argc, char** argv) -> int {
         pid_t child_pid = -1;
         int child_status = 0;
         bool child_exited = false;
+
+        if (cli_opts.headless) {
+            return run_headless_mode(*app, cli_opts);
+        }
 
         if (!cli_opts.detach) {
             const auto x11_display = app->x11_display();

@@ -10,6 +10,7 @@
 #include <cstring>
 #include <format>
 #include <render/chain/pass.hpp>
+#include <stb_image_write.h>
 #include <thread>
 #include <util/job_system.hpp>
 #include <util/logging.hpp>
@@ -67,6 +68,12 @@ struct PhysicalDeviceCandidate {
     uint32_t index;
     bool present_wait_supported;
     int score;
+};
+
+struct ReadbackStagingBuffer {
+    vk::Buffer buffer;
+    vk::DeviceMemory memory;
+    bool is_coherent = false;
 };
 
 auto to_ascii_lower(std::string value) -> std::string {
@@ -236,6 +243,165 @@ static auto create_imported_image_view(vk::Device device, vk::Image image, vk::F
     return view;
 }
 
+static auto create_readback_staging_buffer(vk::Device device, vk::PhysicalDevice physical_device,
+                                           vk::DeviceSize size) -> Result<ReadbackStagingBuffer> {
+    vk::BufferCreateInfo buf_info{};
+    buf_info.size = size;
+    buf_info.usage = vk::BufferUsageFlagBits::eTransferDst;
+    buf_info.sharingMode = vk::SharingMode::eExclusive;
+
+    auto [buf_result, buffer] = device.createBuffer(buf_info);
+    if (buf_result != vk::Result::eSuccess) {
+        return make_error<ReadbackStagingBuffer>(ErrorCode::vulkan_init_failed,
+                                                 "Failed to create staging buffer: " +
+                                                     vk::to_string(buf_result));
+    }
+
+    auto buf_mem_reqs = device.getBufferMemoryRequirements(buffer);
+    auto mem_props = physical_device.getMemoryProperties();
+    uint32_t staging_mem_type = UINT32_MAX;
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+        if ((buf_mem_reqs.memoryTypeBits & (1U << i)) &&
+            (mem_props.memoryTypes[i].propertyFlags &
+             (vk::MemoryPropertyFlagBits::eHostVisible |
+              vk::MemoryPropertyFlagBits::eHostCoherent)) ==
+                (vk::MemoryPropertyFlagBits::eHostVisible |
+                 vk::MemoryPropertyFlagBits::eHostCoherent)) {
+            staging_mem_type = i;
+            break;
+        }
+    }
+    if (staging_mem_type == UINT32_MAX) {
+        for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+            if ((buf_mem_reqs.memoryTypeBits & (1U << i)) &&
+                (mem_props.memoryTypes[i].propertyFlags &
+                 vk::MemoryPropertyFlagBits::eHostVisible)) {
+                staging_mem_type = i;
+                break;
+            }
+        }
+    }
+    if (staging_mem_type == UINT32_MAX) {
+        device.destroyBuffer(buffer);
+        return make_error<ReadbackStagingBuffer>(ErrorCode::vulkan_init_failed,
+                                                 "No host-visible memory type for staging buffer");
+    }
+
+    vk::MemoryAllocateInfo staging_alloc{};
+    staging_alloc.allocationSize = buf_mem_reqs.size;
+    staging_alloc.memoryTypeIndex = staging_mem_type;
+    auto [alloc_result, memory] = device.allocateMemory(staging_alloc);
+    if (alloc_result != vk::Result::eSuccess) {
+        device.destroyBuffer(buffer);
+        return make_error<ReadbackStagingBuffer>(ErrorCode::vulkan_init_failed,
+                                                 "Failed to allocate staging memory: " +
+                                                     vk::to_string(alloc_result));
+    }
+
+    auto bind_res = device.bindBufferMemory(buffer, memory, 0);
+    if (bind_res != vk::Result::eSuccess) {
+        device.freeMemory(memory);
+        device.destroyBuffer(buffer);
+        return make_error<ReadbackStagingBuffer>(ErrorCode::vulkan_init_failed,
+                                                 "Failed to bind staging buffer memory: " +
+                                                     vk::to_string(bind_res));
+    }
+
+    ReadbackStagingBuffer staging{};
+    staging.buffer = buffer;
+    staging.memory = memory;
+    staging.is_coherent = (mem_props.memoryTypes[staging_mem_type].propertyFlags &
+                           vk::MemoryPropertyFlagBits::eHostCoherent) != vk::MemoryPropertyFlags{};
+    return staging;
+}
+
+static void destroy_readback_staging_buffer(vk::Device device, ReadbackStagingBuffer& staging) {
+    if (staging.memory) {
+        device.freeMemory(staging.memory);
+        staging.memory = nullptr;
+    }
+    if (staging.buffer) {
+        device.destroyBuffer(staging.buffer);
+        staging.buffer = nullptr;
+    }
+}
+
+static auto submit_readback_copy(vk::Device device, vk::Queue queue, vk::CommandBuffer cmd,
+                                 vk::Fence fence, vk::Image source, vk::Buffer dest, uint32_t width,
+                                 uint32_t height) -> Result<void> {
+    auto reset_fence_result = device.resetFences(fence);
+    if (reset_fence_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_device_lost,
+                                "Fence reset failed: " + vk::to_string(reset_fence_result));
+    }
+
+    VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
+
+    vk::CommandBufferBeginInfo begin_info{};
+    begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    VK_TRY(cmd.begin(begin_info), ErrorCode::vulkan_device_lost, "Command buffer begin failed");
+
+    vk::ImageMemoryBarrier to_transfer{};
+    to_transfer.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    to_transfer.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+    to_transfer.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    to_transfer.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+    to_transfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_transfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_transfer.image = source;
+    to_transfer.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    to_transfer.subresourceRange.levelCount = 1;
+    to_transfer.subresourceRange.layerCount = 1;
+
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                        vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, to_transfer);
+
+    vk::BufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = vk::Offset3D{0, 0, 0};
+    region.imageExtent = vk::Extent3D{width, height, 1};
+    cmd.copyImageToBuffer(source, vk::ImageLayout::eTransferSrcOptimal, dest, region);
+
+    vk::ImageMemoryBarrier to_attachment{};
+    to_attachment.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+    to_attachment.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    to_attachment.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+    to_attachment.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    to_attachment.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_attachment.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_attachment.image = source;
+    to_attachment.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    to_attachment.subresourceRange.levelCount = 1;
+    to_attachment.subresourceRange.layerCount = 1;
+
+    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                        vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
+                        to_attachment);
+
+    VK_TRY(cmd.end(), ErrorCode::vulkan_device_lost, "Command buffer end failed");
+
+    vk::SubmitInfo submit_info{};
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &cmd;
+    auto submit_res = queue.submit(submit_info, fence);
+    if (submit_res != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_device_lost,
+                                "Queue submit failed: " + vk::to_string(submit_res));
+    }
+
+    auto fence_wait = device.waitForFences(fence, VK_TRUE, UINT64_MAX);
+    if (fence_wait != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_device_lost, "Fence wait failed during readback");
+    }
+    return {};
+}
+
 } // namespace
 
 VulkanBackend::~VulkanBackend() {
@@ -297,6 +463,49 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     return make_result_ptr(std::move(backend));
 }
 
+auto VulkanBackend::create_headless(bool enable_validation, const std::filesystem::path& shader_dir,
+                                    const std::filesystem::path& cache_dir,
+                                    const RenderSettings& settings) -> ResultPtr<VulkanBackend> {
+    GOGGLES_PROFILE_FUNCTION();
+
+    auto backend = std::unique_ptr<VulkanBackend>(new VulkanBackend());
+    backend->m_headless = true;
+    backend->m_enable_validation = enable_validation;
+    backend->m_shader_dir = shader_dir;
+    backend->m_cache_dir = cache_dir;
+    if (backend->m_cache_dir.empty()) {
+        try {
+            backend->m_cache_dir = std::filesystem::temp_directory_path() / "goggles" / "shaders";
+        } catch (...) {
+            backend->m_cache_dir = "/tmp/goggles/shaders";
+        }
+    }
+    backend->m_scale_mode = settings.scale_mode;
+    backend->m_integer_scale = settings.integer_scale;
+    backend->m_gpu_selector = settings.gpu_selector;
+    backend->m_source_resolution = vk::Extent2D{settings.source_width, settings.source_height};
+    backend->update_target_fps(settings.target_fps);
+
+    // Load Vulkan loader directly without SDL.
+    PFN_vkGetInstanceProcAddr loader = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr;
+    if (!loader) {
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+    }
+
+    GOGGLES_TRY(backend->create_instance_headless(enable_validation));
+    GOGGLES_TRY(backend->create_debug_messenger());
+    GOGGLES_TRY(backend->select_physical_device_headless());
+    GOGGLES_TRY(backend->create_device());
+    GOGGLES_TRY(backend->create_command_resources());
+    GOGGLES_TRY(backend->create_sync_objects_headless());
+    GOGGLES_TRY(backend->create_offscreen_image());
+    GOGGLES_TRY(backend->init_filter_chain());
+
+    GOGGLES_LOG_INFO("Vulkan headless backend initialized: {}x{}",
+                     backend->m_offscreen_extent.width, backend->m_offscreen_extent.height);
+    return make_result_ptr(std::move(backend));
+}
+
 void VulkanBackend::shutdown() {
     if (m_pending_load_future.valid()) {
         auto status = m_pending_load_future.wait_for(std::chrono::seconds(3));
@@ -319,11 +528,27 @@ void VulkanBackend::shutdown() {
         m_shader_runtime->shutdown();
     }
     cleanup_imported_image();
+    if (m_headless && m_device) {
+        if (m_offscreen_view) {
+            m_device.destroyImageView(m_offscreen_view);
+            m_offscreen_view = nullptr;
+        }
+        if (m_offscreen_image) {
+            m_device.destroyImage(m_offscreen_image);
+            m_offscreen_image = nullptr;
+        }
+        if (m_offscreen_memory) {
+            m_device.freeMemory(m_offscreen_memory);
+            m_offscreen_memory = nullptr;
+        }
+    }
 
     if (m_device) {
         for (auto& frame : m_frames) {
             m_device.destroyFence(frame.in_flight_fence);
-            m_device.destroySemaphore(frame.image_available_sem);
+            if (frame.image_available_sem) {
+                m_device.destroySemaphore(frame.image_available_sem);
+            }
             if (frame.pending_acquire_sync_sem) {
                 m_device.destroySemaphore(frame.pending_acquire_sync_sem);
             }
@@ -419,6 +644,53 @@ auto VulkanBackend::create_instance(bool enable_validation) -> Result<void> {
 
     GOGGLES_LOG_DEBUG("Vulkan instance created with {} extensions, {} layers", extensions.size(),
                       layers.size());
+    return {};
+}
+
+auto VulkanBackend::create_instance_headless(bool enable_validation) -> Result<void> {
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+
+    std::vector<const char*> extensions;
+    extensions.reserve(REQUIRED_INSTANCE_EXTENSIONS.size() + 1);
+    for (const auto* ext : REQUIRED_INSTANCE_EXTENSIONS) {
+        extensions.push_back(ext);
+    }
+
+    std::vector<const char*> layers;
+    if (enable_validation) {
+        if (is_validation_layer_available()) {
+            layers.push_back(VALIDATION_LAYER_NAME);
+            extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            GOGGLES_LOG_INFO("Vulkan validation layer enabled");
+        } else {
+            GOGGLES_LOG_WARN("Vulkan validation layer requested but not available");
+        }
+    }
+
+    vk::ApplicationInfo app_info{};
+    app_info.pApplicationName = "Goggles";
+    app_info.applicationVersion =
+        VK_MAKE_VERSION(GOGGLES_VERSION_MAJOR, GOGGLES_VERSION_MINOR, GOGGLES_VERSION_PATCH);
+    app_info.pEngineName = "Goggles";
+    app_info.engineVersion =
+        VK_MAKE_VERSION(GOGGLES_VERSION_MAJOR, GOGGLES_VERSION_MINOR, GOGGLES_VERSION_PATCH);
+    app_info.apiVersion = VK_API_VERSION_1_3;
+
+    vk::InstanceCreateInfo create_info{};
+    create_info.pApplicationInfo = &app_info;
+    create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    create_info.ppEnabledExtensionNames = extensions.data();
+    create_info.enabledLayerCount = static_cast<uint32_t>(layers.size());
+    create_info.ppEnabledLayerNames = layers.data();
+
+    auto [result, instance] = vk::createInstance(create_info);
+    if (result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to create Vulkan instance: " + vk::to_string(result));
+    }
+
+    m_instance = instance;
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_instance);
     return {};
 }
 
@@ -584,6 +856,130 @@ auto VulkanBackend::select_physical_device() -> Result<void> {
     return {};
 }
 
+auto VulkanBackend::select_physical_device_headless() -> Result<void> {
+    auto [result, devices] = m_instance.enumeratePhysicalDevices();
+    if (result != vk::Result::eSuccess || devices.empty()) {
+        return make_error<void>(ErrorCode::vulkan_init_failed, "No Vulkan devices found");
+    }
+
+    std::vector<const char*> headless_required_extensions;
+    headless_required_extensions.reserve(REQUIRED_DEVICE_EXTENSIONS.size());
+    for (const auto* ext : REQUIRED_DEVICE_EXTENSIONS) {
+        if (std::strcmp(ext, VK_KHR_SWAPCHAIN_EXTENSION_NAME) != 0) {
+            headless_required_extensions.push_back(ext);
+        }
+    }
+
+    std::vector<PhysicalDeviceCandidate> candidates;
+    std::string available_gpus;
+
+    GOGGLES_LOG_INFO("Available GPUs (headless):");
+    for (size_t idx = 0; idx < devices.size(); ++idx) {
+        const auto& device = devices[idx];
+        auto props = device.getProperties();
+        auto queue_families = device.getQueueFamilyProperties();
+        uint32_t graphics_family = UINT32_MAX;
+
+        for (uint32_t i = 0; i < queue_families.size(); ++i) {
+            if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
+                graphics_family = i;
+                break;
+            }
+        }
+
+        bool graphics_ok = graphics_family != UINT32_MAX;
+        bool extensions_ok = false;
+
+        if (graphics_ok) {
+            auto [ext_result, available_extensions] = device.enumerateDeviceExtensionProperties();
+            if (ext_result == vk::Result::eSuccess) {
+                extensions_ok = true;
+                for (const auto* required : headless_required_extensions) {
+                    bool found = false;
+                    for (const auto& ext : available_extensions) {
+                        if (std::strcmp(ext.extensionName, required) == 0) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        extensions_ok = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const char* status = (graphics_ok && extensions_ok)
+                                 ? "suitable"
+                                 : (!graphics_ok ? "no graphics queue" : "missing extensions");
+        GOGGLES_LOG_INFO("  [{}] {} ({})", idx, props.deviceName.data(), status);
+        available_gpus += std::format("{}[{}] {}", available_gpus.empty() ? "" : ", ", idx,
+                                      props.deviceName.data());
+
+        if (graphics_ok && extensions_ok) {
+            int score = 0;
+            if (props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+                score += 1000;
+            } else if (props.deviceType == vk::PhysicalDeviceType::eIntegratedGpu) {
+                score += 500;
+            }
+            candidates.push_back({.device = device,
+                                  .graphics_family = graphics_family,
+                                  .index = static_cast<uint32_t>(idx),
+                                  .present_wait_supported = false,
+                                  .score = score});
+        }
+    }
+
+    if (candidates.empty()) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "No suitable GPU found with DMA-BUF support (headless)");
+    }
+
+    const PhysicalDeviceCandidate* selected = nullptr;
+    if (!m_gpu_selector.empty()) {
+        auto selected_result =
+            select_candidate_by_gpu_selector(candidates, m_gpu_selector, available_gpus);
+        if (!selected_result) {
+            return make_error<void>(selected_result.error().code, selected_result.error().message,
+                                    selected_result.error().location);
+        }
+        selected = selected_result.value();
+    } else {
+        auto best =
+            std::max_element(candidates.begin(), candidates.end(),
+                             [](const PhysicalDeviceCandidate& a,
+                                const PhysicalDeviceCandidate& b) { return a.score < b.score; });
+        selected = &*best;
+    }
+
+    m_physical_device = selected->device;
+    m_graphics_queue_family = selected->graphics_family;
+    m_gpu_index = selected->index;
+    m_present_wait_supported = false;
+
+    vk::PhysicalDeviceIDProperties id_props{};
+    vk::PhysicalDeviceProperties2 props2{};
+    props2.pNext = &id_props;
+    m_physical_device.getProperties2(&props2);
+
+    std::array<char, 37> uuid_hex{};
+    std::snprintf(uuid_hex.data(), uuid_hex.size(),
+                  "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                  id_props.deviceUUID[0], id_props.deviceUUID[1], id_props.deviceUUID[2],
+                  id_props.deviceUUID[3], id_props.deviceUUID[4], id_props.deviceUUID[5],
+                  id_props.deviceUUID[6], id_props.deviceUUID[7], id_props.deviceUUID[8],
+                  id_props.deviceUUID[9], id_props.deviceUUID[10], id_props.deviceUUID[11],
+                  id_props.deviceUUID[12], id_props.deviceUUID[13], id_props.deviceUUID[14],
+                  id_props.deviceUUID[15]);
+    m_gpu_uuid = uuid_hex.data();
+
+    GOGGLES_LOG_INFO("Selected GPU (headless): {} (UUID: {})", props2.properties.deviceName.data(),
+                     m_gpu_uuid);
+    return {};
+}
+
 auto VulkanBackend::create_device() -> Result<void> {
     float queue_priority = 1.0F;
     vk::DeviceQueueCreateInfo queue_info{};
@@ -648,9 +1044,12 @@ auto VulkanBackend::create_device() -> Result<void> {
         extensions{};
     size_t extension_count = 0;
     for (const auto* ext : REQUIRED_DEVICE_EXTENSIONS) {
+        if (m_headless && std::strcmp(ext, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
+            continue;
+        }
         extensions[extension_count++] = ext;
     }
-    if (m_present_wait_supported) {
+    if (!m_headless && m_present_wait_supported) {
         for (const auto* ext : OPTIONAL_DEVICE_EXTENSIONS) {
             extensions[extension_count++] = ext;
         }
@@ -955,6 +1354,102 @@ auto VulkanBackend::create_sync_objects() -> Result<void> {
     }
 
     GOGGLES_LOG_DEBUG("Sync objects created");
+    return {};
+}
+
+auto VulkanBackend::create_sync_objects_headless() -> Result<void> {
+    vk::FenceCreateInfo fence_info{};
+    fence_info.flags = vk::FenceCreateFlagBits::eSignaled;
+
+    for (auto& frame : m_frames) {
+        auto [result, fence] = m_device.createFence(fence_info);
+        if (result != vk::Result::eSuccess) {
+            return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create fence");
+        }
+        frame.in_flight_fence = fence;
+    }
+
+    GOGGLES_LOG_DEBUG("Headless sync objects created");
+    return {};
+}
+
+auto VulkanBackend::create_offscreen_image() -> Result<void> {
+    uint32_t width = m_source_resolution.width;
+    uint32_t height = m_source_resolution.height;
+    if (width == 0 || height == 0) {
+        width = 1920;
+        height = 1080;
+    }
+    m_offscreen_extent = vk::Extent2D{width, height};
+    m_swapchain_format = vk::Format::eR8G8B8A8Unorm;
+    m_swapchain_extent = m_offscreen_extent;
+
+    vk::ImageCreateInfo image_info{};
+    image_info.imageType = vk::ImageType::e2D;
+    image_info.format = vk::Format::eR8G8B8A8Unorm;
+    image_info.extent = vk::Extent3D{width, height, 1};
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+    image_info.samples = vk::SampleCountFlagBits::e1;
+    image_info.tiling = vk::ImageTiling::eOptimal;
+    image_info.usage =
+        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc;
+    image_info.sharingMode = vk::SharingMode::eExclusive;
+    image_info.initialLayout = vk::ImageLayout::eUndefined;
+
+    auto [img_result, image] = m_device.createImage(image_info);
+    if (img_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to create offscreen image: " + vk::to_string(img_result));
+    }
+    m_offscreen_image = image;
+
+    auto mem_reqs = m_device.getImageMemoryRequirements(m_offscreen_image);
+    auto mem_props = m_physical_device.getMemoryProperties();
+    uint32_t mem_type = find_memory_type(mem_props, mem_reqs.memoryTypeBits);
+    if (mem_type == UINT32_MAX) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "No suitable memory type for offscreen image");
+    }
+
+    vk::MemoryAllocateInfo alloc_info{};
+    alloc_info.allocationSize = mem_reqs.size;
+    alloc_info.memoryTypeIndex = mem_type;
+
+    auto [mem_result, memory] = m_device.allocateMemory(alloc_info);
+    if (mem_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to allocate offscreen memory: " +
+                                    vk::to_string(mem_result));
+    }
+    m_offscreen_memory = memory;
+
+    auto bind_result = m_device.bindImageMemory(m_offscreen_image, m_offscreen_memory, 0);
+    if (bind_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to bind offscreen image memory: " +
+                                    vk::to_string(bind_result));
+    }
+
+    vk::ImageViewCreateInfo view_info{};
+    view_info.image = m_offscreen_image;
+    view_info.viewType = vk::ImageViewType::e2D;
+    view_info.format = vk::Format::eR8G8B8A8Unorm;
+    view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
+
+    auto [view_result, view] = m_device.createImageView(view_info);
+    if (view_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to create offscreen image view: " +
+                                    vk::to_string(view_result));
+    }
+    m_offscreen_view = view;
+
+    GOGGLES_LOG_DEBUG("Offscreen image created: {}x{} R8G8B8A8Unorm", width, height);
     return {};
 }
 
@@ -1435,6 +1930,68 @@ void VulkanBackend::throttle_present() {
     }
 }
 
+auto VulkanBackend::submit_headless(vk::CommandBuffer cmd, const util::ExternalImageFrame* frame,
+                                    FrameResources& hframe) -> Result<void> {
+    // Import sync_fd as a temporary binary semaphore so the GPU waits for the
+    // client to finish writing before sampling the imported DMA-BUF.
+    vk::Semaphore acquire_sync_sem;
+    bool have_acquire_sync = false;
+
+    if (frame && frame->sync_fd.valid()) {
+        auto sync_dup = util::UniqueFd::dup_from(frame->sync_fd.get());
+        if (sync_dup.valid()) {
+            vk::SemaphoreCreateInfo sem_ci{};
+            auto [sem_res, sem] = m_device.createSemaphore(sem_ci);
+            if (sem_res == vk::Result::eSuccess) {
+                VkImportSemaphoreFdInfoKHR import_info{};
+                import_info.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
+                import_info.semaphore = sem;
+                import_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+                import_info.fd = sync_dup.get();
+                import_info.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT;
+
+                auto import_res = static_cast<vk::Result>(
+                    VULKAN_HPP_DEFAULT_DISPATCHER.vkImportSemaphoreFdKHR(m_device, &import_info));
+                if (import_res == vk::Result::eSuccess) {
+                    sync_dup.release();
+                    acquire_sync_sem = sem;
+                    have_acquire_sync = true;
+                } else {
+                    m_device.destroySemaphore(sem);
+                    GOGGLES_LOG_WARN("Failed to import sync_fd as semaphore in headless path");
+                }
+            }
+        }
+    }
+
+    vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eFragmentShader;
+    vk::SubmitInfo submit_info{};
+    if (have_acquire_sync) {
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = &acquire_sync_sem;
+        submit_info.pWaitDstStageMask = &wait_stage;
+    }
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &cmd;
+
+    auto submit_result = m_graphics_queue.submit(submit_info, hframe.in_flight_fence);
+    if (submit_result != vk::Result::eSuccess) {
+        if (have_acquire_sync) {
+            m_device.destroySemaphore(acquire_sync_sem);
+        }
+        return make_error<void>(ErrorCode::vulkan_device_lost,
+                                "Queue submit failed: " + vk::to_string(submit_result));
+    }
+
+    // Defer destruction until the fence signals on the next frame to avoid
+    // destroying the semaphore while the GPU pipeline is still consuming it.
+    if (have_acquire_sync) {
+        hframe.pending_acquire_sync_sem = acquire_sync_sem;
+    }
+
+    return {};
+}
+
 auto VulkanBackend::render(const util::ExternalImageFrame* frame,
                            const UiRenderCallback& ui_callback) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
@@ -1446,6 +2003,109 @@ auto VulkanBackend::render(const util::ExternalImageFrame* frame,
     ++m_frame_count;
     check_pending_chain_swap();
     cleanup_deferred_destroys();
+
+    if (m_headless) {
+        auto& hframe = m_frames[0];
+
+        auto wait_result = m_device.waitForFences(hframe.in_flight_fence, VK_TRUE, UINT64_MAX);
+        if (wait_result != vk::Result::eSuccess) {
+            return make_error<void>(ErrorCode::vulkan_device_lost, "Fence wait failed");
+        }
+        auto reset_result = m_device.resetFences(hframe.in_flight_fence);
+        if (reset_result != vk::Result::eSuccess) {
+            return make_error<void>(ErrorCode::vulkan_device_lost,
+                                    "Fence reset failed: " + vk::to_string(reset_result));
+        }
+
+        // Fence has signalled so the previous frame's wait semaphore is consumed
+        if (hframe.pending_acquire_sync_sem) {
+            m_device.destroySemaphore(hframe.pending_acquire_sync_sem);
+            hframe.pending_acquire_sync_sem = nullptr;
+        }
+
+        auto cmd = hframe.command_buffer;
+        VK_TRY(cmd.reset(), ErrorCode::vulkan_device_lost, "Command buffer reset failed");
+
+        vk::CommandBufferBeginInfo begin_info{};
+        begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+        VK_TRY(cmd.begin(begin_info), ErrorCode::vulkan_device_lost, "Command buffer begin failed");
+
+        if (frame) {
+            GOGGLES_TRY(import_external_image(frame->image));
+
+            vk::ImageMemoryBarrier src_barrier{};
+            src_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
+            src_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+            src_barrier.oldLayout = vk::ImageLayout::eUndefined;
+            src_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            src_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            src_barrier.image = m_import.image;
+            src_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+            src_barrier.subresourceRange.levelCount = 1;
+            src_barrier.subresourceRange.layerCount = 1;
+
+            vk::ImageMemoryBarrier dst_barrier{};
+            dst_barrier.srcAccessMask = vk::AccessFlagBits::eNone;
+            dst_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+            dst_barrier.oldLayout = vk::ImageLayout::eUndefined;
+            dst_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            dst_barrier.image = m_offscreen_image;
+            dst_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+            dst_barrier.subresourceRange.levelCount = 1;
+            dst_barrier.subresourceRange.layerCount = 1;
+
+            std::array barriers = {src_barrier, dst_barrier};
+            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                vk::PipelineStageFlagBits::eFragmentShader |
+                                    vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                                {}, {}, {}, barriers);
+
+            m_filter_chain->record(cmd, m_import.image, m_import.view, m_import_extent,
+                                   m_offscreen_view, m_offscreen_extent, 0, m_scale_mode,
+                                   m_integer_scale);
+        } else {
+            vk::ImageMemoryBarrier barrier{};
+            barrier.srcAccessMask = vk::AccessFlagBits::eNone;
+            barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+            barrier.oldLayout = vk::ImageLayout::eUndefined;
+            barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = m_offscreen_image;
+            barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.layerCount = 1;
+
+            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, {},
+                                barrier);
+
+            vk::RenderingAttachmentInfo color_attachment{};
+            color_attachment.imageView = m_offscreen_view;
+            color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+            color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
+            color_attachment.clearValue.color =
+                vk::ClearColorValue{std::array{0.0F, 0.0F, 0.0F, 1.0F}};
+
+            vk::RenderingInfo rendering_info{};
+            rendering_info.renderArea.offset = vk::Offset2D{0, 0};
+            rendering_info.renderArea.extent = m_offscreen_extent;
+            rendering_info.layerCount = 1;
+            rendering_info.colorAttachmentCount = 1;
+            rendering_info.pColorAttachments = &color_attachment;
+
+            cmd.beginRendering(rendering_info);
+            cmd.endRendering();
+        }
+
+        VK_TRY(cmd.end(), ErrorCode::vulkan_device_lost, "Command buffer end failed");
+
+        return submit_headless(cmd, frame, hframe);
+    }
 
     uint32_t image_index = GOGGLES_TRY(acquire_next_image());
 
@@ -1464,6 +2124,71 @@ auto VulkanBackend::render(const util::ExternalImageFrame* frame,
     }
 
     return submit_and_present(image_index, std::move(acquire_fd));
+}
+
+auto VulkanBackend::readback_to_png(const std::filesystem::path& output) -> Result<void> {
+    if (!m_headless || !m_offscreen_image) {
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "readback_to_png requires headless mode");
+    }
+
+    auto& frame = m_frames[0];
+    auto wait_result = m_device.waitForFences(frame.in_flight_fence, VK_TRUE, UINT64_MAX);
+    if (wait_result != vk::Result::eSuccess) {
+        return make_error<void>(ErrorCode::vulkan_device_lost, "Fence wait failed before readback");
+    }
+
+    const uint32_t width = m_offscreen_extent.width;
+    const uint32_t height = m_offscreen_extent.height;
+    const vk::DeviceSize buffer_size = static_cast<vk::DeviceSize>(width) * height * 4;
+
+    auto staging_result = create_readback_staging_buffer(m_device, m_physical_device, buffer_size);
+    if (!staging_result) {
+        return make_error<void>(staging_result.error().code, staging_result.error().message,
+                                staging_result.error().location);
+    }
+    auto staging = staging_result.value();
+
+    auto copy_result = submit_readback_copy(m_device, m_graphics_queue, frame.command_buffer,
+                                            frame.in_flight_fence, m_offscreen_image,
+                                            staging.buffer, width, height);
+    if (!copy_result) {
+        destroy_readback_staging_buffer(m_device, staging);
+        return make_error<void>(copy_result.error().code, copy_result.error().message,
+                                copy_result.error().location);
+    }
+
+    auto [map_result, data] = m_device.mapMemory(staging.memory, 0, buffer_size);
+    if (map_result != vk::Result::eSuccess) {
+        destroy_readback_staging_buffer(m_device, staging);
+        return make_error<void>(ErrorCode::vulkan_device_lost,
+                                "Failed to map staging memory: " + vk::to_string(map_result));
+    }
+
+    if (!staging.is_coherent) {
+        vk::MappedMemoryRange range{};
+        range.memory = staging.memory;
+        range.offset = 0;
+        range.size = VK_WHOLE_SIZE;
+        auto invalidate = m_device.invalidateMappedMemoryRanges(range);
+        if (invalidate != vk::Result::eSuccess) {
+            GOGGLES_LOG_WARN("invalidateMappedMemoryRanges failed: {}", vk::to_string(invalidate));
+        }
+    }
+
+    int png_result = stbi_write_png(output.c_str(), static_cast<int>(width),
+                                    static_cast<int>(height), 4, data, static_cast<int>(width * 4));
+
+    m_device.unmapMemory(staging.memory);
+    destroy_readback_staging_buffer(m_device, staging);
+
+    if (png_result == 0) {
+        return make_error<void>(ErrorCode::file_write_failed,
+                                "stbi_write_png failed for: " + output.string());
+    }
+
+    GOGGLES_LOG_INFO("PNG written: {} ({}x{})", output.string(), width, height);
+    return {};
 }
 
 auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_path) -> Result<void> {

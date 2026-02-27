@@ -18,6 +18,9 @@ struct CliOptions {
     uint32_t app_width = 0;
     uint32_t app_height = 0;
     std::optional<uint32_t> target_fps;
+    bool headless = false;
+    uint32_t frames = 0;
+    std::filesystem::path output_path;
     std::vector<std::string> app_command;
 };
 

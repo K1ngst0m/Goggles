@@ -45,6 +45,12 @@ public:
                                      const std::filesystem::path& cache_dir = {},
                                      const RenderSettings& settings = {})
         -> ResultPtr<VulkanBackend>;
+    /// @brief Creates a headless Vulkan backend without a window or swapchain.
+    [[nodiscard]] static auto create_headless(bool enable_validation = false,
+                                              const std::filesystem::path& shader_dir = "shaders",
+                                              const std::filesystem::path& cache_dir = {},
+                                              const RenderSettings& settings = {})
+        -> ResultPtr<VulkanBackend>;
 
     ~VulkanBackend();
 
@@ -71,6 +77,8 @@ public:
     /// @brief Renders a captured frame or clears the swapchain when no frame is provided.
     [[nodiscard]] auto render(const util::ExternalImageFrame* frame,
                               const UiRenderCallback& ui_callback = nullptr) -> Result<void>;
+    /// @brief Reads back the offscreen image and writes it as PNG.
+    [[nodiscard]] auto readback_to_png(const std::filesystem::path& output) -> Result<void>;
 
     [[nodiscard]] auto needs_resize() const -> bool { return m_needs_resize; }
 
@@ -128,15 +136,19 @@ private:
     }
 
     [[nodiscard]] auto create_instance(bool enable_validation) -> Result<void>;
+    [[nodiscard]] auto create_instance_headless(bool enable_validation) -> Result<void>;
     [[nodiscard]] auto create_debug_messenger() -> Result<void>;
     [[nodiscard]] auto create_surface(SDL_Window* window) -> Result<void>;
     [[nodiscard]] auto select_physical_device() -> Result<void>;
+    [[nodiscard]] auto select_physical_device_headless() -> Result<void>;
     [[nodiscard]] auto create_device() -> Result<void>;
     [[nodiscard]] auto create_swapchain(uint32_t width, uint32_t height,
                                         vk::Format preferred_format) -> Result<void>;
     void cleanup_swapchain();
     [[nodiscard]] auto create_command_resources() -> Result<void>;
     [[nodiscard]] auto create_sync_objects() -> Result<void>;
+    [[nodiscard]] auto create_sync_objects_headless() -> Result<void>;
+    [[nodiscard]] auto create_offscreen_image() -> Result<void>;
     [[nodiscard]] auto init_filter_chain() -> Result<void>;
 
     [[nodiscard]] auto import_external_image(const util::ExternalImage& frame) -> Result<void>;
@@ -206,6 +218,11 @@ private:
     vk::Extent2D m_import_extent;
     vk::Extent2D m_source_resolution;
     bool m_enable_validation = false;
+    bool m_headless = false;
+    vk::Image m_offscreen_image;
+    vk::DeviceMemory m_offscreen_memory;
+    vk::ImageView m_offscreen_view;
+    vk::Extent2D m_offscreen_extent;
     ScaleMode m_scale_mode = ScaleMode::stretch;
     bool m_needs_resize = false;
     bool m_present_wait_supported = false;
@@ -237,6 +254,8 @@ private:
     void check_pending_chain_swap();
     void cleanup_deferred_destroys();
     void apply_filter_chain_policy();
+    [[nodiscard]] auto submit_headless(vk::CommandBuffer cmd, const util::ExternalImageFrame* frame,
+                                       FrameResources& hframe) -> Result<void>;
 };
 
 } // namespace goggles::render

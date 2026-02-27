@@ -122,6 +122,69 @@ TEST_CASE("parse_cli: single-dimension app width/height is allowed", "[cli]") {
     }
 }
 
+TEST_CASE("parse_cli: headless mode parses all flags", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args({"goggles", "--config", cfg, "--headless", "--frames", "10", "--output",
+                      "/tmp/test.png", "--", "vkcube"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(result);
+    REQUIRE(result->action == goggles::app::CliAction::run);
+    REQUIRE(result->options.headless);
+    REQUIRE(result->options.frames == 10);
+    REQUIRE(result->options.output_path == "/tmp/test.png");
+    REQUIRE(result->options.app_command.size() == 1);
+    REQUIRE(result->options.app_command[0] == "vkcube");
+}
+
+TEST_CASE("parse_cli: headless mode requires --frames", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args(
+        {"goggles", "--config", cfg, "--headless", "--output", "/tmp/test.png", "--", "vkcube"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(!result);
+    REQUIRE(result.error().code == ErrorCode::parse_error);
+}
+
+TEST_CASE("parse_cli: headless mode requires --output", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args({"goggles", "--config", cfg, "--headless", "--frames", "10", "--", "vkcube"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(!result);
+    REQUIRE(result.error().code == ErrorCode::parse_error);
+}
+
+TEST_CASE("parse_cli: headless and detach are mutually exclusive", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args({"goggles", "--config", cfg, "--headless", "--detach", "--frames", "10",
+                      "--output", "/tmp/test.png"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(!result);
+    REQUIRE(result.error().code == ErrorCode::parse_error);
+}
+
+TEST_CASE("parse_cli: headless mode rejects --frames 0", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args({"goggles", "--config", cfg, "--headless", "--frames", "0", "--output",
+                      "/tmp/test.png", "--", "app"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(!result);
+}
+
+TEST_CASE("parse_cli: headless mode requires app command", "[cli]") {
+    auto cfg = default_config_path();
+    ArgvBuilder args(
+        {"goggles", "--config", cfg, "--headless", "--frames", "10", "--output", "/tmp/test.png"});
+
+    auto result = goggles::app::parse_cli(args.argc(), args.argv.data());
+    REQUIRE(!result);
+    REQUIRE(result.error().code == ErrorCode::parse_error);
+}
+
 TEST_CASE("parse_cli: --help returns exit_ok", "[cli]") {
     ArgvBuilder args({"goggles", "--help"});
 

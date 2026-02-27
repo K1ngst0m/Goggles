@@ -41,6 +41,11 @@ auto register_options(CLI::App& app, CliOptions& options) -> void {
         ->check(CLI::Range(1u, 16384u));
     app.add_option("--target-fps", options.target_fps, "Override render target FPS (0 = uncapped)")
         ->check(CLI::Range(0u, 1000u));
+    app.add_flag("--headless", options.headless, "Run without a window (headless mode)");
+    app.add_option("--frames", options.frames,
+                   "Number of compositor frames to capture (headless mode)")
+        ->check(CLI::Range(1u, 100000u));
+    app.add_option("--output", options.output_path, "Output PNG file path (headless mode)");
 }
 
 [[nodiscard]] auto validate_default_mode(int argc, bool has_separator, const CliOptions& options)
@@ -73,6 +78,7 @@ auto parse_cli(int argc, char** argv) -> CliResult {
     app.set_version_flag("--version,-v", GOGGLES_PROJECT_NAME " v" GOGGLES_VERSION);
     app.footer(R"(Usage:
   goggles --detach
+  goggles --headless --frames N --output <path.png> [options] -- <app> [app_args...]
   goggles [options] -- <app> [app_args...]
 
 Notes:
@@ -126,7 +132,25 @@ Notes:
                 ErrorCode::parse_error,
                 "--app-width/--app-height are not supported in detach mode");
         }
-    } else {
+    }
+
+    if (options.headless) {
+        if (options.detach) {
+            return make_error<CliParseOutcome>(ErrorCode::parse_error,
+                                               "--headless and --detach are mutually exclusive");
+        }
+        if (options.frames == 0) {
+            return make_error<CliParseOutcome>(ErrorCode::parse_error,
+                                               "--headless requires --frames");
+        }
+        if (options.output_path.empty()) {
+            return make_error<CliParseOutcome>(ErrorCode::parse_error,
+                                               "--headless requires --output");
+        }
+        // Headless mode also requires an app command (validated by default mode below).
+    }
+
+    if (!options.detach) {
         auto validation_result = validate_default_mode(argc, has_separator, options);
         if (!validation_result) {
             return make_error<CliParseOutcome>(validation_result.error().code,
