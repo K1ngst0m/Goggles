@@ -289,3 +289,9 @@ set_tests_properties(headless_smoke_png_check PROPERTIES
     LABELS "integration"
     DEPENDS headless_smoke
     TIMEOUT 10)
+
+# Disable GPU-dependent tests in CI (no display/GPU available)
+if(DEFINED ENV{CI} OR DEFINED ENV{GITHUB_ACTIONS})
+    set_property(TEST headless_smoke PROPERTY DISABLED TRUE)
+    set_property(TEST headless_smoke_png_check PROPERTY DISABLED TRUE)
+endif()
