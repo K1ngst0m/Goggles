@@ -1,5 +1,6 @@
 #include "image_compare.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iomanip>
@@ -34,7 +35,17 @@ auto main(int argc, char** argv) -> int {
                 std::cerr << "--tolerance requires a value\n";
                 return 2;
             }
-            tolerance = std::strtod(argv[index + 1], nullptr);
+            char* end = nullptr;
+            const double parsed = std::strtod(argv[index + 1], &end);
+            if (end == argv[index + 1] || *end != '\0') {
+                std::cerr << "--tolerance value is not a valid number: " << argv[index + 1] << "\n";
+                return 2;
+            }
+            if (!std::isfinite(parsed) || parsed < 0.0 || parsed > 1.0) {
+                std::cerr << "--tolerance must be a finite value in [0.0, 1.0]\n";
+                return 2;
+            }
+            tolerance = parsed;
             index += 2;
             continue;
         }

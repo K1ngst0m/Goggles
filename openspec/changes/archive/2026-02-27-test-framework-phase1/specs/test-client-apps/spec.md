@@ -57,14 +57,14 @@ The system SHALL provide a `gradient_client` binary that renders a horizontal li
 - **THEN** the process SHALL exit with code 0
 
 ### Requirement: Multi-surface test client
-The system SHALL provide a `multi_surface_client` binary that creates a main surface and one subsurface/popup with distinct solid colors.
+The system SHALL provide a `multi_surface_client` binary that creates a main surface and one `wl_subsurface` with distinct solid colors.
 
 #### Scenario: Two-surface layout
 - **GIVEN** `multi_surface_client` is connected and both surfaces are committed
 - **WHEN** the compositor presents the scene
 - **THEN** the main surface SHALL render its background color (blue: 0, 0, 255, 255)
-- **AND** the popup surface SHALL render its foreground color (red: 255, 0, 0, 255)
-- **AND** the popup SHALL be composited on top of the main surface at a known offset
+- **AND** the subsurface SHALL render its foreground color (red: 255, 0, 0, 255)
+- **AND** the subsurface SHALL be composited on top of the main surface at a known parent-relative offset set via `wl_subsurface.set_position()`
 
 #### Scenario: Clean exit after frame count
 - **GIVEN** both surfaces have been committed for at least 30 frames

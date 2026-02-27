@@ -7,6 +7,9 @@ find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 pkg_get_variable(WL_PROTOCOLS_DIR wayland-protocols pkgdatadir)
 
 set(XDG_SHELL_XML "${WL_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
+if(NOT EXISTS "${XDG_SHELL_XML}")
+    message(FATAL_ERROR "xdg-shell XML not found at: ${XDG_SHELL_XML}")
+endif()
 set(XDG_SHELL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-client-protocol.h")
 set(XDG_SHELL_CODE "${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c")
 

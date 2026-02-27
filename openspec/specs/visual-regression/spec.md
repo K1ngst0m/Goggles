@@ -1,7 +1,7 @@
 # visual-regression Specification
 
 ## Purpose
-TBD - created by archiving change test-framework-phase1. Update Purpose after archive.
+Defines requirements for the image comparison library, CLI tool, and headless pipeline smoke test that form the visual regression testing foundation for Goggles. These capabilities were introduced in the archived change `test-framework-phase1` and are the basis for Phase 2 visual regression tests.
 ## Requirements
 ### Requirement: Image comparison library
 The system SHALL provide a C++ image comparison library at `tests/visual/image_compare.hpp` that compares two PNG images with configurable per-channel tolerance.
@@ -68,13 +68,13 @@ The system SHALL provide a `goggles_image_compare` CLI binary that wraps the com
 The system SHALL provide a CTest integration test that exercises the full `Application::create_headless()` → filter chain → `readback_to_png()` pipeline.
 
 #### Scenario: Smoke test produces a valid PNG
-- **GIVEN** the `visual-test` preset is built (includes `goggles` binary and `solid_color_client`)
+- **GIVEN** the project is built (includes `goggles` binary and `solid_color_client`)
 - **WHEN** CTest runs the headless smoke test
 - **THEN** `goggles --headless --frames 5 --output <tmp>/smoke.png -- solid_color_client` SHALL exit with code 0
-- **AND** `<tmp>/smoke.png` SHALL be a valid PNG file with width > 0 and height > 0
+- **AND** `<tmp>/smoke.png` SHALL exist and be a non-empty file
 
 #### Scenario: Smoke test is labeled integration
-- **GIVEN** the `visual-test` CTest configuration
+- **GIVEN** any CTest configuration
 - **WHEN** `ctest -L integration` is run
 - **THEN** the headless smoke test SHALL be included in the run
 

@@ -7,7 +7,7 @@ Goggles has 27 unit tests and no automated visual validation. 30+ manual test sc
 - **New**: `tests/clients/` — four deterministic Wayland/`wl_shm` test client apps rendering known solid-color patterns (`solid_color_client`, `gradient_client`, `quadrant_client`, `multi_surface_client`)
 - **New**: `tests/visual/image_compare.hpp/.cpp` — image comparison library with fuzzy per-channel tolerance, `CompareResult` struct, and diff-image generation
 - **New**: `tests/visual/image_compare_cli.cpp` — standalone CLI comparison tool (`goggles_image_compare`)
-- **New**: `tests/app/test_headless_smoke` — CTest integration test running the full headless pipeline against `solid_color_client`
+- **New**: `headless_smoke` — CTest integration test running the full headless pipeline against `solid_color_client`
 - **Modified**: `tests/CMakeLists.txt` — unconditional inclusion of `tests/clients/` and `tests/visual/`, headless smoke tests
 
 ## Capabilities
