@@ -92,7 +92,7 @@ cp -f "$REPO_ROOT/config/goggles.template.toml" \
   "$APPDIR/usr/share/goggles/config/goggles.template.toml"
 
 # Package only git-tracked resources (avoid shipping locally-downloaded shader packs).
-copy_git_tracked_paths "$APPDIR/usr/share/goggles" assets shaders
+copy_git_tracked_paths "$APPDIR/usr/share/goggles" assets shaders ":(exclude)assets/cursor/**"
 
 echo "$VERSION" >"$APPDIR/usr/share/goggles/VERSION"
 
