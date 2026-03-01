@@ -75,6 +75,62 @@ auto get_time_msec() -> uint32_t {
     return static_cast<uint32_t>(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
+constexpr uint32_t CURSOR_SIZE = 64;
+constexpr uint32_t FALLBACK_CURSOR_WIDTH = 16;
+constexpr uint32_t FALLBACK_CURSOR_HEIGHT = 24;
+constexpr uint32_t FALLBACK_HOTSPOT_X = 0;
+constexpr uint32_t FALLBACK_HOTSPOT_Y = 0;
+
+auto fallback_cursor_pixels() -> std::vector<uint32_t> {
+    constexpr uint32_t OPAQUE_BLACK = 0xFF000000;
+    constexpr uint32_t OPAQUE_WHITE = 0xFFFFFFFF;
+
+    std::vector<uint32_t> pixels(static_cast<size_t>(FALLBACK_CURSOR_WIDTH) *
+                                     static_cast<size_t>(FALLBACK_CURSOR_HEIGHT),
+                                 0U);
+
+    auto set_pixel = [&pixels](uint32_t x, uint32_t y, uint32_t color) {
+        if (x >= FALLBACK_CURSOR_WIDTH || y >= FALLBACK_CURSOR_HEIGHT) {
+            return;
+        }
+        pixels[static_cast<size_t>(y) * FALLBACK_CURSOR_WIDTH + x] = color;
+    };
+
+    for (uint32_t y = 0; y < 12; ++y) {
+        set_pixel(0, y, OPAQUE_BLACK);
+        if (y == 0) {
+            set_pixel(1, y, OPAQUE_BLACK);
+        } else {
+            set_pixel(1, y, OPAQUE_WHITE);
+            set_pixel(2, y, OPAQUE_BLACK);
+        }
+    }
+
+    for (uint32_t i = 0; i < 9; ++i) {
+        const uint32_t x = i;
+        const uint32_t y = i;
+        set_pixel(x, y, OPAQUE_BLACK);
+        if (x + 1 < FALLBACK_CURSOR_WIDTH) {
+            set_pixel(x + 1, y, OPAQUE_WHITE);
+        }
+        if (y + 1 < FALLBACK_CURSOR_HEIGHT) {
+            set_pixel(x, y + 1, OPAQUE_WHITE);
+        }
+    }
+
+    for (uint32_t y = 10; y < FALLBACK_CURSOR_HEIGHT; ++y) {
+        set_pixel(4, y, OPAQUE_BLACK);
+        set_pixel(5, y, OPAQUE_WHITE);
+        set_pixel(6, y, OPAQUE_BLACK);
+    }
+
+    for (uint32_t x = 0; x < 9; ++x) {
+        set_pixel(x, 12, OPAQUE_BLACK);
+    }
+
+    return pixels;
+}
+
 auto sdl_to_linux_keycode(SDL_Scancode scancode) -> uint32_t {
     switch (scancode) {
     case SDL_SCANCODE_A:
@@ -1060,54 +1116,110 @@ auto CompositorServer::Impl::setup_output() -> Result<void> {
 
 auto CompositorServer::Impl::setup_cursor_theme() -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
-    constexpr int CURSOR_SIZE = 64;
-    cursor_theme = wlr_xcursor_theme_load("cursor", CURSOR_SIZE);
+
+    clear_cursor_theme();
+
+    cursor_theme = wlr_xcursor_theme_load(nullptr, CURSOR_SIZE);
     if (!cursor_theme) {
-        return make_error<void>(ErrorCode::input_init_failed, "Failed to load cursor theme");
+        return make_error<void>(ErrorCode::input_init_failed, "Failed to load system cursor theme");
     }
 
-    cursor_shape = wlr_xcursor_theme_get_cursor(cursor_theme, "left_ptr");
-    if (!cursor_shape) {
-        cursor_shape = wlr_xcursor_theme_get_cursor(cursor_theme, "default");
-    }
-    if (!cursor_shape) {
-        clear_cursor_theme();
-        return make_error<void>(ErrorCode::input_init_failed,
-                                "Cursor theme missing default cursor images");
-    }
+    struct CursorImageSource {
+        const uint8_t* pixels = nullptr;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t hotspot_x = 0;
+        uint32_t hotspot_y = 0;
+        uint32_t delay_ms = 0;
+    };
 
-    cursor_frames.clear();
-    cursor_frames.reserve(cursor_shape->image_count);
-    for (unsigned int i = 0; i < cursor_shape->image_count; ++i) {
-        const auto* image = cursor_shape->images[i];
-        if (!image || !image->buffer || image->width == 0 || image->height == 0) {
-            clear_cursor_theme();
+    auto append_frame_from_buffer = [this](const CursorImageSource& source) -> Result<void> {
+        if (!source.pixels || source.width == 0 || source.height == 0) {
             return make_error<void>(ErrorCode::input_init_failed,
-                                    "Cursor theme contains invalid image data");
+                                    "Cursor frame contains invalid pixel buffer");
         }
+
         wlr_texture* texture =
-            wlr_texture_from_pixels(renderer, util::DRM_FORMAT_ARGB8888, image->width * 4,
-                                    image->width, image->height, image->buffer);
+            wlr_texture_from_pixels(renderer, util::DRM_FORMAT_ARGB8888, source.width * 4,
+                                    source.width, source.height, source.pixels);
         if (!texture) {
-            clear_cursor_theme();
             return make_error<void>(ErrorCode::input_init_failed,
                                     "Failed to create cursor texture");
         }
+
         CursorFrame frame{};
         frame.texture = texture;
-        frame.width = image->width;
-        frame.height = image->height;
-        frame.hotspot_x = image->hotspot_x;
-        frame.hotspot_y = image->hotspot_y;
-        frame.delay_ms = image->delay;
+        frame.width = source.width;
+        frame.height = source.height;
+        frame.hotspot_x = std::min(source.hotspot_x, source.width - 1);
+        frame.hotspot_y = std::min(source.hotspot_y, source.height - 1);
+        frame.delay_ms = source.delay_ms;
         cursor_frames.push_back(frame);
+        return {};
+    };
+
+    constexpr std::array<const char*, 4> CURSOR_NAMES = {
+        "left_ptr",
+        "default",
+        "arrow",
+        "pointer",
+    };
+
+    for (const char* cursor_name : CURSOR_NAMES) {
+        cursor_shape = wlr_xcursor_theme_get_cursor(cursor_theme, cursor_name);
+        if (cursor_shape) {
+            break;
+        }
+    }
+    cursor_frames.clear();
+
+    if (cursor_shape) {
+        cursor_frames.reserve(cursor_shape->image_count);
+        for (unsigned int i = 0; i < cursor_shape->image_count; ++i) {
+            const auto* image = cursor_shape->images[i];
+            if (!image || !image->buffer || image->width == 0 || image->height == 0) {
+                continue;
+            }
+            CursorImageSource source{};
+            source.pixels = image->buffer;
+            source.width = image->width;
+            source.height = image->height;
+            source.hotspot_x = image->hotspot_x;
+            source.hotspot_y = image->hotspot_y;
+            source.delay_ms = image->delay;
+            auto frame_result = append_frame_from_buffer(source);
+            if (!frame_result) {
+                clear_cursor_theme();
+                return frame_result;
+            }
+        }
+
+        if (!cursor_frames.empty()) {
+            return {};
+        }
+
+        GOGGLES_LOG_WARN("System cursor shape '{}' had no usable image frames; using built-in "
+                         "fallback cursor",
+                         cursor_shape->name ? cursor_shape->name : "<unnamed>");
+    } else {
+        GOGGLES_LOG_WARN("System cursor shape not found; using built-in fallback cursor");
     }
 
-    if (cursor_frames.empty()) {
+    const auto fallback_pixels = fallback_cursor_pixels();
+    CursorImageSource fallback_source{};
+    fallback_source.pixels = reinterpret_cast<const uint8_t*>(fallback_pixels.data());
+    fallback_source.width = FALLBACK_CURSOR_WIDTH;
+    fallback_source.height = FALLBACK_CURSOR_HEIGHT;
+    fallback_source.hotspot_x = FALLBACK_HOTSPOT_X;
+    fallback_source.hotspot_y = FALLBACK_HOTSPOT_Y;
+    fallback_source.delay_ms = 0;
+    auto fallback_result = append_frame_from_buffer(fallback_source);
+    if (!fallback_result) {
         clear_cursor_theme();
-        return make_error<void>(ErrorCode::input_init_failed,
-                                "Cursor theme provided no usable images");
+        return fallback_result;
     }
+
+    cursor_shape = nullptr;
 
     return {};
 }
@@ -1128,9 +1240,14 @@ void CompositorServer::Impl::clear_cursor_theme() {
 }
 
 auto CompositorServer::Impl::get_cursor_frame(uint32_t time_msec) const -> const CursorFrame* {
-    if (!cursor_shape || cursor_frames.empty()) {
+    if (cursor_frames.empty()) {
         return nullptr;
     }
+
+    if (!cursor_shape) {
+        return &cursor_frames.front();
+    }
+
     const int frame_index = wlr_xcursor_frame(cursor_shape, time_msec);
     if (frame_index < 0 || static_cast<size_t>(frame_index) >= cursor_frames.size()) {
         return nullptr;
@@ -1525,8 +1642,7 @@ void CompositorServer::Impl::handle_pointer_axis_event(const InputEvent& event, 
     }
     auto orientation =
         event.horizontal ? WL_POINTER_AXIS_HORIZONTAL_SCROLL : WL_POINTER_AXIS_VERTICAL_SCROLL;
-    wlr_seat_pointer_notify_axis(seat, time, orientation, event.value,
-                                 0, // value_discrete (legacy)
+    wlr_seat_pointer_notify_axis(seat, time, orientation, event.value, 0,
                                  WL_POINTER_AXIS_SOURCE_WHEEL,
                                  WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
     wlr_seat_pointer_notify_frame(seat);

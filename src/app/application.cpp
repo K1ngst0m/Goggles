@@ -74,11 +74,7 @@ static void update_ui_parameters(render::VulkanBackend& vulkan_backend,
 }
 
 static auto configure_cursor_theme_env(const util::AppDirs& app_dirs) -> Result<void> {
-    auto assets_dir = util::resource_path(app_dirs, "assets");
-    std::string cursor_path = assets_dir.string();
-    if (setenv("XCURSOR_PATH", cursor_path.c_str(), 1) != 0) {
-        return make_error<void>(ErrorCode::input_init_failed, "Failed to set XCURSOR_PATH");
-    }
+    static_cast<void>(app_dirs);
     if (setenv("XCURSOR_SIZE", "64", 1) != 0) {
         return make_error<void>(ErrorCode::input_init_failed, "Failed to set XCURSOR_SIZE");
     }
