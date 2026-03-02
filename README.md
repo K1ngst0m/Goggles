@@ -24,7 +24,7 @@ Goggles runs target apps inside a nested Wayland compositor, applies a shader fi
 | Name | Build | Status | Platform | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **crt/crt-royale.slangp** | Pass | Partial | `Mesa: RDNA3` | Full verification pending after the shader parameter controlling support. |
-| **crt/zfast-crt.slangp** | Pass | Verified | `Mesa: RDNA3`, `Proprietary: Ada` |  |
+| **crt/crt-lottes-fast.slangp** | Pass | Verified | `Mesa: RDNA3`, `Proprietary: Ada` |  |
 
 - [Shader Compatibility Report](docs/shader_compatibility.md) - Full compilation status for all RetroArch presets
 
@@ -68,7 +68,7 @@ For Steam games, prefer a wrapper that launches the game through Goggles:
 pixi run shader-fetch            # Download/refresh full RetroArch shaders into shaders/retroarch
 ```
 
-This downloads from [libretro/slang-shaders](https://github.com/libretro/slang-shaders). All shaders except zfast-crt are gitignored.
+This downloads from [libretro/slang-shaders](https://github.com/libretro/slang-shaders). All shaders except tracked crt-lottes-fast files are gitignored.
 
 ## Documentation
 

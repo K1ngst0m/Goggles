@@ -1252,7 +1252,7 @@ RetroArch shader preset compatibility with Goggles filter chain.
 | `zfast-crt-geo.slangp` | ✅ |
 | `zfast-crt-geo-svideo.slangp` | ✅ |
 | `zfast-crt-hdmask.slangp` | ✅ |
-| `zfast-crt.slangp` | ✅ |
+| `crt-lottes-fast.slangp` | ✅ |
 
 </details>
 

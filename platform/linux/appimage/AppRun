@@ -98,7 +98,7 @@ print_install_state() {
   echo "MANIFEST64=${manifest_path_x86_64}"
   echo "MANIFEST32=${manifest_path_i386}"
   echo "SHADER_PACK_ROOT=${DATA_ROOT}/goggles/shaders/retroarch"
-  echo "SHADER_PACK_PRESENT=$([[ -f "${DATA_ROOT}/goggles/shaders/retroarch/crt/zfast-crt.slangp" ]] && echo 1 || echo 0)"
+  echo "SHADER_PACK_PRESENT=$([[ -f "${DATA_ROOT}/goggles/shaders/retroarch/crt/crt-lottes-fast.slangp" ]] && echo 1 || echo 0)"
 }
 
 atomic_install_file() {
@@ -248,8 +248,8 @@ GOGGLES_BIN="${APPDIR}/usr/bin/goggles"
 
 export GOGGLES_RESOURCE_DIR="${APPDIR}/usr/share/goggles"
 
-DEFAULT_SHADER="${APPDIR}/usr/share/goggles/shaders/retroarch/crt/zfast-crt.slangp"
-XDG_SHADER="${DATA_ROOT}/goggles/shaders/retroarch/crt/zfast-crt.slangp"
+DEFAULT_SHADER="${APPDIR}/usr/share/goggles/shaders/retroarch/crt/crt-lottes-fast.slangp"
+XDG_SHADER="${DATA_ROOT}/goggles/shaders/retroarch/crt/crt-lottes-fast.slangp"
 
 extra_args=()
 has_shader=0

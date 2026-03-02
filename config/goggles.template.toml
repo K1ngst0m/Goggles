@@ -25,7 +25,7 @@
 # Leave empty for passthrough mode (no processing).
 preset = ""
 # Examples:
-# preset = "shaders/retroarch/crt/zfast-crt.slangp"
+# preset = "shaders/retroarch/crt/crt-lottes-fast.slangp"
 # preset = "shaders/retroarch/handheld/lcd3x.slangp"
 
 # =============================================================================

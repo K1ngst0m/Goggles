@@ -139,16 +139,16 @@ The system SHALL provide 3 Catch2 visual tests in `tests/visual/test_shader_basi
 - **WHEN** goggles runs headless with no shader preset and the output is compared to the golden
 - **THEN** the comparison SHALL pass with `tolerance = 2/255` and `max_failing_pct ≤ 0.1%`
 
-#### Scenario: zfast-crt shader matches golden
+#### Scenario: crt-lottes-fast shader matches golden
 - **GIVEN** golden `tests/golden/shader_zfast_quadrant.png` exists
-- **WHEN** goggles runs headless with `zfast-crt.slangp` and the output is compared to the golden
+- **WHEN** goggles runs headless with `crt-lottes-fast.slangp` and the output is compared to the golden
 - **THEN** the comparison SHALL pass with `tolerance = 0.05` and `max_failing_pct ≤ 5.0%`
 
-#### Scenario: filter-chain toggle produces distinct bypass and zfast outputs
+#### Scenario: filter-chain toggle produces distinct bypass and crt outputs
 - **GIVEN** both golden images exist
-- **WHEN** goggles is run twice — once with bypass config and once with zfast config
+- **WHEN** goggles is run twice — once with bypass config and once with crt config
 - **THEN** the bypass run SHALL match the bypass golden within bypass tolerance
-- **AND** the zfast run SHALL match the zfast golden within zfast tolerance
+- **AND** the crt run SHALL match the crt golden within crt tolerance
 
 #### Scenario: tests skip gracefully when goldens are absent
 - **GIVEN** golden images have not been generated (e.g. fresh checkout without GPU)

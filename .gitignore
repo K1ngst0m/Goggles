@@ -107,17 +107,14 @@ CLAUDE.md
 core
 core.*
 
-# RetroArch shaders - ignore all except tracked zfast-crt files
+# RetroArch shaders - ignore all except tracked CRT preset files
 shaders/retroarch/*
 !shaders/retroarch/crt/
 shaders/retroarch/crt/*
-!shaders/retroarch/crt/zfast-crt.slangp
+!shaders/retroarch/crt/crt-lottes-fast.slangp
 !shaders/retroarch/crt/shaders/
 shaders/retroarch/crt/shaders/*
-!shaders/retroarch/crt/shaders/zfast_crt/
-shaders/retroarch/crt/shaders/zfast_crt/*
-!shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_finemask.slang
-!shaders/retroarch/crt/shaders/zfast_crt/zfast_crt_impl.inc
+!shaders/retroarch/crt/shaders/crt-lottes-fast.slang
 
 # pixi environments and build artifacts
 .pixi

@@ -19,34 +19,34 @@ auto test_cache_dir() -> std::filesystem::path {
 } // namespace
 
 // Path to zfast-crt preset (relative to project root, set via CMake)
-static const std::filesystem::path ZFAST_CRT_PRESET =
-    std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/crt/zfast-crt.slangp";
+static const std::filesystem::path zfast_crt_preset =
+    std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/crt/crt-lottes-fast.slangp";
 
 TEST_CASE("zfast-crt integration - preset loading", "[integration][zfast]") {
     // Skip if shader files not available
-    if (!std::filesystem::exists(ZFAST_CRT_PRESET)) {
-        SKIP("zfast-crt.slangp not found in shaders/retroarch/crt/");
+    if (!std::filesystem::exists(zfast_crt_preset)) {
+        SKIP("crt-lottes-fast.slangp not found in shaders/retroarch/crt/");
     }
 
     PresetParser parser;
-    auto preset_result = parser.load(ZFAST_CRT_PRESET);
+    auto preset_result = parser.load(zfast_crt_preset);
     REQUIRE(preset_result.has_value());
 
     auto& preset = preset_result.value();
     REQUIRE(preset.passes.size() == 1);
     REQUIRE(preset.passes[0].filter_mode == FilterMode::linear);
     REQUIRE(preset.passes[0].scale_type_x == ScaleType::viewport);
-    REQUIRE(preset.passes[0].shader_path.filename() == "zfast_crt_finemask.slang");
+    REQUIRE(preset.passes[0].shader_path.filename() == "crt-lottes-fast.slang");
 }
 
 TEST_CASE("zfast-crt integration - preprocessing", "[integration][zfast]") {
-    if (!std::filesystem::exists(ZFAST_CRT_PRESET)) {
-        SKIP("zfast-crt.slangp not found in shaders/retroarch/crt/");
+    if (!std::filesystem::exists(zfast_crt_preset)) {
+        SKIP("crt-lottes-fast.slangp not found in shaders/retroarch/crt/");
     }
 
     // Load preset to get shader path
     PresetParser parser;
-    auto preset_result = parser.load(ZFAST_CRT_PRESET);
+    auto preset_result = parser.load(zfast_crt_preset);
     REQUIRE(preset_result.has_value());
 
     auto shader_path = preset_result->passes[0].shader_path;
@@ -65,35 +65,33 @@ TEST_CASE("zfast-crt integration - preprocessing", "[integration][zfast]") {
     REQUIRE(preprocessed.vertex_source.find("#version 450") != std::string::npos);
     REQUIRE(preprocessed.fragment_source.find("#version 450") != std::string::npos);
 
-    // Verify parameters extracted (6 params: BLURSCALEX, LOWLUMSCAN, HILUMSCAN, BRIGHTBOOST,
-    // MASK_DARK, MASK_FADE)
-    REQUIRE(preprocessed.parameters.size() == 6);
+    REQUIRE(preprocessed.parameters.size() == 8);
 
     // Check specific known parameters
-    bool found_blurscalex = false;
-    bool found_mask_dark = false;
+    bool found_scan_blur = false;
+    bool found_curvature = false;
     for (const auto& param : preprocessed.parameters) {
-        if (param.name == "BLURSCALEX") {
-            found_blurscalex = true;
-            REQUIRE(param.default_value == 0.30F);
+        if (param.name == "SCAN_BLUR") {
+            found_scan_blur = true;
+            REQUIRE(param.default_value == 2.5F);
         }
-        if (param.name == "MASK_DARK") {
-            found_mask_dark = true;
-            REQUIRE(param.default_value == 0.25F);
+        if (param.name == "CURVATURE") {
+            found_curvature = true;
+            REQUIRE(param.default_value == 0.02F);
         }
     }
-    REQUIRE(found_blurscalex);
-    REQUIRE(found_mask_dark);
+    REQUIRE(found_scan_blur);
+    REQUIRE(found_curvature);
 }
 
 TEST_CASE("zfast-crt integration - compilation", "[integration][zfast]") {
-    if (!std::filesystem::exists(ZFAST_CRT_PRESET)) {
-        SKIP("zfast-crt.slangp not found in shaders/retroarch/crt/");
+    if (!std::filesystem::exists(zfast_crt_preset)) {
+        SKIP("crt-lottes-fast.slangp not found in shaders/retroarch/crt/");
     }
 
     // Load preset
     PresetParser parser;
-    auto preset_result = parser.load(ZFAST_CRT_PRESET);
+    auto preset_result = parser.load(zfast_crt_preset);
     REQUIRE(preset_result.has_value());
 
     auto shader_path = preset_result->passes[0].shader_path;
@@ -137,15 +135,15 @@ TEST_CASE("zfast-crt integration - compilation", "[integration][zfast]") {
 }
 
 TEST_CASE("zfast-crt integration - full pipeline", "[integration][zfast]") {
-    if (!std::filesystem::exists(ZFAST_CRT_PRESET)) {
-        SKIP("zfast-crt.slangp not found in shaders/retroarch/crt/");
+    if (!std::filesystem::exists(zfast_crt_preset)) {
+        SKIP("crt-lottes-fast.slangp not found in shaders/retroarch/crt/");
     }
 
     // This test verifies the complete pipeline from preset to compiled shader
     // without requiring a Vulkan device (so we can't create FilterPass)
 
     PresetParser parser;
-    auto preset_result = parser.load(ZFAST_CRT_PRESET);
+    auto preset_result = parser.load(zfast_crt_preset);
     REQUIRE(preset_result.has_value());
 
     RetroArchPreprocessor preprocessor;

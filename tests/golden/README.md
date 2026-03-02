@@ -50,7 +50,7 @@ to download the actual image data. Without this step the files will contain LFS 
 
 Regenerate golden images after any intentional change to:
 
-- Shader code (`shaders/retroarch/crt/zfast-crt.slangp` or dependencies)
+- Shader code (`shaders/retroarch/crt/crt-lottes-fast.slangp` or dependencies)
 - Render pipeline output (color space, blending, format)
 - Headless capture logic
 
