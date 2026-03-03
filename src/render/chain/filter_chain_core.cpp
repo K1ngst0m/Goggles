@@ -212,6 +212,7 @@ auto FilterChainCore::load_preset(const std::filesystem::path& preset_path) -> R
     // Detect required frame history depth and feedback passes from shader texture bindings
     m_required_history_depth = 0;
     m_feedback_framebuffers.clear();
+    m_feedback_initialized.clear();
     std::unordered_set<size_t> feedback_pass_indices;
     for (const auto& pass : m_passes) {
         for (const auto& tex : pass->texture_bindings()) {
@@ -240,6 +241,7 @@ auto FilterChainCore::load_preset(const std::filesystem::path& preset_path) -> R
     }
     for (auto pass_idx : feedback_pass_indices) {
         m_feedback_framebuffers.try_emplace(pass_idx);
+        m_feedback_initialized.try_emplace(pass_idx, false);
     }
 
     GOGGLES_TRY(load_preset_textures());
@@ -342,7 +344,7 @@ void FilterChainCore::copy_feedback_framebuffers(vk::CommandBuffer cmd) {
 
         pre[1].srcAccessMask = vk::AccessFlagBits::eShaderRead;
         pre[1].dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-        pre[1].oldLayout = vk::ImageLayout::eUndefined;
+        pre[1].oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         pre[1].newLayout = vk::ImageLayout::eTransferDstOptimal;
         pre[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         pre[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -524,20 +526,30 @@ void FilterChainCore::record(vk::CommandBuffer cmd, vk::Image original_image,
         {.viewport = viewport_extent, .source = effective_original_extent}, {vp.width, vp.height}));
 
     for (auto& [pass_idx, feedback_fb] : m_feedback_framebuffers) {
-        if (feedback_fb && m_frame_count == 0) {
-            vk::ImageMemoryBarrier init_barrier{};
-            init_barrier.srcAccessMask = {};
-            init_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-            init_barrier.oldLayout = vk::ImageLayout::eUndefined;
-            init_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-            init_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            init_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            init_barrier.image = feedback_fb->image();
-            init_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-            cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
-                                init_barrier);
+        if (!feedback_fb) {
+            continue;
         }
+
+        bool initialized = false;
+        if (auto it = m_feedback_initialized.find(pass_idx); it != m_feedback_initialized.end()) {
+            initialized = it->second;
+        }
+        if (initialized) {
+            continue;
+        }
+
+        vk::ImageMemoryBarrier init_barrier{};
+        init_barrier.srcAccessMask = {};
+        init_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        init_barrier.oldLayout = vk::ImageLayout::eUndefined;
+        init_barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        init_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        init_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        init_barrier.image = feedback_fb->image();
+        init_barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, init_barrier);
+        m_feedback_initialized[pass_idx] = true;
     }
 
     vk::ImageView source_view = effective_original_view;
@@ -625,6 +637,7 @@ void FilterChainCore::shutdown() {
     m_passes.clear();
     m_framebuffers.clear();
     m_feedback_framebuffers.clear();
+    m_feedback_initialized.clear();
     cleanup_texture_registry();
     m_alias_to_pass_index.clear();
     m_frame_history.shutdown();
@@ -765,9 +778,11 @@ auto FilterChainCore::ensure_framebuffers(const FramebufferExtents& extents,
                 it->second =
                     GOGGLES_TRY(Framebuffer::create(m_vk_ctx.device, m_vk_ctx.physical_device,
                                                     pass_config.framebuffer_format, target_extent));
+                m_feedback_initialized[i] = false;
                 GOGGLES_LOG_DEBUG("Created feedback framebuffer for pass {}", i);
             } else if (it->second->extent() != target_extent) {
                 GOGGLES_TRY(it->second->resize(target_extent));
+                m_feedback_initialized[i] = false;
             }
         }
 

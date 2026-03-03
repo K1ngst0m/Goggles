@@ -509,9 +509,18 @@ void VulkanBackend::shutdown() {
     if (m_pending_load_future.valid()) {
         auto status = m_pending_load_future.wait_for(std::chrono::seconds(3));
         if (status == std::future_status::timeout) {
-            GOGGLES_LOG_WARN("Shader load task still running during shutdown, may cause issues");
+            GOGGLES_LOG_WARN(
+                "Shader load task still running during shutdown, waiting for completion");
+        }
+
+        auto pending_result = m_pending_load_future.get();
+        if (!pending_result) {
+            GOGGLES_LOG_WARN("Pending shader load finished with error during shutdown: {}",
+                             pending_result.error().message);
         }
     }
+
+    m_pending_chain_ready.store(false, std::memory_order_release);
 
     if (m_device) {
         auto wait_result = m_device.waitIdle();
@@ -520,9 +529,23 @@ void VulkanBackend::shutdown() {
         }
     }
 
-    if (m_filter_chain) {
-        m_filter_chain->shutdown();
+    auto shutdown_chain = [](std::unique_ptr<FilterChain>& chain) {
+        if (!chain) {
+            return;
+        }
+        chain->shutdown();
+        chain.reset();
+    };
+
+    shutdown_chain(m_filter_chain);
+    shutdown_chain(m_pending_filter_chain);
+
+    for (size_t i = 0; i < m_deferred_count; ++i) {
+        shutdown_chain(m_deferred_destroys[i].filter_chain);
+        m_deferred_destroys[i].destroy_after_frame = 0;
     }
+    m_deferred_count = 0;
+
     cleanup_imported_image();
     if (m_headless && m_device) {
         if (m_offscreen_view) {
@@ -2348,6 +2371,9 @@ void VulkanBackend::check_pending_chain_swap() {
     // Swap in the new chain/runtime boundary.
     m_filter_chain = std::move(m_pending_filter_chain);
     apply_filter_chain_policy();
+    if (m_filter_chain) {
+        m_filter_chain->set_prechain_resolution(m_source_resolution);
+    }
     m_preset_path = m_pending_preset_path;
     m_pending_chain_ready.store(false, std::memory_order_release);
     m_chain_swapped.store(true, std::memory_order_release);

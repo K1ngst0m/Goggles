@@ -99,6 +99,17 @@ TEST_CASE("FilterChain stage ordering parity", "[filter_chain][pipeline]") {
     REQUIRE(effect_pos < postchain_pos);
 }
 
+TEST_CASE("Feedback layout continuity safeguards", "[filter_chain][feedback]") {
+    const auto source_path =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/chain/filter_chain_core.cpp";
+    auto source_text = read_text_file(source_path);
+    REQUIRE(source_text.has_value());
+
+    REQUIRE(source_text->find("pre[1].oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;") !=
+            std::string::npos);
+    REQUIRE(source_text->find("m_feedback_initialized[pass_idx] = true;") != std::string::npos);
+}
+
 TEST_CASE("OriginalHistory sampler name parsing", "[filter_chain][history]") {
     SECTION("Valid OriginalHistory names") {
         auto idx0 = parse_original_history_index("OriginalHistory0");

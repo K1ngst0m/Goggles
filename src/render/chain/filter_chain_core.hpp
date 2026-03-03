@@ -156,6 +156,7 @@ private:
     std::unordered_map<std::string, LoadedTexture> m_texture_registry;
     std::unordered_map<std::string, size_t> m_alias_to_pass_index;
     std::unordered_map<size_t, std::unique_ptr<Framebuffer>> m_feedback_framebuffers;
+    std::unordered_map<size_t, bool> m_feedback_initialized;
 
     ScaleMode m_last_scale_mode = ScaleMode::stretch;
     uint32_t m_last_integer_scale = 0;

@@ -160,10 +160,29 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
     REQUIRE(failure_clear_ready_pos < failure_return_pos);
     REQUIRE(failure_return_pos < success_signal_pos);
 
+    const auto swap_reapply_resolution_pos = backend_text->find(
+        "m_filter_chain->set_prechain_resolution(m_source_resolution);", check_swap_pos);
+    REQUIRE(swap_reapply_resolution_pos != std::string::npos);
+    REQUIRE(swap_reapply_resolution_pos < success_signal_pos);
+
     REQUIRE(backend_text->find(".destroy_after_frame = m_frame_count + MAX_FRAMES_IN_FLIGHT + 1") !=
             std::string::npos);
     REQUIRE(backend_text->find("m_filter_chain->handle_resize(m_swapchain_extent)") !=
             std::string::npos);
+
+    const auto shutdown_pos = backend_text->find("void VulkanBackend::shutdown()");
+    const auto pending_shutdown_pos =
+        backend_text->find("shutdown_chain(m_pending_filter_chain);", shutdown_pos);
+    const auto deferred_shutdown_pos =
+        backend_text->find("shutdown_chain(m_deferred_destroys[i].filter_chain);", shutdown_pos);
+    const auto device_destroy_pos = backend_text->find("m_device.destroy();", shutdown_pos);
+
+    REQUIRE(shutdown_pos != std::string::npos);
+    REQUIRE(pending_shutdown_pos != std::string::npos);
+    REQUIRE(deferred_shutdown_pos != std::string::npos);
+    REQUIRE(device_destroy_pos != std::string::npos);
+    REQUIRE(pending_shutdown_pos < device_destroy_pos);
+    REQUIRE(deferred_shutdown_pos < device_destroy_pos);
 
     const auto backend_hpp =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_backend.hpp";
