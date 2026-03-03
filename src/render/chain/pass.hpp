@@ -1,5 +1,7 @@
 #pragma once
 
+#include "vulkan_context.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -11,14 +13,6 @@
 namespace goggles::render {
 
 class ShaderRuntime;
-
-/// @brief Vulkan objects shared by render passes.
-struct VulkanContext {
-    vk::Device device;
-    vk::PhysicalDevice physical_device;
-    vk::CommandPool command_pool;
-    vk::Queue graphics_queue;
-};
 
 /// @brief Per-frame context provided to each render pass.
 struct PassContext {

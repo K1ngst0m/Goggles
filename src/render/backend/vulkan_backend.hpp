@@ -11,14 +11,15 @@
 #include <functional>
 #include <future>
 #include <optional>
-#include <render/chain/filter_chain.hpp>
-#include <render/shader/shader_runtime.hpp>
+#include <render/chain/filter_controls.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
 #include <util/external_image.hpp>
 #include <vector>
 
 namespace goggles::render {
+
+class FilterChain;
 
 /// @brief Settings controlling viewport scaling and pacing.
 struct RenderSettings {
@@ -107,14 +108,16 @@ public:
     [[nodiscard]] auto swapchain_image_count() const -> uint32_t {
         return static_cast<uint32_t>(m_swapchain_images.size());
     }
-    [[nodiscard]] auto filter_chain() -> FilterChain* { return m_filter_chain.get(); }
     [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
-    void set_prechain_resolution(uint32_t width, uint32_t height) {
-        m_source_resolution = vk::Extent2D{width, height};
-        if (m_filter_chain) {
-            m_filter_chain->set_prechain_resolution(width, height);
-        }
-    }
+    void set_prechain_resolution(uint32_t width, uint32_t height);
+
+    [[nodiscard]] auto list_filter_controls() const -> std::vector<FilterControlDescriptor>;
+    [[nodiscard]] auto list_filter_controls(FilterControlStage stage) const
+        -> std::vector<FilterControlDescriptor>;
+    [[nodiscard]] auto set_filter_control_value(FilterControlId control_id, float value) -> bool;
+    [[nodiscard]] auto reset_filter_control_value(FilterControlId control_id) -> bool;
+    void reset_filter_controls();
+
     [[nodiscard]] auto get_captured_extent() const -> vk::Extent2D { return m_import_extent; }
     [[nodiscard]] auto get_scale_mode() const -> ScaleMode { return m_scale_mode; }
     [[nodiscard]] auto get_integer_scale() const -> uint32_t { return m_integer_scale; }
@@ -171,7 +174,6 @@ private:
 
     vk::PhysicalDevice m_physical_device;
     vk::Queue m_graphics_queue;
-    std::unique_ptr<ShaderRuntime> m_shader_runtime;
     std::unique_ptr<FilterChain> m_filter_chain;
 
     vk::Instance m_instance;
@@ -236,14 +238,12 @@ private:
 
     // Async shader reload state
     std::unique_ptr<FilterChain> m_pending_filter_chain;
-    std::unique_ptr<ShaderRuntime> m_pending_shader_runtime;
     std::filesystem::path m_pending_preset_path;
     std::atomic<bool> m_pending_chain_ready{false};
     std::future<Result<void>> m_pending_load_future;
 
     struct DeferredDestroy {
-        std::unique_ptr<FilterChain> chain;
-        std::unique_ptr<ShaderRuntime> runtime;
+        std::unique_ptr<FilterChain> filter_chain;
         uint64_t destroy_after_frame = 0;
     };
     static constexpr size_t MAX_DEFERRED_DESTROYS = 4;

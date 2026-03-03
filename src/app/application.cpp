@@ -9,7 +9,6 @@
 #include <poll.h>
 #include <ranges>
 #include <render/backend/vulkan_backend.hpp>
-#include <render/chain/filter_chain.hpp>
 #include <string>
 #include <string_view>
 #include <sys/signalfd.h>
@@ -50,24 +49,14 @@ static auto scan_presets(const std::filesystem::path& dir) -> std::vector<std::f
 
 static void update_ui_parameters(render::VulkanBackend& vulkan_backend,
                                  ui::ImGuiLayer& imgui_layer) {
-    auto* chain = vulkan_backend.filter_chain();
-    auto params = chain->get_all_parameters();
+    auto controls = vulkan_backend.list_filter_controls(render::FilterControlStage::effect);
     std::vector<ui::ParameterState> ui_params;
-    ui_params.reserve(params.size());
+    ui_params.reserve(controls.size());
 
-    for (const auto& p : params) {
+    for (const auto& control : controls) {
         ui_params.push_back({
-            .pass_index = 0,
-            .info =
-                {
-                    .name = p.name,
-                    .description = p.description,
-                    .default_value = p.default_value,
-                    .min_value = p.min_value,
-                    .max_value = p.max_value,
-                    .step = p.step,
-                },
-            .current_value = p.current_value,
+            .descriptor = control,
+            .current_value = control.current_value,
         });
     }
     imgui_layer.set_parameters(std::move(ui_params));
@@ -154,13 +143,12 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
     m_imgui_layer->state().shader_enabled = !config.shader.preset.empty();
 
     m_imgui_layer->set_parameter_change_callback(
-        [&backend = *m_vulkan_backend](size_t /*pass_index*/, const std::string& name,
-                                       float value) {
-            backend.filter_chain()->set_parameter(name, value);
+        [&backend = *m_vulkan_backend](render::FilterControlId control_id, float value) {
+            static_cast<void>(backend.set_filter_control_value(control_id, value));
         });
     m_imgui_layer->set_parameter_reset_callback(
         [&backend = *m_vulkan_backend, layer = m_imgui_layer.get()]() {
-            backend.filter_chain()->clear_parameter_overrides();
+            backend.reset_filter_controls();
             update_ui_parameters(backend, *layer);
         });
     m_imgui_layer->set_prechain_change_callback(
@@ -168,8 +156,8 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
             backend.set_prechain_resolution(width, height);
         });
     m_imgui_layer->set_prechain_parameter_callback(
-        [&backend = *m_vulkan_backend](const std::string& name, float value) {
-            backend.filter_chain()->set_prechain_parameter(name, value);
+        [&backend = *m_vulkan_backend](render::FilterControlId control_id, float value) {
+            static_cast<void>(backend.set_filter_control_value(control_id, value));
         });
     m_imgui_layer->set_prechain_scale_mode_callback([this](ScaleMode mode, uint32_t integer_scale) {
         m_vulkan_backend->set_scale_mode(mode);
@@ -180,7 +168,7 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
     m_imgui_layer->set_prechain_state(prechain_res, m_vulkan_backend->get_scale_mode(),
                                       m_vulkan_backend->get_integer_scale());
     m_imgui_layer->set_prechain_parameters(
-        m_vulkan_backend->filter_chain()->get_prechain_parameters());
+        m_vulkan_backend->list_filter_controls(render::FilterControlStage::prechain));
 
     update_ui_parameters(*m_vulkan_backend, *m_imgui_layer);
     return Result<void>{};
@@ -493,7 +481,7 @@ void Application::sync_prechain_ui() {
     }
 
     if (prechain.pass_parameters.empty()) {
-        auto params = m_vulkan_backend->filter_chain()->get_prechain_parameters();
+        auto params = m_vulkan_backend->list_filter_controls(render::FilterControlStage::prechain);
         if (!params.empty()) {
             m_imgui_layer->set_prechain_parameters(std::move(params));
         }
@@ -742,6 +730,8 @@ void Application::sync_ui_state() {
     if (m_vulkan_backend->consume_chain_swapped()) {
         m_imgui_layer->state().current_preset = m_vulkan_backend->current_preset_path();
         update_ui_parameters(*m_vulkan_backend, *m_imgui_layer);
+        m_imgui_layer->set_prechain_parameters(
+            m_vulkan_backend->list_filter_controls(render::FilterControlStage::prechain));
     }
 
     m_imgui_layer->begin_frame();

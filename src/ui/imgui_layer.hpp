@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
-#include <render/shader/retroarch_preprocessor.hpp>
+#include <render/chain/filter_controls.hpp>
 #include <string>
 #include <util/config.hpp>
 #include <util/error.hpp>
@@ -45,8 +45,7 @@ struct ImGuiConfig {
 
 /// @brief UI state for a single shader parameter.
 struct ParameterState {
-    size_t pass_index;
-    render::ShaderParameter info;
+    render::FilterControlDescriptor descriptor;
     float current_value;
 };
 
@@ -70,7 +69,7 @@ struct PreChainState {
     uint32_t target_width = 0;
     uint32_t target_height = 0;
     bool dirty = false;
-    std::vector<render::ShaderParameter> pass_parameters;
+    std::vector<render::FilterControlDescriptor> pass_parameters;
 };
 
 /// @brief Aggregate UI state for shader controls.
@@ -88,10 +87,11 @@ struct ShaderControlState {
 };
 
 using ParameterChangeCallback =
-    std::function<void(size_t pass_index, const std::string& name, float value)>;
+    std::function<void(render::FilterControlId control_id, float value)>;
 using ParameterResetCallback = std::function<void()>;
 using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t height)>;
-using PreChainParameterCallback = std::function<void(const std::string& name, float value)>;
+using PreChainParameterCallback =
+    std::function<void(render::FilterControlId control_id, float value)>;
 using PreChainScaleModeCallback = std::function<void(ScaleMode mode, uint32_t integer_scale)>;
 using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
 using SurfaceFilterToggleCallback = std::function<void(uint32_t surface_id, bool enabled)>;
@@ -145,7 +145,7 @@ public:
     /// @brief Initializes pre-chain UI state from backend values.
     void set_prechain_state(vk::Extent2D resolution, ScaleMode scale_mode, uint32_t integer_scale);
     /// @brief Updates pre-chain pass parameters for UI display.
-    void set_prechain_parameters(std::vector<render::ShaderParameter> params);
+    void set_prechain_parameters(std::vector<render::FilterControlDescriptor> params);
     /// @brief Sets a callback invoked when a pre-chain pass parameter is changed.
     void set_prechain_parameter_callback(PreChainParameterCallback callback);
     /// @brief Sets a callback invoked when the pre-chain scale mode changes.
@@ -179,6 +179,8 @@ private:
     ImGuiLayer() = default;
     void draw_shader_controls();
     void draw_prechain_stage_controls();
+    void draw_prechain_scale_and_profile_controls(PreChainState& prechain);
+    void draw_prechain_pass_parameter_controls(PreChainState& prechain);
     void draw_effect_stage_controls();
     void draw_postchain_stage_controls();
     void draw_parameter_controls();

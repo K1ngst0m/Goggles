@@ -13,6 +13,7 @@ struct ShaderParameter {
     std::string name;
     std::string description;
     float default_value;
+    float current_value;
     float min_value;
     float max_value;
     float step;

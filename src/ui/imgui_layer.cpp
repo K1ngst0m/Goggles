@@ -395,7 +395,7 @@ void ImGuiLayer::set_prechain_state(vk::Extent2D resolution, ScaleMode scale_mod
     }
 }
 
-void ImGuiLayer::set_prechain_parameters(std::vector<render::ShaderParameter> params) {
+void ImGuiLayer::set_prechain_parameters(std::vector<render::FilterControlDescriptor> params) {
     m_state.prechain.pass_parameters = std::move(params);
 }
 
@@ -492,145 +492,151 @@ void ImGuiLayer::draw_prechain_stage_controls() {
     GOGGLES_PROFILE_FUNCTION();
     if (ImGui::CollapsingHeader("Pre-Chain Stage", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& prechain = m_state.prechain;
+        draw_prechain_scale_and_profile_controls(prechain);
+        draw_prechain_pass_parameter_controls(prechain);
+    }
+}
 
-        static constexpr std::array<const char*, 5> SCALE_MODE_LABELS = {
-            "Fit", "Fill", "Stretch", "Integer", "Dynamic",
-        };
-        static constexpr std::array<ScaleMode, 5> SCALE_MODE_VALUES = {
-            ScaleMode::fit,     ScaleMode::fill,    ScaleMode::stretch,
-            ScaleMode::integer, ScaleMode::dynamic,
-        };
+void ImGuiLayer::draw_prechain_scale_and_profile_controls(PreChainState& prechain) {
+    static constexpr std::array<const char*, 5> SCALE_MODE_LABELS = {
+        "Fit", "Fill", "Stretch", "Integer", "Dynamic",
+    };
+    static constexpr std::array<ScaleMode, 5> SCALE_MODE_VALUES = {
+        ScaleMode::fit, ScaleMode::fill, ScaleMode::stretch, ScaleMode::integer, ScaleMode::dynamic,
+    };
 
-        ImGui::Text("Scale Mode:");
-        ImGui::SetNextItemWidth(150);
-        int mode_index = 0;
-        for (size_t i = 0; i < SCALE_MODE_VALUES.size(); ++i) {
-            if (SCALE_MODE_VALUES[i] == prechain.scale_mode) {
-                mode_index = static_cast<int>(i);
-                break;
-            }
+    ImGui::Text("Scale Mode:");
+    ImGui::SetNextItemWidth(150);
+    int mode_index = 0;
+    for (size_t i = 0; i < SCALE_MODE_VALUES.size(); ++i) {
+        if (SCALE_MODE_VALUES[i] == prechain.scale_mode) {
+            mode_index = static_cast<int>(i);
+            break;
         }
-        if (ImGui::Combo("##scale_mode", &mode_index, SCALE_MODE_LABELS.data(),
-                         static_cast<int>(SCALE_MODE_LABELS.size()))) {
-            prechain.scale_mode = SCALE_MODE_VALUES[static_cast<size_t>(mode_index)];
+    }
+    if (ImGui::Combo("##scale_mode", &mode_index, SCALE_MODE_LABELS.data(),
+                     static_cast<int>(SCALE_MODE_LABELS.size()))) {
+        prechain.scale_mode = SCALE_MODE_VALUES[static_cast<size_t>(mode_index)];
+        if (m_on_prechain_scale_mode) {
+            m_on_prechain_scale_mode(prechain.scale_mode, prechain.integer_scale);
+        }
+    }
+
+    if (prechain.scale_mode == ScaleMode::integer) {
+        ImGui::Text("Integer Scale:");
+        ImGui::SetNextItemWidth(120);
+        int integer_scale = static_cast<int>(prechain.integer_scale);
+        if (ImGui::SliderInt("##integer_scale", &integer_scale, 0, 5)) {
+            prechain.integer_scale = static_cast<uint32_t>(std::clamp(integer_scale, 0, 5));
             if (m_on_prechain_scale_mode) {
                 m_on_prechain_scale_mode(prechain.scale_mode, prechain.integer_scale);
             }
         }
+    }
 
-        if (prechain.scale_mode == ScaleMode::integer) {
-            ImGui::Text("Integer Scale:");
-            ImGui::SetNextItemWidth(120);
-            int integer_scale = static_cast<int>(prechain.integer_scale);
-            if (ImGui::SliderInt("##integer_scale", &integer_scale, 0, 5)) {
-                prechain.integer_scale = static_cast<uint32_t>(std::clamp(integer_scale, 0, 5));
-                if (m_on_prechain_scale_mode) {
-                    m_on_prechain_scale_mode(prechain.scale_mode, prechain.integer_scale);
-                }
+    static constexpr std::array<const char*, 8> PROFILE_LABELS = {
+        "Disabled", // 0: pass-through
+        "240p",     // 1: NES, SNES, Genesis, N64, PS1, Saturn
+        "288p",     // 2: PS2 240p mode, Wii VC
+        "480p",     // 3: Dreamcast, GameCube, PS2, Xbox, Wii
+        "480i",     // 4: interlaced variant
+        "720p",     // 5: Xbox 360, PS3, Wii U era
+        "1080p",    // 6: PS3/360+, modern HD
+        "Custom",   // 7: user-defined
+    };
+    static constexpr std::array<uint32_t, 8> PROFILE_HEIGHTS = {
+        0,    // disabled
+        240,  // 240p
+        288,  // 288p
+        480,  // 480p
+        480,  // 480i
+        720,  // 720p
+        1080, // 1080p
+        0,    // custom (uses manual input)
+    };
+
+    ImGui::Text("Resolution Profile:");
+    ImGui::SetNextItemWidth(120);
+    int profile_idx = static_cast<int>(prechain.profile);
+    if (ImGui::Combo("##profile", &profile_idx, PROFILE_LABELS.data(),
+                     static_cast<int>(PROFILE_LABELS.size()))) {
+        prechain.profile = static_cast<ResolutionProfile>(profile_idx);
+        if (prechain.profile != ResolutionProfile::custom) {
+            uint32_t h = PROFILE_HEIGHTS[static_cast<size_t>(profile_idx)];
+            prechain.target_width = 0;
+            prechain.target_height = h;
+            prechain.dirty = false;
+            if (m_on_prechain_change) {
+                m_on_prechain_change(0, h);
             }
         }
+    }
 
-        // Resolution profile labels and heights (width=0 preserves aspect ratio)
-        static constexpr std::array<const char*, 8> PROFILE_LABELS = {
-            "Disabled", // 0: pass-through
-            "240p",     // 1: NES, SNES, Genesis, N64, PS1, Saturn
-            "288p",     // 2: PS2 240p mode, Wii VC
-            "480p",     // 3: Dreamcast, GameCube, PS2, Xbox, Wii
-            "480i",     // 4: interlaced variant
-            "720p",     // 5: Xbox 360, PS3, Wii U era
-            "1080p",    // 6: PS3/360+, modern HD
-            "Custom",   // 7: user-defined
-        };
-        static constexpr std::array<uint32_t, 8> PROFILE_HEIGHTS = {
-            0,    // disabled
-            240,  // 240p
-            288,  // 288p
-            480,  // 480p
-            480,  // 480i
-            720,  // 720p
-            1080, // 1080p
-            0,    // custom (uses manual input)
-        };
+    if (prechain.profile == ResolutionProfile::custom) {
+        ImGui::Text("Target Resolution:");
+        ImGui::SetNextItemWidth(100);
+        int width = static_cast<int>(prechain.target_width);
+        if (ImGui::InputInt("##width", &width, 0, 0)) {
+            prechain.target_width = static_cast<uint32_t>(std::max(0, width));
+            prechain.dirty = true;
+        }
+        ImGui::SameLine();
+        ImGui::Text("x");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(100);
+        int height = static_cast<int>(prechain.target_height);
+        if (ImGui::InputInt("##height", &height, 0, 0)) {
+            prechain.target_height = static_cast<uint32_t>(std::max(0, height));
+            prechain.dirty = true;
+        }
 
-        ImGui::Text("Resolution Profile:");
-        ImGui::SetNextItemWidth(120);
-        int profile_idx = static_cast<int>(prechain.profile);
-        if (ImGui::Combo("##profile", &profile_idx, PROFILE_LABELS.data(),
-                         static_cast<int>(PROFILE_LABELS.size()))) {
-            prechain.profile = static_cast<ResolutionProfile>(profile_idx);
-
-            // Auto-apply for non-custom profiles (width=0 preserves aspect ratio)
-            if (prechain.profile != ResolutionProfile::custom) {
-                uint32_t h = PROFILE_HEIGHTS[static_cast<size_t>(profile_idx)];
-                prechain.target_width = 0;
-                prechain.target_height = h;
-                prechain.dirty = false;
+        if (prechain.dirty) {
+            ImGui::SameLine();
+            if (ImGui::Button("Apply")) {
                 if (m_on_prechain_change) {
-                    m_on_prechain_change(0, h);
+                    m_on_prechain_change(prechain.target_width, prechain.target_height);
                 }
+                prechain.dirty = false;
             }
         }
+    }
+}
 
-        // Custom resolution input (only shown when Custom is selected)
-        if (prechain.profile == ResolutionProfile::custom) {
-            ImGui::Text("Target Resolution:");
-            ImGui::SetNextItemWidth(100);
-            int width = static_cast<int>(prechain.target_width);
-            if (ImGui::InputInt("##width", &width, 0, 0)) {
-                prechain.target_width = static_cast<uint32_t>(std::max(0, width));
-                prechain.dirty = true;
-            }
-            ImGui::SameLine();
-            ImGui::Text("x");
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(100);
-            int height = static_cast<int>(prechain.target_height);
-            if (ImGui::InputInt("##height", &height, 0, 0)) {
-                prechain.target_height = static_cast<uint32_t>(std::max(0, height));
-                prechain.dirty = true;
-            }
+void ImGuiLayer::draw_prechain_pass_parameter_controls(PreChainState& prechain) {
+    if (prechain.profile != ResolutionProfile::disabled && !prechain.pass_parameters.empty()) {
+        ImGui::Separator();
+        static constexpr std::array<const char*, 2> FILTER_LABELS = {"Area", "Gaussian"};
+        for (auto& param : prechain.pass_parameters) {
+            bool is_enum = (param.step >= 1.0F) && (param.max_value - param.min_value) <= 10.0F;
+            const std::string label =
+                std::string(param.name) + "##prechain_" + std::to_string(param.control_id);
+            if (is_enum) {
+                int count = static_cast<int>(param.max_value - param.min_value) + 1;
+                int current = static_cast<int>(param.current_value - param.min_value);
 
-            if (prechain.dirty) {
-                ImGui::SameLine();
-                if (ImGui::Button("Apply")) {
-                    if (m_on_prechain_change) {
-                        m_on_prechain_change(prechain.target_width, prechain.target_height);
-                    }
-                    prechain.dirty = false;
-                }
-            }
-        }
-
-        // Pass parameters (only shown when pre-chain is active)
-        if (prechain.profile != ResolutionProfile::disabled && !prechain.pass_parameters.empty()) {
-            ImGui::Separator();
-            static constexpr std::array<const char*, 2> FILTER_LABELS = {"Area", "Gaussian"};
-            for (auto& param : prechain.pass_parameters) {
-                bool is_enum = (param.step >= 1.0F) && (param.max_value - param.min_value) <= 10.0F;
-                if (is_enum) {
-                    int count = static_cast<int>(param.max_value - param.min_value) + 1;
-                    int current = static_cast<int>(param.default_value - param.min_value);
-
-                    ImGui::SetNextItemWidth(150);
-                    if (ImGui::Combo(param.description.c_str(), &current, FILTER_LABELS.data(),
-                                     std::min(count, static_cast<int>(FILTER_LABELS.size())))) {
-                        float new_value = param.min_value + static_cast<float>(current);
-                        param.default_value = new_value;
-                        if (m_on_prechain_parameter) {
-                            m_on_prechain_parameter(param.name, new_value);
-                        }
-                    }
-                } else {
-                    float value = param.default_value;
-                    ImGui::SetNextItemWidth(150);
-                    if (ImGui::SliderFloat(param.description.c_str(), &value, param.min_value,
-                                           param.max_value)) {
-                        param.default_value = value;
-                        if (m_on_prechain_parameter) {
-                            m_on_prechain_parameter(param.name, value);
-                        }
+                ImGui::SetNextItemWidth(150);
+                if (ImGui::Combo(label.c_str(), &current, FILTER_LABELS.data(),
+                                 std::min(count, static_cast<int>(FILTER_LABELS.size())))) {
+                    float new_value = param.min_value + static_cast<float>(current);
+                    param.current_value = new_value;
+                    if (m_on_prechain_parameter) {
+                        m_on_prechain_parameter(param.control_id, new_value);
                     }
                 }
+            } else {
+                float value = param.current_value;
+                ImGui::SetNextItemWidth(150);
+                if (ImGui::SliderFloat(label.c_str(), &value, param.min_value, param.max_value)) {
+                    param.current_value = value;
+                    if (m_on_prechain_parameter) {
+                        m_on_prechain_parameter(param.control_id, value);
+                    }
+                }
+            }
+
+            if (ImGui::IsItemHovered() && param.description.has_value() &&
+                !param.description->empty()) {
+                ImGui::SetTooltip("%s", param.description->c_str());
             }
         }
     }
@@ -696,21 +702,25 @@ void ImGuiLayer::draw_parameter_controls() {
         }
 
         for (auto& param : m_state.parameters) {
+            const auto& descriptor = param.descriptor;
             // Skip dummy/separator parameters (min == max)
-            if (param.info.min_value >= param.info.max_value) {
-                ImGui::TextDisabled("%s", param.info.description.c_str());
+            if (descriptor.min_value >= descriptor.max_value) {
+                ImGui::TextDisabled("%s", descriptor.name.c_str());
                 continue;
             }
 
+            const std::string label =
+                descriptor.name + "##effect_" + std::to_string(descriptor.control_id);
             float old_value = param.current_value;
-            if (ImGui::SliderFloat(param.info.name.c_str(), &param.current_value,
-                                   param.info.min_value, param.info.max_value, "%.3f")) {
+            if (ImGui::SliderFloat(label.c_str(), &param.current_value, descriptor.min_value,
+                                   descriptor.max_value, "%.3f")) {
                 if (param.current_value != old_value && m_on_parameter_change) {
-                    m_on_parameter_change(param.pass_index, param.info.name, param.current_value);
+                    m_on_parameter_change(descriptor.control_id, param.current_value);
                 }
             }
-            if (ImGui::IsItemHovered() && !param.info.description.empty()) {
-                ImGui::SetTooltip("%s", param.info.description.c_str());
+            if (ImGui::IsItemHovered() && descriptor.description.has_value() &&
+                !descriptor.description->empty()) {
+                ImGui::SetTooltip("%s", descriptor.description->c_str());
             }
         }
         ImGui::TreePop();

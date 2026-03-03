@@ -35,6 +35,8 @@ target_sources(goggles_tests PRIVATE
     render/test_semantic_binder.cpp
     render/test_zfast_integration.cpp
     render/test_filter_chain.cpp
+    render/test_filter_controls.cpp
+    render/test_filter_boundary_contracts.cpp
     render/test_shader_validation.cpp
 
     # Future: Pipeline module tests (when implemented)

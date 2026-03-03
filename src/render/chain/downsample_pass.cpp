@@ -82,7 +82,8 @@ auto DownsamplePass::get_shader_parameters() const -> std::vector<ShaderParamete
     return {{
         .name = "filter_type",
         .description = "Filter Type",
-        .default_value = m_filter_type,
+        .default_value = DownsamplePass::FILTER_TYPE_DEFAULT,
+        .current_value = m_filter_type,
         .min_value = 0.0F,
         .max_value = 1.0F,
         .step = 1.0F,

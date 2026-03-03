@@ -60,7 +60,8 @@ private:
 
     vk::Sampler m_sampler;
 
-    float m_filter_type = 0.0F;
+    static constexpr float FILTER_TYPE_DEFAULT = 0.0F;
+    float m_filter_type = FILTER_TYPE_DEFAULT;
 };
 
 } // namespace goggles::render

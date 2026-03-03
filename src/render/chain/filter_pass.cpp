@@ -173,7 +173,7 @@ auto FilterPass::get_shader_parameters() const -> std::vector<ShaderParameter> {
     result.reserve(m_parameters.size());
     for (const auto& param : m_parameters) {
         ShaderParameter p = param;
-        p.default_value = get_parameter_value(param.name);
+        p.current_value = get_parameter_value(param.name);
         result.push_back(std::move(p));
     }
     return result;

@@ -18,9 +18,7 @@ target_compile_definitions(goggles_render_shader_obj PRIVATE
 target_link_libraries(goggles_render_shader_obj PUBLIC
     goggles_util
     Vulkan::Vulkan
-    SDL3::SDL3
     slang::slang
-    stb_image
 )
 
 target_compile_definitions(goggles_render_shader_obj PUBLIC

@@ -265,6 +265,7 @@ auto RetroArchPreprocessor::extract_parameters(const std::string& source)
             param.name = match[1].str();
             param.description = match[2].str();
             param.default_value = std::stof(match[3].str());
+            param.current_value = param.default_value;
             param.min_value = std::stof(match[4].str());
             param.max_value = std::stof(match[5].str());
             param.step = std::stof(match[6].str());

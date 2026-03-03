@@ -5,9 +5,12 @@ add_library(goggles_render_chain_obj OBJECT
     preset_parser.cpp
     filter_pass.cpp
     framebuffer.cpp
+    filter_chain_core.cpp
     filter_chain.cpp
+    filter_controls.cpp
     frame_history.cpp
     downsample_pass.cpp
+    vulkan_dispatch.cpp
 )
 
 target_include_directories(goggles_render_chain_obj PUBLIC
@@ -22,7 +25,6 @@ target_compile_definitions(goggles_render_chain_obj PRIVATE
 target_link_libraries(goggles_render_chain_obj PUBLIC
     goggles_util
     Vulkan::Vulkan
-    SDL3::SDL3
     slang::slang
     stb_image
 )
