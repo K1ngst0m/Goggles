@@ -10,7 +10,7 @@ if(ENABLE_CLANG_TIDY)
     set(GOGGLES_CLANG_TIDY_CONFIG
         ${CLANG_TIDY_EXE}
         --header-filter=${CMAKE_SOURCE_DIR}/src/.*
-        --exclude-header-filter=${CMAKE_SOURCE_DIR}/src/render/chain/include/goggles_filter_chain\\.h)
+        --exclude-header-filter=${CMAKE_SOURCE_DIR}/src/render/chain/api/c/goggles_filter_chain\\.h)
 
     function(goggles_enable_clang_tidy target_name)
         set_target_properties(${target_name} PROPERTIES CXX_CLANG_TIDY "${GOGGLES_CLANG_TIDY_CONFIG}")

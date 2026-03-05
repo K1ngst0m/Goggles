@@ -38,7 +38,8 @@ endif()
 
 target_include_directories(goggles-filter-chain
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/render/chain/include>
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/render/chain/api/c>
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/render/chain/api/cpp>
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
         $<INSTALL_INTERFACE:include>
     PRIVATE
@@ -99,8 +100,8 @@ goggles_enable_sanitizers(goggles_render)
 goggles_enable_profiling(goggles_render)
 
 install(FILES
-    ${CMAKE_SOURCE_DIR}/src/render/chain/include/goggles_filter_chain.h
-    ${CMAKE_SOURCE_DIR}/src/render/chain/include/goggles_filter_chain.hpp
+    ${CMAKE_SOURCE_DIR}/src/render/chain/api/c/goggles_filter_chain.h
+    ${CMAKE_SOURCE_DIR}/src/render/chain/api/cpp/goggles_filter_chain.hpp
     DESTINATION include
 )
 

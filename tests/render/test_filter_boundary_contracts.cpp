@@ -204,7 +204,7 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
 
 TEST_CASE("Filter chain wrapper boundary contract coverage", "[filter_chain][wrapper_contract]") {
     const auto wrapper_hpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
-                             "src/render/chain/include/goggles_filter_chain.hpp";
+                             "src/render/chain/api/cpp/goggles_filter_chain.hpp";
     auto header_text = read_text_file(wrapper_hpp);
     REQUIRE(header_text.has_value());
 
@@ -251,8 +251,8 @@ TEST_CASE("Filter chain wrapper boundary contract coverage", "[filter_chain][wra
     REQUIRE((output_only & ChainStageMask::prechain) == ChainStageMask::none);
     REQUIRE((output_only & ChainStageMask::effect) == ChainStageMask::none);
 
-    const auto wrapper_cpp =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/chain/filter_chain_cpp_wrapper.cpp";
+    const auto wrapper_cpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
+                             "src/render/chain/api/cpp/goggles_filter_chain.cpp";
     auto wrapper_text = read_text_file(wrapper_cpp);
     REQUIRE(wrapper_text.has_value());
 

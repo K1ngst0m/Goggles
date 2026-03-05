@@ -1,4 +1,5 @@
 #include "goggles_filter_chain.h"
+
 #include "goggles_filter_chain.hpp"
 
 #include <cstdint>
