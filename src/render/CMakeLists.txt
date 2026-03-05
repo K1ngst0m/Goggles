@@ -28,6 +28,12 @@ if(GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "SHARED")
         goggles_render_shader_obj
         goggles_render_texture_obj
         PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+    target_compile_definitions(
+        goggles_render_chain_obj
+        goggles_render_shader_obj
+        goggles_render_texture_obj
+        PRIVATE GOGGLES_CHAIN_BUILD_SHARED)
 endif()
 
 target_include_directories(goggles-filter-chain
@@ -44,11 +50,18 @@ target_compile_definitions(goggles-filter-chain PRIVATE
 )
 
 target_link_libraries(goggles-filter-chain PRIVATE
-    goggles_util
     Vulkan::Vulkan
     slang::slang
     stb_image
 )
+
+target_link_libraries(goggles-filter-chain PUBLIC
+    goggles_util
+)
+
+if(GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "SHARED")
+    target_compile_definitions(goggles-filter-chain INTERFACE GOGGLES_CHAIN_USE_SHARED)
+endif()
 
 target_compile_definitions(goggles-filter-chain PUBLIC
     VULKAN_HPP_NO_EXCEPTIONS
@@ -85,8 +98,14 @@ goggles_enable_clang_tidy(goggles_render)
 goggles_enable_sanitizers(goggles_render)
 goggles_enable_profiling(goggles_render)
 
-install(FILES ${CMAKE_SOURCE_DIR}/src/render/chain/include/goggles_filter_chain.h
+install(FILES
+    ${CMAKE_SOURCE_DIR}/src/render/chain/include/goggles_filter_chain.h
+    ${CMAKE_SOURCE_DIR}/src/render/chain/include/goggles_filter_chain.hpp
     DESTINATION include
+)
+
+install(FILES ${CMAKE_SOURCE_DIR}/src/util/error.hpp
+    DESTINATION include/util
 )
 
 install(TARGETS goggles-filter-chain

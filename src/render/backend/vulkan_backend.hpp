@@ -1,6 +1,6 @@
 #pragma once
 
-#include "goggles_filter_chain.h"
+#include "goggles_filter_chain.hpp"
 #include "vulkan_debug.hpp"
 
 #include <SDL3/SDL.h>
@@ -173,7 +173,7 @@ private:
 
     vk::PhysicalDevice m_physical_device;
     vk::Queue m_graphics_queue;
-    goggles_chain_t* m_filter_chain = nullptr;
+    FilterChainRuntime m_filter_chain;
 
     vk::Instance m_instance;
     vk::Device m_device;
@@ -236,13 +236,13 @@ private:
     std::atomic<bool> m_chain_swapped{false};
 
     // Async shader reload state
-    goggles_chain_t* m_pending_filter_chain = nullptr;
+    FilterChainRuntime m_pending_filter_chain;
     std::filesystem::path m_pending_preset_path;
     std::atomic<bool> m_pending_chain_ready{false};
     std::future<Result<void>> m_pending_load_future;
 
     struct DeferredDestroy {
-        goggles_chain_t* filter_chain = nullptr;
+        FilterChainRuntime filter_chain;
         uint64_t destroy_after_frame = 0;
     };
     static constexpr size_t MAX_DEFERRED_DESTROYS = 4;

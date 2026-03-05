@@ -8,6 +8,7 @@ add_library(goggles_render_chain_obj OBJECT
     filter_chain_core.cpp
     filter_chain.cpp
     filter_chain_c_api.cpp
+    filter_chain_cpp_wrapper.cpp
     filter_controls.cpp
     frame_history.cpp
     downsample_pass.cpp
