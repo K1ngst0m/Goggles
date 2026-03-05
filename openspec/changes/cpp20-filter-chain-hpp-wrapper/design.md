@@ -1,6 +1,6 @@
 ## Context
 
-Goggles exposes a filter-chain C ABI in `src/render/chain/include/goggles_filter_chain.h` and currently consumes that header directly in internal C++ runtime code (notably backend integration). The deep-interview plan requires a C++20-native API surface for internal/public C++ usage while preserving the C ABI boundary and C contract tests.
+Goggles exposes a filter-chain C ABI in `src/render/chain/include/goggles_filter_chain.h` and currently consumes that header directly in internal C++ runtime code (notably backend integration). The goggles-interview plan requires a C++20-native API surface for internal/public C++ usage while preserving the C ABI boundary and C contract tests.
 
 Policy constraints from `docs/project_policies.md` apply:
 

@@ -156,6 +156,7 @@ auto FilterChainRuntime::operator=(FilterChainRuntime&& other) noexcept -> Filte
     if (!result) {
         GOGGLES_LOG_WARN("FilterChainRuntime move-assignment cleanup failed: {}",
                          result.error().message);
+        return *this;
     }
     m_handle = other.m_handle;
     other.m_handle = nullptr;
@@ -200,6 +201,9 @@ auto FilterChainRuntime::destroy() -> Result<void> {
 
     auto* chain = m_handle;
     const auto status = goggles_chain_destroy(&m_handle);
+    if (status != GOGGLES_CHAIN_STATUS_OK) {
+        m_handle = nullptr;
+    }
     return status_to_result(chain, status, "Failed to destroy filter chain");
 }
 

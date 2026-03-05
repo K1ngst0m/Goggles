@@ -39,10 +39,10 @@ endif()
 target_include_directories(goggles-filter-chain
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/render/chain/include>
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/src
 )
 
 target_compile_definitions(goggles-filter-chain PRIVATE
