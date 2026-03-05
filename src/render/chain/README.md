@@ -1,90 +1,74 @@
-# Filter Chain C API (Vulkan v1)
+# Filter Chain Maintainer Guide
 
-This directory documents the public C API contract for extracting the Goggles filter chain as a standalone library.
+This directory owns Goggles' multi-pass shader pipeline.
+Use this file as the entry point before changing chain behavior.
 
-## Audience and integration style
+## What this module owns
 
-- Engine and render-backend integrators embedding the runtime into an existing Vulkan frame path.
-- FFI and binding authors targeting host languages like Rust, Python, or C#.
-- Plugin/module authors linking the library into a larger host process.
-- Integration styles in v1: static linking, shared-library linking, and in-process embed in an existing render loop.
-- Not a standalone process boundary in v1.
+- Preset parsing for `.slangp` pipelines.
+- Pass-graph build and rebuild.
+- Per-frame recording for prechain, effect passes, and output pass.
+- Frame history and feedback surfaces (`OriginalHistory#`, `PassFeedback#`).
+- Control discovery/mutation plumbing used by UI and runtime boundaries.
 
-## What this project is
+## Runtime flow (mental model)
 
-- A Vulkan-only C API surface for creating a filter-chain runtime, loading presets, recording frame commands, and managing controls.
-- A stable v1 ABI boundary centered on opaque handles, explicit ownership, explicit status codes, and fixed-width public scalar types.
-- A host-integrated runtime model where the host keeps ownership of command submission, presentation, and external synchronization.
+1. Load preset and build pass graph.
+2. Allocate/update graph-owned framebuffers.
+3. Per frame, record in fixed order: prechain -> effect -> output.
+4. Advance history and feedback resources for next frame.
+5. Rebuild when preset or size policy changes.
 
-## What this project is not
+## Where to edit
 
-- Not a dynamic loader-table API in v1.
-- Not a non-Vulkan backend in v1.
-- Not an API that exposes internal pass graph or shader runtime implementation types.
-- Not an API that performs implicit submit/present or runs hidden background mutation threads.
+| Task | Primary files | Also check |
+|---|---|---|
+| Pipeline orchestration | `filter_chain.cpp`, `filter_chain.hpp` | `filter_chain_core.cpp` |
+| Pass execution order and sizing | `filter_chain_core.cpp`, `filter_chain_core.hpp` | `output_pass.cpp` |
+| Single pass behavior | `filter_pass.cpp`, `filter_pass.hpp` | `semantic_binder.hpp` |
+| Output stage | `output_pass.cpp`, `output_pass.hpp` | `framebuffer.*` |
+| Pre-filter/downsample path | `downsample_pass.cpp`, `downsample_pass.hpp` | `frame_history.*` |
+| Preset parsing | `preset_parser.cpp`, `preset_parser.hpp` | tests under `tests/render/` |
+| Shader semantic binding | `semantic_binder.hpp` | `tests/render/test_filter_chain.cpp` |
+| Control metadata and IDs | `filter_controls.cpp`, `filter_controls.hpp` | `tests/render/test_filter_controls.cpp` |
 
-## Quick start
+## Invariants you must preserve
 
-```c
-#include "goggles_filter_chain.h"
+- Stage order stays fixed: prechain -> effect -> output.
+- Semantic names stay stable: `Source`, `OriginalHistory#`, `PassOutput#`, `PassFeedback#`.
+- Rebuild work stays coordinated through `util::JobSystem`; no ad-hoc thread ownership in chain code.
+- Framebuffer/history lifetime stays graph-scoped; avoid cross-graph leakage.
+- Keep hot path bounded: no avoidable blocking I/O, no avoidable allocations in per-frame record paths.
 
-goggles_chain_status_t render_once(
-    const goggles_chain_vk_context_t* vk,
-    VkCommandBuffer cmd,
-    VkImage src_image,
-    VkImageView src_view,
-    VkImageView dst_view,
-    uint32_t width,
-    uint32_t height)
-{
-    goggles_chain_vk_create_info_t ci = goggles_chain_vk_create_info_init();
-    ci.target_format = VK_FORMAT_R8G8B8A8_UNORM;
-    ci.num_sync_indices = 1u; /* valid portable default; raise after capability query */
-    ci.shader_dir_utf8 = "./shaders";
-    ci.cache_dir_utf8 = "./cache";
-    ci.initial_prechain_resolution.width = width;
-    ci.initial_prechain_resolution.height = height;
+## Practical change playbooks
 
-    goggles_chain_t* chain = NULL;
-    goggles_chain_status_t st = goggles_chain_create_vk(vk, &ci, &chain);
-    if (st != GOGGLES_CHAIN_STATUS_OK) {
-        return st;
-    }
+### Change preset behavior
 
-    st = goggles_chain_preset_load(chain, "./presets/example.slangp");
-    if (st == GOGGLES_CHAIN_STATUS_OK) {
-        goggles_chain_vk_record_info_t ri = goggles_chain_vk_record_info_init();
-        ri.command_buffer = cmd;
-        ri.source_image = src_image;
-        ri.source_view = src_view;
-        ri.source_extent.width = width;
-        ri.source_extent.height = height;
-        ri.target_view = dst_view;
-        ri.target_extent.width = width;
-        ri.target_extent.height = height;
-        ri.frame_index = 0u;
-        ri.scale_mode = GOGGLES_CHAIN_SCALE_MODE_FIT;
-        st = goggles_chain_record_vk(chain, &ri);
-    }
+1. Update parser/model (`preset_parser.*`).
+2. Update pass-graph build logic (`filter_chain_core.*`).
+3. Verify semantic bindings still resolve as expected.
+4. Run render chain unit tests.
 
-    (void)goggles_chain_destroy(&chain);
-    return st;
-}
-```
+### Change pass execution or resources
 
-## Versioning and ABI stability
+1. Update pass implementation (`filter_pass.*`, `output_pass.*`, or `downsample_pass.*`).
+2. Verify stage order and resource transitions still match contracts.
+3. Validate feedback/history continuity.
+4. Run render tests and one real render smoke run.
 
-- `goggles_chain_api_version()` returns packed semantic version (`major << 22 | minor << 12 | patch`).
-- `goggles_chain_abi_version()` returns the ABI major.
-- v1.x source compatibility: patch releases are non-breaking, minor releases are additive.
-- v1.x binary compatibility: patch and minor releases keep ABI compatibility.
-- v1.x behavioral compatibility: documented preconditions, postconditions, and error semantics are stable.
-- Bug fixes may tighten behavior only where prior behavior was undocumented or ambiguous.
-- Incompatible ABI layout/signature/calling-convention changes require a major ABI bump.
-- All symbols declared by the v1 public header are mandatory exports for ABI v1.
+### Change control behavior
 
-## Full documentation
+1. Update `filter_controls.*` and chain integration points.
+2. Keep `control_id` semantics stable for active presets.
+3. Verify clamp/reset/list behavior in tests.
 
-- Integration guide: `docs/integration_guide.md`
-- Spec: `docs/spec.md`
-- Source draft retained for review: `../../../docs/filter_chain_c_api_design_draft.md`
+## Verification checklist
+
+- Fast loop: `ctest --preset test -R "goggles_unit_tests" --output-on-failure`
+- CI-parity gate: `pixi run build -p asan && pixi run test -p asan && pixi run build -p quality`
+- Manual smoke: `pixi run start -p debug -- vkcube --wsi xcb`
+
+## Related docs
+
+- Workflow guide: `docs/integration_guide.md`
+- Maintainer contracts: `docs/spec.md`

@@ -37,6 +37,8 @@ The render architecture SHALL support future multi-pass shader processing throug
 - **WHEN** the result needs to be propagated to the caller
 - **THEN** `GOGGLES_TRY(expr)` macro SHALL be used for early return
 
+## ADDED Requirements
+
 ### Requirement: Async Filter Lifecycle Safety
 
 The render pipeline SHALL preserve async preset reload, chain swap, and resize safety behavior after introducing the `goggles-filter-chain` boundary.
