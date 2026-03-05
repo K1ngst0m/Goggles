@@ -83,3 +83,10 @@ Topic-specific docs:
 - [Shader Compatibility Report](docs/shader_compatibility.md) - Full compilation status for all RetroArch presets
 - [Project Policies](docs/project_policies.md) - Development rules and conventions
 - [Roadmap](ROADMAP.md) - Development pending work
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+Some bundled third-party files use their own licenses (for example, `assets/fonts/OFL.txt` and
+curated shader files under `shaders/retroarch/`). See [THIRD_PART_NOTICES.md](THIRD_PART_NOTICES.md).
