@@ -53,6 +53,16 @@ auto collect_app_ui_sources() -> std::vector<std::filesystem::path> {
     return files;
 }
 
+auto count_occurrences(std::string_view text, std::string_view needle) -> size_t {
+    size_t count = 0;
+    size_t pos = text.find(needle);
+    while (pos != std::string_view::npos) {
+        ++count;
+        pos = text.find(needle, pos + needle.size());
+    }
+    return count;
+}
+
 } // namespace
 
 TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][boundary_contract]") {
@@ -143,7 +153,7 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
 
     const auto failure_branch_pos = backend_text->find("if (!result) {", check_swap_pos);
     const auto failure_reset_pos =
-        backend_text->find("goggles_chain_destroy(&m_pending_filter_chain);", failure_branch_pos);
+        backend_text->find("m_pending_filter_chain.destroy();", failure_branch_pos);
     const auto failure_clear_ready_pos =
         backend_text->find("m_pending_chain_ready.store(false", failure_reset_pos);
     const auto failure_return_pos = backend_text->find("return;", failure_clear_ready_pos);
@@ -160,13 +170,15 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
     REQUIRE(failure_clear_ready_pos < failure_return_pos);
     REQUIRE(failure_return_pos < success_signal_pos);
 
-    const auto swap_reapply_resolution_pos =
-        backend_text->find("goggles_chain_prechain_resolution_set(", check_swap_pos);
+    const auto swap_reapply_resolution_pos = backend_text->find(
+        "m_filter_chain.set_prechain_resolution(m_source_resolution)", check_swap_pos);
     REQUIRE(swap_reapply_resolution_pos != std::string::npos);
     REQUIRE(swap_reapply_resolution_pos < success_signal_pos);
 
-    REQUIRE(backend_text->find(".destroy_after_frame = retire_after_frame") != std::string::npos);
-    REQUIRE(backend_text->find("goggles_chain_handle_resize(") != std::string::npos);
+    REQUIRE(backend_text->find("deferred.destroy_after_frame = retire_after_frame") !=
+            std::string::npos);
+    REQUIRE(backend_text->find("m_filter_chain.handle_resize(m_swapchain_extent)") !=
+            std::string::npos);
 
     const auto shutdown_pos = backend_text->find("void VulkanBackend::shutdown()");
     const auto pending_shutdown_pos =
@@ -188,4 +200,67 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
     REQUIRE(header_text.has_value());
     REQUIRE(header_text->find("m_chain_swapped.exchange(false, std::memory_order_acq_rel)") !=
             std::string::npos);
+}
+
+TEST_CASE("Filter chain wrapper boundary contract coverage", "[filter_chain][wrapper_contract]") {
+    const auto wrapper_hpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
+                             "src/render/chain/include/goggles_filter_chain.hpp";
+    auto header_text = read_text_file(wrapper_hpp);
+    REQUIRE(header_text.has_value());
+
+    REQUIRE(header_text->find("class GOGGLES_CHAIN_CPP_API FilterChainRuntime") !=
+            std::string::npos);
+    REQUIRE(header_text->find("FilterChainRuntime(const FilterChainRuntime&) = delete;") !=
+            std::string::npos);
+    REQUIRE(header_text->find(
+                "operator=(const FilterChainRuntime&) -> FilterChainRuntime& = delete;") !=
+            std::string::npos);
+    REQUIRE(header_text->find("FilterChainRuntime(FilterChainRuntime&& other) noexcept") !=
+            std::string::npos);
+    REQUIRE(header_text->find(
+                "operator=(FilterChainRuntime&& other) noexcept -> FilterChainRuntime&") !=
+            std::string::npos);
+    REQUIRE(header_text->find("goggles_chain_t**") == std::string::npos);
+
+    using goggles::render::ChainStageMask;
+    using goggles::render::ChainStagePolicy;
+    using goggles::render::stage_policy_mask;
+
+    const auto all_enabled =
+        stage_policy_mask(ChainStagePolicy{.prechain_enabled = true, .effect_stage_enabled = true});
+    const auto pre_only = stage_policy_mask(
+        ChainStagePolicy{.prechain_enabled = true, .effect_stage_enabled = false});
+    const auto effect_only = stage_policy_mask(
+        ChainStagePolicy{.prechain_enabled = false, .effect_stage_enabled = true});
+    const auto output_only = stage_policy_mask(
+        ChainStagePolicy{.prechain_enabled = false, .effect_stage_enabled = false});
+
+    REQUIRE((all_enabled & ChainStageMask::postchain) == ChainStageMask::postchain);
+    REQUIRE((all_enabled & ChainStageMask::prechain) == ChainStageMask::prechain);
+    REQUIRE((all_enabled & ChainStageMask::effect) == ChainStageMask::effect);
+
+    REQUIRE((pre_only & ChainStageMask::postchain) == ChainStageMask::postchain);
+    REQUIRE((pre_only & ChainStageMask::prechain) == ChainStageMask::prechain);
+    REQUIRE((pre_only & ChainStageMask::effect) == ChainStageMask::none);
+
+    REQUIRE((effect_only & ChainStageMask::postchain) == ChainStageMask::postchain);
+    REQUIRE((effect_only & ChainStageMask::prechain) == ChainStageMask::none);
+    REQUIRE((effect_only & ChainStageMask::effect) == ChainStageMask::effect);
+
+    REQUIRE((output_only & ChainStageMask::postchain) == ChainStageMask::postchain);
+    REQUIRE((output_only & ChainStageMask::prechain) == ChainStageMask::none);
+    REQUIRE((output_only & ChainStageMask::effect) == ChainStageMask::none);
+
+    const auto wrapper_cpp =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/chain/filter_chain_cpp_wrapper.cpp";
+    auto wrapper_text = read_text_file(wrapper_cpp);
+    REQUIRE(wrapper_text.has_value());
+
+    REQUIRE(wrapper_text->find("goggles_chain_create_vk_ex") != std::string::npos);
+    REQUIRE(wrapper_text->find("goggles_chain_destroy") != std::string::npos);
+    REQUIRE(wrapper_text->find("goggles_chain_record_vk") != std::string::npos);
+
+    REQUIRE(count_occurrences(*wrapper_text, "GOGGLES_LOG_WARN(") == 2);
+    REQUIRE(wrapper_text->find("GOGGLES_LOG_ERROR(") == std::string::npos);
+    REQUIRE(wrapper_text->find("GOGGLES_LOG_INFO(") == std::string::npos);
 }
