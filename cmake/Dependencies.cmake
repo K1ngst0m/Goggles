@@ -44,6 +44,18 @@ if(NOT DEFINED ENV{CONDA_PREFIX})
         "Run: pixi run build [preset]")
 endif()
 
+find_package(util_core REQUIRED CONFIG)
+if(NOT TARGET util_core::util_core)
+    message(FATAL_ERROR "util_core package did not provide util_core::util_core target")
+endif()
+
+set(GOGGLES_UTIL_CORE_POLICY_FILE "$ENV{CONDA_PREFIX}/share/goggles-util-core/util-core-policy.json")
+if(NOT EXISTS "${GOGGLES_UTIL_CORE_POLICY_FILE}")
+    message(FATAL_ERROR
+        "util-core package policy artifact is missing: ${GOGGLES_UTIL_CORE_POLICY_FILE}\n"
+        "Install dependencies with Pixi so util-core is available before configure.")
+endif()
+
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image SYSTEM INTERFACE $ENV{CONDA_PREFIX}/include/stb)
 

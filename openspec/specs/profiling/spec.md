@@ -1,7 +1,7 @@
 # profiling Specification
 
 ## Purpose
-TBD - created by archiving change add-tracy-profiling. Update Purpose after archive.
+This spec defines normative requirements for profiling behavior in Goggles.
 ## Requirements
 ### Requirement: Profiling Infrastructure
 

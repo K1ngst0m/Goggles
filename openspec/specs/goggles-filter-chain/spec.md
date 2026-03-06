@@ -1,7 +1,7 @@
 # goggles-filter-chain Specification
 
 ## Purpose
-TBD - created by archiving change decouple-goggles-filter-library. Update Purpose after archive.
+This spec defines normative requirements for goggles filter chain behavior in Goggles.
 ## Requirements
 ### Requirement: Standalone Filter Library Target
 The extracted filter runtime SHALL build as a standalone target named `goggles-filter-chain` with one-way dependency direction between host backend and filter boundary.

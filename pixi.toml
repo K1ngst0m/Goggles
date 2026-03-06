@@ -38,11 +38,6 @@ depends-on = ["_check-init"]
 description = "Run tests"
 cmd = "bash scripts/task/test.sh"
 
-[tasks.smoke-filter-chain]
-description = "Run local filter-chain ABI smoke matrix"
-cmd = "bash scripts/task/smoke-filter-chain.sh"
-depends-on = ["_check-init"]
-
 [tasks.dev]
 description = "Build full dev environment"
 cmd = "bash scripts/task/dev.sh"
@@ -160,6 +155,7 @@ bs-thread-pool = { path = "packages/bs-thread-pool" }
 slang-shaders = { path = "packages/slang-shaders" }
 wlroots-0-19 = { path = "packages/wlroots_0_19" }
 imgui = { path = "packages/imgui" }
+util-core = { path = "packages/util-core" }
 
 # CI-only: Lightweight lint environment
 [feature.lint.dependencies]

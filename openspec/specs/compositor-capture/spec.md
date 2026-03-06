@@ -1,7 +1,7 @@
 # compositor-capture Specification
 
 ## Purpose
-TBD - created by archiving change add-non-vulkan-surface-present. Update Purpose after archive.
+This spec defines normative requirements for compositor capture behavior in Goggles.
 ## Requirements
 ### Requirement: Non-Vulkan Surface Presentation
 The system SHALL render a selected non-Vulkan client surface (Wayland or XWayland) into the

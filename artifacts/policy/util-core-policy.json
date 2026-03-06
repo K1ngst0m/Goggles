@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "policy_id": "util-core-v1",
+  "ownership_authority": {
+    "module": "src/util",
+    "policy_owner": "goggles-core-maintainers",
+    "review_required_for_changes": true
+  },
+  "version_policy": {
+    "scheme": "semver",
+    "compatibility_target": "abi-v1",
+    "breaking_change_rule": "major version increment and host/runtime gate updates"
+  },
+  "api_surface": {
+    "allowed_headers": [
+      "util/config.hpp",
+      "util/error.hpp",
+      "util/logging.hpp",
+      "util/profiling.hpp",
+      "util/serializer.hpp"
+    ],
+    "excluded_host_only_headers": [
+      "util/external_image.hpp",
+      "util/job_system.hpp",
+      "util/unique_fd.hpp",
+      "util/paths.hpp",
+      "util/queues.hpp",
+      "util/drm_format.hpp",
+      "util/drm_fourcc.hpp"
+    ]
+  },
+  "consumers": {
+    "standalone_runtime": [
+      "goggles-filter-chain"
+    ],
+    "host": [
+      "goggles_render",
+      "goggles"
+    ]
+  },
+  "published_artifacts": {
+    "machine_readable": "artifacts/policy/util-core-policy.json",
+    "human_readable": "artifacts/policy/util-core-policy.md"
+  }
+}

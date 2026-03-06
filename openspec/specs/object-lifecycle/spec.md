@@ -1,7 +1,7 @@
 # object-lifecycle Specification
 
 ## Purpose
-TBD - created by archiving change refactor-factory-pattern. Update Purpose after archive.
+This spec defines normative requirements for object lifecycle behavior in Goggles.
 ## Requirements
 ### Requirement: Factory Pattern for Complex Initialization
 Major subsystem classes with fallible initialization SHALL use static factory methods returning `ResultPtr<T>` instead of two-phase initialization (constructor + `init()`).

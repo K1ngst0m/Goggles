@@ -8,7 +8,6 @@ Build Commands
   pixi run build [-p PRESET]              Build 64-bit app
   pixi run build-all-presets              Build all CMake presets
   pixi run test [-p PRESET]               Run tests
-  pixi run smoke-filter-chain             Run local ABI smoke matrix (shared/static x clang/gcc)
 
 Run Commands
   pixi run start [-p PRESET] [--] <APP> [APP_ARGS...]

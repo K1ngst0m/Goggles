@@ -1,7 +1,7 @@
 # input-forwarding Specification
 
 ## Purpose
-TBD - created by archiving change add-wayland-input-forwarding. Update Purpose after archive.
+This spec defines normative requirements for input forwarding behavior in Goggles.
 ## Requirements
 ### Requirement: Input Forwarding Infrastructure
 

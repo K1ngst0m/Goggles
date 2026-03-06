@@ -9,6 +9,20 @@ set(GOGGLES_CHAIN_LIBRARY_TYPE "STATIC" CACHE STRING
     "Library type for goggles-filter-chain (STATIC or SHARED)")
 set_property(CACHE GOGGLES_CHAIN_LIBRARY_TYPE PROPERTY STRINGS STATIC SHARED)
 
+set(GOGGLES_FILTER_UTIL_CORE_TARGET "util_core::util_core" CACHE STRING
+    "Target providing util-core API for goggles-filter-chain standalone runtime")
+
+if(NOT TARGET ${GOGGLES_FILTER_UTIL_CORE_TARGET})
+    if(GOGGLES_FILTER_UTIL_CORE_TARGET STREQUAL "goggles_util" AND TARGET util_core::util_core)
+        set(GOGGLES_FILTER_UTIL_CORE_TARGET "util_core::util_core" CACHE STRING
+            "Target providing util-core API for goggles-filter-chain standalone runtime" FORCE)
+    else()
+        message(FATAL_ERROR
+            "Configured util-core target '${GOGGLES_FILTER_UTIL_CORE_TARGET}' is unavailable. "
+            "Ensure util-core package wiring is present before configuring render targets.")
+    endif()
+endif()
+
 string(TOUPPER "${GOGGLES_CHAIN_LIBRARY_TYPE}" GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED)
 if(NOT GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "STATIC" AND
    NOT GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "SHARED")
@@ -23,17 +37,13 @@ add_library(goggles-filter-chain ${GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED}
 )
 
 if(GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "SHARED")
-    set_target_properties(
-        goggles_render_chain_obj
-        goggles_render_shader_obj
-        goggles_render_texture_obj
-        PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-    target_compile_definitions(
-        goggles_render_chain_obj
-        goggles_render_shader_obj
-        goggles_render_texture_obj
-        PRIVATE GOGGLES_CHAIN_BUILD_SHARED)
+    foreach(runtime_obj_target IN ITEMS
+            goggles_render_chain_obj
+            goggles_render_shader_obj
+            goggles_render_texture_obj)
+        set_target_properties(${runtime_obj_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        target_compile_definitions(${runtime_obj_target} PRIVATE GOGGLES_CHAIN_BUILD_SHARED)
+    endforeach()
 endif()
 
 target_include_directories(goggles-filter-chain
@@ -57,7 +67,7 @@ target_link_libraries(goggles-filter-chain PRIVATE
 )
 
 target_link_libraries(goggles-filter-chain PUBLIC
-    goggles_util
+    ${GOGGLES_FILTER_UTIL_CORE_TARGET}
 )
 
 if(GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "SHARED")
@@ -73,6 +83,21 @@ goggles_enable_clang_tidy(goggles-filter-chain)
 goggles_enable_sanitizers(goggles-filter-chain)
 goggles_enable_profiling(goggles-filter-chain)
 
+add_library(goggles_filter_chain_runtime INTERFACE)
+
+target_link_libraries(goggles_filter_chain_runtime INTERFACE
+    goggles-filter-chain
+    ${GOGGLES_FILTER_UTIL_CORE_TARGET}
+)
+
+target_compile_definitions(goggles_filter_chain_runtime INTERFACE
+    VULKAN_HPP_NO_EXCEPTIONS
+    VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
+)
+if(GOGGLES_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "SHARED")
+    target_compile_definitions(goggles_filter_chain_runtime INTERFACE GOGGLES_CHAIN_USE_SHARED)
+endif()
+
 add_library(goggles_render STATIC
     $<TARGET_OBJECTS:goggles_render_backend_obj>
 )
@@ -87,7 +112,7 @@ target_link_libraries(goggles_render PUBLIC
     goggles_util
     Vulkan::Vulkan
     SDL3::SDL3
-    goggles-filter-chain
+    goggles_filter_chain_runtime
 )
 
 target_compile_definitions(goggles_render PUBLIC
@@ -101,6 +126,7 @@ goggles_enable_profiling(goggles_render)
 
 install(FILES
     ${CMAKE_SOURCE_DIR}/src/render/chain/api/c/goggles_filter_chain.h
+    ${CMAKE_SOURCE_DIR}/src/render/chain/api/c/goggles_filter_chain_standalone_contract.h
     ${CMAKE_SOURCE_DIR}/src/render/chain/api/cpp/goggles_filter_chain.hpp
     DESTINATION include
 )

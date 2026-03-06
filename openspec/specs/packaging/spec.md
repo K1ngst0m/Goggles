@@ -1,7 +1,7 @@
 # packaging Specification
 
 ## Purpose
-TBD - created by archiving change add-appimage-packaging. Update Purpose after archive.
+This spec defines normative requirements for packaging behavior in Goggles.
 ## Requirements
 ### Requirement: AppImage Distribution
 

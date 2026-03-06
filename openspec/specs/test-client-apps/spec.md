@@ -1,7 +1,7 @@
 # test-client-apps Specification
 
 ## Purpose
-TBD - created by archiving change test-framework-phase1. Update Purpose after archive.
+This spec defines normative requirements for test client apps behavior in Goggles.
 ## Requirements
 ### Requirement: Solid color test client
 The system SHALL provide a `solid_color_client` binary that connects to a Wayland compositor and renders a single solid color surface via `wl_shm`.

@@ -1,0 +1,34 @@
+package:
+  name: util-core
+  version: "1.0.0"
+
+source:
+  path: ../..
+
+build:
+  number: 0
+  script:
+    - mkdir -p $PREFIX/include/util
+    - cp src/util/config.hpp $PREFIX/include/util/
+    - cp src/util/error.hpp $PREFIX/include/util/
+    - cp src/util/logging.hpp $PREFIX/include/util/
+    - cp src/util/profiling.hpp $PREFIX/include/util/
+    - cp src/util/serializer.hpp $PREFIX/include/util/
+    - mkdir -p $PREFIX/share/goggles-util-core
+    - cp artifacts/policy/util-core-policy.json $PREFIX/share/goggles-util-core/
+    - cp artifacts/policy/util-core-policy.md $PREFIX/share/goggles-util-core/
+    - mkdir -p $PREFIX/lib/cmake/util_core
+    - |
+      cat > $PREFIX/lib/cmake/util_core/util_core-config.cmake <<'EOF'
+      if(NOT TARGET util_core::util_core)
+          add_library(util_core::util_core INTERFACE IMPORTED GLOBAL)
+          set_target_properties(util_core::util_core PROPERTIES
+              INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
+          )
+      endif()
+      EOF
+
+about:
+  homepage: https://github.com/kingstom/goggles
+  license: MIT
+  summary: util-core policy artifact package for standalone filter runtime constraints

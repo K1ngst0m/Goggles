@@ -1,7 +1,7 @@
 # shader-testing Specification
 
 ## Purpose
-TBD - created by archiving change add-shader-batch-test. Update Purpose after archive.
+This spec defines normative requirements for shader testing behavior in Goggles.
 ## Requirements
 ### Requirement: Batch shader preset testing
 The system SHALL provide a batch testing tool that validates all RetroArch shader presets for parsing and compilation compatibility.

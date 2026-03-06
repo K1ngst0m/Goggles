@@ -1,7 +1,7 @@
 # layer-shell-overlay Specification
 
 ## Purpose
-TBD - created by archiving change add-layer-shell-support. Update Purpose after archive.
+This spec defines normative requirements for layer shell overlay behavior in Goggles.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # filter-chain-c-api Specification
 
 ## Purpose
-TBD - created by archiving change filter-chain-c-api-v1. Update Purpose after archive.
+This spec defines normative requirements for filter chain c api behavior in Goggles.
 ## Requirements
 ### Requirement: Public Header and Export Surface
 The filter-chain C API MUST be defined in a single public header named `include/goggles_filter_chain.h`. All public types and functions in ABI v1 MUST use the `goggles_chain_` prefix, all exported functions MUST use `GOGGLES_CHAIN_CALL`, and all symbols declared in the v1 header MUST be exported when `goggles_chain_abi_version()` returns `GOGGLES_CHAIN_ABI_VERSION`.

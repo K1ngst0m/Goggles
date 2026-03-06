@@ -1,7 +1,7 @@
 # surface-frame-presentation Specification
 
 ## Purpose
-TBD - created by archiving change update-surface-frame-retention. Update Purpose after archive.
+This spec defines normative requirements for surface frame presentation behavior in Goggles.
 ## Requirements
 ### Requirement: Preserve last surface frame on target change
 The compositor presentation path SHALL retain the most recently presented frame for each surface

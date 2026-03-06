@@ -1,7 +1,7 @@
 # config-loading Specification
 
 ## Purpose
-TBD - created by archiving change refactor-path-resolution-and-config-loading. Update Purpose after archive.
+This spec defines normative requirements for config loading behavior in Goggles.
 ## Requirements
 ### Requirement: Config Discovery Uses XDG Config Home
 The system SHALL discover the default configuration file at:
