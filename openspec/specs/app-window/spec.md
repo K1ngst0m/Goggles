@@ -1,7 +1,7 @@
 # app-window Specification
 
 ## Purpose
-TBD - created by archiving change add-sdl3-window-test. Update Purpose after archive.
+This spec defines normative requirements for app window behavior in Goggles.
 ## Requirements
 ### Requirement: SDL3 Window Creation
 The application SHALL create an SDL3 window with Vulkan support enabled on startup **unless `--headless` is active**, in which case SDL SHALL NOT be initialized and no window SHALL be created.

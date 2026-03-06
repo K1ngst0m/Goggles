@@ -9,6 +9,20 @@ Build Commands
   pixi run build-all-presets              Build all CMake presets
   pixi run test [-p PRESET]               Run tests
   pixi run smoke-filter-chain             Run local ABI smoke matrix (shared/static x clang/gcc)
+  pixi run verify-filter-chain-standalone-graph
+                                          Validate standalone target graph boundaries
+  pixi run verify-filter-chain-standalone-deps
+                                          Validate standalone dependency pinning constraints
+  pixi run filter-chain-standalone-release-dry-run
+                                          Generate standalone release dry-run artifacts
+  pixi run verify-filter-chain-standalone-status-checks
+                                           Validate standalone workflow status-check contract
+  pixi run verify-policy-artifacts [-- --util-core-policy <path> --channel-allowlist <path> --provenance <dir>]
+                                           Validate util-core policy and channel allowlist trust artifacts
+  pixi run verify-filter-chain-host-migration
+                                           Ensure host stage/order contracts stay aligned with the filter chain
+  pixi run verify-filter-chain-host-dual-path
+                                          Validate standalone + fallback host build paths before flipping
 
 Run Commands
   pixi run start [-p PRESET] [--] <APP> [APP_ARGS...]

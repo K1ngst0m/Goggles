@@ -1,7 +1,7 @@
 # documentation Specification
 
 ## Purpose
-TBD - created by archiving change add-documentation-structure. Update Purpose after archive.
+This spec defines normative requirements for documentation behavior in Goggles.
 ## Requirements
 ### Requirement: Documentation Policy
 

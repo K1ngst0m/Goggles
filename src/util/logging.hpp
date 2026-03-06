@@ -17,7 +17,9 @@ namespace goggles {
 /// @param app_name Application name used in log formatting.
 void initialize_logger(std::string_view app_name = "goggles");
 /// @brief Returns the global logger instance.
-[[nodiscard]] auto get_logger() -> std::shared_ptr<spdlog::logger>;
+[[nodiscard]] inline auto get_logger() -> std::shared_ptr<spdlog::logger> {
+    return spdlog::default_logger();
+}
 /// @brief Sets the global logger verbosity level.
 /// @param level New verbosity threshold.
 void set_log_level(spdlog::level::level_enum level);

@@ -160,6 +160,7 @@ environments:
       - conda: packages/slang-shaders
       - conda: packages/stb
       - conda: packages/tracy
+      - conda: packages/util-core
       - conda: packages/wlroots_0_19
   lint:
     channels:
@@ -1656,6 +1657,14 @@ packages:
   license: LicenseRef-Public-Domain
   size: 119135
   timestamp: 1767016325805
+- conda: packages/util-core
+  name: util-core
+  version: 1.0.0
+  build: hb0f4dca_0
+  subdir: linux-64
+  variants:
+    target_platform: linux-64
+  license: MIT
 - conda: https://conda.anaconda.org/conda-forge/linux-64/vulkan-tools-1.4.328.1-h215f996_1.conda
   sha256: 2b575248542f0d25e77b4ce7114d5867bf8133c031e0c6b9c6510268da78556e
   md5: 6250b737302ec1e550987deb1935f181

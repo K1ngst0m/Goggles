@@ -1,7 +1,7 @@
 # build-system Specification
 
 ## Purpose
-TBD - created by archiving change add-version-management. Update Purpose after archive.
+This spec defines normative requirements for build system behavior in Goggles.
 ## Requirements
 ### Requirement: Single Source of Truth for Version
 

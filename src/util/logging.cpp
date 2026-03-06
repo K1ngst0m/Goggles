@@ -66,13 +66,6 @@ void initialize_logger(std::string_view app_name) {
     spdlog::set_default_logger(g_logger);
 }
 
-auto get_logger() -> std::shared_ptr<spdlog::logger> {
-    if (!g_logger) {
-        initialize_logger();
-    }
-    return g_logger;
-}
-
 void set_log_level(spdlog::level::level_enum level) {
     GOGGLES_PROFILE_FUNCTION();
     if (g_logger) {

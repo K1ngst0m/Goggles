@@ -1,7 +1,7 @@
 # vk-layer-capture Specification
 
 ## Purpose
-TBD - created by archiving change add-vk-layer-capture-minimal. Update Purpose after archive.
+This spec defines normative requirements for vk layer capture behavior in Goggles.
 ## Requirements
 ### Requirement: Vulkan Layer Registration
 The capture layer SHALL provide valid Vulkan layer manifests for both 32-bit (i386) and 64-bit (x86_64) architectures that allow the Vulkan loader to discover and load the appropriate layer library.

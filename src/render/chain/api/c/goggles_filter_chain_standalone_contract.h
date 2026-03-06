@@ -1,0 +1,20 @@
+#pragma once
+
+#define GOGGLES_CHAIN_STANDALONE_CONTRACT_VERSION 1u
+
+#define GOGGLES_CHAIN_RUNTIME_OWNERSHIP_BOUNDARY "chain+shader+texture"
+#define GOGGLES_CHAIN_RUNTIME_OWNED_MODULE_CHAIN "src/render/chain"
+#define GOGGLES_CHAIN_RUNTIME_OWNED_MODULE_SHADER "src/render/shader"
+#define GOGGLES_CHAIN_RUNTIME_OWNED_MODULE_TEXTURE "src/render/texture"
+
+#define GOGGLES_CHAIN_HOST_EXCLUDED_MODULE_APP "src/app"
+#define GOGGLES_CHAIN_HOST_EXCLUDED_MODULE_UI "src/ui"
+#define GOGGLES_CHAIN_HOST_EXCLUDED_MODULE_COMPOSITOR "src/compositor"
+#define GOGGLES_CHAIN_HOST_EXCLUDED_MODULE_RENDER_BACKEND "src/render/backend"
+
+#define GOGGLES_CHAIN_UTIL_CORE_POLICY_ID "util-core-v1"
+#define GOGGLES_CHAIN_RUNTIME_OWNERSHIP_KEY "runtime-ownership-map"
+#define GOGGLES_CHAIN_UTIL_CORE_POLICY_KEY "util-core-policy"
+#define GOGGLES_CHAIN_DEPENDENCY_GAP_KEY "dependency-gap-report"
+#define GOGGLES_CHAIN_RELEASE_GATE_INPUTS_KEY "release-gate-inputs"
+#define GOGGLES_CHAIN_CONSUMER_CONSTRAINTS_KEY "consumer-constraints"

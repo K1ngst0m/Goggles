@@ -1,7 +1,7 @@
 # headless-mode Specification
 
 ## Purpose
-TBD - created by archiving change add-headless-mode. Update Purpose after archive.
+This spec defines normative requirements for headless mode behavior in Goggles.
 ## Requirements
 ### Requirement: Headless CLI Flags
 The application SHALL accept `--headless`, `--frames <N>`, and `--output <path>` as CLI flags. When `--headless` is present, `--frames` and `--output` MUST both be provided; missing either SHALL produce a descriptive error and exit with a non-zero code.
