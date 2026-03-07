@@ -301,8 +301,11 @@ void CompositorState::teardown() {
         event_source = nullptr;
     }
 
-    focused_surface = nullptr;
-    focused_xsurface = nullptr;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        focused_surface = nullptr;
+        focused_xsurface = nullptr;
+    }
     keyboard_entered_surface = nullptr;
     pointer_entered_surface = nullptr;
     clear_presented_frame();

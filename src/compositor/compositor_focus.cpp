@@ -50,6 +50,64 @@ auto get_time_msec() -> uint32_t {
     return static_cast<uint32_t>(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
+struct CursorBounds {
+    double min_x = 0.0;
+    double min_y = 0.0;
+    double max_x = 0.0;
+    double max_y = 0.0;
+};
+
+struct FocusSnapshot {
+    wlr_surface* focused_surface = nullptr;
+    wlr_xwayland_surface* focused_xsurface = nullptr;
+    wlr_surface* root_surface = nullptr;
+    wlr_xwayland_surface* root_xsurface = nullptr;
+};
+
+auto snapshot_focus(const CompositorState& state) -> FocusSnapshot {
+    std::scoped_lock lock(state.hooks_mutex);
+
+    FocusSnapshot snapshot{
+        .focused_surface = state.focused_surface,
+        .focused_xsurface = state.focused_xsurface,
+    };
+    if (snapshot.focused_xsurface && snapshot.focused_xsurface->surface) {
+        snapshot.root_surface = snapshot.focused_xsurface->surface;
+        snapshot.root_xsurface = snapshot.focused_xsurface;
+    } else {
+        snapshot.root_surface = snapshot.focused_surface;
+    }
+
+    return snapshot;
+}
+
+void deactivate_previous_focus(CompositorState& state) {
+    wlr_xwayland_surface* old_xsurface = nullptr;
+    wlr_xdg_toplevel* old_toplevel = nullptr;
+
+    {
+        std::scoped_lock lock(state.hooks_mutex);
+        old_xsurface = state.focused_xsurface;
+        if (!old_xsurface && state.focused_surface) {
+            for (const auto& hooks_entry : state.xdg_hooks) {
+                const auto* hooks = hooks_entry.get();
+                if (hooks->surface == state.focused_surface && hooks->toplevel) {
+                    old_toplevel = hooks->toplevel;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (old_xsurface) {
+        wlr_xwayland_surface_activate(old_xsurface, false);
+        return;
+    }
+    if (old_toplevel) {
+        wlr_xdg_toplevel_set_activated(old_toplevel, false);
+    }
+}
+
 } // namespace
 
 auto CompositorServer::is_pointer_locked() const -> bool {
@@ -85,10 +143,8 @@ void CompositorState::handle_surface_resize_requests() {
 }
 
 void CompositorState::handle_new_pointer_constraint(wlr_pointer_constraint_v1* constraint) {
-    wlr_surface* target_surface = focused_surface;
-    if (focused_xsurface && focused_xsurface->surface) {
-        target_surface = focused_xsurface->surface;
-    }
+    const auto focus = snapshot_focus(*this);
+    wlr_surface* target_surface = focus.root_surface;
 
     if (constraint->surface == target_surface) {
         activate_constraint(constraint);
@@ -213,7 +269,7 @@ void CompositorState::deactivate_constraint() {
 }
 
 void CompositorState::focus_surface(wlr_surface* surface) {
-    if (focused_surface == surface) {
+    if (snapshot_focus(*this).focused_surface == surface) {
         return;
     }
 
@@ -240,8 +296,13 @@ void CompositorState::focus_surface(wlr_surface* surface) {
 
     deactivate_constraint();
 
-    focused_xsurface = nullptr;
-    focused_surface = surface;
+    deactivate_previous_focus(*this);
+
+    {
+        std::scoped_lock lock(hooks_mutex);
+        focused_xsurface = nullptr;
+        focused_surface = surface;
+    }
 
     GOGGLES_LOG_DEBUG("Focused XDG: id={} surface={} title='{}' app_id='{}' size={}x{}", focused_id,
                       static_cast<void*>(surface), title, app_id, width, height);
@@ -266,11 +327,13 @@ void CompositorState::focus_surface(wlr_surface* surface) {
 }
 
 void CompositorState::focus_xwayland_surface(wlr_xwayland_surface* xsurface) {
-    if (focused_xsurface == xsurface) {
+    if (snapshot_focus(*this).focused_xsurface == xsurface) {
         return;
     }
 
     deactivate_constraint();
+
+    deactivate_previous_focus(*this);
 
     // Clear stale wl_surface focus before re-entering the XWayland path for this window.
     wlr_seat_keyboard_clear_focus(seat);
@@ -278,8 +341,11 @@ void CompositorState::focus_xwayland_surface(wlr_xwayland_surface* xsurface) {
     keyboard_entered_surface = nullptr;
     pointer_entered_surface = nullptr;
 
-    focused_xsurface = xsurface;
-    focused_surface = xsurface->surface;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        focused_xsurface = xsurface;
+        focused_surface = xsurface->surface;
+    }
 
     GOGGLES_LOG_DEBUG("Focused XWayland: window_id={} ptr={} surface={} title='{}'",
                       static_cast<uint32_t>(xsurface->window_id), static_cast<void*>(xsurface),
@@ -507,8 +573,8 @@ auto compute_layer_position(const wlr_layer_surface_v1_state& state, int out_w, 
     return {pos_x, pos_y};
 }
 
-auto get_cursor_bounds(const CompositorState& state, const InputTarget& root_target)
-    -> std::optional<std::pair<double, double>> {
+auto get_cursor_bounds_rect(const CompositorState& state, const InputTarget& root_target)
+    -> std::optional<CursorBounds> {
     if (!root_target.root_surface) {
         return std::nullopt;
     }
@@ -518,8 +584,12 @@ auto get_cursor_bounds(const CompositorState& state, const InputTarget& root_tar
         return std::nullopt;
     }
 
-    auto width = static_cast<double>(extent_opt->first);
-    auto height = static_cast<double>(extent_opt->second);
+    CursorBounds bounds{
+        .min_x = 0.0,
+        .min_y = 0.0,
+        .max_x = static_cast<double>(extent_opt->first),
+        .max_y = static_cast<double>(extent_opt->second),
+    };
 
     if (!root_target.root_xsurface) {
         std::scoped_lock lock(state.hooks_mutex);
@@ -543,11 +613,15 @@ auto get_cursor_bounds(const CompositorState& state, const InputTarget& root_tar
             }
 
             auto [popup_x, popup_y] = get_xdg_popup_position(popup_hooks);
-            width = std::max(width, popup_x + static_cast<double>(popup_extent->first));
-            height = std::max(height, popup_y + static_cast<double>(popup_extent->second));
+            bounds.min_x = std::min(bounds.min_x, popup_x);
+            bounds.min_y = std::min(bounds.min_y, popup_y);
+            bounds.max_x =
+                std::max(bounds.max_x, popup_x + static_cast<double>(popup_extent->first));
+            bounds.max_y =
+                std::max(bounds.max_y, popup_y + static_cast<double>(popup_extent->second));
         }
 
-        return std::pair<double, double>(width, height);
+        return bounds;
     }
 
     std::scoped_lock lock(state.hooks_mutex);
@@ -584,11 +658,13 @@ auto get_cursor_bounds(const CompositorState& state, const InputTarget& root_tar
             static_cast<double>(popup->x) - static_cast<double>(root_target.root_xsurface->x);
         const double popup_y =
             static_cast<double>(popup->y) - static_cast<double>(root_target.root_xsurface->y);
-        width = std::max(width, popup_x + static_cast<double>(popup_extent->first));
-        height = std::max(height, popup_y + static_cast<double>(popup_extent->second));
+        bounds.min_x = std::min(bounds.min_x, popup_x);
+        bounds.min_y = std::min(bounds.min_y, popup_y);
+        bounds.max_x = std::max(bounds.max_x, popup_x + static_cast<double>(popup_extent->first));
+        bounds.max_y = std::max(bounds.max_y, popup_y + static_cast<double>(popup_extent->second));
     }
 
-    return std::pair<double, double>(width, height);
+    return bounds;
 }
 
 auto get_surface_local_coords(const CompositorState& state, const InputTarget& target)
@@ -671,29 +747,39 @@ void CompositorState::apply_cursor_hint_if_needed() {
 }
 
 void CompositorState::auto_focus_next_surface() {
-    XWaylandSurfaceHooks* last_xwayland = nullptr;
-    for (const auto& hooks_entry : xwayland_hooks) {
-        auto* hooks = hooks_entry.get();
-        if (hooks->mapped && !hooks->override_redirect && hooks->xsurface &&
-            hooks->xsurface->surface) {
-            last_xwayland = hooks;
+    wlr_xwayland_surface* xwayland_target = nullptr;
+    wlr_surface* xdg_surface_target = nullptr;
+    wlr_xdg_toplevel* xdg_toplevel_target = nullptr;
+
+    {
+        std::scoped_lock lock(hooks_mutex);
+        for (const auto& hooks_entry : xwayland_hooks) {
+            auto* hooks = hooks_entry.get();
+            if (hooks->mapped && !hooks->override_redirect && hooks->xsurface &&
+                hooks->xsurface->surface) {
+                xwayland_target = hooks->xsurface;
+            }
+        }
+
+        if (!xwayland_target) {
+            for (const auto& hooks_entry : xdg_hooks) {
+                auto* hooks = hooks_entry.get();
+                if (hooks->mapped && hooks->surface && hooks->toplevel) {
+                    xdg_surface_target = hooks->surface;
+                    xdg_toplevel_target = hooks->toplevel;
+                }
+            }
         }
     }
-    if (last_xwayland) {
-        focus_xwayland_surface(last_xwayland->xsurface);
+
+    if (xwayland_target) {
+        focus_xwayland_surface(xwayland_target);
         return;
     }
 
-    XdgToplevelHooks* last_xdg = nullptr;
-    for (const auto& hooks_entry : xdg_hooks) {
-        auto* hooks = hooks_entry.get();
-        if (hooks->mapped && hooks->surface && hooks->toplevel) {
-            last_xdg = hooks;
-        }
-    }
-    if (last_xdg) {
-        wlr_xdg_toplevel_set_activated(last_xdg->toplevel, true);
-        focus_surface(last_xdg->surface);
+    if (xdg_surface_target && xdg_toplevel_target) {
+        wlr_xdg_toplevel_set_activated(xdg_toplevel_target, true);
+        focus_surface(xdg_surface_target);
         return;
     }
 
@@ -718,12 +804,12 @@ void CompositorState::update_cursor_position(const InputEvent& event,
     double next_x = cursor_x + event.dx;
     double next_y = cursor_y + event.dy;
 
-    auto bounds_opt = get_cursor_bounds(*this, root_target);
+    auto bounds_opt = get_cursor_bounds_rect(*this, root_target);
     if (bounds_opt) {
-        const auto [width, height] = *bounds_opt;
-        if (width > 0 && height > 0) {
-            next_x = std::clamp(next_x, 0.0, width - 1.0);
-            next_y = std::clamp(next_y, 0.0, height - 1.0);
+        const auto& bounds = *bounds_opt;
+        if (bounds.max_x > bounds.min_x && bounds.max_y > bounds.min_y) {
+            next_x = std::clamp(next_x, bounds.min_x, bounds.max_x - 1.0);
+            next_y = std::clamp(next_y, bounds.min_y, bounds.max_y - 1.0);
         }
     }
 
@@ -789,15 +875,9 @@ auto get_root_input_target(CompositorState& state) -> InputTarget {
         }
     }
 
-    wlr_surface* root_surface = nullptr;
-    wlr_xwayland_surface* root_xsurface = nullptr;
-
-    if (state.focused_xsurface && state.focused_xsurface->surface) {
-        root_xsurface = state.focused_xsurface;
-        root_surface = state.focused_xsurface->surface;
-    } else if (state.focused_surface) {
-        root_surface = state.focused_surface;
-    }
+    const auto focus = snapshot_focus(state);
+    wlr_surface* root_surface = focus.root_surface;
+    wlr_xwayland_surface* root_xsurface = focus.root_xsurface;
 
     if (!root_surface) {
         return target;

@@ -231,6 +231,7 @@ void CompositorState::handle_xdg_popup_destroy(XdgPopupHooks* hooks) {
         return;
     }
 
+    auto* surface = hooks->surface;
     hooks->destroyed = true;
 
     GOGGLES_LOG_DEBUG("XDG popup destroyed: id={} surface={} parent={}", hooks->id,
@@ -253,10 +254,10 @@ void CompositorState::handle_xdg_popup_destroy(XdgPopupHooks* hooks) {
         }
     }
 
-    if (keyboard_entered_surface == hooks->surface) {
+    if (keyboard_entered_surface == surface) {
         keyboard_entered_surface = nullptr;
     }
-    if (pointer_entered_surface == hooks->surface) {
+    if (pointer_entered_surface == surface) {
         pointer_entered_surface = nullptr;
     }
 
@@ -313,14 +314,32 @@ void CompositorState::handle_xdg_surface_map(XdgToplevelHooks* hooks) {
 }
 
 void CompositorState::handle_xdg_surface_destroy(XdgToplevelHooks* hooks) {
+    auto* surface = hooks->surface;
+
     detach_listener(hooks->surface_destroy);
     detach_listener(hooks->surface_commit);
     detach_listener(hooks->surface_map);
     detach_listener(hooks->xdg_ack_configure);
     detach_listener(hooks->toplevel_destroy);
 
-    if (!focused_xsurface && focused_surface == hooks->surface) {
-        focused_surface = nullptr;
+    bool clear_focus = false;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        if (!focused_xsurface && focused_surface == surface) {
+            focused_surface = nullptr;
+            clear_focus = true;
+        }
+
+        auto hook_it = std::find_if(xdg_hooks.begin(), xdg_hooks.end(),
+                                    [hooks](const std::unique_ptr<XdgToplevelHooks>& entry) {
+                                        return entry.get() == hooks;
+                                    });
+        if (hook_it != xdg_hooks.end()) {
+            xdg_hooks.erase(hook_it);
+        }
+    }
+
+    if (clear_focus) {
         keyboard_entered_surface = nullptr;
         pointer_entered_surface = nullptr;
         cursor_surface = nullptr;
@@ -331,19 +350,8 @@ void CompositorState::handle_xdg_surface_destroy(XdgToplevelHooks* hooks) {
         }
         auto_focus_next_surface();
     }
-    if (presented_surface == hooks->surface) {
+    if (presented_surface == surface) {
         clear_presented_frame();
-    }
-
-    {
-        std::scoped_lock lock(hooks_mutex);
-        auto hook_it = std::find_if(xdg_hooks.begin(), xdg_hooks.end(),
-                                    [hooks](const std::unique_ptr<XdgToplevelHooks>& entry) {
-                                        return entry.get() == hooks;
-                                    });
-        if (hook_it != xdg_hooks.end()) {
-            xdg_hooks.erase(hook_it);
-        }
     }
 }
 

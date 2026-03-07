@@ -361,12 +361,22 @@ void CompositorState::handle_xwayland_surface_commit(XWaylandSurfaceHooks* hooks
 }
 
 void CompositorState::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsurface) {
+    auto* surface = xsurface ? xsurface->surface : nullptr;
+
     if (xsurface && xsurface->override_redirect) {
         GOGGLES_LOG_DEBUG("XWayland override-redirect destroyed: window_id={} ptr={}",
                           static_cast<uint32_t>(xsurface->window_id), static_cast<void*>(xsurface));
     }
+
+    bool clear_focus = false;
     {
         std::scoped_lock lock(hooks_mutex);
+        if (focused_xsurface == xsurface) {
+            focused_xsurface = nullptr;
+            focused_surface = nullptr;
+            clear_focus = true;
+        }
+
         auto hook_it =
             std::find_if(xwayland_hooks.begin(), xwayland_hooks.end(),
                          [xsurface](const auto& entry) { return entry->xsurface == xsurface; });
@@ -375,14 +385,14 @@ void CompositorState::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsur
         }
     }
 
-    if (keyboard_entered_surface == xsurface->surface) {
+    if (keyboard_entered_surface == surface) {
         keyboard_entered_surface = nullptr;
     }
-    if (pointer_entered_surface == xsurface->surface) {
+    if (pointer_entered_surface == surface) {
         pointer_entered_surface = nullptr;
     }
 
-    if (presented_surface == xsurface->surface) {
+    if (presented_surface == surface) {
         clear_presented_frame();
     }
 
@@ -390,14 +400,12 @@ void CompositorState::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsur
         request_present_reset();
     }
 
-    if (focused_xsurface != xsurface) {
+    if (!clear_focus) {
         return;
     }
 
     GOGGLES_LOG_DEBUG("Focused XWayland surface destroyed: ptr={}", static_cast<void*>(xsurface));
     deactivate_constraint();
-    focused_xsurface = nullptr;
-    focused_surface = nullptr;
     keyboard_entered_surface = nullptr;
     pointer_entered_surface = nullptr;
     cursor_surface = nullptr;

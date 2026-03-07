@@ -234,10 +234,16 @@ void CompositorState::handle_layer_surface_map(LayerSurfaceHooks* hooks) {
 void CompositorState::handle_layer_surface_unmap(LayerSurfaceHooks* hooks) {
     hooks->mapped = false;
 
+    wlr_surface* next_focus_surface = nullptr;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        next_focus_surface = focused_surface;
+    }
+
     if (seat && hooks->surface && seat->keyboard_state.focused_surface == hooks->surface &&
-        focused_surface) {
+        next_focus_surface) {
         wlr_seat_set_keyboard(seat, keyboard.get());
-        wlr_seat_keyboard_notify_enter(seat, focused_surface, keyboard->keycodes,
+        wlr_seat_keyboard_notify_enter(seat, next_focus_surface, keyboard->keycodes,
                                        keyboard->num_keycodes, &keyboard->modifiers);
     }
 
@@ -250,10 +256,16 @@ void CompositorState::handle_layer_surface_destroy(LayerSurfaceHooks* hooks) {
     }
     hooks->destroyed = true;
 
+    wlr_surface* next_focus_surface = nullptr;
+    {
+        std::scoped_lock lock(hooks_mutex);
+        next_focus_surface = focused_surface;
+    }
+
     if (seat && hooks->surface && seat->keyboard_state.focused_surface == hooks->surface &&
-        focused_surface) {
+        next_focus_surface) {
         wlr_seat_set_keyboard(seat, keyboard.get());
-        wlr_seat_keyboard_notify_enter(seat, focused_surface, keyboard->keycodes,
+        wlr_seat_keyboard_notify_enter(seat, next_focus_surface, keyboard->keycodes,
                                        keyboard->num_keycodes, &keyboard->modifiers);
     }
 
