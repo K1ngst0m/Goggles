@@ -103,4 +103,9 @@ auto CompositorServer::wayland_display() const -> std::string {
     return m_impl->state.wayland_socket_name;
 }
 
+auto CompositorServer::get_runtime_metrics_snapshot() const
+    -> util::CompositorRuntimeMetricsSnapshot {
+    return m_impl->state.get_runtime_metrics_snapshot();
+}
+
 } // namespace goggles::input

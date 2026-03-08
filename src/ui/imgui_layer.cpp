@@ -2,7 +2,6 @@
 
 #include <SDL3/SDL_video.h>
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cmath>
 #include <compositor/compositor_server.hpp>
@@ -10,7 +9,6 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
-#include <numeric>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
 #include <util/profiling.hpp>
@@ -216,14 +214,6 @@ void ImGuiLayer::begin_frame() {
         return;
     }
 
-    auto now = std::chrono::steady_clock::now();
-    if (m_last_frame_time.time_since_epoch().count() > 0) {
-        auto delta = std::chrono::duration<float, std::milli>(now - m_last_frame_time).count();
-        m_frame_times[m_frame_idx] = delta;
-        m_frame_idx = (m_frame_idx + 1) % K_FRAME_HISTORY_SIZE;
-    }
-    m_last_frame_time = now;
-
     if (m_window != nullptr) {
         float display_scale = get_display_scale(m_window);
         if (std::fabs(display_scale - m_last_display_scale) > 0.01F) {
@@ -405,6 +395,10 @@ void ImGuiLayer::set_prechain_parameter_callback(PreChainParameterCallback callb
 
 void ImGuiLayer::set_prechain_scale_mode_callback(PreChainScaleModeCallback callback) {
     m_on_prechain_scale_mode = std::move(callback);
+}
+
+void ImGuiLayer::set_runtime_metrics(util::CompositorRuntimeMetricsSnapshot metrics) {
+    m_runtime_metrics = metrics;
 }
 
 void ImGuiLayer::set_surfaces(std::vector<input::SurfaceInfo> surfaces) {
@@ -733,23 +727,8 @@ void ImGuiLayer::draw_app_management() {
     ImGui::SetNextWindowSize(ImVec2(350, 350), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Application")) {
         if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
-            float avg_ms = std::accumulate(m_frame_times.begin(), m_frame_times.end(), 0.F) /
-                           static_cast<float>(K_FRAME_HISTORY_SIZE);
-            float fps = avg_ms > 0.F ? 1000.F / avg_ms : 0.F;
-
-            float src_avg_ms =
-                std::accumulate(m_source_frame_times.begin(), m_source_frame_times.end(), 0.F) /
-                static_cast<float>(K_FRAME_HISTORY_SIZE);
-            float src_fps = src_avg_ms > 0.F ? 1000.F / src_avg_ms : 0.F;
-
-            ImGui::Text("Render: %.1f FPS (%.2f ms)", fps, avg_ms);
-            ImGui::PlotLines("##render_ft", m_frame_times.data(),
-                             static_cast<int>(K_FRAME_HISTORY_SIZE), static_cast<int>(m_frame_idx),
-                             nullptr, 0.F, 33.F, ImVec2(150, 40));
-            ImGui::Text("Source: %.1f FPS (%.2f ms)", src_fps, src_avg_ms);
-            ImGui::PlotLines(
-                "##source_ft", m_source_frame_times.data(), static_cast<int>(K_FRAME_HISTORY_SIZE),
-                static_cast<int>(m_source_frame_idx), nullptr, 0.F, 33.F, ImVec2(150, 40));
+            ImGui::Text("Game FPS: %.1f", m_runtime_metrics.game_fps);
+            ImGui::Text("Compositor Latency: %.2f ms", m_runtime_metrics.compositor_latency_ms);
         }
 
         if (ImGui::CollapsingHeader("Window Management", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -819,17 +798,6 @@ void ImGuiLayer::draw_app_management() {
         }
     }
     ImGui::End();
-}
-
-void ImGuiLayer::notify_source_frame() {
-    auto now = std::chrono::steady_clock::now();
-    if (m_last_source_frame_time.time_since_epoch().count() > 0) {
-        auto delta =
-            std::chrono::duration<float, std::milli>(now - m_last_source_frame_time).count();
-        m_source_frame_times[m_source_frame_idx] = delta;
-        m_source_frame_idx = (m_source_frame_idx + 1) % K_FRAME_HISTORY_SIZE;
-    }
-    m_last_source_frame_time = now;
 }
 
 void ImGuiLayer::rebuild_for_format(vk::Format new_format) {

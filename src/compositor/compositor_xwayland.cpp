@@ -345,6 +345,10 @@ void CompositorState::handle_xwayland_surface_commit(XWaylandSurfaceHooks* hooks
         return;
     }
 
+    if (hooks->mapped && !hooks->override_redirect) {
+        note_active_surface_commit(hooks->xsurface->surface);
+    }
+
     // Release buffer to allow swapchain image reuse
     // Without this, X11 clients block on vkQueuePresentKHR
     timespec now{};

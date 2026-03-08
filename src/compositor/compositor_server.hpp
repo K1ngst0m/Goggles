@@ -7,6 +7,7 @@
 #include <string>
 #include <util/error.hpp>
 #include <util/external_image.hpp>
+#include <util/runtime_metrics.hpp>
 #include <vector>
 
 namespace goggles::input {
@@ -99,6 +100,9 @@ public:
     /// @param after_frame_number Return a frame only if newer than this number.
     [[nodiscard]] auto get_presented_frame(uint64_t after_frame_number) const
         -> std::optional<util::ExternalImageFrame>;
+    /// @brief Returns the latest compositor-provided gameplay metrics snapshot.
+    [[nodiscard]] auto get_runtime_metrics_snapshot() const
+        -> util::CompositorRuntimeMetricsSnapshot;
 
     /// @brief Returns a snapshot of all connected surfaces.
     [[nodiscard]] auto get_surfaces() const -> std::vector<SurfaceInfo>;

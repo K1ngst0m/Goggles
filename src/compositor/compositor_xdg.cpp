@@ -195,6 +195,8 @@ void CompositorState::handle_xdg_popup_commit(XdgPopupHooks* hooks) {
         }
     }
 
+    note_active_surface_commit(hooks->surface);
+
     timespec now{};
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_surface_send_frame_done(hooks->surface, &now);
@@ -273,6 +275,8 @@ void CompositorState::handle_xdg_surface_commit(XdgToplevelHooks* hooks) {
         wlr_xdg_surface_schedule_configure(hooks->toplevel->base);
         hooks->sent_configure = true;
     }
+
+    note_active_surface_commit(hooks->surface);
 
     timespec now{};
     clock_gettime(CLOCK_MONOTONIC, &now);

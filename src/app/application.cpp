@@ -188,7 +188,6 @@ auto Application::init_compositor_server(const util::AppDirs& app_dirs) -> Resul
         [app_ptr = this, compositor = m_compositor_server.get()](uint32_t surface_id) {
             compositor->set_input_target(surface_id);
             app_ptr->m_surface_frame.reset();
-            app_ptr->m_last_source_frame_number = UINT64_MAX;
         });
     m_imgui_layer->set_surface_filter_toggle_callback([this](uint32_t surface_id, bool enabled) {
         set_surface_filter_enabled(surface_id, enabled);
@@ -723,6 +722,7 @@ void Application::sync_ui_state() {
         sync_surface_filters(surfaces);
         update_surface_resize_for_surfaces(surfaces);
         m_imgui_layer->set_surfaces(std::move(surfaces));
+        m_imgui_layer->set_runtime_metrics(m_compositor_server->get_runtime_metrics_snapshot());
     }
 
     sync_prechain_ui();
@@ -743,7 +743,6 @@ void Application::render_frame() {
     }
 
     const util::ExternalImageFrame* source_frame = nullptr;
-    uint64_t source_frame_number = 0;
 
     if (m_surface_frame) {
         if (m_surface_frame->image.format == vk::Format::eUndefined) {
@@ -752,16 +751,12 @@ void Application::render_frame() {
             GOGGLES_LOG_DEBUG("Skipping surface frame with invalid DMA-BUF modifier");
         } else if (m_surface_frame->image.handle) {
             source_frame = &m_surface_frame.value();
-            source_frame_number = m_surface_frame->frame_number;
         }
     }
 
-    if (source_frame && source_frame_number != m_last_source_frame_number) {
-        m_last_source_frame_number = source_frame_number;
-        m_imgui_layer->notify_source_frame();
-    }
     if (source_frame) {
-        GOGGLES_PROFILE_VALUE("goggles_source_frame", static_cast<double>(source_frame_number));
+        GOGGLES_PROFILE_VALUE("goggles_source_frame",
+                              static_cast<double>(m_surface_frame->frame_number));
     }
 
     auto policy = compute_stage_policy();

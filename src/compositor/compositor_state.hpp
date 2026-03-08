@@ -4,7 +4,9 @@
 #include "compositor_server.hpp"
 #include "compositor_targets.hpp"
 
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -117,6 +119,23 @@ struct KeyboardDeleter {
 using UniqueKeyboard = std::unique_ptr<wlr_keyboard, KeyboardDeleter>;
 
 struct CompositorState {
+    struct RuntimeMetricsState {
+        static constexpr size_t K_SAMPLE_WINDOW = 120;
+
+        wlr_surface* active_root_surface = nullptr;
+        std::array<float, K_SAMPLE_WINDOW> game_frame_intervals_ms{};
+        std::array<float, K_SAMPLE_WINDOW> compositor_latency_samples_ms{};
+        size_t game_frame_interval_index = 0;
+        size_t compositor_latency_index = 0;
+        size_t game_frame_interval_count = 0;
+        size_t compositor_latency_count = 0;
+        std::chrono::steady_clock::time_point last_game_commit_time;
+        std::chrono::steady_clock::time_point pending_capture_commit_time;
+        bool has_last_game_commit_time = false;
+        bool has_pending_capture_commit_time = false;
+        util::CompositorRuntimeMetricsSnapshot snapshot;
+    };
+
     util::SPSCQueue<InputEvent> event_queue{64};
     util::SPSCQueue<SurfaceResizeRequest> resize_queue{64};
     wl_display* display = nullptr;
@@ -164,6 +183,7 @@ struct CompositorState {
     mutable std::mutex hooks_mutex;
     mutable std::mutex present_mutex;
     std::optional<util::ExternalImageFrame> presented_frame;
+    RuntimeMetricsState runtime_metrics;
     Listeners listeners;
     uint32_t present_width = 0;
     uint32_t present_height = 0;
@@ -255,6 +275,10 @@ struct CompositorState {
     void request_present_reset();
     void update_presented_frame(wlr_surface* surface);
     void refresh_presented_frame();
+    void note_active_surface_commit(wlr_surface* surface);
+    void reset_runtime_metrics_for_target(wlr_surface* root_surface);
+    [[nodiscard]] auto get_runtime_metrics_snapshot() const
+        -> util::CompositorRuntimeMetricsSnapshot;
     void render_root_surface_tree(wlr_render_pass* pass, wlr_surface* root_surface);
     void render_xwayland_popup_surfaces(wlr_render_pass* pass, const InputTarget& target);
     void render_cursor_overlay(wlr_render_pass* pass) const;

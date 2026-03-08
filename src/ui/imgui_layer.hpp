@@ -1,7 +1,5 @@
 #pragma once
 
-#include <array>
-#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -10,6 +8,7 @@
 #include <string>
 #include <util/config.hpp>
 #include <util/error.hpp>
+#include <util/runtime_metrics.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -150,6 +149,8 @@ public:
     void set_prechain_parameter_callback(PreChainParameterCallback callback);
     /// @brief Sets a callback invoked when the pre-chain scale mode changes.
     void set_prechain_scale_mode_callback(PreChainScaleModeCallback callback);
+    /// @brief Updates compositor-provided runtime metrics shown in the performance panel.
+    void set_runtime_metrics(util::CompositorRuntimeMetricsSnapshot metrics);
 
     /// @brief Returns mutable UI state (owned by this layer).
     [[nodiscard]] auto state() -> ShaderControlState& { return m_state; }
@@ -172,8 +173,6 @@ public:
 
     /// @brief Rebuilds ImGui resources after a swapchain format change.
     void rebuild_for_format(vk::Format new_format);
-    /// @brief Records a timing sample for the source (captured) frame cadence.
-    void notify_source_frame();
 
 private:
     ImGuiLayer() = default;
@@ -213,17 +212,10 @@ private:
     SurfaceSelectCallback m_on_surface_select;
     SurfaceFilterToggleCallback m_on_surface_filter_toggle;
     std::vector<input::SurfaceInfo> m_surfaces;
+    util::CompositorRuntimeMetricsSnapshot m_runtime_metrics;
     float m_last_display_scale = 1.0F;
     bool m_global_visible = true;
     bool m_initialized = false;
-
-    static constexpr size_t K_FRAME_HISTORY_SIZE = 120;
-    std::array<float, K_FRAME_HISTORY_SIZE> m_frame_times{};
-    std::array<float, K_FRAME_HISTORY_SIZE> m_source_frame_times{};
-    size_t m_frame_idx = 0;
-    size_t m_source_frame_idx = 0;
-    std::chrono::steady_clock::time_point m_last_frame_time;
-    std::chrono::steady_clock::time_point m_last_source_frame_time;
 };
 
 } // namespace goggles::ui

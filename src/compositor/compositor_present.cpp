@@ -1,7 +1,10 @@
 #include "compositor_state.hpp"
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <ctime>
+#include <numeric>
 
 extern "C" {
 #include <wlr/render/allocator.h>
@@ -86,6 +89,44 @@ void render_surface_iterator(wlr_surface* surface, int sx, int sy, void* data) {
     options.filter_mode = WLR_SCALE_FILTER_BILINEAR;
     options.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
     wlr_render_pass_add_texture(context->pass, &options);
+}
+
+void clear_runtime_metric_samples(CompositorState::RuntimeMetricsState& metrics) {
+    metrics.game_frame_intervals_ms.fill(0.0F);
+    metrics.compositor_latency_samples_ms.fill(0.0F);
+    metrics.game_frame_interval_index = 0;
+    metrics.compositor_latency_index = 0;
+    metrics.game_frame_interval_count = 0;
+    metrics.compositor_latency_count = 0;
+    metrics.has_last_game_commit_time = false;
+    metrics.has_pending_capture_commit_time = false;
+    metrics.snapshot = {};
+}
+
+void reset_runtime_metrics_state(CompositorState::RuntimeMetricsState& metrics,
+                                 wlr_surface* root_surface) {
+    metrics.active_root_surface = root_surface;
+    clear_runtime_metric_samples(metrics);
+}
+
+void push_runtime_metric_sample(
+    std::array<float, CompositorState::RuntimeMetricsState::K_SAMPLE_WINDOW>& samples,
+    size_t& index, float sample_ms, size_t& count) {
+    samples[index] = sample_ms;
+    index = (index + 1) % samples.size();
+    count = std::min(count + 1, samples.size());
+}
+
+auto average_runtime_metric_sample(
+    const std::array<float, CompositorState::RuntimeMetricsState::K_SAMPLE_WINDOW>& samples,
+    size_t count) -> float {
+    if (count == 0) {
+        return 0.0F;
+    }
+
+    return std::accumulate(samples.begin(), samples.begin() + static_cast<std::ptrdiff_t>(count),
+                           0.0F) /
+           static_cast<float>(count);
 }
 
 } // namespace
@@ -179,6 +220,7 @@ void CompositorState::clear_presented_frame() {
     }
     presented_frame.reset();
     presented_surface = nullptr;
+    reset_runtime_metrics_state(runtime_metrics, nullptr);
 }
 
 void CompositorState::request_present_reset() {
@@ -209,9 +251,87 @@ void CompositorState::refresh_presented_frame() {
         return;
     }
 
+    reset_runtime_metrics_for_target(target.root_surface);
+
     if (!render_surface_to_frame(target) && presented_surface != target.root_surface) {
         clear_presented_frame();
     }
+}
+
+void CompositorState::note_active_surface_commit(wlr_surface* surface) {
+    GOGGLES_PROFILE_FUNCTION();
+    auto target = get_input_target(*this);
+    if (!surface || !target.root_surface) {
+        return;
+    }
+
+    const bool is_root_commit = surface == target.root_surface;
+    const bool is_active_descendant_commit = target.surface && surface == target.surface;
+    if (!is_root_commit && !is_active_descendant_commit) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    std::scoped_lock lock(present_mutex);
+    if (runtime_metrics.active_root_surface != target.root_surface) {
+        reset_runtime_metrics_state(runtime_metrics, target.root_surface);
+    }
+
+    if (is_root_commit) {
+        if (runtime_metrics.has_last_game_commit_time) {
+            const auto delta_ms = std::chrono::duration<float, std::milli>(
+                                      now - runtime_metrics.last_game_commit_time)
+                                      .count();
+            push_runtime_metric_sample(runtime_metrics.game_frame_intervals_ms,
+                                       runtime_metrics.game_frame_interval_index, delta_ms,
+                                       runtime_metrics.game_frame_interval_count);
+            const float avg_ms = average_runtime_metric_sample(
+                runtime_metrics.game_frame_intervals_ms, runtime_metrics.game_frame_interval_count);
+            runtime_metrics.snapshot.game_fps = avg_ms > 0.0F ? 1000.0F / avg_ms : 0.0F;
+        }
+
+        runtime_metrics.last_game_commit_time = now;
+        runtime_metrics.has_last_game_commit_time = true;
+    }
+
+    runtime_metrics.pending_capture_commit_time = now;
+    runtime_metrics.has_pending_capture_commit_time = true;
+}
+
+void CompositorState::reset_runtime_metrics_for_target(wlr_surface* root_surface) {
+    std::scoped_lock lock(present_mutex);
+    if (runtime_metrics.active_root_surface == root_surface) {
+        return;
+    }
+
+    reset_runtime_metrics_state(runtime_metrics, root_surface);
+}
+
+auto CompositorState::get_runtime_metrics_snapshot() const
+    -> util::CompositorRuntimeMetricsSnapshot {
+    std::scoped_lock lock(present_mutex);
+
+    auto snapshot = runtime_metrics.snapshot;
+    if (!runtime_metrics.has_last_game_commit_time ||
+        runtime_metrics.game_frame_interval_count == 0) {
+        return snapshot;
+    }
+
+    const float avg_ms = average_runtime_metric_sample(runtime_metrics.game_frame_intervals_ms,
+                                                       runtime_metrics.game_frame_interval_count);
+    if (avg_ms <= 0.0F) {
+        return snapshot;
+    }
+
+    const auto idle_ms =
+        std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() -
+                                                 runtime_metrics.last_game_commit_time)
+            .count();
+    if (idle_ms > std::max(avg_ms * 3.0F, 100.0F)) {
+        snapshot.game_fps = 0.0F;
+    }
+
+    return snapshot;
 }
 
 void CompositorState::render_root_surface_tree(wlr_render_pass* pass, wlr_surface* root_surface) {
@@ -341,7 +461,12 @@ bool CompositorState::render_surface_to_frame(const InputTarget& target) {
         return false;
     }
 
+    const auto capture_time = std::chrono::steady_clock::now();
+
     std::scoped_lock lock(present_mutex);
+    if (runtime_metrics.active_root_surface != root_surface) {
+        reset_runtime_metrics_state(runtime_metrics, root_surface);
+    }
     if (presented_buffer) {
         wlr_buffer_unlock(presented_buffer);
         presented_buffer = nullptr;
@@ -373,6 +498,19 @@ bool CompositorState::render_surface_to_frame(const InputTarget& target) {
     // Release stays tied to the exported buffer so wlroots can retire it after import completes.
     if (syncobj_state && syncobj_state->release_timeline) {
         wlr_linux_drm_syncobj_v1_state_signal_release_with_buffer(syncobj_state, buffer);
+    }
+
+    if (runtime_metrics.has_pending_capture_commit_time) {
+        const auto latency_ms = std::chrono::duration<float, std::milli>(
+                                    capture_time - runtime_metrics.pending_capture_commit_time)
+                                    .count();
+        push_runtime_metric_sample(runtime_metrics.compositor_latency_samples_ms,
+                                   runtime_metrics.compositor_latency_index, latency_ms,
+                                   runtime_metrics.compositor_latency_count);
+        runtime_metrics.snapshot.compositor_latency_ms =
+            average_runtime_metric_sample(runtime_metrics.compositor_latency_samples_ms,
+                                          runtime_metrics.compositor_latency_count);
+        runtime_metrics.has_pending_capture_commit_time = false;
     }
 
     presented_frame = std::move(frame);
