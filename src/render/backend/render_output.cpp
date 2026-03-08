@@ -40,22 +40,78 @@ void destroy_render_finished_semaphores(vk::Device device, RenderOutput& output)
     output.render_finished_sems.clear();
 }
 
-auto recreate_render_finished_semaphores(vk::Device device, RenderOutput& output) -> Result<void> {
-    destroy_render_finished_semaphores(device, output);
+void destroy_image_views(vk::Device device, std::vector<vk::ImageView>& image_views) {
+    if (!device) {
+        image_views.clear();
+        return;
+    }
+
+    for (auto image_view : image_views) {
+        device.destroyImageView(image_view);
+    }
+    image_views.clear();
+}
+
+auto create_render_finished_semaphores(vk::Device device, size_t image_count)
+    -> Result<std::vector<vk::Semaphore>> {
+    std::vector<vk::Semaphore> render_finished_sems;
+    render_finished_sems.resize(image_count);
 
     vk::SemaphoreCreateInfo sem_info{};
-    output.render_finished_sems.resize(output.swapchain_images.size());
-    for (auto& semaphore : output.render_finished_sems) {
+    for (auto& semaphore : render_finished_sems) {
         auto [result, new_semaphore] = device.createSemaphore(sem_info);
         if (result != vk::Result::eSuccess) {
-            destroy_render_finished_semaphores(device, output);
-            return make_error<void>(ErrorCode::vulkan_init_failed,
-                                    "Failed to create render finished semaphore");
+            for (auto created_semaphore : render_finished_sems) {
+                if (created_semaphore) {
+                    device.destroySemaphore(created_semaphore);
+                }
+            }
+            return make_error<std::vector<vk::Semaphore>>(
+                ErrorCode::vulkan_init_failed, "Failed to create render finished semaphore");
         }
         semaphore = new_semaphore;
     }
 
-    return {};
+    return render_finished_sems;
+}
+
+void destroy_fences(vk::Device device,
+                    std::array<vk::Fence, RenderOutput::MAX_FRAMES_IN_FLIGHT>& fences) {
+    if (!device) {
+        fences = {};
+        return;
+    }
+
+    for (auto& fence : fences) {
+        if (fence) {
+            device.destroyFence(fence);
+            fence = nullptr;
+        }
+    }
+}
+
+void destroy_semaphores(vk::Device device,
+                        std::array<vk::Semaphore, RenderOutput::MAX_FRAMES_IN_FLIGHT>& semaphores) {
+    if (!device) {
+        semaphores = {};
+        return;
+    }
+
+    for (auto& semaphore : semaphores) {
+        if (semaphore) {
+            device.destroySemaphore(semaphore);
+            semaphore = nullptr;
+        }
+    }
+}
+
+auto normalize_wait_stage(vk::Semaphore wait_semaphore, vk::PipelineStageFlags wait_stage)
+    -> vk::PipelineStageFlags {
+    if (!wait_semaphore || wait_stage != vk::PipelineStageFlags{}) {
+        return wait_stage;
+    }
+
+    return vk::PipelineStageFlagBits::eColorAttachmentOutput;
 }
 
 void destroy_offscreen_target(vk::Device device, RenderOutput& output) {
@@ -372,24 +428,34 @@ auto RenderOutput::create_swapchain(VulkanContext& context, uint32_t width, uint
                                 "Failed to create swapchain: " + vk::to_string(swapchain_result));
     }
 
-    swapchain = new_swapchain;
-    swapchain_format = chosen_format.format;
-    swapchain_extent = extent;
-    headless = false;
+    std::vector<vk::ImageView> new_swapchain_image_views;
+    std::vector<vk::Semaphore> new_render_finished_sems;
+    const auto cleanup_new_swapchain = [&]() {
+        destroy_image_views(device, new_swapchain_image_views);
+        for (auto semaphore : new_render_finished_sems) {
+            if (semaphore) {
+                device.destroySemaphore(semaphore);
+            }
+        }
+        new_render_finished_sems.clear();
+        if (new_swapchain) {
+            device.destroySwapchainKHR(new_swapchain);
+            new_swapchain = nullptr;
+        }
+    };
 
-    auto [image_result, images] = device.getSwapchainImagesKHR(swapchain);
+    auto [image_result, images] = device.getSwapchainImagesKHR(new_swapchain);
     if (image_result != vk::Result::eSuccess) {
-        cleanup_swapchain(context);
+        cleanup_new_swapchain();
         return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to get swapchain images");
     }
-    swapchain_images = std::move(images);
 
-    swapchain_image_views.reserve(swapchain_images.size());
-    for (auto image : swapchain_images) {
+    new_swapchain_image_views.reserve(images.size());
+    for (auto image : images) {
         vk::ImageViewCreateInfo view_info{};
         view_info.image = image;
         view_info.viewType = vk::ImageViewType::e2D;
-        view_info.format = swapchain_format;
+        view_info.format = chosen_format.format;
         view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
         view_info.subresourceRange.baseMipLevel = 0;
         view_info.subresourceRange.levelCount = 1;
@@ -398,17 +464,30 @@ auto RenderOutput::create_swapchain(VulkanContext& context, uint32_t width, uint
 
         auto [view_result, view] = device.createImageView(view_info);
         if (view_result != vk::Result::eSuccess) {
-            cleanup_swapchain(context);
+            cleanup_new_swapchain();
             return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create image view");
         }
-        swapchain_image_views.push_back(view);
+        new_swapchain_image_views.push_back(view);
     }
 
-    auto render_finished_result = recreate_render_finished_semaphores(device, *this);
+    auto render_finished_result = create_render_finished_semaphores(device, images.size());
     if (!render_finished_result) {
-        cleanup_swapchain(context);
-        return render_finished_result;
+        cleanup_new_swapchain();
+        return make_error<void>(render_finished_result.error().code,
+                                render_finished_result.error().message,
+                                render_finished_result.error().location);
     }
+    new_render_finished_sems = std::move(render_finished_result.value());
+
+    cleanup_swapchain(context);
+
+    swapchain = new_swapchain;
+    swapchain_images = std::move(images);
+    swapchain_image_views = std::move(new_swapchain_image_views);
+    render_finished_sems = std::move(new_render_finished_sems);
+    swapchain_format = chosen_format.format;
+    swapchain_extent = extent;
+    headless = false;
 
     present_id = 0;
     last_present_time = std::chrono::steady_clock::time_point{};
@@ -449,19 +528,20 @@ auto RenderOutput::create_command_resources(VulkanContext& context) -> Result<vo
     if (pool_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create command pool");
     }
-    command_pool = pool;
 
     vk::CommandBufferAllocateInfo alloc_info{};
-    alloc_info.commandPool = command_pool;
+    alloc_info.commandPool = pool;
     alloc_info.level = vk::CommandBufferLevel::ePrimary;
     alloc_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 
     auto [alloc_result, buffers] = device.allocateCommandBuffers(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
+        device.destroyCommandPool(pool);
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate command buffers");
     }
 
+    command_pool = pool;
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         frames[i].command_buffer = buffers[i];
     }
@@ -477,22 +557,34 @@ auto RenderOutput::create_sync_objects(VulkanContext& context) -> Result<void> {
     fence_info.flags = vk::FenceCreateFlagBits::eSignaled;
     vk::SemaphoreCreateInfo sem_info{};
 
-    for (auto& frame : frames) {
+    std::array<vk::Fence, MAX_FRAMES_IN_FLIGHT> new_fences{};
+    std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> new_image_available_sems{};
+
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         {
             auto [result, fence] = device.createFence(fence_info);
             if (result != vk::Result::eSuccess) {
+                destroy_semaphores(device, new_image_available_sems);
+                destroy_fences(device, new_fences);
                 return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create fence");
             }
-            frame.in_flight_fence = fence;
+            new_fences[i] = fence;
         }
         {
             auto [result, semaphore] = device.createSemaphore(sem_info);
             if (result != vk::Result::eSuccess) {
+                destroy_semaphores(device, new_image_available_sems);
+                destroy_fences(device, new_fences);
                 return make_error<void>(ErrorCode::vulkan_init_failed,
                                         "Failed to create semaphore");
             }
-            frame.image_available_sem = semaphore;
+            new_image_available_sems[i] = semaphore;
         }
+    }
+
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        frames[i].in_flight_fence = new_fences[i];
+        frames[i].image_available_sem = new_image_available_sems[i];
     }
 
     GOGGLES_LOG_DEBUG("Sync objects created");
@@ -505,12 +597,19 @@ auto RenderOutput::create_sync_objects_headless(VulkanContext& context) -> Resul
     vk::FenceCreateInfo fence_info{};
     fence_info.flags = vk::FenceCreateFlagBits::eSignaled;
 
-    for (auto& frame : frames) {
+    std::array<vk::Fence, MAX_FRAMES_IN_FLIGHT> new_fences{};
+
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         auto [result, fence] = device.createFence(fence_info);
         if (result != vk::Result::eSuccess) {
+            destroy_fences(device, new_fences);
             return make_error<void>(ErrorCode::vulkan_init_failed, "Failed to create fence");
         }
-        frame.in_flight_fence = fence;
+        new_fences[i] = fence;
+    }
+
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        frames[i].in_flight_fence = new_fences[i];
     }
 
     headless = true;
@@ -666,12 +765,24 @@ void RenderOutput::destroy(VulkanContext& context) {
 }
 
 void RenderOutput::wait_all_frames(VulkanContext& context) {
-    std::array<vk::Fence, MAX_FRAMES_IN_FLIGHT> fences{};
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        fences[i] = frames[i].in_flight_fence;
+    auto& device = context.device;
+    if (!device) {
+        return;
     }
 
-    auto result = context.device.waitForFences(fences, VK_TRUE, UINT64_MAX);
+    std::vector<vk::Fence> fences;
+    fences.reserve(MAX_FRAMES_IN_FLIGHT);
+    for (const auto& frame : frames) {
+        if (frame.in_flight_fence) {
+            fences.push_back(frame.in_flight_fence);
+        }
+    }
+
+    if (fences.empty()) {
+        return;
+    }
+
+    auto result = device.waitForFences(fences, VK_TRUE, UINT64_MAX);
     if (result != vk::Result::eSuccess) {
         GOGGLES_LOG_WARN("wait_all_frames failed: {}", vk::to_string(result));
     }
@@ -735,6 +846,8 @@ auto RenderOutput::submit_and_present(VulkanContext& context, uint32_t image_ind
                                       vk::PipelineStageFlags acquire_wait_stage) -> Result<void> {
     auto& graphics_queue = context.graphics_queue;
     auto& present_wait_supported = context.present_wait_supported;
+    const vk::PipelineStageFlags normalized_acquire_wait_stage =
+        normalize_wait_stage(acquire_wait_semaphore, acquire_wait_stage);
 
     auto& frame = frames[current_frame];
     vk::Semaphore render_finished_sem = render_finished_sems[image_index];
@@ -747,7 +860,7 @@ auto RenderOutput::submit_and_present(VulkanContext& context, uint32_t image_ind
 
     if (acquire_wait_semaphore) {
         wait_semaphores[wait_count] = acquire_wait_semaphore;
-        wait_stages[wait_count] = acquire_wait_stage;
+        wait_stages[wait_count] = normalized_acquire_wait_stage;
         ++wait_count;
     }
 
@@ -808,12 +921,14 @@ auto RenderOutput::submit_and_present(VulkanContext& context, uint32_t image_ind
 auto RenderOutput::submit_headless(VulkanContext& context, vk::Semaphore acquire_wait_semaphore,
                                    vk::PipelineStageFlags acquire_wait_stage) -> Result<void> {
     auto& graphics_queue = context.graphics_queue;
+    const vk::PipelineStageFlags normalized_acquire_wait_stage =
+        normalize_wait_stage(acquire_wait_semaphore, acquire_wait_stage);
     auto& frame = frames[0];
     vk::SubmitInfo submit_info{};
     if (acquire_wait_semaphore) {
         submit_info.waitSemaphoreCount = 1;
         submit_info.pWaitSemaphores = &acquire_wait_semaphore;
-        submit_info.pWaitDstStageMask = &acquire_wait_stage;
+        submit_info.pWaitDstStageMask = &normalized_acquire_wait_stage;
     }
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &frame.command_buffer;

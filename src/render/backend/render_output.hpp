@@ -37,11 +37,13 @@ struct RenderOutput {
     [[nodiscard]] auto prepare_headless_frame(VulkanContext& context) -> Result<vk::CommandBuffer>;
     [[nodiscard]] auto submit_and_present(VulkanContext& context, uint32_t image_index,
                                           vk::Semaphore acquire_wait_semaphore = nullptr,
-                                          vk::PipelineStageFlags acquire_wait_stage = {})
+                                          vk::PipelineStageFlags acquire_wait_stage =
+                                              vk::PipelineStageFlagBits::eColorAttachmentOutput)
         -> Result<void>;
     [[nodiscard]] auto submit_headless(VulkanContext& context,
                                        vk::Semaphore acquire_wait_semaphore = nullptr,
-                                       vk::PipelineStageFlags acquire_wait_stage = {})
+                                       vk::PipelineStageFlags acquire_wait_stage =
+                                           vk::PipelineStageFlagBits::eColorAttachmentOutput)
         -> Result<void>;
     [[nodiscard]] auto readback_to_png(VulkanContext& context, const std::filesystem::path& output)
         -> Result<void>;
