@@ -1,6 +1,10 @@
 # Render backend
 
 add_library(goggles_render_backend_obj OBJECT
+    external_frame_importer.cpp
+    filter_chain_controller.cpp
+    render_output.cpp
+    vulkan_context.cpp
     vulkan_backend.cpp
     vulkan_debug.cpp
     stb_image_write_impl.cpp

@@ -1,17 +1,14 @@
 #pragma once
 
-#include "goggles_filter_chain.hpp"
-#include "vulkan_debug.hpp"
+#include "external_frame_importer.hpp"
+#include "filter_chain_controller.hpp"
+#include "render_output.hpp"
+#include "vulkan_context.hpp"
 
 #include <SDL3/SDL.h>
-#include <array>
-#include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <future>
-#include <optional>
 #include <render/chain/filter_controls.hpp>
 #include <util/config.hpp>
 #include <util/error.hpp>
@@ -68,7 +65,7 @@ public:
     [[nodiscard]] auto reload_shader_preset(const std::filesystem::path& preset_path)
         -> Result<void>;
     [[nodiscard]] auto current_preset_path() const -> const std::filesystem::path& {
-        return m_preset_path;
+        return m_filter_chain_controller.current_preset_path();
     }
 
     void set_filter_chain_policy(const FilterChainStagePolicy& policy);
@@ -80,7 +77,7 @@ public:
     /// @brief Reads back the offscreen image and writes it as PNG.
     [[nodiscard]] auto readback_to_png(const std::filesystem::path& output) -> Result<void>;
 
-    [[nodiscard]] auto needs_resize() const -> bool { return m_needs_resize; }
+    [[nodiscard]] auto needs_resize() const -> bool { return m_render_output.needs_resize; }
 
     /// @brief Maps a source image format to a swapchain format.
     /// @param source_format Source image format to map.
@@ -97,15 +94,25 @@ public:
         -> Result<void>;
     void wait_all_frames();
 
-    [[nodiscard]] auto instance() const -> vk::Instance { return m_instance; }
-    [[nodiscard]] auto physical_device() const -> vk::PhysicalDevice { return m_physical_device; }
-    [[nodiscard]] auto device() const -> vk::Device { return m_device; }
-    [[nodiscard]] auto graphics_queue() const -> vk::Queue { return m_graphics_queue; }
-    [[nodiscard]] auto graphics_queue_family() const -> uint32_t { return m_graphics_queue_family; }
-    [[nodiscard]] auto swapchain_format() const -> vk::Format { return m_swapchain_format; }
-    [[nodiscard]] auto swapchain_extent() const -> vk::Extent2D { return m_swapchain_extent; }
+    [[nodiscard]] auto instance() const -> vk::Instance { return m_vulkan_context.instance; }
+    [[nodiscard]] auto physical_device() const -> vk::PhysicalDevice {
+        return m_vulkan_context.physical_device;
+    }
+    [[nodiscard]] auto device() const -> vk::Device { return m_vulkan_context.device; }
+    [[nodiscard]] auto graphics_queue() const -> vk::Queue {
+        return m_vulkan_context.graphics_queue;
+    }
+    [[nodiscard]] auto graphics_queue_family() const -> uint32_t {
+        return m_vulkan_context.graphics_queue_family;
+    }
+    [[nodiscard]] auto swapchain_format() const -> vk::Format {
+        return m_render_output.swapchain_format;
+    }
+    [[nodiscard]] auto swapchain_extent() const -> vk::Extent2D {
+        return m_render_output.swapchain_extent;
+    }
     [[nodiscard]] auto swapchain_image_count() const -> uint32_t {
-        return static_cast<uint32_t>(m_swapchain_images.size());
+        return m_render_output.image_count();
     }
     [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
     void set_prechain_resolution(uint32_t width, uint32_t height);
@@ -117,144 +124,53 @@ public:
     [[nodiscard]] auto reset_filter_control_value(FilterControlId control_id) -> bool;
     void reset_filter_controls();
 
-    [[nodiscard]] auto get_captured_extent() const -> vk::Extent2D { return m_import_extent; }
+    [[nodiscard]] auto get_captured_extent() const -> vk::Extent2D {
+        return m_external_frame_importer.import_extent;
+    }
     [[nodiscard]] auto get_scale_mode() const -> ScaleMode { return m_scale_mode; }
     [[nodiscard]] auto get_integer_scale() const -> uint32_t { return m_integer_scale; }
     void set_scale_mode(ScaleMode mode) { m_scale_mode = mode; }
     void set_integer_scale(uint32_t scale) { m_integer_scale = scale; }
-    [[nodiscard]] auto gpu_index() const -> uint32_t { return m_gpu_index; }
-    [[nodiscard]] auto gpu_uuid() const -> const std::string& { return m_gpu_uuid; }
+    [[nodiscard]] auto gpu_index() const -> uint32_t { return m_vulkan_context.gpu_index; }
+    [[nodiscard]] auto gpu_uuid() const -> const std::string& { return m_vulkan_context.gpu_uuid; }
 
     [[nodiscard]] auto consume_chain_swapped() -> bool {
-        return m_chain_swapped.exchange(false, std::memory_order_acq_rel);
+        return m_filter_chain_controller.consume_chain_swapped();
     }
 
 private:
     VulkanBackend() = default;
 
-    void update_target_fps(uint32_t target_fps) {
-        m_target_fps = target_fps;
-        m_last_present_time = std::chrono::steady_clock::time_point{};
-    }
+    void initialize_paths(const std::filesystem::path& shader_dir,
+                          const std::filesystem::path& cache_dir);
+    void initialize_settings(const RenderSettings& settings);
+    void update_target_fps(uint32_t target_fps) { m_render_output.set_target_fps(target_fps); }
 
-    [[nodiscard]] auto create_instance(bool enable_validation) -> Result<void>;
-    [[nodiscard]] auto create_instance_headless(bool enable_validation) -> Result<void>;
-    [[nodiscard]] auto create_debug_messenger() -> Result<void>;
-    [[nodiscard]] auto create_surface(SDL_Window* window) -> Result<void>;
-    [[nodiscard]] auto select_physical_device() -> Result<void>;
-    [[nodiscard]] auto select_physical_device_headless() -> Result<void>;
-    [[nodiscard]] auto create_device() -> Result<void>;
-    [[nodiscard]] auto create_swapchain(uint32_t width, uint32_t height,
-                                        vk::Format preferred_format) -> Result<void>;
-    void cleanup_swapchain();
-    [[nodiscard]] auto create_command_resources() -> Result<void>;
-    [[nodiscard]] auto create_sync_objects() -> Result<void>;
-    [[nodiscard]] auto create_sync_objects_headless() -> Result<void>;
-    [[nodiscard]] auto create_offscreen_image() -> Result<void>;
     [[nodiscard]] auto init_filter_chain() -> Result<void>;
+    [[nodiscard]] auto make_filter_chain_build_config() const
+        -> backend_internal::FilterChainController::RuntimeBuildConfig;
 
-    [[nodiscard]] auto import_external_image(const util::ExternalImage& frame) -> Result<void>;
-    void cleanup_imported_image();
-
-    [[nodiscard]] auto acquire_next_image() -> Result<uint32_t>;
     [[nodiscard]] auto record_render_commands(vk::CommandBuffer cmd, uint32_t image_index,
                                               const UiRenderCallback& ui_callback = nullptr)
         -> Result<void>;
     [[nodiscard]] auto record_clear_commands(vk::CommandBuffer cmd, uint32_t image_index,
                                              const UiRenderCallback& ui_callback = nullptr)
         -> Result<void>;
-    [[nodiscard]] auto submit_and_present(uint32_t image_index, util::UniqueFd sync_fd = {})
-        -> Result<void>;
 
     [[nodiscard]] static auto is_srgb_format(vk::Format format) -> bool;
 
-    [[nodiscard]] auto apply_present_wait(uint64_t present_id) -> Result<void>;
-    void throttle_present();
-
-    vk::PhysicalDevice m_physical_device;
-    vk::Queue m_graphics_queue;
-    FilterChainRuntime m_filter_chain;
-
-    vk::Instance m_instance;
-    vk::Device m_device;
-    std::vector<vk::Image> m_swapchain_images;
-    std::vector<vk::ImageView> m_swapchain_image_views;
-    std::vector<vk::Semaphore> m_render_finished_sems;
-
-    struct ImportedImage {
-        vk::Image image;
-        vk::DeviceMemory memory;
-        vk::ImageView view;
-    };
-    ImportedImage m_import;
-
-    vk::SurfaceKHR m_surface;
-    vk::SwapchainKHR m_swapchain;
-    vk::CommandPool m_command_pool;
-    std::optional<VulkanDebugMessenger> m_debug_messenger;
+    backend_internal::VulkanContext m_vulkan_context;
+    backend_internal::RenderOutput m_render_output;
+    backend_internal::ExternalFrameImporter m_external_frame_importer;
+    backend_internal::FilterChainController m_filter_chain_controller;
 
     std::filesystem::path m_shader_dir;
     std::filesystem::path m_cache_dir;
-    std::filesystem::path m_preset_path;
-    std::string m_gpu_selector;
 
-    static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-
-    struct FrameResources {
-        vk::CommandBuffer command_buffer;
-        vk::Fence in_flight_fence;
-        vk::Semaphore image_available_sem;
-        vk::Semaphore pending_acquire_sync_sem;
-    };
-    std::array<FrameResources, MAX_FRAMES_IN_FLIGHT> m_frames{};
-
-    uint32_t m_graphics_queue_family = UINT32_MAX;
-    uint32_t m_gpu_index = 0;
-    std::string m_gpu_uuid;
-    vk::Format m_swapchain_format = vk::Format::eUndefined;
-    uint32_t m_current_frame = 0;
-    vk::Format m_source_format = vk::Format::eUndefined;
     uint32_t m_integer_scale = 0;
-    vk::Extent2D m_swapchain_extent;
-    vk::Extent2D m_import_extent;
-    vk::Extent2D m_source_resolution;
-    bool m_enable_validation = false;
-    bool m_headless = false;
-    vk::Image m_offscreen_image;
-    vk::DeviceMemory m_offscreen_memory;
-    vk::ImageView m_offscreen_view;
-    vk::Extent2D m_offscreen_extent;
     ScaleMode m_scale_mode = ScaleMode::stretch;
-    bool m_needs_resize = false;
-    bool m_present_wait_supported = false;
-    bool m_prechain_policy_enabled = true;
-    bool m_effect_stage_policy_enabled = true;
-    uint32_t m_target_fps = 0;
-    uint64_t m_present_id = 0;
-    std::chrono::steady_clock::time_point m_last_present_time;
-    std::atomic<bool> m_format_changed{false};
-    std::atomic<bool> m_chain_swapped{false};
 
-    // Async shader reload state
-    FilterChainRuntime m_pending_filter_chain;
-    std::filesystem::path m_pending_preset_path;
-    std::atomic<bool> m_pending_chain_ready{false};
-    std::future<Result<void>> m_pending_load_future;
-
-    struct DeferredDestroy {
-        FilterChainRuntime filter_chain;
-        uint64_t destroy_after_frame = 0;
-    };
-    static constexpr size_t MAX_DEFERRED_DESTROYS = 4;
-    std::array<DeferredDestroy, MAX_DEFERRED_DESTROYS> m_deferred_destroys{};
-    size_t m_deferred_count = 0;
-    uint64_t m_frame_count = 0;
-
-    void check_pending_chain_swap();
-    void cleanup_deferred_destroys();
-    void apply_filter_chain_policy();
-    [[nodiscard]] auto submit_headless(vk::CommandBuffer cmd, const util::ExternalImageFrame* frame,
-                                       FrameResources& hframe) -> Result<void>;
+    [[nodiscard]] auto current_filter_target_extent() const -> vk::Extent2D;
 };
 
 } // namespace goggles::render

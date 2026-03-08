@@ -38,6 +38,7 @@ target_sources(goggles_tests PRIVATE
     render/test_filter_controls.cpp
     render/test_filter_chain_c_api_contracts.cpp
     render/test_filter_boundary_contracts.cpp
+    render/test_vulkan_backend_subsystem_contracts.cpp
     render/test_shader_validation.cpp
 
     # Future: Pipeline module tests (when implemented)

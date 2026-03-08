@@ -109,6 +109,13 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
     auto chain_text = read_text_file(chain_path);
     REQUIRE(chain_text.has_value());
 
+    const auto backend_context_path =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_context.hpp";
+    auto backend_context_text = read_text_file(backend_context_path);
+    REQUIRE(backend_context_text.has_value());
+    REQUIRE(backend_context_text->find("render/chain/vulkan_context.hpp") != std::string::npos);
+    REQUIRE(backend_context_text->find("boundary_context(") != std::string::npos);
+
     const auto prechain_list_pos =
         chain_text->find("auto prechain_controls = collect_prechain_controls();");
     const auto effect_list_pos =
@@ -144,21 +151,31 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
 TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][async_contract]") {
     const auto backend_cpp =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_backend.cpp";
+    const auto controller_cpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
+                                "src/render/backend/filter_chain_controller.cpp";
+    const auto render_output_cpp =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/render_output.cpp";
     auto backend_text = read_text_file(backend_cpp);
+    auto controller_text = read_text_file(controller_cpp);
+    auto render_output_text = read_text_file(render_output_cpp);
     REQUIRE(backend_text.has_value());
+    REQUIRE(controller_text.has_value());
+    REQUIRE(render_output_text.has_value());
+    REQUIRE(backend_text->find("m_vulkan_context.boundary_context(m_render_output.command_pool)") !=
+            std::string::npos);
 
     const auto check_swap_pos =
-        backend_text->find("void VulkanBackend::check_pending_chain_swap()");
+        controller_text->find("void FilterChainController::check_pending_chain_swap(");
     REQUIRE(check_swap_pos != std::string::npos);
 
-    const auto failure_branch_pos = backend_text->find("if (!result) {", check_swap_pos);
+    const auto failure_branch_pos = controller_text->find("if (!result) {", check_swap_pos);
     const auto failure_reset_pos =
-        backend_text->find("m_pending_filter_chain.destroy();", failure_branch_pos);
+        controller_text->find("destroy_filter_chain(pending_filter_chain", failure_branch_pos);
     const auto failure_clear_ready_pos =
-        backend_text->find("m_pending_chain_ready.store(false", failure_reset_pos);
-    const auto failure_return_pos = backend_text->find("return;", failure_clear_ready_pos);
-    const auto success_signal_pos = backend_text->find(
-        "m_chain_swapped.store(true, std::memory_order_release);", failure_return_pos);
+        controller_text->find("pending_chain_ready.store(false", failure_reset_pos);
+    const auto failure_return_pos = controller_text->find("return;", failure_clear_ready_pos);
+    const auto success_signal_pos = controller_text->find(
+        "chain_swapped.store(true, std::memory_order_release);", failure_return_pos);
 
     REQUIRE(failure_branch_pos != std::string::npos);
     REQUIRE(failure_reset_pos != std::string::npos);
@@ -170,35 +187,46 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
     REQUIRE(failure_clear_ready_pos < failure_return_pos);
     REQUIRE(failure_return_pos < success_signal_pos);
 
-    const auto swap_reapply_resolution_pos = backend_text->find(
-        "m_filter_chain.set_prechain_resolution(m_source_resolution)", check_swap_pos);
+    const auto swap_reapply_resolution_pos = controller_text->find(
+        "filter_chain.set_prechain_resolution(source_resolution)", check_swap_pos);
     REQUIRE(swap_reapply_resolution_pos != std::string::npos);
     REQUIRE(swap_reapply_resolution_pos < success_signal_pos);
 
-    REQUIRE(backend_text->find("deferred.destroy_after_frame = retire_after_frame") !=
+    REQUIRE(controller_text->find("deferred.destroy_after_frame = retire_after_frame") !=
             std::string::npos);
-    REQUIRE(backend_text->find("m_filter_chain.handle_resize(m_swapchain_extent)") !=
+    REQUIRE(backend_text->find("m_filter_chain_controller.handle_resize(") != std::string::npos);
+    REQUIRE(backend_text->find("m_external_frame_importer.import_external_image") !=
             std::string::npos);
+    REQUIRE(backend_text->find("m_external_frame_importer.prepare_wait_semaphore") !=
+            std::string::npos);
+    REQUIRE(backend_text->find("m_external_frame_importer.retire_wait_semaphore") !=
+            std::string::npos);
+    REQUIRE(backend_text->find("m_render_output.is_headless()") != std::string::npos);
+    REQUIRE(backend_text->find("m_vulkan_context.headless") == std::string::npos);
+    REQUIRE(backend_text->find("m_render_output.target_extent()") != std::string::npos);
+    REQUIRE(backend_text->find("m_render_output.clear_resize_request()") != std::string::npos);
+    REQUIRE(render_output_text->find("auto RenderOutput::acquire_next_image") != std::string::npos);
+    REQUIRE(render_output_text->find("auto RenderOutput::submit_and_present") != std::string::npos);
+    REQUIRE(render_output_text->find("auto RenderOutput::submit_headless") != std::string::npos);
+    REQUIRE(render_output_text->find("auto RenderOutput::readback_to_png") != std::string::npos);
 
     const auto shutdown_pos = backend_text->find("void VulkanBackend::shutdown()");
-    const auto pending_shutdown_pos =
-        backend_text->find("shutdown_chain(m_pending_filter_chain);", shutdown_pos);
-    const auto deferred_shutdown_pos =
-        backend_text->find("shutdown_chain(m_deferred_destroys[i].filter_chain);", shutdown_pos);
-    const auto device_destroy_pos = backend_text->find("m_device.destroy();", shutdown_pos);
+    const auto controller_shutdown_pos =
+        backend_text->find("m_filter_chain_controller.shutdown(", shutdown_pos);
+    const auto context_destroy_pos =
+        backend_text->find("m_vulkan_context.destroy();", shutdown_pos);
 
     REQUIRE(shutdown_pos != std::string::npos);
-    REQUIRE(pending_shutdown_pos != std::string::npos);
-    REQUIRE(deferred_shutdown_pos != std::string::npos);
-    REQUIRE(device_destroy_pos != std::string::npos);
-    REQUIRE(pending_shutdown_pos < device_destroy_pos);
-    REQUIRE(deferred_shutdown_pos < device_destroy_pos);
+    REQUIRE(controller_shutdown_pos != std::string::npos);
+    REQUIRE(context_destroy_pos != std::string::npos);
+    REQUIRE(controller_shutdown_pos < context_destroy_pos);
 
     const auto backend_hpp =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_backend.hpp";
     auto header_text = read_text_file(backend_hpp);
     REQUIRE(header_text.has_value());
-    REQUIRE(header_text->find("m_chain_swapped.exchange(false, std::memory_order_acq_rel)") !=
+    REQUIRE(header_text->find("return m_render_output.needs_resize;") != std::string::npos);
+    REQUIRE(header_text->find("return m_filter_chain_controller.consume_chain_swapped();") !=
             std::string::npos);
 }
 
