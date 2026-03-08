@@ -103,7 +103,11 @@ auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
 void Framebuffer::shutdown() {
     GOGGLES_PROFILE_FUNCTION();
     if (m_device) {
-        static_cast<void>(m_device.waitIdle());
+        const vk::Result wait_idle_result = m_device.waitIdle();
+        if (wait_idle_result != vk::Result::eSuccess) {
+            GOGGLES_LOG_WARN("Framebuffer shutdown waitIdle failed: {}",
+                             vk::to_string(wait_idle_result));
+        }
     }
     if (m_view) {
         m_device.destroyImageView(m_view);

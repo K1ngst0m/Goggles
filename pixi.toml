@@ -87,6 +87,10 @@ cmd = "rm -rf build"
 description = "Format C/C++ and TOML files"
 cmd = "bash -c \"echo 'Formatting C/C++...' && git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 clang-format -i && echo 'Formatting TOML...' && git ls-files -z '*.toml' | grep -zv 'test_data/' | xargs -0 taplo fmt && echo 'Done!'\""
 
+[tasks.semgrep]
+description = "Run repo-controlled Semgrep rules"
+cmd = "semgrep scan --error --metrics=off --config .semgrep.yml --config .semgrep/rules src tests"
+
 [tasks.help]
 description = "Show task usage"
 cmd = "bash scripts/task/help.sh"
@@ -160,6 +164,7 @@ bs-thread-pool = { path = "packages/bs-thread-pool" }
 slang-shaders = { path = "packages/slang-shaders" }
 wlroots-0-19 = { path = "packages/wlroots_0_19" }
 imgui = { path = "packages/imgui" }
+python = "3.12.*"
 
 # CI-only: Lightweight lint environment
 [feature.lint.dependencies]
@@ -169,3 +174,6 @@ taplo = "==0.9.3"
 [environments]
 default = { solve-group = "default" }
 lint = { features = ["lint"], no-default-feature = true, solve-group = "lint" }
+
+[pypi-dependencies]
+semgrep = "==1.154.0"

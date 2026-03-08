@@ -122,6 +122,12 @@ jobs:
           pixi run ccache --set-config=compression=true
           pixi run ccache --zero-stats
 
+      - name: Show Semgrep path and version
+        run: pixi run bash -c 'command -v semgrep && semgrep --version'
+
+      - name: Run Semgrep
+        run: pixi run semgrep
+
       # Use CMake-integrated clang-tidy (CXX_CLANG_TIDY) for both PR and main.
       # This ensures CI uses identical flags and header-filter as local builds,
       # and generated headers (wayland protocols) exist before analysis runs.

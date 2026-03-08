@@ -1,0 +1,25 @@
+rules:
+  - id: goggles-no-using-namespace-headers
+    message: Headers must not use `using namespace`; keep namespace imports out of headers.
+    severity: ERROR
+    languages:
+      - cpp
+    pattern: using namespace $NS;
+    paths:
+      include:
+        - /src/**/*.h
+        - /src/**/*.hpp
+        - /tests/**/*.h
+        - /tests/**/*.hpp
+
+  - id: goggles-no-vulkan-unique-or-raii
+    message: App-side Vulkan code must use plain `vk::` handles, not `vk::Unique*` or `vk::raii::*` wrappers.
+    severity: ERROR
+    languages:
+      - cpp
+    pattern-regex: '\bvk::Unique[A-Za-z0-9_:<>]*\b|\bvk::raii::'
+    paths:
+      include:
+        - /src/**/*.cpp
+        - /src/**/*.h
+        - /src/**/*.hpp

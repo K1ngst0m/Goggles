@@ -1,0 +1,97 @@
+rules:
+  - id: goggles-no-std-stream-logging
+    message: Application logging must use project logging macros instead of `std::cout` or `std::cerr`.
+    severity: ERROR
+    languages:
+      - cpp
+    pattern-either:
+      - pattern: std::cout << $VALUE
+      - pattern: std::cerr << $VALUE
+    paths:
+      include:
+        - /src/app/**/*.cpp
+        - /src/app/**/*.h
+        - /src/app/**/*.hpp
+        - /src/compositor/**/*.cpp
+        - /src/compositor/**/*.h
+        - /src/compositor/**/*.hpp
+        - /src/render/**/*.cpp
+        - /src/render/**/*.h
+        - /src/render/**/*.hpp
+        - /src/ui/**/*.cpp
+        - /src/ui/**/*.h
+        - /src/ui/**/*.hpp
+
+  - id: goggles-no-direct-raw-new
+    message: Direct owning raw `new` is banned in app code; use RAII ownership instead.
+    severity: ERROR
+    languages:
+      - cpp
+    pattern-either:
+      - pattern: $TYPE* $PTR = new $TYPE(...);
+      - pattern: auto* $PTR = new $TYPE(...);
+      - pattern: $TYPE* $PTR = new $TYPE[$SIZE];
+      - pattern: auto* $PTR = new $TYPE[$SIZE];
+    paths:
+      include:
+        - /src/**/*.cpp
+        - /src/**/*.h
+        - /src/**/*.hpp
+      exclude:
+        - /src/render/chain/api/c/**
+
+  - id: goggles-no-direct-delete
+    message: Direct owning raw `delete` is banned in app code; release resources through RAII-safe ownership.
+    severity: ERROR
+    languages:
+      - cpp
+    pattern-regex: '(?m)^\s*delete\s+[A-Za-z_][A-Za-z0-9_]*\s*;'
+    paths:
+      include:
+        - /src/**/*.cpp
+        - /src/**/*.h
+        - /src/**/*.hpp
+      exclude:
+        - /src/render/chain/api/c/**
+
+  - id: goggles-no-raw-vulkan-handles
+    message: App-side code must not use raw `Vk*` handles outside approved boundary exceptions.
+    severity: ERROR
+    languages:
+      - cpp
+    pattern-regex: '\bVk[A-Za-z0-9_]+\b'
+    paths:
+      include:
+        - /src/app/**/*.cpp
+        - /src/app/**/*.h
+        - /src/app/**/*.hpp
+        - /src/render/chain/**/*.cpp
+        - /src/render/chain/**/*.h
+        - /src/render/chain/**/*.hpp
+      exclude:
+        - /src/capture/vk_layer/**
+        - /src/render/chain/api/**
+
+  - id: goggles-no-discarded-vulkan-result
+    message: Do not discard Vulkan result-returning calls with `static_cast<void>(...)`; check the result explicitly.
+    severity: ERROR
+    languages:
+      - cpp
+    pattern-regex: 'static_cast<void>\([^;\n]*\.waitIdle\(\)\)'
+    paths:
+      include:
+        - /src/render/**/*.cpp
+        - /src/render/**/*.h
+        - /src/render/**/*.hpp
+
+  - id: goggles-no-render-std-thread
+    message: Render-path work must not use `std::thread` or `std::jthread`; use `goggles::util::JobSystem`.
+    severity: ERROR
+    languages:
+      - cpp
+    pattern-regex: '\bstd::(?:jthread|thread)\b'
+    paths:
+      include:
+        - /src/render/**/*.cpp
+        - /src/render/**/*.h
+        - /src/render/**/*.hpp
