@@ -531,12 +531,24 @@ auto RenderOutput::create_offscreen_image(VulkanContext& context, vk::Extent2D s
         height = 1080;
     }
 
-    destroy_offscreen_target(device, *this);
+    vk::Image new_offscreen_image;
+    vk::DeviceMemory new_offscreen_memory;
+    vk::ImageView new_offscreen_view;
 
-    offscreen_extent = vk::Extent2D{width, height};
-    swapchain_format = vk::Format::eR8G8B8A8Unorm;
-    swapchain_extent = offscreen_extent;
-    headless = true;
+    const auto cleanup_new_offscreen_target = [&]() {
+        if (new_offscreen_view) {
+            device.destroyImageView(new_offscreen_view);
+            new_offscreen_view = nullptr;
+        }
+        if (new_offscreen_image) {
+            device.destroyImage(new_offscreen_image);
+            new_offscreen_image = nullptr;
+        }
+        if (new_offscreen_memory) {
+            device.freeMemory(new_offscreen_memory);
+            new_offscreen_memory = nullptr;
+        }
+    };
 
     vk::ImageCreateInfo image_info{};
     image_info.imageType = vk::ImageType::e2D;
@@ -556,13 +568,13 @@ auto RenderOutput::create_offscreen_image(VulkanContext& context, vk::Extent2D s
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create offscreen image: " + vk::to_string(image_result));
     }
-    offscreen_image = image;
+    new_offscreen_image = image;
 
-    auto mem_requirements = device.getImageMemoryRequirements(offscreen_image);
+    auto mem_requirements = device.getImageMemoryRequirements(new_offscreen_image);
     auto mem_props = physical_device.getMemoryProperties();
     const uint32_t mem_type = find_memory_type(mem_props, mem_requirements.memoryTypeBits);
     if (mem_type == UINT32_MAX) {
-        destroy_offscreen_target(device, *this);
+        cleanup_new_offscreen_target();
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "No suitable memory type for offscreen image");
     }
@@ -573,23 +585,23 @@ auto RenderOutput::create_offscreen_image(VulkanContext& context, vk::Extent2D s
 
     auto [memory_result, memory] = device.allocateMemory(alloc_info);
     if (memory_result != vk::Result::eSuccess) {
-        destroy_offscreen_target(device, *this);
+        cleanup_new_offscreen_target();
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to allocate offscreen memory: " +
                                     vk::to_string(memory_result));
     }
-    offscreen_memory = memory;
+    new_offscreen_memory = memory;
 
-    auto bind_result = device.bindImageMemory(offscreen_image, offscreen_memory, 0);
+    auto bind_result = device.bindImageMemory(new_offscreen_image, new_offscreen_memory, 0);
     if (bind_result != vk::Result::eSuccess) {
-        destroy_offscreen_target(device, *this);
+        cleanup_new_offscreen_target();
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to bind offscreen image memory: " +
                                     vk::to_string(bind_result));
     }
 
     vk::ImageViewCreateInfo view_info{};
-    view_info.image = offscreen_image;
+    view_info.image = new_offscreen_image;
     view_info.viewType = vk::ImageViewType::e2D;
     view_info.format = vk::Format::eR8G8B8A8Unorm;
     view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
@@ -600,12 +612,22 @@ auto RenderOutput::create_offscreen_image(VulkanContext& context, vk::Extent2D s
 
     auto [view_result, view] = device.createImageView(view_info);
     if (view_result != vk::Result::eSuccess) {
-        destroy_offscreen_target(device, *this);
+        cleanup_new_offscreen_target();
         return make_error<void>(ErrorCode::vulkan_init_failed,
                                 "Failed to create offscreen image view: " +
                                     vk::to_string(view_result));
     }
-    offscreen_view = view;
+    new_offscreen_view = view;
+
+    destroy_offscreen_target(device, *this);
+
+    offscreen_image = new_offscreen_image;
+    offscreen_memory = new_offscreen_memory;
+    offscreen_view = new_offscreen_view;
+    offscreen_extent = vk::Extent2D{width, height};
+    swapchain_format = vk::Format::eR8G8B8A8Unorm;
+    swapchain_extent = offscreen_extent;
+    headless = true;
 
     GOGGLES_LOG_DEBUG("Offscreen image created: {}x{} R8G8B8A8Unorm", width, height);
     return {};
