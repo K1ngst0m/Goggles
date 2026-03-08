@@ -28,10 +28,16 @@ rules:
     languages:
       - cpp
     pattern-either:
+      - pattern: $TYPE* $PTR = new $TYPE;
       - pattern: $TYPE* $PTR = new $TYPE(...);
+      - pattern: $TYPE* $PTR = new $TYPE{...};
+      - pattern: auto* $PTR = new $TYPE;
       - pattern: auto* $PTR = new $TYPE(...);
+      - pattern: auto* $PTR = new $TYPE{...};
       - pattern: $TYPE* $PTR = new $TYPE[$SIZE];
+      - pattern: $TYPE* $PTR = new $TYPE[$SIZE]{...};
       - pattern: auto* $PTR = new $TYPE[$SIZE];
+      - pattern: auto* $PTR = new $TYPE[$SIZE]{...};
     paths:
       include:
         - /src/**/*.cpp
@@ -45,7 +51,7 @@ rules:
     severity: ERROR
     languages:
       - cpp
-    pattern-regex: '(?m)^\s*delete\s+[A-Za-z_][A-Za-z0-9_]*\s*;'
+    pattern-regex: '(?m)^\s*delete(?:\s*\[\s*\])?\s+(?:\([^;\n]+\)|[A-Za-z_][A-Za-z0-9_]*(?:\s*(?:->|\.)\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*;'
     paths:
       include:
         - /src/**/*.cpp

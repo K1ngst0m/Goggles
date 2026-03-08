@@ -20,6 +20,15 @@ rules:
     pattern-regex: '\bvk::Unique[A-Za-z0-9_:<>]*\b|\bvk::raii::'
     paths:
       include:
-        - /src/**/*.cpp
-        - /src/**/*.h
-        - /src/**/*.hpp
+        - /src/app/**/*.cpp
+        - /src/app/**/*.h
+        - /src/app/**/*.hpp
+        - /src/compositor/**/*.cpp
+        - /src/compositor/**/*.h
+        - /src/compositor/**/*.hpp
+        - /src/render/**/*.cpp
+        - /src/render/**/*.h
+        - /src/render/**/*.hpp
+        - /src/ui/**/*.cpp
+        - /src/ui/**/*.h
+        - /src/ui/**/*.hpp

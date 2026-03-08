@@ -91,6 +91,10 @@ cmd = "bash -c \"echo 'Formatting C/C++...' && git ls-files -z '*.c' '*.h' '*.cp
 description = "Run repo-controlled Semgrep rules"
 cmd = "semgrep scan --error --metrics=off --config .semgrep.yml --config .semgrep/rules src tests"
 
+[tasks.semgrep-verify]
+description = "Verify Semgrep rule fixtures"
+cmd = "python tests/semgrep/verify_semgrep_fixtures.py"
+
 [tasks.help]
 description = "Show task usage"
 cmd = "bash scripts/task/help.sh"

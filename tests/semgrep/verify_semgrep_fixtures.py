@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -26,7 +27,10 @@ EXPECTED_FINDINGS = {
         ],
     },
     "goggles-no-direct-delete": {
-        "positive": ["src/render/positive_delete.cpp"],
+        "positive": [
+            "src/render/positive_delete.cpp",
+            "src/render/positive_delete_array.cpp",
+        ],
         "negative": [
             "src/render/negative_delete.cpp",
             "src/render/chain/api/c/negative_delete_exception.cpp",
@@ -49,7 +53,10 @@ EXPECTED_FINDINGS = {
     },
     "goggles-no-vulkan-unique-or-raii": {
         "positive": ["src/render/positive_vulkan_unique.cpp"],
-        "negative": ["src/render/negative_vulkan_unique.cpp"],
+        "negative": [
+            "src/render/negative_vulkan_unique.cpp",
+            "src/capture/vk_layer/negative_vulkan_unique_exception.cpp",
+        ],
     },
     "goggles-no-using-namespace-headers": {
         "positive": ["tests/positive_using_namespace.hpp"],
@@ -63,41 +70,26 @@ def verification_target(relative_fixture_path: str) -> Path:
     return fixture_path.parent / "__semgrep_verify__" / fixture_path.name
 
 
-def materialize_fixture(relative_fixture_path: str) -> Path:
+def materialize_fixture(workspace_root: Path, relative_fixture_path: str) -> Path:
     source = FIXTURES_ROOT / relative_fixture_path
-    target = REPO_ROOT / verification_target(relative_fixture_path)
+    target = workspace_root / verification_target(relative_fixture_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
-    subprocess.run(
-        ["git", "add", str(target.relative_to(REPO_ROOT))], cwd=REPO_ROOT, check=True
-    )
     return target
 
 
-def cleanup_fixture(target: Path) -> None:
-    relative_target = target.relative_to(REPO_ROOT)
-    subprocess.run(
-        ["git", "rm", "--cached", "-f", str(relative_target)],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    target.unlink(missing_ok=True)
-    parent = target.parent
-    while parent != REPO_ROOT and parent.name == "__semgrep_verify__":
-        try:
-            parent.rmdir()
-        except OSError:
-            break
-        parent = parent.parent
+def initialize_workspace(workspace_root: Path) -> None:
+    shutil.copy2(REPO_ROOT / ".semgrep.yml", workspace_root / ".semgrep.yml")
+    shutil.copy2(REPO_ROOT / ".semgrepignore", workspace_root / ".semgrepignore")
+    shutil.copytree(REPO_ROOT / ".semgrep", workspace_root / ".semgrep")
 
 
 def scan_fixture(relative_fixture_path: str) -> set[str]:
-    target = materialize_fixture(relative_fixture_path)
-    try:
-        relative_target = target.relative_to(REPO_ROOT).as_posix()
-        target_dir = target.parent.relative_to(REPO_ROOT).as_posix()
+    with tempfile.TemporaryDirectory(prefix="goggles-semgrep-") as temp_dir:
+        workspace_root = Path(temp_dir)
+        initialize_workspace(workspace_root)
+        target = materialize_fixture(workspace_root, relative_fixture_path)
+        relative_target = target.relative_to(workspace_root).as_posix()
         command = [
             str(SEMGREP_BIN),
             "scan",
@@ -107,10 +99,10 @@ def scan_fixture(relative_fixture_path: str) -> set[str]:
             ".semgrep.yml",
             "--config",
             ".semgrep/rules",
-            target_dir,
+            ".",
         ]
         completed = subprocess.run(
-            command, cwd=REPO_ROOT, capture_output=True, text=True, check=False
+            command, cwd=workspace_root, capture_output=True, text=True, check=False
         )
         if not completed.stdout:
             raise RuntimeError(
@@ -122,26 +114,39 @@ def scan_fixture(relative_fixture_path: str) -> set[str]:
             if entry["path"] == relative_target:
                 rule_ids.add(entry["check_id"].split(".")[-1])
         return rule_ids
-    finally:
-        cleanup_fixture(target)
+
+
+def build_expected_rule_ids_by_fixture() -> dict[str, set[str]]:
+    expected_rule_ids_by_fixture: dict[str, set[str]] = {}
+
+    for rule_id, expectation in EXPECTED_FINDINGS.items():
+        for relative_path in expectation["positive"]:
+            expected_rule_ids_by_fixture.setdefault(relative_path, set()).add(rule_id)
+        for relative_path in expectation["negative"]:
+            expected_rule_ids_by_fixture.setdefault(relative_path, set())
+
+    return expected_rule_ids_by_fixture
 
 
 def validate() -> dict:
     missing: list[dict[str, str]] = []
     unexpected: list[dict[str, str]] = []
     actual_positive_total = 0
+    expected_rule_ids_by_fixture = build_expected_rule_ids_by_fixture()
 
-    for rule_id, expectation in EXPECTED_FINDINGS.items():
-        for relative_path in expectation["positive"]:
-            rule_ids = scan_fixture(relative_path)
-            if rule_id in rule_ids:
-                actual_positive_total += 1
-            else:
-                missing.append({"rule_id": rule_id, "path": relative_path})
-        for relative_path in expectation["negative"]:
-            rule_ids = scan_fixture(relative_path)
-            if rule_id in rule_ids:
-                unexpected.append({"rule_id": rule_id, "path": relative_path})
+    for relative_path, expected_rule_ids in sorted(
+        expected_rule_ids_by_fixture.items()
+    ):
+        actual_rule_ids = scan_fixture(relative_path)
+
+        for rule_id in sorted(expected_rule_ids - actual_rule_ids):
+            missing.append({"rule_id": rule_id, "path": relative_path})
+
+        for rule_id in sorted(actual_rule_ids - expected_rule_ids):
+            unexpected.append({"rule_id": rule_id, "path": relative_path})
+
+        if actual_rule_ids == expected_rule_ids:
+            actual_positive_total += len(expected_rule_ids)
 
     expected_positive_total = sum(
         len(expectation["positive"]) for expectation in EXPECTED_FINDINGS.values()
