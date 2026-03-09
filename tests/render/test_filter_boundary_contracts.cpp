@@ -321,19 +321,21 @@ TEST_CASE("Runtime metrics keep root ownership while tracking the current captur
     metrics.snapshot.game_fps_history_count = 1;
     metrics.snapshot.compositor_latency_history_count = 1;
 
-    REQUIRE(metrics.should_reset_for_capture_target(game_root));
+    REQUIRE(metrics.should_reset_for_capture_target(game_root, game_root));
 
-    metrics.reset_for_capture_target(game_root);
+    metrics.reset_for_capture_target(game_root, game_root);
 
-    REQUIRE_FALSE(metrics.should_reset_for_capture_target(game_root));
-    REQUIRE(metrics.should_reset_for_capture_target(other_root));
+    REQUIRE_FALSE(metrics.should_reset_for_capture_target(game_root, game_root));
+    REQUIRE(metrics.should_reset_for_capture_target(game_root, popup_surface));
+    REQUIRE(metrics.should_reset_for_capture_target(other_root, other_root));
     REQUIRE(metrics.should_track_surface_commit(game_root, game_root));
-    REQUIRE(metrics.should_track_surface_commit(popup_surface, popup_surface));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(popup_surface, popup_surface));
     REQUIRE_FALSE(metrics.should_track_surface_commit(game_root, popup_surface));
     REQUIRE_FALSE(metrics.should_track_surface_commit(other_root, popup_surface));
     REQUIRE_FALSE(metrics.should_track_surface_commit(nullptr, popup_surface));
     REQUIRE_FALSE(metrics.should_track_surface_commit(popup_surface, nullptr));
     REQUIRE(metrics.capture_target_root_surface == game_root);
+    REQUIRE(metrics.capture_target_surface == game_root);
     REQUIRE(metrics.game_frame_interval_count == 0);
     REQUIRE(metrics.compositor_latency_count == 0);
     REQUIRE_FALSE(metrics.has_last_game_commit_time);
@@ -343,9 +345,11 @@ TEST_CASE("Runtime metrics keep root ownership while tracking the current captur
     REQUIRE(metrics.snapshot.game_fps_history_count == 0);
     REQUIRE(metrics.snapshot.compositor_latency_history_count == 0);
 
-    metrics.reset_for_capture_target(other_root);
+    metrics.reset_for_capture_target(other_root, popup_surface);
 
     REQUIRE(metrics.capture_target_root_surface == other_root);
-    REQUIRE(metrics.should_track_surface_commit(other_root, other_root));
-    REQUIRE_FALSE(metrics.should_track_surface_commit(game_root, other_root));
+    REQUIRE(metrics.capture_target_surface == popup_surface);
+    REQUIRE_FALSE(metrics.should_track_surface_commit(other_root, other_root));
+    REQUIRE(metrics.should_track_surface_commit(popup_surface, popup_surface));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(game_root, popup_surface));
 }

@@ -20,6 +20,7 @@ struct RuntimeMetricsState {
         util::CompositorRuntimeMetricsSnapshot::K_HISTORY_WINDOW;
 
     wlr_surface* capture_target_root_surface = nullptr;
+    wlr_surface* capture_target_surface = nullptr;
     std::array<float, K_SAMPLE_WINDOW> game_frame_intervals_ms{};
     std::array<float, K_SAMPLE_WINDOW> compositor_latency_samples_ms{};
     size_t game_frame_interval_index = 0;
@@ -44,19 +45,23 @@ struct RuntimeMetricsState {
         snapshot = {};
     }
 
-    void reset_for_capture_target(wlr_surface* root_surface) {
+    void reset_for_capture_target(wlr_surface* root_surface, wlr_surface* capture_surface) {
         capture_target_root_surface = root_surface;
+        capture_target_surface = capture_surface;
         clear_samples();
     }
 
-    [[nodiscard]] bool should_reset_for_capture_target(wlr_surface* root_surface) const {
-        return capture_target_root_surface != root_surface;
+    [[nodiscard]] bool should_reset_for_capture_target(wlr_surface* root_surface,
+                                                       wlr_surface* capture_surface) const {
+        return capture_target_root_surface != root_surface ||
+               capture_target_surface != capture_surface;
     }
 
     [[nodiscard]] bool should_track_surface_commit(wlr_surface* committed_surface,
                                                    wlr_surface* capture_surface) const {
-        return capture_target_root_surface != nullptr && committed_surface != nullptr &&
-               capture_surface != nullptr && committed_surface == capture_surface;
+        return capture_target_root_surface != nullptr && capture_target_surface != nullptr &&
+               committed_surface != nullptr && capture_surface != nullptr &&
+               capture_surface == capture_target_surface && committed_surface == capture_surface;
     }
 };
 

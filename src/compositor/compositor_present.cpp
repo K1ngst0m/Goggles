@@ -231,7 +231,7 @@ void CompositorState::clear_presented_frame() {
     }
     presented_frame.reset();
     presented_surface = nullptr;
-    runtime_metrics.reset_for_capture_target(nullptr);
+    runtime_metrics.reset_for_capture_target(nullptr, nullptr);
 }
 
 void CompositorState::request_present_reset() {
@@ -262,7 +262,8 @@ void CompositorState::refresh_presented_frame() {
         return;
     }
 
-    reset_runtime_metrics_for_target(target.root_surface);
+    reset_runtime_metrics_for_target(target.root_surface,
+                                     target.surface ? target.surface : target.root_surface);
 
     if (!render_surface_to_frame(target) && presented_surface != target.root_surface) {
         clear_presented_frame();
@@ -283,8 +284,8 @@ void CompositorState::note_active_surface_commit(wlr_surface* surface) {
 
     const auto now = std::chrono::steady_clock::now();
     std::scoped_lock lock(present_mutex);
-    if (runtime_metrics.should_reset_for_capture_target(target.root_surface)) {
-        runtime_metrics.reset_for_capture_target(target.root_surface);
+    if (runtime_metrics.should_reset_for_capture_target(target.root_surface, capture_surface)) {
+        runtime_metrics.reset_for_capture_target(target.root_surface, capture_surface);
     }
     if (!runtime_metrics.should_track_surface_commit(surface, capture_surface)) {
         return;
@@ -309,13 +310,14 @@ void CompositorState::note_active_surface_commit(wlr_surface* surface) {
     runtime_metrics.has_pending_capture_commit_time = true;
 }
 
-void CompositorState::reset_runtime_metrics_for_target(wlr_surface* root_surface) {
+void CompositorState::reset_runtime_metrics_for_target(wlr_surface* root_surface,
+                                                       wlr_surface* capture_surface) {
     std::scoped_lock lock(present_mutex);
-    if (!runtime_metrics.should_reset_for_capture_target(root_surface)) {
+    if (!runtime_metrics.should_reset_for_capture_target(root_surface, capture_surface)) {
         return;
     }
 
-    runtime_metrics.reset_for_capture_target(root_surface);
+    runtime_metrics.reset_for_capture_target(root_surface, capture_surface);
 }
 
 auto CompositorState::get_runtime_metrics_snapshot() const
@@ -475,8 +477,9 @@ bool CompositorState::render_surface_to_frame(const InputTarget& target) {
     const auto capture_time = std::chrono::steady_clock::now();
 
     std::scoped_lock lock(present_mutex);
-    if (runtime_metrics.should_reset_for_capture_target(root_surface)) {
-        runtime_metrics.reset_for_capture_target(root_surface);
+    auto* capture_surface = target.surface ? target.surface : root_surface;
+    if (runtime_metrics.should_reset_for_capture_target(root_surface, capture_surface)) {
+        runtime_metrics.reset_for_capture_target(root_surface, capture_surface);
     }
     if (presented_buffer) {
         wlr_buffer_unlock(presented_buffer);
