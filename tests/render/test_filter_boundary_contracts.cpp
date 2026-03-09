@@ -1,3 +1,4 @@
+#include "compositor/compositor_runtime_metrics.hpp"
 #include "render/backend/vulkan_backend.hpp"
 #include "render/chain/filter_controls.hpp"
 #include "ui/imgui_layer.hpp"
@@ -5,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -61,6 +63,10 @@ auto count_occurrences(std::string_view text, std::string_view needle) -> size_t
         pos = text.find(needle, pos + needle.size());
     }
     return count;
+}
+
+auto surface_token(std::uintptr_t value) -> goggles::input::wlr_surface* {
+    return reinterpret_cast<goggles::input::wlr_surface*>(value);
 }
 
 } // namespace
@@ -300,4 +306,61 @@ TEST_CASE("Filter chain wrapper boundary contract coverage", "[filter_chain][wra
     REQUIRE(count_occurrences(*wrapper_text, "GOGGLES_LOG_WARN(") == 2);
     REQUIRE(wrapper_text->find("GOGGLES_LOG_ERROR(") == std::string::npos);
     REQUIRE(wrapper_text->find("GOGGLES_LOG_INFO(") == std::string::npos);
+}
+
+TEST_CASE("Runtime metrics keep root ownership while tracking the current capture surface",
+          "[app_window][runtime_metrics_contract]") {
+    using RuntimeMetricsState = goggles::input::RuntimeMetricsState;
+
+    RuntimeMetricsState metrics{};
+    auto* game_root = surface_token(0x1000);
+    auto* popup_surface = surface_token(0x2000);
+    auto* other_root = surface_token(0x3000);
+    const RuntimeMetricsState::CaptureTarget game_capture_target{game_root, game_root};
+    const RuntimeMetricsState::CaptureTarget popup_capture_target{game_root, popup_surface};
+    const RuntimeMetricsState::CaptureTarget other_capture_target{other_root, other_root};
+    const RuntimeMetricsState::CaptureTarget other_popup_capture_target{other_root, popup_surface};
+
+    metrics.game_frame_intervals_ms[0] = 16.0F;
+    metrics.compositor_latency_samples_ms[0] = 4.0F;
+    metrics.game_frame_interval_count = 3;
+    metrics.compositor_latency_count = 2;
+    metrics.has_last_game_commit_time = true;
+    metrics.has_pending_capture_commit_time = true;
+    metrics.snapshot.game_fps = 62.5F;
+    metrics.snapshot.compositor_latency_ms = 3.5F;
+    metrics.snapshot.game_fps_history[0] = 60.0F;
+    metrics.snapshot.compositor_latency_history_ms[0] = 4.0F;
+    metrics.snapshot.game_fps_history_count = 1;
+    metrics.snapshot.compositor_latency_history_count = 1;
+
+    REQUIRE(metrics.should_reset_for_capture_target(game_capture_target));
+
+    metrics.reset_for_capture_target(game_capture_target);
+
+    REQUIRE_FALSE(metrics.should_reset_for_capture_target(game_capture_target));
+    REQUIRE(metrics.should_reset_for_capture_target(popup_capture_target));
+    REQUIRE(metrics.should_reset_for_capture_target(other_capture_target));
+    REQUIRE(metrics.should_track_surface_commit(game_root));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(popup_surface));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(other_root));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(nullptr));
+    REQUIRE(metrics.capture_target_root_surface == game_root);
+    REQUIRE(metrics.capture_target_surface == game_root);
+    REQUIRE(metrics.game_frame_interval_count == 0);
+    REQUIRE(metrics.compositor_latency_count == 0);
+    REQUIRE_FALSE(metrics.has_last_game_commit_time);
+    REQUIRE_FALSE(metrics.has_pending_capture_commit_time);
+    REQUIRE(metrics.snapshot.game_fps == 0.0F);
+    REQUIRE(metrics.snapshot.compositor_latency_ms == 0.0F);
+    REQUIRE(metrics.snapshot.game_fps_history_count == 0);
+    REQUIRE(metrics.snapshot.compositor_latency_history_count == 0);
+
+    metrics.reset_for_capture_target(other_popup_capture_target);
+
+    REQUIRE(metrics.capture_target_root_surface == other_root);
+    REQUIRE(metrics.capture_target_surface == popup_surface);
+    REQUIRE_FALSE(metrics.should_track_surface_commit(other_root));
+    REQUIRE(metrics.should_track_surface_commit(popup_surface));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(game_root));
 }

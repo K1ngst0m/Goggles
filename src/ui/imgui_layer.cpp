@@ -3,6 +3,7 @@
 #include <SDL3/SDL_video.h>
 #include <algorithm>
 #include <cctype>
+#include <cfloat>
 #include <cmath>
 #include <compositor/compositor_server.hpp>
 #include <filesystem>
@@ -17,6 +18,19 @@
 namespace goggles::ui {
 
 namespace {
+
+constexpr float K_PERFORMANCE_PLOT_HEIGHT = 60.0F;
+
+void draw_runtime_metric_plot(const char* plot_id, const float* values, std::size_t value_count,
+                              const char* overlay_text) {
+    if (value_count == 0) {
+        ImGui::TextDisabled("No samples yet");
+        return;
+    }
+
+    ImGui::PlotLines(plot_id, values, static_cast<int>(value_count), 0, overlay_text, FLT_MAX,
+                     FLT_MAX, ImVec2(0.0F, K_PERFORMANCE_PLOT_HEIGHT));
+}
 
 auto to_lower(std::string_view str) -> std::string {
     std::string result;
@@ -745,7 +759,12 @@ void ImGuiLayer::draw_app_management() {
     if (ImGui::Begin("Application")) {
         if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Text("Game FPS: %.1f", m_runtime_metrics.game_fps);
+            draw_runtime_metric_plot("##game_fps_plot", m_runtime_metrics.game_fps_history.data(),
+                                     m_runtime_metrics.game_fps_history_count, nullptr);
             ImGui::Text("Compositor Latency: %.2f ms", m_runtime_metrics.compositor_latency_ms);
+            draw_runtime_metric_plot("##compositor_latency_plot",
+                                     m_runtime_metrics.compositor_latency_history_ms.data(),
+                                     m_runtime_metrics.compositor_latency_history_count, nullptr);
         }
 
         if (ImGui::CollapsingHeader("Window Management", ImGuiTreeNodeFlags_DefaultOpen)) {
