@@ -1,6 +1,8 @@
 #include "downsample_pass.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <render/shader/shader_runtime.hpp>
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
@@ -8,6 +10,10 @@
 namespace goggles::render {
 
 namespace {
+
+constexpr uint32_t LINEAR_SOURCE_BINDING = 0;
+constexpr uint32_t NEAREST_SOURCE_BINDING = 1;
+constexpr std::string_view FILTER_TYPE_PARAMETER_NAME = "filter_type";
 
 /// @brief Push constants for the downsample shader.
 struct DownsamplePushConstants {
@@ -24,6 +30,26 @@ struct DownsamplePushConstants {
 
 } // namespace
 
+auto DownsamplePass::shader_parameters(float filter_type) -> std::vector<ShaderParameter> {
+    return {{
+        .name = std::string(FILTER_TYPE_PARAMETER_NAME),
+        .description = "Filter Type",
+        .default_value = DownsamplePass::FILTER_TYPE_DEFAULT,
+        .current_value = sanitize_parameter_value(FILTER_TYPE_PARAMETER_NAME, filter_type),
+        .min_value = 0.0F,
+        .max_value = DownsamplePass::FILTER_TYPE_NEAREST,
+        .step = 1.0F,
+    }};
+}
+
+auto DownsamplePass::sanitize_parameter_value(std::string_view name, float value) -> float {
+    if (name == FILTER_TYPE_PARAMETER_NAME) {
+        return std::round(std::clamp(value, DownsamplePass::FILTER_TYPE_DEFAULT,
+                                     DownsamplePass::FILTER_TYPE_NEAREST));
+    }
+    return value;
+}
+
 DownsamplePass::~DownsamplePass() {
     DownsamplePass::shutdown();
 }
@@ -38,7 +64,7 @@ auto DownsamplePass::create(const VulkanContext& vk_ctx, ShaderRuntime& shader_r
     pass->m_target_format = config.target_format;
     pass->m_num_sync_indices = config.num_sync_indices;
 
-    GOGGLES_TRY(pass->create_sampler());
+    GOGGLES_TRY(pass->create_samplers());
     GOGGLES_TRY(pass->create_descriptor_resources());
     GOGGLES_TRY(pass->create_pipeline_layout());
     GOGGLES_TRY(pass->create_pipeline(shader_runtime, config.shader_dir));
@@ -65,9 +91,13 @@ void DownsamplePass::shutdown() {
             m_device.destroyDescriptorSetLayout(m_descriptor_layout);
             m_descriptor_layout = nullptr;
         }
-        if (m_sampler) {
-            m_device.destroySampler(m_sampler);
-            m_sampler = nullptr;
+        if (m_nearest_sampler) {
+            m_device.destroySampler(m_nearest_sampler);
+            m_nearest_sampler = nullptr;
+        }
+        if (m_linear_sampler) {
+            m_device.destroySampler(m_linear_sampler);
+            m_linear_sampler = nullptr;
         }
     }
     m_descriptor_sets.clear();
@@ -79,38 +109,39 @@ void DownsamplePass::shutdown() {
 }
 
 auto DownsamplePass::get_shader_parameters() const -> std::vector<ShaderParameter> {
-    return {{
-        .name = "filter_type",
-        .description = "Filter Type",
-        .default_value = DownsamplePass::FILTER_TYPE_DEFAULT,
-        .current_value = m_filter_type,
-        .min_value = 0.0F,
-        .max_value = 1.0F,
-        .step = 1.0F,
-    }};
+    return shader_parameters(m_filter_type);
 }
 
 void DownsamplePass::set_shader_parameter(const std::string& name, float value) {
     if (name == "filter_type") {
-        m_filter_type = value;
+        m_filter_type = sanitize_parameter_value(name, value);
     }
 }
 
 void DownsamplePass::update_descriptor(uint32_t frame_index, vk::ImageView source_view) {
-    vk::DescriptorImageInfo image_info{};
-    image_info.sampler = m_sampler;
-    image_info.imageView = source_view;
-    image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    std::array<vk::DescriptorImageInfo, 2> image_infos{};
+    image_infos[0].sampler = m_linear_sampler;
+    image_infos[0].imageView = source_view;
+    image_infos[0].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    image_infos[1].sampler = m_nearest_sampler;
+    image_infos[1].imageView = source_view;
+    image_infos[1].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
-    vk::WriteDescriptorSet write{};
-    write.dstSet = m_descriptor_sets[frame_index];
-    write.dstBinding = 0;
-    write.dstArrayElement = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    write.pImageInfo = &image_info;
+    std::array<vk::WriteDescriptorSet, 2> writes{};
+    writes[0].dstSet = m_descriptor_sets[frame_index];
+    writes[0].dstBinding = LINEAR_SOURCE_BINDING;
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    writes[0].pImageInfo = &image_infos[0];
+    writes[1].dstSet = m_descriptor_sets[frame_index];
+    writes[1].dstBinding = NEAREST_SOURCE_BINDING;
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    writes[1].pImageInfo = &image_infos[1];
 
-    m_device.updateDescriptorSets(write, {});
+    m_device.updateDescriptorSets(writes, {});
 }
 
 void DownsamplePass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
@@ -171,10 +202,8 @@ void DownsamplePass::record(vk::CommandBuffer cmd, const PassContext& ctx) {
     cmd.endRendering();
 }
 
-auto DownsamplePass::create_sampler() -> Result<void> {
+auto DownsamplePass::create_samplers() -> Result<void> {
     vk::SamplerCreateInfo create_info{};
-    create_info.magFilter = vk::Filter::eLinear;
-    create_info.minFilter = vk::Filter::eLinear;
     create_info.mipmapMode = vk::SamplerMipmapMode::eNearest;
     create_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
     create_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
@@ -187,26 +216,45 @@ auto DownsamplePass::create_sampler() -> Result<void> {
     create_info.borderColor = vk::BorderColor::eFloatOpaqueBlack;
     create_info.unnormalizedCoordinates = VK_FALSE;
 
-    auto [result, sampler] = m_device.createSampler(create_info);
-    if (result != vk::Result::eSuccess) {
+    create_info.magFilter = vk::Filter::eLinear;
+    create_info.minFilter = vk::Filter::eLinear;
+    auto [linear_result, linear_sampler] = m_device.createSampler(create_info);
+    if (linear_result != vk::Result::eSuccess) {
         return make_error<void>(ErrorCode::vulkan_init_failed,
-                                "Failed to create sampler: " + vk::to_string(result));
+                                "Failed to create linear downsample sampler: " +
+                                    vk::to_string(linear_result));
     }
+    m_linear_sampler = linear_sampler;
 
-    m_sampler = sampler;
+    create_info.magFilter = vk::Filter::eNearest;
+    create_info.minFilter = vk::Filter::eNearest;
+    auto [nearest_result, nearest_sampler] = m_device.createSampler(create_info);
+    if (nearest_result != vk::Result::eSuccess) {
+        m_device.destroySampler(m_linear_sampler);
+        m_linear_sampler = nullptr;
+        return make_error<void>(ErrorCode::vulkan_init_failed,
+                                "Failed to create nearest downsample sampler: " +
+                                    vk::to_string(nearest_result));
+    }
+    m_nearest_sampler = nearest_sampler;
+
     return {};
 }
 
 auto DownsamplePass::create_descriptor_resources() -> Result<void> {
-    vk::DescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    binding.descriptorCount = 1;
-    binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+    std::array<vk::DescriptorSetLayoutBinding, 2> bindings{};
+    bindings[0].binding = LINEAR_SOURCE_BINDING;
+    bindings[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = vk::ShaderStageFlagBits::eFragment;
+    bindings[1].binding = NEAREST_SOURCE_BINDING;
+    bindings[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = vk::ShaderStageFlagBits::eFragment;
 
     vk::DescriptorSetLayoutCreateInfo layout_info{};
-    layout_info.bindingCount = 1;
-    layout_info.pBindings = &binding;
+    layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
+    layout_info.pBindings = bindings.data();
 
     auto [layout_result, layout] = m_device.createDescriptorSetLayout(layout_info);
     if (layout_result != vk::Result::eSuccess) {
@@ -218,7 +266,7 @@ auto DownsamplePass::create_descriptor_resources() -> Result<void> {
 
     vk::DescriptorPoolSize pool_size{};
     pool_size.type = vk::DescriptorType::eCombinedImageSampler;
-    pool_size.descriptorCount = m_num_sync_indices;
+    pool_size.descriptorCount = m_num_sync_indices * static_cast<uint32_t>(bindings.size());
 
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.maxSets = m_num_sync_indices;

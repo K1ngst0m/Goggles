@@ -2,7 +2,7 @@
 
 #include "filter_chain_core.hpp"
 
-#include <algorithm>
+#include <cmath>
 #include <render/shader/shader_runtime.hpp>
 
 namespace goggles::render {
@@ -14,6 +14,14 @@ auto make_optional_description(const std::string& description) -> std::optional<
         return std::nullopt;
     }
     return description;
+}
+
+auto normalize_control_value(const FilterControlDescriptor& descriptor, float value) -> float {
+    const float clamped = clamp_filter_control_value(descriptor, value);
+    if (descriptor.stage == FilterControlStage::prechain && descriptor.name == "filter_type") {
+        return std::round(clamped);
+    }
+    return clamped;
 }
 
 } // namespace
@@ -135,11 +143,11 @@ auto FilterChain::set_control_value(FilterControlId control_id, float value) -> 
         if (descriptor.control_id != control_id) {
             continue;
         }
-        const float clamped = clamp_filter_control_value(descriptor, value);
+        const float normalized = normalize_control_value(descriptor, value);
         if (descriptor.stage == FilterControlStage::prechain) {
-            m_filter_chain->set_prechain_parameter(descriptor.name, clamped);
+            m_filter_chain->set_prechain_parameter(descriptor.name, normalized);
         } else {
-            m_filter_chain->set_parameter(descriptor.name, clamped);
+            m_filter_chain->set_parameter(descriptor.name, normalized);
         }
         return true;
     }

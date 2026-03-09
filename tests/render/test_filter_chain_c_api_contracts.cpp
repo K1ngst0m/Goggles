@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -456,6 +457,26 @@ auto make_valid_record_info() -> goggles_chain_vk_record_info_t {
     return info;
 }
 
+auto find_control_descriptor(const goggles_chain_control_snapshot_t* snapshot,
+                             goggles_chain_stage_t stage, std::string_view name)
+    -> const goggles_chain_control_desc_t* {
+    const auto* descriptors = goggles_chain_control_snapshot_get_data(snapshot);
+    const size_t count = goggles_chain_control_snapshot_get_count(snapshot);
+    if (descriptors == nullptr) {
+        return nullptr;
+    }
+
+    for (size_t index = 0; index < count; ++index) {
+        const auto& descriptor = descriptors[index];
+        if (descriptor.stage == stage && descriptor.name_utf8 != nullptr &&
+            std::string_view(descriptor.name_utf8) == name) {
+            return &descriptor;
+        }
+    }
+
+    return nullptr;
+}
+
 } // namespace
 
 TEST_CASE("Filter chain C API lifecycle and out-param safety", "[filter_chain_c_api]") {
@@ -731,6 +752,86 @@ TEST_CASE("Filter chain C API snapshot contract", "[filter_chain_c_api][snapshot
                                              &invalid_stage_snapshot) ==
             GOGGLES_CHAIN_STATUS_INVALID_ARGUMENT);
     REQUIRE(invalid_stage_snapshot == nullptr);
+}
+
+TEST_CASE("Filter chain C API prechain filter_type preserves nearest mode",
+          "[filter_chain_c_api][controls]") {
+    if constexpr (ASAN_BUILD) {
+        SKIP("Skipping Vulkan-backed C API prechain control test under ASAN due external Vulkan "
+             "loader leak noise");
+    }
+
+    VulkanRuntimeFixture fixture;
+    if (!fixture.available()) {
+        SKIP("Skipping Vulkan-backed C API prechain control test because no Vulkan graphics "
+             "device is available");
+    }
+    const auto vk_context = fixture.context();
+
+    const auto shader_root = std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders";
+    const auto preset_path =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/test/format.slangp";
+    REQUIRE(std::filesystem::exists(shader_root));
+    REQUIRE(std::filesystem::exists(preset_path));
+
+    CacheDirGuard cache_dir_guard(make_cache_dir());
+    ChainGuard guard;
+    guard.chain = create_ready_chain(vk_context, shader_root, cache_dir_guard.dir, preset_path);
+    REQUIRE(guard.chain != nullptr);
+
+    goggles_chain_control_snapshot_t* snapshot = nullptr;
+    REQUIRE(goggles_chain_control_list_stage(guard.chain, GOGGLES_CHAIN_STAGE_PRECHAIN,
+                                             &snapshot) == GOGGLES_CHAIN_STATUS_OK);
+    REQUIRE(snapshot != nullptr);
+
+    const auto* filter_type =
+        find_control_descriptor(snapshot, GOGGLES_CHAIN_STAGE_PRECHAIN, "filter_type");
+    REQUIRE(filter_type != nullptr);
+    REQUIRE(filter_type->default_value == Catch::Approx(0.0F));
+    REQUIRE(filter_type->min_value == Catch::Approx(0.0F));
+    REQUIRE(filter_type->max_value == Catch::Approx(2.0F));
+    REQUIRE(filter_type->step == Catch::Approx(1.0F));
+    const auto filter_type_id = filter_type->control_id;
+    REQUIRE(goggles_chain_control_snapshot_destroy(&snapshot) == GOGGLES_CHAIN_STATUS_OK);
+
+    REQUIRE(goggles_chain_control_set_value(guard.chain, filter_type_id, 2.0F) ==
+            GOGGLES_CHAIN_STATUS_OK);
+    REQUIRE(goggles_chain_prechain_resolution_set(guard.chain, {.width = 2u, .height = 3u}) ==
+            GOGGLES_CHAIN_STATUS_OK);
+
+    REQUIRE(goggles_chain_control_list_stage(guard.chain, GOGGLES_CHAIN_STAGE_PRECHAIN,
+                                             &snapshot) == GOGGLES_CHAIN_STATUS_OK);
+    REQUIRE(snapshot != nullptr);
+    filter_type = find_control_descriptor(snapshot, GOGGLES_CHAIN_STAGE_PRECHAIN, "filter_type");
+    REQUIRE(filter_type != nullptr);
+    REQUIRE(filter_type->current_value == Catch::Approx(2.0F));
+    REQUIRE(goggles_chain_control_snapshot_destroy(&snapshot) == GOGGLES_CHAIN_STATUS_OK);
+
+    REQUIRE(goggles_chain_control_list(guard.chain, &snapshot) == GOGGLES_CHAIN_STATUS_OK);
+    REQUIRE(snapshot != nullptr);
+    filter_type = find_control_descriptor(snapshot, GOGGLES_CHAIN_STAGE_PRECHAIN, "filter_type");
+    REQUIRE(filter_type != nullptr);
+    REQUIRE(filter_type->current_value == Catch::Approx(2.0F));
+    REQUIRE(goggles_chain_control_snapshot_destroy(&snapshot) == GOGGLES_CHAIN_STATUS_OK);
+
+    REQUIRE(goggles_chain_control_set_value(guard.chain, filter_type_id, 0.0F) ==
+            GOGGLES_CHAIN_STATUS_OK);
+    REQUIRE(goggles_chain_control_list_stage(guard.chain, GOGGLES_CHAIN_STAGE_PRECHAIN,
+                                             &snapshot) == GOGGLES_CHAIN_STATUS_OK);
+    REQUIRE(snapshot != nullptr);
+    filter_type = find_control_descriptor(snapshot, GOGGLES_CHAIN_STAGE_PRECHAIN, "filter_type");
+    REQUIRE(filter_type != nullptr);
+    REQUIRE(filter_type->current_value == Catch::Approx(0.0F));
+    REQUIRE(goggles_chain_control_snapshot_destroy(&snapshot) == GOGGLES_CHAIN_STATUS_OK);
+
+    REQUIRE(goggles_chain_control_set_value(guard.chain, filter_type_id, 1.0F) ==
+            GOGGLES_CHAIN_STATUS_OK);
+    REQUIRE(goggles_chain_control_list(guard.chain, &snapshot) == GOGGLES_CHAIN_STATUS_OK);
+    REQUIRE(snapshot != nullptr);
+    filter_type = find_control_descriptor(snapshot, GOGGLES_CHAIN_STAGE_PRECHAIN, "filter_type");
+    REQUIRE(filter_type != nullptr);
+    REQUIRE(filter_type->current_value == Catch::Approx(1.0F));
+    REQUIRE(goggles_chain_control_snapshot_destroy(&snapshot) == GOGGLES_CHAIN_STATUS_OK);
 }
 
 TEST_CASE("Filter chain C API control and record validation", "[filter_chain_c_api][record]") {

@@ -1,17 +1,20 @@
 // Downsampling shader for pre-chain resolution control.
-// Supports area filtering and Gaussian-weighted bilinear sampling.
+// Supports area, Gaussian, and nearest-neighbor filtering.
 
 struct PushConstants {
     float4 source_size; // [width, height, 1/width, 1/height]
     float4 target_size; // [width, height, 1/width, 1/height]
-    float filter_type;  // 0 = area, 1 = gaussian
+    float filter_type;  // 0 = area, 1 = gaussian, 2 = nearest-neighbor
 };
 
 [[vk::push_constant]]
 PushConstants pc;
 
 [[vk::binding(0, 0)]]
-Sampler2D source_texture;
+Sampler2D source_linear_texture;
+
+[[vk::binding(1, 0)]]
+Sampler2D source_nearest_texture;
 
 // Gaussian-weighted 9-tap sampling with scale-adaptive kernel.
 // Sigma scales with downscale ratio to cover the correct source region.
@@ -25,19 +28,21 @@ float4 sample_gaussian(float2 texcoord, float2 texel_size) {
     float2 offset_diagonal = sigma * texel_size;
 
     // Center sample
-    float4 center = source_texture.Sample(texcoord);
+    float4 center = source_linear_texture.Sample(texcoord);
 
     // Cardinal samples at ±sigma (4 taps)
-    float4 c_px = source_texture.Sample(texcoord + float2(offset_cardinal.x, 0.0));
-    float4 c_nx = source_texture.Sample(texcoord - float2(offset_cardinal.x, 0.0));
-    float4 c_py = source_texture.Sample(texcoord + float2(0.0, offset_cardinal.y));
-    float4 c_ny = source_texture.Sample(texcoord - float2(0.0, offset_cardinal.y));
+    float4 c_px = source_linear_texture.Sample(texcoord + float2(offset_cardinal.x, 0.0));
+    float4 c_nx = source_linear_texture.Sample(texcoord - float2(offset_cardinal.x, 0.0));
+    float4 c_py = source_linear_texture.Sample(texcoord + float2(0.0, offset_cardinal.y));
+    float4 c_ny = source_linear_texture.Sample(texcoord - float2(0.0, offset_cardinal.y));
 
     // Diagonal samples at (±sigma, ±sigma) (4 taps)
-    float4 d_pp = source_texture.Sample(texcoord + offset_diagonal);
-    float4 d_nn = source_texture.Sample(texcoord - offset_diagonal);
-    float4 d_pn = source_texture.Sample(texcoord + float2(offset_diagonal.x, -offset_diagonal.y));
-    float4 d_np = source_texture.Sample(texcoord + float2(-offset_diagonal.x, offset_diagonal.y));
+    float4 d_pp = source_linear_texture.Sample(texcoord + offset_diagonal);
+    float4 d_nn = source_linear_texture.Sample(texcoord - offset_diagonal);
+    float4 d_pn =
+        source_linear_texture.Sample(texcoord + float2(offset_diagonal.x, -offset_diagonal.y));
+    float4 d_np =
+        source_linear_texture.Sample(texcoord + float2(-offset_diagonal.x, offset_diagonal.y));
 
     // Gaussian weights (precomputed, normalized to 1.0):
     // center: exp(0) = 1.0 -> 0.204
@@ -85,7 +90,7 @@ float4 sample_area(float2 texcoord) {
             float weight = overlap_size.x * overlap_size.y;
             if (weight > 0.0) {
                 float2 sample_uv = (float2(x, y) + 0.5) * pc.source_size.zw;
-                accum += source_texture.Sample(sample_uv) * weight;
+                accum += source_linear_texture.Sample(sample_uv) * weight;
                 total_weight += weight;
             }
         }
@@ -95,14 +100,25 @@ float4 sample_area(float2 texcoord) {
         return accum / total_weight;
     }
 
-    return source_texture.Sample(texcoord);
+    return source_linear_texture.Sample(texcoord);
+}
+
+float4 sample_nearest(float2 texcoord) {
+    float2 source_pixel = clamp(floor(texcoord * pc.source_size.xy), float2(0.0, 0.0),
+                                pc.source_size.xy - float2(1.0, 1.0));
+    float2 nearest_uv = (source_pixel + 0.5) * pc.source_size.zw;
+    return source_nearest_texture.Sample(nearest_uv);
 }
 
 [shader("pixel")] float4 main(float2 texcoord : TEXCOORD0) : SV_Target0 {
     float2 scale = pc.source_size.xy / pc.target_size.xy;
 
+    if (pc.filter_type > 1.5) {
+        return sample_nearest(texcoord);
+    }
+
     if (scale.x <= 1.0 && scale.y <= 1.0) {
-        return source_texture.Sample(texcoord);
+        return source_linear_texture.Sample(texcoord);
     }
 
     if (pc.filter_type > 0.5) {

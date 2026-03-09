@@ -114,6 +114,7 @@ auto FilterChainCore::create(const VulkanContext& vk_ctx, vk::Format swapchain_f
     chain->m_shader_runtime = &shader_runtime;
     chain->m_shader_dir = shader_dir;
     chain->m_prechain_requested_resolution = source_resolution;
+    chain->m_prechain_parameters = DownsamplePass::shader_parameters(0.0F);
 
     OutputPassConfig output_config{
         .target_format = swapchain_format,
@@ -134,6 +135,7 @@ auto FilterChainCore::create(const VulkanContext& vk_ctx, vk::Format swapchain_f
         };
         chain->m_prechain_passes.push_back(
             GOGGLES_TRY(DownsamplePass::create(vk_ctx, shader_runtime, downsample_config)));
+        chain->apply_prechain_parameters();
 
         chain->m_prechain_framebuffers.push_back(GOGGLES_TRY(Framebuffer::create(
             vk_ctx.device, vk_ctx.physical_device, vk::Format::eR8G8B8A8Unorm, source_resolution)));
@@ -737,6 +739,10 @@ auto FilterChainCore::get_prechain_resolution() const -> vk::Extent2D {
 }
 
 auto FilterChainCore::get_prechain_parameters() const -> std::vector<ShaderParameter> {
+    if (m_prechain_passes.empty()) {
+        return m_prechain_parameters;
+    }
+
     std::vector<ShaderParameter> result;
     for (const auto& pass : m_prechain_passes) {
         auto params = pass->get_shader_parameters();
@@ -746,8 +752,23 @@ auto FilterChainCore::get_prechain_parameters() const -> std::vector<ShaderParam
 }
 
 void FilterChainCore::set_prechain_parameter(const std::string& name, float value) {
+    const float sanitized = DownsamplePass::sanitize_parameter_value(name, value);
+    for (auto& parameter : m_prechain_parameters) {
+        if (parameter.name == name) {
+            parameter.current_value = sanitized;
+        }
+    }
+
     for (auto& pass : m_prechain_passes) {
-        pass->set_shader_parameter(name, value);
+        pass->set_shader_parameter(name, sanitized);
+    }
+}
+
+void FilterChainCore::apply_prechain_parameters() {
+    for (const auto& parameter : m_prechain_parameters) {
+        for (auto& pass : m_prechain_passes) {
+            pass->set_shader_parameter(parameter.name, parameter.current_value);
+        }
     }
 }
 
@@ -847,6 +868,7 @@ auto FilterChainCore::ensure_prechain_passes(vk::Extent2D captured_extent) -> Re
     };
     m_prechain_passes.push_back(
         GOGGLES_TRY(DownsamplePass::create(m_vk_ctx, *m_shader_runtime, downsample_config)));
+    apply_prechain_parameters();
 
     m_prechain_framebuffers.push_back(GOGGLES_TRY(Framebuffer::create(
         m_vk_ctx.device, m_vk_ctx.physical_device, vk::Format::eR8G8B8A8Unorm, target_resolution)));

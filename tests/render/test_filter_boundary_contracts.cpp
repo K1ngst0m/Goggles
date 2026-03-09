@@ -109,6 +109,10 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
     auto chain_text = read_text_file(chain_path);
     REQUIRE(chain_text.has_value());
 
+    const auto imgui_path = std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/ui/imgui_layer.cpp";
+    auto imgui_text = read_text_file(imgui_path);
+    REQUIRE(imgui_text.has_value());
+
     const auto backend_context_path =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_context.hpp";
     auto backend_context_text = read_text_file(backend_context_path);
@@ -130,6 +134,11 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
     REQUIRE(
         chain_text->find("const float clamped = clamp_filter_control_value(descriptor, value);") !=
         std::string::npos);
+    REQUIRE(chain_text->find("std::round(clamped)") != std::string::npos);
+
+    REQUIRE(imgui_text->find("FILTER_TYPE_LABELS") != std::string::npos);
+    REQUIRE(imgui_text->find("\"Nearest\"") != std::string::npos);
+    REQUIRE(imgui_text->find("param.name == \"filter_type\"") != std::string::npos);
 
     const auto source_files = collect_app_ui_sources();
     const std::array<std::string_view, 3> forbidden_patterns = {

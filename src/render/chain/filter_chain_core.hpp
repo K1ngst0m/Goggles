@@ -128,6 +128,7 @@ private:
     void copy_feedback_framebuffers(vk::CommandBuffer cmd);
 
     [[nodiscard]] auto ensure_prechain_passes(vk::Extent2D captured_extent) -> Result<void>;
+    void apply_prechain_parameters();
 
     struct ChainResult {
         vk::ImageView view;
@@ -171,6 +172,7 @@ private:
     vk::Extent2D m_prechain_requested_resolution; // 0,0 = disabled
     vk::Extent2D m_prechain_resolved_resolution;
     vk::Extent2D m_prechain_last_captured_extent;
+    std::vector<ShaderParameter> m_prechain_parameters;
     std::vector<std::unique_ptr<Pass>> m_prechain_passes;
     std::vector<std::unique_ptr<Framebuffer>> m_prechain_framebuffers;
 

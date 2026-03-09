@@ -599,22 +599,39 @@ void ImGuiLayer::draw_prechain_scale_and_profile_controls(PreChainState& prechai
 void ImGuiLayer::draw_prechain_pass_parameter_controls(PreChainState& prechain) {
     if (prechain.profile != ResolutionProfile::disabled && !prechain.pass_parameters.empty()) {
         ImGui::Separator();
-        static constexpr std::array<const char*, 2> FILTER_LABELS = {"Area", "Gaussian"};
+        static constexpr std::array<const char*, 3> FILTER_TYPE_LABELS = {
+            "Area",
+            "Gaussian",
+            "Nearest",
+        };
         for (auto& param : prechain.pass_parameters) {
             bool is_enum = (param.step >= 1.0F) && (param.max_value - param.min_value) <= 10.0F;
             const std::string label =
                 std::string(param.name) + "##prechain_" + std::to_string(param.control_id);
-            if (is_enum) {
+            const bool is_filter_type = param.name == "filter_type";
+            if (is_enum && is_filter_type) {
                 int count = static_cast<int>(param.max_value - param.min_value) + 1;
                 int current = static_cast<int>(param.current_value - param.min_value);
+                current = std::clamp(current, 0, count - 1);
 
                 ImGui::SetNextItemWidth(150);
-                if (ImGui::Combo(label.c_str(), &current, FILTER_LABELS.data(),
-                                 std::min(count, static_cast<int>(FILTER_LABELS.size())))) {
+                if (ImGui::Combo(label.c_str(), &current, FILTER_TYPE_LABELS.data(),
+                                 std::min(count, static_cast<int>(FILTER_TYPE_LABELS.size())))) {
                     float new_value = param.min_value + static_cast<float>(current);
                     param.current_value = new_value;
                     if (m_on_prechain_parameter) {
                         m_on_prechain_parameter(param.control_id, new_value);
+                    }
+                }
+            } else if (is_enum) {
+                int value = static_cast<int>(param.current_value);
+                const int min_value = static_cast<int>(param.min_value);
+                const int max_value = static_cast<int>(param.max_value);
+                ImGui::SetNextItemWidth(150);
+                if (ImGui::SliderInt(label.c_str(), &value, min_value, max_value)) {
+                    param.current_value = static_cast<float>(value);
+                    if (m_on_prechain_parameter) {
+                        m_on_prechain_parameter(param.control_id, param.current_value);
                     }
                 }
             } else {

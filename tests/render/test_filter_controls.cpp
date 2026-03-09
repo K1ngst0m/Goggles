@@ -52,3 +52,19 @@ TEST_CASE("Filter control set-value clamp behavior", "[filter_chain][controls]")
     REQUIRE(clamp_filter_control_value(descriptor, 2.0F) == Catch::Approx(5.0F));
     REQUIRE(clamp_filter_control_value(descriptor, 20.0F) == Catch::Approx(10.0F));
 }
+
+TEST_CASE("Pre-chain filter_type range remains backward-compatible", "[filter_chain][controls]") {
+    FilterControlDescriptor descriptor{};
+    descriptor.stage = FilterControlStage::prechain;
+    descriptor.name = "filter_type";
+    descriptor.default_value = 0.0F;
+    descriptor.min_value = 0.0F;
+    descriptor.max_value = 2.0F;
+    descriptor.step = 1.0F;
+
+    REQUIRE(clamp_filter_control_value(descriptor, -1.0F) == Catch::Approx(0.0F));
+    REQUIRE(clamp_filter_control_value(descriptor, 0.0F) == Catch::Approx(0.0F));
+    REQUIRE(clamp_filter_control_value(descriptor, 1.0F) == Catch::Approx(1.0F));
+    REQUIRE(clamp_filter_control_value(descriptor, 2.0F) == Catch::Approx(2.0F));
+    REQUIRE(clamp_filter_control_value(descriptor, 4.0F) == Catch::Approx(2.0F));
+}

@@ -2,6 +2,7 @@
 
 #include "pass.hpp"
 
+#include <string_view>
 #include <vector>
 
 namespace goggles::render {
@@ -13,9 +14,12 @@ struct DownsamplePassConfig {
     std::filesystem::path shader_dir;
 };
 
-/// @brief Pre-chain pass that downsamples captured frames using area filtering.
+/// @brief Pre-chain pass that downsamples captured frames with selectable filtering.
 class DownsamplePass : public Pass {
 public:
+    [[nodiscard]] static auto shader_parameters(float filter_type) -> std::vector<ShaderParameter>;
+    [[nodiscard]] static auto sanitize_parameter_value(std::string_view name, float value) -> float;
+
     /// @brief Creates a downsample pass for the given target format.
     /// @return A pass or an error.
     [[nodiscard]] static auto create(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
@@ -43,7 +47,7 @@ private:
     [[nodiscard]] auto create_pipeline_layout() -> Result<void>;
     [[nodiscard]] auto create_pipeline(ShaderRuntime& shader_runtime,
                                        const std::filesystem::path& shader_dir) -> Result<void>;
-    [[nodiscard]] auto create_sampler() -> Result<void>;
+    [[nodiscard]] auto create_samplers() -> Result<void>;
 
     void update_descriptor(uint32_t frame_index, vk::ImageView source_view);
 
@@ -58,9 +62,12 @@ private:
     vk::DescriptorPool m_descriptor_pool;
     std::vector<vk::DescriptorSet> m_descriptor_sets;
 
-    vk::Sampler m_sampler;
+    vk::Sampler m_linear_sampler;
+    vk::Sampler m_nearest_sampler;
 
     static constexpr float FILTER_TYPE_DEFAULT = 0.0F;
+    static constexpr float FILTER_TYPE_GAUSSIAN = 1.0F;
+    static constexpr float FILTER_TYPE_NEAREST = 2.0F;
     float m_filter_type = FILTER_TYPE_DEFAULT;
 };
 
