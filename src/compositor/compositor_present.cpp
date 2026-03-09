@@ -91,35 +91,15 @@ void render_surface_iterator(wlr_surface* surface, int sx, int sy, void* data) {
     wlr_render_pass_add_texture(context->pass, &options);
 }
 
-void clear_runtime_metric_samples(CompositorState::RuntimeMetricsState& metrics) {
-    metrics.game_frame_intervals_ms.fill(0.0F);
-    metrics.compositor_latency_samples_ms.fill(0.0F);
-    metrics.game_frame_interval_index = 0;
-    metrics.compositor_latency_index = 0;
-    metrics.game_frame_interval_count = 0;
-    metrics.compositor_latency_count = 0;
-    metrics.has_last_game_commit_time = false;
-    metrics.has_pending_capture_commit_time = false;
-    metrics.snapshot = {};
-}
-
-void reset_runtime_metrics_state(CompositorState::RuntimeMetricsState& metrics,
-                                 wlr_surface* root_surface) {
-    metrics.active_root_surface = root_surface;
-    clear_runtime_metric_samples(metrics);
-}
-
-void push_runtime_metric_sample(
-    std::array<float, CompositorState::RuntimeMetricsState::K_SAMPLE_WINDOW>& samples,
-    size_t& index, float sample_ms, size_t& count) {
+void push_runtime_metric_sample(std::array<float, RuntimeMetricsState::K_SAMPLE_WINDOW>& samples,
+                                size_t& index, float sample_ms, size_t& count) {
     samples[index] = sample_ms;
     index = (index + 1) % samples.size();
     count = std::min(count + 1, samples.size());
 }
 
 auto average_runtime_metric_sample(
-    const std::array<float, CompositorState::RuntimeMetricsState::K_SAMPLE_WINDOW>& samples,
-    size_t count) -> float {
+    const std::array<float, RuntimeMetricsState::K_SAMPLE_WINDOW>& samples, size_t count) -> float {
     if (count == 0) {
         return 0.0F;
     }
@@ -127,6 +107,37 @@ auto average_runtime_metric_sample(
     return std::accumulate(samples.begin(), samples.begin() + static_cast<std::ptrdiff_t>(count),
                            0.0F) /
            static_cast<float>(count);
+}
+
+template <typename Transform>
+void publish_runtime_metric_history(
+    const std::array<float, RuntimeMetricsState::K_SAMPLE_WINDOW>& samples, size_t index,
+    size_t count, std::array<float, RuntimeMetricsState::K_SAMPLE_WINDOW>& published,
+    size_t& published_count, Transform transform) {
+    published.fill(0.0F);
+    published_count = count;
+    if (count == 0) {
+        return;
+    }
+
+    const size_t start = count == samples.size() ? index : 0;
+    for (size_t offset = 0; offset < count; ++offset) {
+        const size_t sample_index = (start + offset) % samples.size();
+        published[offset] = transform(samples[sample_index]);
+    }
+}
+
+void refresh_published_runtime_metrics(RuntimeMetricsState& metrics) {
+    publish_runtime_metric_history(
+        metrics.game_frame_intervals_ms, metrics.game_frame_interval_index,
+        metrics.game_frame_interval_count, metrics.snapshot.game_fps_history,
+        metrics.snapshot.game_fps_history_count,
+        [](float interval_ms) { return interval_ms > 0.0F ? 1000.0F / interval_ms : 0.0F; });
+    publish_runtime_metric_history(
+        metrics.compositor_latency_samples_ms, metrics.compositor_latency_index,
+        metrics.compositor_latency_count, metrics.snapshot.compositor_latency_history_ms,
+        metrics.snapshot.compositor_latency_history_count,
+        [](float latency_ms) { return latency_ms; });
 }
 
 } // namespace
@@ -220,7 +231,7 @@ void CompositorState::clear_presented_frame() {
     }
     presented_frame.reset();
     presented_surface = nullptr;
-    reset_runtime_metrics_state(runtime_metrics, nullptr);
+    runtime_metrics.reset_for_capture_target({});
 }
 
 void CompositorState::request_present_reset() {
@@ -251,7 +262,11 @@ void CompositorState::refresh_presented_frame() {
         return;
     }
 
-    reset_runtime_metrics_for_target(target.root_surface);
+    const RuntimeMetricsState::CaptureTarget capture_target = {
+        .root_surface = target.root_surface,
+        .surface = target.surface ? target.surface : target.root_surface,
+    };
+    reset_runtime_metrics_for_target(capture_target);
 
     if (!render_surface_to_frame(target) && presented_surface != target.root_surface) {
         clear_presented_frame();
@@ -265,46 +280,50 @@ void CompositorState::note_active_surface_commit(wlr_surface* surface) {
         return;
     }
 
-    const bool is_root_commit = surface == target.root_surface;
-    const bool is_active_descendant_commit = target.surface && surface == target.surface;
-    if (!is_root_commit && !is_active_descendant_commit) {
+    const RuntimeMetricsState::CaptureTarget capture_target = {
+        .root_surface = target.root_surface,
+        .surface = target.surface ? target.surface : target.root_surface,
+    };
+    if (surface != capture_target.surface) {
         return;
     }
 
     const auto now = std::chrono::steady_clock::now();
     std::scoped_lock lock(present_mutex);
-    if (runtime_metrics.active_root_surface != target.root_surface) {
-        reset_runtime_metrics_state(runtime_metrics, target.root_surface);
+    if (runtime_metrics.should_reset_for_capture_target(capture_target)) {
+        runtime_metrics.reset_for_capture_target(capture_target);
+    }
+    if (!runtime_metrics.should_track_surface_commit(surface)) {
+        return;
     }
 
-    if (is_root_commit) {
-        if (runtime_metrics.has_last_game_commit_time) {
-            const auto delta_ms = std::chrono::duration<float, std::milli>(
-                                      now - runtime_metrics.last_game_commit_time)
-                                      .count();
-            push_runtime_metric_sample(runtime_metrics.game_frame_intervals_ms,
-                                       runtime_metrics.game_frame_interval_index, delta_ms,
-                                       runtime_metrics.game_frame_interval_count);
-            const float avg_ms = average_runtime_metric_sample(
-                runtime_metrics.game_frame_intervals_ms, runtime_metrics.game_frame_interval_count);
-            runtime_metrics.snapshot.game_fps = avg_ms > 0.0F ? 1000.0F / avg_ms : 0.0F;
-        }
-
-        runtime_metrics.last_game_commit_time = now;
-        runtime_metrics.has_last_game_commit_time = true;
+    if (runtime_metrics.has_last_game_commit_time) {
+        const auto delta_ms =
+            std::chrono::duration<float, std::milli>(now - runtime_metrics.last_game_commit_time)
+                .count();
+        push_runtime_metric_sample(runtime_metrics.game_frame_intervals_ms,
+                                   runtime_metrics.game_frame_interval_index, delta_ms,
+                                   runtime_metrics.game_frame_interval_count);
+        const float avg_ms = average_runtime_metric_sample(
+            runtime_metrics.game_frame_intervals_ms, runtime_metrics.game_frame_interval_count);
+        runtime_metrics.snapshot.game_fps = avg_ms > 0.0F ? 1000.0F / avg_ms : 0.0F;
+        refresh_published_runtime_metrics(runtime_metrics);
     }
 
+    runtime_metrics.last_game_commit_time = now;
+    runtime_metrics.has_last_game_commit_time = true;
     runtime_metrics.pending_capture_commit_time = now;
     runtime_metrics.has_pending_capture_commit_time = true;
 }
 
-void CompositorState::reset_runtime_metrics_for_target(wlr_surface* root_surface) {
+void CompositorState::reset_runtime_metrics_for_target(
+    const RuntimeMetricsState::CaptureTarget& capture_target) {
     std::scoped_lock lock(present_mutex);
-    if (runtime_metrics.active_root_surface == root_surface) {
+    if (!runtime_metrics.should_reset_for_capture_target(capture_target)) {
         return;
     }
 
-    reset_runtime_metrics_state(runtime_metrics, root_surface);
+    runtime_metrics.reset_for_capture_target(capture_target);
 }
 
 auto CompositorState::get_runtime_metrics_snapshot() const
@@ -464,8 +483,12 @@ bool CompositorState::render_surface_to_frame(const InputTarget& target) {
     const auto capture_time = std::chrono::steady_clock::now();
 
     std::scoped_lock lock(present_mutex);
-    if (runtime_metrics.active_root_surface != root_surface) {
-        reset_runtime_metrics_state(runtime_metrics, root_surface);
+    const RuntimeMetricsState::CaptureTarget capture_target = {
+        .root_surface = root_surface,
+        .surface = target.surface ? target.surface : root_surface,
+    };
+    if (runtime_metrics.should_reset_for_capture_target(capture_target)) {
+        runtime_metrics.reset_for_capture_target(capture_target);
     }
     if (presented_buffer) {
         wlr_buffer_unlock(presented_buffer);
@@ -510,6 +533,7 @@ bool CompositorState::render_surface_to_frame(const InputTarget& target) {
         runtime_metrics.snapshot.compositor_latency_ms =
             average_runtime_metric_sample(runtime_metrics.compositor_latency_samples_ms,
                                           runtime_metrics.compositor_latency_count);
+        refresh_published_runtime_metrics(runtime_metrics);
         runtime_metrics.has_pending_capture_commit_time = false;
     }
 
