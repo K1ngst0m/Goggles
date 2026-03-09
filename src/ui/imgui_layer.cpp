@@ -3,7 +3,6 @@
 #include <SDL3/SDL_video.h>
 #include <algorithm>
 #include <cctype>
-#include <cfloat>
 #include <cmath>
 #include <compositor/compositor_server.hpp>
 #include <filesystem>
@@ -20,16 +19,56 @@ namespace goggles::ui {
 namespace {
 
 constexpr float K_PERFORMANCE_PLOT_HEIGHT = 60.0F;
+constexpr float K_MIN_FPS_PLOT_MAX = 120.0F;
+constexpr float K_UNCAPPED_FPS_PLOT_MAX = 240.0F;
+constexpr float K_MIN_LATENCY_PLOT_MAX_MS = 16.0F;
+constexpr float K_UNCAPPED_LATENCY_PLOT_MAX_MS = 25.0F;
+
+struct PlotConfig {
+    float uncapped_plot_max;
+    float capped_plot_max;
+    float min_plot_max;
+    float step;
+};
+
+auto round_up_to_step(float value, float step) -> float {
+    return std::ceil(value / step) * step;
+}
+
+auto compute_plot_max(uint32_t target_fps, const PlotConfig& config) -> float {
+    if (target_fps == 0) {
+        return config.uncapped_plot_max;
+    }
+
+    return round_up_to_step(config.capped_plot_max, config.step);
+}
+
+auto compute_game_fps_plot_max(uint32_t target_fps) -> float {
+    return compute_plot_max(target_fps,
+                            PlotConfig{.uncapped_plot_max = K_UNCAPPED_FPS_PLOT_MAX,
+                                       .capped_plot_max = static_cast<float>(target_fps) * 1.25F,
+                                       .min_plot_max = K_MIN_FPS_PLOT_MAX,
+                                       .step = 10.0F});
+}
+
+auto compute_compositor_latency_plot_max_ms(uint32_t target_fps) -> float {
+    const float frame_budget_ms = target_fps == 0 ? 0.0F : 1000.0F / static_cast<float>(target_fps);
+    return compute_plot_max(target_fps,
+                            PlotConfig{.uncapped_plot_max = K_UNCAPPED_LATENCY_PLOT_MAX_MS,
+                                       .capped_plot_max = frame_budget_ms * 1.5F,
+                                       .min_plot_max = K_MIN_LATENCY_PLOT_MAX_MS,
+                                       .step = 5.0F});
+}
 
 void draw_runtime_metric_plot(const char* plot_id, const float* values, std::size_t value_count,
-                              const char* overlay_text) {
+                              const char* overlay_text, float scale_max) {
     if (value_count == 0) {
         ImGui::TextDisabled("No samples yet");
         return;
     }
 
-    ImGui::PlotLines(plot_id, values, static_cast<int>(value_count), 0, overlay_text, FLT_MAX,
-                     FLT_MAX, ImVec2(0.0F, K_PERFORMANCE_PLOT_HEIGHT));
+    ImGui::PlotLines(plot_id, values, static_cast<int>(value_count), 0, overlay_text, 0.0F,
+                     scale_max, ImVec2(0.0F, K_PERFORMANCE_PLOT_HEIGHT));
 }
 
 auto to_lower(std::string_view str) -> std::string {
@@ -769,13 +808,19 @@ void ImGuiLayer::draw_app_management() {
     ImGui::SetNextWindowSize(ImVec2(350, 350), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Application")) {
         if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const float game_fps_plot_max = compute_game_fps_plot_max(m_target_fps);
+            const float compositor_latency_plot_max_ms =
+                compute_compositor_latency_plot_max_ms(m_target_fps);
+
             ImGui::Text("Game FPS: %.1f", m_runtime_metrics.game_fps);
             draw_runtime_metric_plot("##game_fps_plot", m_runtime_metrics.game_fps_history.data(),
-                                     m_runtime_metrics.game_fps_history_count, nullptr);
+                                     m_runtime_metrics.game_fps_history_count, nullptr,
+                                     game_fps_plot_max);
             ImGui::Text("Compositor Latency: %.2f ms", m_runtime_metrics.compositor_latency_ms);
             draw_runtime_metric_plot("##compositor_latency_plot",
                                      m_runtime_metrics.compositor_latency_history_ms.data(),
-                                     m_runtime_metrics.compositor_latency_history_count, nullptr);
+                                     m_runtime_metrics.compositor_latency_history_count, nullptr,
+                                     compositor_latency_plot_max_ms);
             ImGui::Separator();
             if (m_target_fps == 0) {
                 ImGui::Text("Effective Pacing Target: Uncapped");
