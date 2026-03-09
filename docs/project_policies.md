@@ -1,8 +1,8 @@
 # Goggles Project Development Policies
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Status:** Active  
-**Last Updated:** 2026-02-08
+**Last Updated:** 2026-03-09
 
 This document is the authoritative, normative policy for the Goggles codebase.
 
@@ -44,11 +44,10 @@ Implicit exceptions MUST NOT be used.
 4. Errors SHOULD be logged once at subsystem boundaries; duplicate cascading logs MUST NOT occur.
 5. App-side Vulkan code MUST use `vk::` (vulkan-hpp), not raw `Vk*` handles.
 6. Vulkan `vk::Result` returns MUST be checked explicitly (no `static_cast<void>(...)`).
-7. Application code MUST NOT use raw `new`/`delete`.
-8. Owned file descriptors MUST use `goggles::util::UniqueFd`.
-9. Code comments MUST explain non-obvious why; narration comments MUST NOT be used.
-10. Build/test workflows MUST use Pixi tasks and CMake/CTest presets.
-11. Real-time render-path work MUST use `goggles::util::JobSystem`; direct `std::thread`/`std::jthread` MUST NOT be used for pipeline/render work.
+7. Owned file descriptors MUST use `goggles::util::UniqueFd`.
+8. Code comments MUST explain non-obvious why; narration comments MUST NOT be used.
+9. Build/test workflows MUST use Pixi tasks and CMake/CTest presets.
+10. Real-time render-path work MUST use `goggles::util::JobSystem` for concurrent pipeline/render work.
 
 ---
 
@@ -84,12 +83,11 @@ Implicit exceptions MUST NOT be used.
 ## 4. Logging Policy
 
 **Applies to:** app
-**Enforced by:** review, runtime behavior
+**Enforced by:** semgrep, review, runtime behavior
 
 ### 4.1 Logging backend
 
 - Application logging MUST use project logging macros backed by `spdlog`.
-- `std::cout`, `std::cerr`, and `printf` MUST NOT be used for subsystem logging.
 
 ### 4.2 Levels
 
@@ -105,22 +103,17 @@ Valid levels are: `trace`, `debug`, `info`, `warn`, `error`, `critical`.
 ## 5. Naming, Layout, and Documentation Policy
 
 **Applies to:** all C/C++ source and headers  
-**Enforced by:** clang-format, clang-tidy (partial), review
+**Enforced by:** clang-format, clang-tidy (partial), semgrep, review
 
 ### 5.1 Naming rules
 
-- Namespaces: `goggles::...` (lower_case segments).
-- Types (classes/structs/type aliases): `PascalCase`.
-- Functions/variables/parameters: `snake_case`.
-- Constants: `UPPER_SNAKE_CASE`.
-- Private members: `m_` prefix.
-- Enum types: `PascalCase`; enum values: `snake_case`.
-- Files: `snake_case.hpp` / `snake_case.cpp`.
+- C++ identifier naming MUST follow the repository `clang-tidy` naming configuration.
+- Files MUST use `snake_case.hpp` / `snake_case.cpp`.
+- Scoped `clang-tidy` overrides MAY narrow naming enforcement for generated or C-interop surfaces.
 
 ### 5.2 Header and include rules
 
 - Headers MUST use `#pragma once`.
-- `using namespace` in headers MUST NOT be used.
 - Include order in `.cpp` MUST be:
   1) corresponding header, 2) C++ standard headers, 3) third-party headers,
   4) project headers from other modules, 5) project headers from same module.
@@ -145,12 +138,11 @@ Valid levels are: `trace`, `debug`, `info`, `warn`, `error`, `critical`.
 ## 6. Ownership, Lifetime, and Vulkan Policy
 
 **Applies to:** app code
-**Enforced by:** review, clang-tidy (partial)
+**Enforced by:** semgrep, review, clang-tidy (partial)
 
 ### 6.1 Ownership model
 
 - C++ owned resources MUST use RAII.
-- Application code MUST NOT use raw `new`/`delete`.
 - `std::unique_ptr` SHOULD be default owning pointer.
 - `std::shared_ptr` SHOULD be used only for true shared ownership and SHOULD include rationale when non-obvious.
 
@@ -167,7 +159,6 @@ Valid levels are: `trace`, `debug`, `info`, `warn`, `error`, `critical`.
 ### 6.4 Vulkan lifetime model
 
 - App code MUST use plain `vk::` handles with explicit destroy/free calls.
-- `vk::Unique*` and `vk::raii::*` wrappers MUST NOT be used in app code.
 - Destruction order MUST respect dependency order and synchronization requirements.
 
 ### 6.5 Vulkan error checks
@@ -188,7 +179,7 @@ Valid levels are: `trace`, `debug`, `info`, `warn`, `error`, `critical`.
 ## 7. Threading and Real-Time Policy
 
 **Applies to:** render path, background work
-**Enforced by:** review, profiling, architecture checks
+**Enforced by:** semgrep, review, profiling, architecture checks
 
 ### 7.1 Default model
 
@@ -206,7 +197,6 @@ Per-frame real-time code paths MUST NOT:
 ### 7.3 Job system requirement
 
 - Concurrent pipeline/render work MUST use `goggles::util::JobSystem`.
-- Direct `std::thread` or `std::jthread` usage for pipeline/render work MUST NOT be used.
 - External integration code outside real-time path MAY use `std::jthread` with RAII-safe lifecycle.
 
 ---
@@ -299,6 +289,7 @@ Before opening/merging significant code changes, contributors SHOULD run relevan
 
 - `clang-format`: formatting/layout.
 - `clang-tidy`: static checks (partial policy coverage).
+- `semgrep`: repository policy bans that are practical to express as structural/static rules.
 - CI presets/tests: build and test gates.
 - Code review: semantic policy requirements not covered by tools.
 
@@ -311,7 +302,14 @@ Before opening/merging significant code changes, contributors SHOULD run relevan
 
 ## 12. Changelog
 
-### 12.1 v1.0 -> v1.1
+### 12.1 v1.1 -> v1.2
+
+- Removed policy text that is now directly gated by Semgrep (`using namespace` in headers, raw `new`/`delete`, banned Vulkan RAII wrappers, render-path thread bans, std-stream/`printf` logging bans).
+- Moved identifier naming specifics to the repository `clang-tidy` configuration and kept only the high-level policy contract plus scoped-override allowance.
+- Expanded Semgrep logging coverage to include `printf` so the removed overlap remains CI-gated.
+- Updated enforcement tags and matrix to call out Semgrep-owned policy checks explicitly.
+
+### 12.2 v1.0 -> v1.1
 
 - Rewrote document to RFC-style normative format.
 - Added explicit precedence and exception process.

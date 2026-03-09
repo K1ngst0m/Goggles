@@ -326,16 +326,16 @@ void throttle_present(RenderOutput& output) {
         return;
     }
 
-    using clock = std::chrono::steady_clock;
+    using Clock = std::chrono::steady_clock;
     const auto frame_duration = std::chrono::nanoseconds(1'000'000'000ULL / output.target_fps);
 
     if (output.last_present_time.time_since_epoch().count() == 0) {
-        output.last_present_time = clock::now();
+        output.last_present_time = Clock::now();
         return;
     }
 
     const auto next_frame = output.last_present_time + frame_duration;
-    const auto now = clock::now();
+    const auto now = Clock::now();
     if (now < next_frame) {
         std::this_thread::sleep_until(next_frame);
         output.last_present_time = next_frame;

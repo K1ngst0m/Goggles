@@ -16,8 +16,14 @@ SEMGREP_BIN = REPO_ROOT / ".pixi/envs/default/bin/semgrep"
 
 EXPECTED_FINDINGS = {
     "goggles-no-std-stream-logging": {
-        "positive": ["src/app/positive_logging.cpp"],
-        "negative": ["src/app/negative_logging.cpp"],
+        "positive": [
+            "src/app/positive_logging.cpp",
+            "src/app/positive_logging_printf.cpp",
+        ],
+        "negative": [
+            "src/app/negative_logging.cpp",
+            "src/app/negative_logging_printf.cpp",
+        ],
     },
     "goggles-no-direct-raw-new": {
         "positive": ["src/render/positive_raw_new.cpp"],

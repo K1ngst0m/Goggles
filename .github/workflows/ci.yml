@@ -128,9 +128,6 @@ jobs:
       - name: Run Semgrep
         run: pixi run semgrep
 
-      - name: Verify Semgrep fixtures
-        run: pixi run semgrep-verify
-
       # Use CMake-integrated clang-tidy (CXX_CLANG_TIDY) for both PR and main.
       # This ensures CI uses identical flags and header-filter as local builds,
       # and generated headers (wayland protocols) exist before analysis runs.

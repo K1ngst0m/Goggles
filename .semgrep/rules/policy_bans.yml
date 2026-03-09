@@ -1,12 +1,14 @@
 rules:
   - id: goggles-no-std-stream-logging
-    message: Application logging must use project logging macros instead of `std::cout` or `std::cerr`.
+    message: Application logging must use project logging macros instead of `std::cout`, `std::cerr`, or `printf`.
     severity: ERROR
     languages:
       - cpp
     pattern-either:
       - pattern: std::cout << $VALUE
       - pattern: std::cerr << $VALUE
+      - pattern: printf(...)
+      - pattern: std::printf(...)
     paths:
       include:
         - /src/app/**/*.cpp

@@ -84,12 +84,8 @@ description = "Format C/C++ and TOML files"
 cmd = "bash -c \"echo 'Formatting C/C++...' && git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 clang-format -i && echo 'Formatting TOML...' && git ls-files -z '*.toml' | grep -zv 'test_data/' | xargs -0 taplo fmt && echo 'Done!'\""
 
 [tasks.semgrep]
-description = "Run repo-controlled Semgrep rules"
-cmd = "semgrep scan --error --metrics=off --config .semgrep.yml --config .semgrep/rules src tests"
-
-[tasks.semgrep-verify]
-description = "Verify Semgrep rule fixtures"
-cmd = "python tests/semgrep/verify_semgrep_fixtures.py"
+description = "Run Semgrep rules and fixture verification"
+cmd = "bash -c 'semgrep scan --error --metrics=off --config .semgrep.yml --config .semgrep/rules src tests && python tests/semgrep/verify_semgrep_fixtures.py'"
 
 [tasks.help]
 description = "Show task usage"

@@ -36,12 +36,18 @@ HeaderFilterRegex: '^(?!.*\.cache/CPM).*$'
 FormatStyle: file
 
 CheckOptions:
-  # PROJECT_POLICIES.md: snake_case for namespaces, functions, variables, parameters
+  # PROJECT_POLICIES.md: identifier naming contract for repository C++ code
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
   - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypeAliasCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
     value: CamelCase
   - key: readability-identifier-naming.FunctionCase
     value: lower_case
