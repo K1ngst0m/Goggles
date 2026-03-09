@@ -258,7 +258,7 @@ struct CompositorState {
     void update_presented_frame(wlr_surface* surface);
     void refresh_presented_frame();
     void note_active_surface_commit(wlr_surface* surface);
-    void reset_runtime_metrics_for_target(wlr_surface* root_surface, wlr_surface* capture_surface);
+    void reset_runtime_metrics_for_target(const RuntimeMetricsState::CaptureTarget& capture_target);
     [[nodiscard]] auto get_runtime_metrics_snapshot() const
         -> util::CompositorRuntimeMetricsSnapshot;
     void render_root_surface_tree(wlr_render_pass* pass, wlr_surface* root_surface);

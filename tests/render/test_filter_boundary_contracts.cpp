@@ -307,6 +307,10 @@ TEST_CASE("Runtime metrics keep root ownership while tracking the current captur
     auto* game_root = surface_token(0x1000);
     auto* popup_surface = surface_token(0x2000);
     auto* other_root = surface_token(0x3000);
+    const RuntimeMetricsState::CaptureTarget game_capture_target{game_root, game_root};
+    const RuntimeMetricsState::CaptureTarget popup_capture_target{game_root, popup_surface};
+    const RuntimeMetricsState::CaptureTarget other_capture_target{other_root, other_root};
+    const RuntimeMetricsState::CaptureTarget other_popup_capture_target{other_root, popup_surface};
 
     metrics.game_frame_intervals_ms[0] = 16.0F;
     metrics.compositor_latency_samples_ms[0] = 4.0F;
@@ -321,19 +325,17 @@ TEST_CASE("Runtime metrics keep root ownership while tracking the current captur
     metrics.snapshot.game_fps_history_count = 1;
     metrics.snapshot.compositor_latency_history_count = 1;
 
-    REQUIRE(metrics.should_reset_for_capture_target(game_root, game_root));
+    REQUIRE(metrics.should_reset_for_capture_target(game_capture_target));
 
-    metrics.reset_for_capture_target(game_root, game_root);
+    metrics.reset_for_capture_target(game_capture_target);
 
-    REQUIRE_FALSE(metrics.should_reset_for_capture_target(game_root, game_root));
-    REQUIRE(metrics.should_reset_for_capture_target(game_root, popup_surface));
-    REQUIRE(metrics.should_reset_for_capture_target(other_root, other_root));
-    REQUIRE(metrics.should_track_surface_commit(game_root, game_root));
-    REQUIRE_FALSE(metrics.should_track_surface_commit(popup_surface, popup_surface));
-    REQUIRE_FALSE(metrics.should_track_surface_commit(game_root, popup_surface));
-    REQUIRE_FALSE(metrics.should_track_surface_commit(other_root, popup_surface));
-    REQUIRE_FALSE(metrics.should_track_surface_commit(nullptr, popup_surface));
-    REQUIRE_FALSE(metrics.should_track_surface_commit(popup_surface, nullptr));
+    REQUIRE_FALSE(metrics.should_reset_for_capture_target(game_capture_target));
+    REQUIRE(metrics.should_reset_for_capture_target(popup_capture_target));
+    REQUIRE(metrics.should_reset_for_capture_target(other_capture_target));
+    REQUIRE(metrics.should_track_surface_commit(game_root));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(popup_surface));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(other_root));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(nullptr));
     REQUIRE(metrics.capture_target_root_surface == game_root);
     REQUIRE(metrics.capture_target_surface == game_root);
     REQUIRE(metrics.game_frame_interval_count == 0);
@@ -345,11 +347,11 @@ TEST_CASE("Runtime metrics keep root ownership while tracking the current captur
     REQUIRE(metrics.snapshot.game_fps_history_count == 0);
     REQUIRE(metrics.snapshot.compositor_latency_history_count == 0);
 
-    metrics.reset_for_capture_target(other_root, popup_surface);
+    metrics.reset_for_capture_target(other_popup_capture_target);
 
     REQUIRE(metrics.capture_target_root_surface == other_root);
     REQUIRE(metrics.capture_target_surface == popup_surface);
-    REQUIRE_FALSE(metrics.should_track_surface_commit(other_root, other_root));
-    REQUIRE(metrics.should_track_surface_commit(popup_surface, popup_surface));
-    REQUIRE_FALSE(metrics.should_track_surface_commit(game_root, popup_surface));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(other_root));
+    REQUIRE(metrics.should_track_surface_commit(popup_surface));
+    REQUIRE_FALSE(metrics.should_track_surface_commit(game_root));
 }

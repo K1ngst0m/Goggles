@@ -16,6 +16,11 @@ namespace goggles::input {
 using ::wlr_surface;
 
 struct RuntimeMetricsState {
+    struct CaptureTarget {
+        wlr_surface* root_surface = nullptr;
+        wlr_surface* surface = nullptr;
+    };
+
     static constexpr size_t K_SAMPLE_WINDOW =
         util::CompositorRuntimeMetricsSnapshot::K_HISTORY_WINDOW;
 
@@ -45,23 +50,20 @@ struct RuntimeMetricsState {
         snapshot = {};
     }
 
-    void reset_for_capture_target(wlr_surface* root_surface, wlr_surface* capture_surface) {
-        capture_target_root_surface = root_surface;
-        capture_target_surface = capture_surface;
+    void reset_for_capture_target(const CaptureTarget& capture_target) {
+        capture_target_root_surface = capture_target.root_surface;
+        capture_target_surface = capture_target.surface;
         clear_samples();
     }
 
-    [[nodiscard]] bool should_reset_for_capture_target(wlr_surface* root_surface,
-                                                       wlr_surface* capture_surface) const {
-        return capture_target_root_surface != root_surface ||
-               capture_target_surface != capture_surface;
+    [[nodiscard]] bool should_reset_for_capture_target(const CaptureTarget& capture_target) const {
+        return capture_target_root_surface != capture_target.root_surface ||
+               capture_target_surface != capture_target.surface;
     }
 
-    [[nodiscard]] bool should_track_surface_commit(wlr_surface* committed_surface,
-                                                   wlr_surface* capture_surface) const {
+    [[nodiscard]] bool should_track_surface_commit(wlr_surface* committed_surface) const {
         return capture_target_root_surface != nullptr && capture_target_surface != nullptr &&
-               committed_surface != nullptr && capture_surface != nullptr &&
-               capture_surface == capture_target_surface && committed_surface == capture_surface;
+               committed_surface != nullptr && committed_surface == capture_target_surface;
     }
 };
 
