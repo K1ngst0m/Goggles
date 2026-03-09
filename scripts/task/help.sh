@@ -4,8 +4,7 @@ Goggles Pixi Tasks
 ══════════════════
 
 Build Commands
-  pixi run dev [-p PRESET]                Build the project
-  pixi run build [-p PRESET]              Build 64-bit app
+  pixi run build [-p PRESET]              Build app
   pixi run build-all-presets              Build all CMake presets
   pixi run test [-p PRESET]               Run tests
   pixi run smoke-filter-chain             Run local ABI smoke matrix (shared/static x clang/gcc)
@@ -21,7 +20,7 @@ Utilities
   pixi run clean [-p PRESET]              Remove build directories
   pixi run distclean                      Remove all build directories
   pixi run shader-fetch                   Download RetroArch slang shaders
-  pixi run init                           First-time project setup (pre-commit hook)
+  pixi run init                           Install or repair managed pre-commit hook
 
 Options
   -p, --preset PRESET   Build preset (default: debug)
@@ -31,7 +30,7 @@ Options
 Examples
   pixi run build                          Build with default preset (debug)
   pixi run build -p release               Build with release preset
-  pixi run start vkcube                   Run vkcube in the compositor
-  pixi run start -p release vkcube        Run with release build
+  pixi run start -- vkcube                Run vkcube in the compositor
+  pixi run start -p release -- vkcube     Run with release build
   pixi run profile -- vkcube              Capture a viewer Tracy trace
 EOF

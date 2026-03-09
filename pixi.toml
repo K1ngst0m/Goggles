@@ -25,7 +25,7 @@ VK_ADD_LAYER_PATH = "$CONDA_PREFIX/share/vulkan/explicit_layer.d"
 cmd = "bash scripts/ensure-init.sh"
 
 [tasks.build]
-description = "Build 64-bit app"
+description = "Build app"
 cmd = "bash scripts/task/build.sh"
 depends-on = ["_check-init"]
 
@@ -42,10 +42,6 @@ cmd = "bash scripts/task/test.sh"
 description = "Run local filter-chain ABI smoke matrix"
 cmd = "bash scripts/task/smoke-filter-chain.sh"
 depends-on = ["_check-init"]
-
-[tasks.dev]
-description = "Build full dev environment"
-cmd = "bash scripts/task/dev.sh"
 
 [tasks.start]
 description = "Launch app inside compositor + viewer"
@@ -72,7 +68,7 @@ description = "Build Goggles AppImage bundle"
 cmd = "bash scripts/task/appimage.sh"
 
 [tasks.init]
-description = "First-time project setup"
+description = "Install or repair managed pre-commit hook"
 cmd = "bash scripts/task/init.sh"
 
 [tasks.clean]

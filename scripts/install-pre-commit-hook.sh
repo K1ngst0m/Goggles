@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Install the pre-commit formatting hook (idempotent).
-# Used by: pixi run init
+# Install or repair the managed pre-commit formatting hook.
+# Used by: pixi run init and scripts/ensure-init.sh auto-recovery.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HOOK_SRC="${PROJECT_ROOT}/scripts/pre-commit-format.sh"
+EXPECTED_HOOK_TARGET="$(readlink -f "$HOOK_SRC")"
 
 if ! git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "[pre-commit] Not a git checkout; skipping hook install."
@@ -32,12 +33,44 @@ fi
 
 HOOK_DST="${HOOKS_DIR}/pre-commit"
 
-if [[ -e "$HOOK_DST" && ! -L "$HOOK_DST" ]]; then
-  echo "[pre-commit] Existing hook not managed; leave it unchanged: $HOOK_DST"
+is_managed_hook() {
+  [[ -L "$HOOK_DST" ]] || return 1
+
+  local resolved_hook
+  resolved_hook="$(readlink -f "$HOOK_DST" 2>/dev/null || true)"
+
+  [[ -n "$resolved_hook" && "$resolved_hook" == "$EXPECTED_HOOK_TARGET" ]]
+}
+
+is_stale_managed_hook() {
+  [[ -L "$HOOK_DST" ]] || return 1
+
+  local link_target
+  link_target="$(readlink "$HOOK_DST" 2>/dev/null || true)"
+
+  [[ "$link_target" == *"scripts/pre-commit-format.sh" ]]
+}
+
+if is_managed_hook; then
+  echo "[pre-commit] Managed hook already installed -> $HOOK_DST"
   exit 0
 fi
 
+action="Installed"
+
+if [[ -L "$HOOK_DST" ]]; then
+  if ! is_stale_managed_hook; then
+    echo "[pre-commit] Existing hook symlink is not managed; leave it unchanged: $HOOK_DST" >&2
+    exit 1
+  fi
+
+  action="Repaired"
+elif [[ -e "$HOOK_DST" ]]; then
+  echo "[pre-commit] Existing hook not managed; leave it unchanged: $HOOK_DST" >&2
+  exit 1
+fi
+
 mkdir -p "$HOOKS_DIR"
-ln -sf "$HOOK_SRC" "$HOOK_DST"
+ln -sfn "$HOOK_SRC" "$HOOK_DST"
 chmod +x "$HOOK_SRC" "$HOOK_DST"
-echo "[pre-commit] Installed hook -> $HOOK_DST"
+echo "[pre-commit] ${action} managed hook -> $HOOK_DST"

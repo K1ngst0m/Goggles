@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Init: install pre-commit hook for code formatting.
+# Init: install or repair the managed pre-commit hook.
 
 set -euo pipefail
 

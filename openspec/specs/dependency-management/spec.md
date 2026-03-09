@@ -10,7 +10,7 @@ The project SHALL use Pixi as the enforced environment for builds and dependency
 #### Scenario: Pixi environment enforcement
 - **WHEN** CMake config runs for any target
 - **THEN** it SHALL require `CONDA_PREFIX` to be set by Pixi
-- **AND** it SHALL fail fast with guidance to run `pixi run build [preset]` if invoked outside Pixi
+- **AND** it SHALL fail fast with guidance to run `pixi run build -p <preset>` if invoked outside Pixi
 
 #### Scenario: Glibc 2.28 compatibility anchor
 - **WHEN** dependencies are resolved via Pixi
@@ -123,4 +123,3 @@ Sysroot packages SHALL verify upstream artifacts and self-heal known packaging i
 #### Scenario: Tracy source integrity
 - **WHEN** Tracy sources are fetched for the sysroot build
 - **THEN** the recipe SHALL verify the commit hash matches the expected revision before building
-

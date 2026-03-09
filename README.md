@@ -57,7 +57,7 @@ target together. The `--` separator is required so app arguments (like `--config
 as Goggles options. The preset defaults to `debug`.
 
 ```bash
-# Quick smoke tests (build + manifests as needed)
+# Quick smoke tests (build as needed)
 pixi run start -- vkcube --wsi xcb                            # preset=debug
 pixi run start -p release -- vkcube --wsi xcb                 # preset=release
 pixi run start -p profile --app-width 480 --app-height 240 -- vkcube --wsi xcb

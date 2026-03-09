@@ -18,7 +18,7 @@ with open(path, "r", encoding="utf-8") as handle:
 
 for preset in data.get("configurePresets", []):
     name = preset.get("name")
-    if not name or name.startswith(".") or name.endswith("-i686"):
+    if not name or name.startswith("."):
         continue
     print(name)
 PY
@@ -115,7 +115,7 @@ validate_preset "$PRESET"
 cd "$REPO_ROOT"
 
 echo "Ensuring preset '$PRESET' is built..."
-pixi run dev -p "$PRESET"
+pixi run build -p "$PRESET"
 
 VIEWER_BIN="$REPO_ROOT/build/$PRESET/bin/goggles"
 [[ -x "$VIEWER_BIN" ]] || die "viewer binary not found at $VIEWER_BIN"

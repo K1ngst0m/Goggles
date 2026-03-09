@@ -41,7 +41,7 @@ if(NOT DEFINED ENV{CONDA_PREFIX})
     message(FATAL_ERROR
         "CONDA_PREFIX environment variable not set.\n"
         "This project must be built within a Pixi environment.\n"
-        "Run: pixi run build [preset]")
+        "Run: pixi run build -p <preset>")
 endif()
 
 add_library(stb_image INTERFACE)
