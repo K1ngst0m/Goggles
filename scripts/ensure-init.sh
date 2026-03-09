@@ -13,6 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HOOK_SRC="${PROJECT_ROOT}/scripts/pre-commit-format.sh"
 EXPECTED_HOOK_TARGET="$(readlink -f "$HOOK_SRC")"
+MANAGED_MARKER="# goggles-managed-pre-commit-hook"
+printf -v HOOK_SRC_SHELL %q "$HOOK_SRC"
+EXPECTED_EXEC_LINE="exec ${HOOK_SRC_SHELL} \"\$@\""
 
 if ! git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo -e "\033[31m[ERROR] Not a git checkout.\033[0m" >&2
@@ -35,7 +38,12 @@ else
   fi
 fi
 
-is_managed_hook() {
+has_managed_marker() {
+  [[ -f "$HOOK" && ! -L "$HOOK" ]] || return 1
+  grep -Fq "$MANAGED_MARKER" "$HOOK"
+}
+
+is_legacy_managed_hook() {
   [[ -L "$HOOK" ]] || return 1
 
   local resolved_hook
@@ -44,30 +52,35 @@ is_managed_hook() {
   [[ -n "$resolved_hook" && "$resolved_hook" == "$EXPECTED_HOOK_TARGET" ]]
 }
 
-is_stale_managed_hook() {
-  [[ -L "$HOOK" ]] || return 1
+is_current_managed_wrapper() {
+  has_managed_marker || return 1
+  grep -Fqx "$EXPECTED_EXEC_LINE" "$HOOK"
+}
 
-  local link_target
-  link_target="$(readlink "$HOOK" 2>/dev/null || true)"
+is_repairable_managed_hook() {
+  has_managed_marker
+}
 
-  [[ "$link_target" == *"scripts/pre-commit-format.sh" ]]
+is_managed_hook() {
+  is_legacy_managed_hook || is_current_managed_wrapper
 }
 
 if is_managed_hook; then
   exit 0
 fi
 
-if [[ -L "$HOOK" ]]; then
-  if ! is_stale_managed_hook; then
-    echo -e "\033[31m[ERROR] Found an unmanaged pre-commit hook symlink at $HOOK. Move or remove it, then rerun your Pixi command.\033[0m" >&2
-    exit 1
-  fi
+if [[ ! -e "$HOOK" ]]; then
+  echo "[pre-commit] Managed hook missing; reinstalling."
+elif is_repairable_managed_hook; then
+  echo "[pre-commit] Managed hook is stale; reinstalling."
+elif [[ -L "$HOOK" ]]; then
+  echo -e "\033[31m[ERROR] Found an unmanaged pre-commit hook symlink at $HOOK. Move or remove it, then rerun your Pixi command.\033[0m" >&2
+  exit 1
 elif [[ -e "$HOOK" ]]; then
   echo -e "\033[31m[ERROR] Found an unmanaged pre-commit hook at $HOOK. Move or remove it, then rerun your Pixi command.\033[0m" >&2
   exit 1
 fi
 
-echo "[pre-commit] Managed hook missing or stale; reinstalling."
 bash "${PROJECT_ROOT}/scripts/install-pre-commit-hook.sh"
 
 if ! is_managed_hook; then
