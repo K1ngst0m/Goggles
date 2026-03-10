@@ -74,13 +74,78 @@ jobs:
         if: always()
         run: pixi run ccache --show-stats
 
-  static-analysis:
-    name: Static Analysis
+  static-analysis-semgrep:
+    name: Static Analysis / Semgrep
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Semgrep-relevant changes
+        id: semgrep_changes
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --quiet --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- \
+            src \
+            tests \
+            .semgrep \
+            .semgrep.yml \
+            pixi.toml \
+            pixi.lock \
+            scripts \
+            .github/workflows; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            echo "No Semgrep-relevant files changed relative to origin/${{ github.base_ref }}."
+          else
+            status=$?
+            if [[ $status -eq 1 ]]; then
+              echo "changed=true" >>"$GITHUB_OUTPUT"
+            else
+              exit "$status"
+            fi
+          fi
 
       - name: Setup Pixi
+        if: github.event_name != 'pull_request' || steps.semgrep_changes.outputs.changed == 'true'
+        uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          cache: true
+          manifest-path: pixi.toml
+          locked: true
+
+      - name: Run static-analysis Semgrep lane
+        if: github.event_name != 'pull_request' || steps.semgrep_changes.outputs.changed == 'true'
+        run: pixi run ci --lane static-analysis-semgrep
+
+  static-analysis-quality:
+    name: Static Analysis / Quality Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect quality-analysis mode
+        id: quality_mode
+        if: github.event_name == 'pull_request'
+        run: |
+          changed_files="$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- src)"
+
+          if ! printf '%s\n' "$changed_files" | grep -Eq '^src/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$'; then
+            echo "mode=skip" >>"$GITHUB_OUTPUT"
+            echo "No src C/C++ files changed relative to origin/${{ github.base_ref }}."
+          elif printf '%s\n' "$changed_files" | grep -Eq '^src/.*\.(c|cc|cpp|cxx)$'; then
+            echo "mode=changed-sources" >>"$GITHUB_OUTPUT"
+            echo "Changed src source files detected. Running targeted clang-tidy."
+          else
+            echo "mode=header-only" >>"$GITHUB_OUTPUT"
+            echo "Only src headers changed. Keeping the full quality build for this PR."
+          fi
+
+      - name: Setup Pixi
+        if: github.event_name != 'pull_request' || steps.quality_mode.outputs.mode != 'skip'
         uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
@@ -89,26 +154,32 @@ jobs:
           locked: true
 
       - name: Setup ccache
+        if: github.event_name != 'pull_request' || steps.quality_mode.outputs.mode == 'header-only'
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ runner.os }}-ccache-tidy-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-ccache-tidy-${{ github.ref_name }}-
             ${{ runner.os }}-ccache-tidy-main-
-            ${{ runner.os }}-ccache-tidy-
             ${{ runner.os }}-ccache-main-
             ${{ runner.os }}-ccache-
           max-size: ${{ env.CCACHE_MAX_SIZE }}
 
       - name: Configure ccache
+        if: github.event_name != 'pull_request' || steps.quality_mode.outputs.mode == 'header-only'
         run: |
           pixi run ccache --set-config=max_size=${{ env.CCACHE_MAX_SIZE }}
           pixi run ccache --set-config=compression=true
           pixi run ccache --zero-stats
 
-      - name: Run static-analysis lane
-        run: pixi run ci --lane static-analysis
+      - name: Run targeted quality lane for changed PR sources
+        if: github.event_name == 'pull_request' && steps.quality_mode.outputs.mode == 'changed-sources'
+        run: pixi run ci --lane static-analysis-quality-pr --base-ref "origin/${{ github.base_ref }}"
+
+      - name: Run static-analysis quality lane
+        if: github.event_name == 'push' || steps.quality_mode.outputs.mode == 'header-only'
+        run: pixi run ci --lane static-analysis-quality
 
       - name: Show ccache statistics
-        if: always()
+        if: always() && (github.event_name != 'pull_request' || steps.quality_mode.outputs.mode == 'header-only')
         run: pixi run ccache --show-stats
