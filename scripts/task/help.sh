@@ -7,6 +7,8 @@ Build Commands
   pixi run build [-p PRESET]              Build app
   pixi run build-all-presets              Build all CMake presets
   pixi run test [-p PRESET]               Run tests
+  pixi run ci [--lane LANE] [--runner RUNNER] [--cache-mode MODE]
+                                           Run CI lanes locally on host or in a container
   pixi run smoke-filter-chain             Run local ABI smoke matrix (shared/static x clang/gcc)
 
 Run Commands
@@ -30,6 +32,9 @@ Options
 Examples
   pixi run build                          Build with default preset (debug)
   pixi run build -p release               Build with release preset
+  pixi run ci --lane build-test           Run the CI build-and-test lane on host
+  pixi run ci --runner container --cache-mode cold --lane build-test
+                                            Run the build-and-test lane in a fresh CI container
   pixi run start -- vkcube                Run vkcube in the compositor
   pixi run start -p release -- vkcube     Run with release build
   pixi run profile -- vkcube              Capture a viewer Tracy trace

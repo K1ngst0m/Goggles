@@ -235,10 +235,12 @@ if(NOT VKCUBE_EXEC)
 endif()
 
 set(HEADLESS_TEST_PNG "${CMAKE_CURRENT_BINARY_DIR}/goggles_headless_test.png")
+set(HEADLESS_TEST_SHADER "${CMAKE_SOURCE_DIR}/shaders/retroarch/crt/crt-lottes-fast.slangp")
 
 if(VKCUBE_EXEC)
     add_test(NAME goggles_headless_integration
              COMMAND $<TARGET_FILE:goggles>
+                 --shader ${HEADLESS_TEST_SHADER}
                  --headless --frames 3 --output ${HEADLESS_TEST_PNG}
                  -- ${VKCUBE_EXEC})
 
@@ -277,6 +279,7 @@ set(SMOKE_TEST_PNG "${CMAKE_CURRENT_BINARY_DIR}/smoke_out.png")
 
 add_test(NAME headless_smoke
          COMMAND $<TARGET_FILE:goggles>
+             --shader ${HEADLESS_TEST_SHADER}
              --headless --frames 5 --output ${SMOKE_TEST_PNG}
              -- $<TARGET_FILE:solid_color_client>)
 

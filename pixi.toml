@@ -38,6 +38,10 @@ depends-on = ["_check-init"]
 description = "Run tests"
 cmd = "bash scripts/task/test.sh"
 
+[tasks.ci]
+description = "Run the local CI check suite on host or in a container"
+cmd = "bash scripts/task/ci.sh"
+
 [tasks.smoke-filter-chain]
 description = "Run local filter-chain ABI smoke matrix"
 cmd = "bash scripts/task/smoke-filter-chain.sh"
@@ -166,6 +170,10 @@ python = "3.12.*"
 [feature.lint.dependencies]
 clang-tools = "21.*"
 taplo = "==0.9.3"
+
+[feature.lint.tasks.ci-format]
+description = "Run the local CI format-check lane"
+cmd = "bash scripts/task/ci.sh --lane format"
 
 [environments]
 default = { solve-group = "default" }

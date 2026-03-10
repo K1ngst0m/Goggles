@@ -34,21 +34,8 @@ jobs:
           environments: lint
           locked: true
 
-      - name: Run clang-format
-        run: git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 pixi run -e lint clang-format -i
-
-      - name: Run taplo (TOML format)
-        run: git ls-files -z '*.toml' | grep -zv 'test_data/' | xargs -0 pixi run -e lint taplo fmt
-
-      - name: Check for formatting changes
-        run: |
-          if git diff --quiet; then
-            echo "✅ Code is properly formatted"
-          else
-            echo "❌ Code needs formatting. Run 'pixi run format' locally."
-            git diff --stat
-            exit 1
-          fi
+      - name: Run format-check lane
+        run: pixi run -e lint ci-format
 
   build-and-test:
     name: Build and Test
@@ -80,11 +67,8 @@ jobs:
           pixi run ccache --set-config=compression=true
           pixi run ccache --zero-stats
 
-      - name: Build (ASAN preset)
-        run: pixi run build -p asan
-
-      - name: Run Tests
-        run: pixi run test -p asan
+      - name: Run build-and-test lane
+        run: pixi run ci --lane build-test
 
       - name: Show ccache statistics
         if: always()
@@ -122,17 +106,8 @@ jobs:
           pixi run ccache --set-config=compression=true
           pixi run ccache --zero-stats
 
-      - name: Show Semgrep path and version
-        run: pixi run bash -c 'command -v semgrep && semgrep --version'
-
-      - name: Run Semgrep
-        run: pixi run semgrep
-
-      # Use CMake-integrated clang-tidy (CXX_CLANG_TIDY) for both PR and main.
-      # This ensures CI uses identical flags and header-filter as local builds,
-      # and generated headers (wayland protocols) exist before analysis runs.
-      - name: Build with clang-tidy
-        run: pixi run build -p quality
+      - name: Run static-analysis lane
+        run: pixi run ci --lane static-analysis
 
       - name: Show ccache statistics
         if: always()
