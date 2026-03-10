@@ -39,8 +39,20 @@ description = "Run tests"
 cmd = "bash scripts/task/test.sh"
 
 [tasks.ci]
-description = "Run the local CI check suite on host or in a container"
+description = "Run local CI lanes (format, build-test, static-analysis, static-analysis-semgrep, static-analysis-quality, static-analysis-quality-pr)"
 cmd = "bash scripts/task/ci.sh"
+
+[tasks.ci-static-analysis]
+description = "Run both static-analysis lanes (Semgrep + quality build)"
+cmd = "bash scripts/task/ci.sh --lane static-analysis"
+
+[tasks.ci-static-analysis-semgrep]
+description = "Run the Semgrep static-analysis lane"
+cmd = "bash scripts/task/ci.sh --lane static-analysis-semgrep"
+
+[tasks.ci-static-analysis-quality]
+description = "Run the quality-build static-analysis lane"
+cmd = "bash scripts/task/ci.sh --lane static-analysis-quality"
 
 [tasks.smoke-filter-chain]
 description = "Run local filter-chain ABI smoke matrix"

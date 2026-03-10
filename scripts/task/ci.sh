@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LANE="all"
 RUNNER="host"
 CACHE_MODE=""
+BASE_REF=""
 CONTAINER_IMAGE=""
 CONTAINER_ENGINE="${GOGGLES_CI_CONTAINER_ENGINE:-auto}"
 CI_START_MS=0
@@ -163,7 +164,7 @@ ensure_repo_tmpdir() {
 usage() {
   cat <<'EOF'
 Usage:
-  pixi run ci [--lane LANE] [--runner RUNNER] [--cache-mode MODE]
+  pixi run ci [--lane LANE] [--runner RUNNER] [--cache-mode MODE] [--base-ref REF]
 
 Run the main CI lanes locally.
 
@@ -171,7 +172,10 @@ Lanes:
   all              Run every CI lane (default)
   format           Run the format-check lane
   build-test       Run the build-and-test lane
-  static-analysis  Run the static-analysis lane
+  static-analysis  Run both static-analysis lanes (Semgrep + quality)
+  static-analysis-semgrep  Run only the Semgrep static-analysis lane
+  static-analysis-quality  Run only the quality-build static-analysis lane
+  static-analysis-quality-pr  Run clang-tidy only on changed src files relative to --base-ref
 
 Runners:
   host             Run lanes on the local host (default)
@@ -260,6 +264,16 @@ container_lane_command() {
       ;;
     static-analysis)
       printf '%s\n' "pixi run --locked ci --lane static-analysis --runner host"
+      ;;
+    static-analysis-semgrep)
+      printf '%s\n' "pixi run --locked ci --lane static-analysis-semgrep --runner host"
+      ;;
+    static-analysis-quality)
+      printf '%s\n' "pixi run --locked ci --lane static-analysis-quality --runner host"
+      ;;
+    static-analysis-quality-pr)
+      [[ -n "$BASE_REF" ]] || die "Container lane 'static-analysis-quality-pr' requires --base-ref"
+      printf 'pixi run --locked ci --lane static-analysis-quality-pr --runner host --base-ref %q\n' "$BASE_REF"
       ;;
     *)
       die "Unsupported container lane '$lane'"
@@ -428,29 +442,137 @@ run_build_test_lane() {
   fi
 }
 
+run_static_analysis_semgrep_lane_steps() {
+  local level="$1"
+  local status
+
+  run_timed_stage "$level" "semgrep --version" bash -c 'command -v semgrep && semgrep --version'
+  status=$?
+  if [[ $status -ne 0 ]]; then
+    return "$status"
+  fi
+
+  run_timed_stage "$level" "semgrep scan" semgrep scan --error --metrics=off --config .semgrep.yml --config .semgrep/rules src tests
+  status=$?
+  if [[ $status -ne 0 ]]; then
+    return "$status"
+  fi
+
+  run_timed_stage "$level" "python tests/semgrep/verify_semgrep_fixtures.py" python tests/semgrep/verify_semgrep_fixtures.py
+  status=$?
+  if [[ $status -ne 0 ]]; then
+    return "$status"
+  fi
+}
+
+run_static_analysis_quality_lane_steps() {
+  local level="$1"
+  local status
+
+  run_timed_stage "$level" "bash scripts/task/build.sh -p quality" bash "$SCRIPT_DIR/build.sh" -p quality
+  status=$?
+  if [[ $status -ne 0 ]]; then
+    return "$status"
+  fi
+}
+
+run_static_analysis_semgrep_lane() {
+  echo "==> Running CI static-analysis-semgrep lane"
+  run_static_analysis_semgrep_lane_steps 1
+}
+
+run_static_analysis_quality_lane() {
+  echo "==> Running CI static-analysis-quality lane"
+  run_static_analysis_quality_lane_steps 1
+}
+
+require_quality_pr_base_ref() {
+  [[ -n "$BASE_REF" ]] || die "static-analysis-quality-pr requires --base-ref"
+
+  git rev-parse --verify "$BASE_REF^{commit}" >/dev/null 2>&1 ||
+    die "Base ref '$BASE_REF' is not available locally"
+}
+
+collect_changed_quality_files() {
+  git diff --name-only --diff-filter=ACMR "$BASE_REF...HEAD" -- src
+}
+
+run_clang_tidy_on_changed_sources() {
+  clang-tidy \
+    -p "$REPO_ROOT/build/quality" \
+    --header-filter="$REPO_ROOT/src/.*" \
+    --exclude-header-filter="$REPO_ROOT/src/render/chain/api/c/goggles_filter_chain\\.h" \
+    "$@"
+}
+
+run_static_analysis_quality_pr_lane_steps() {
+  local level="$1"
+  local status
+  local changed_file
+  local -a changed_sources=()
+  local -a changed_headers=()
+
+  require_quality_pr_base_ref
+
+  while IFS= read -r changed_file; do
+    [[ -n "$changed_file" ]] || continue
+
+    case "$changed_file" in
+      src/*.c|src/*.cc|src/*.cpp|src/*.cxx)
+        changed_sources+=("$changed_file")
+        ;;
+      src/*.h|src/*.hh|src/*.hpp|src/*.hxx)
+        changed_headers+=("$changed_file")
+        ;;
+    esac
+  done < <(collect_changed_quality_files)
+
+  if ((${#changed_sources[@]} == 0 && ${#changed_headers[@]} == 0)); then
+    echo "No src C/C++ files changed relative to $BASE_REF; skipping quality static analysis"
+    return 0
+  fi
+
+  if ((${#changed_headers[@]} > 0)); then
+    echo "Changed src headers detected relative to $BASE_REF; running full quality build"
+    run_static_analysis_quality_lane_steps "$level"
+    return $?
+  fi
+
+  echo "Running clang-tidy on changed src files relative to $BASE_REF:"
+  printf '  %s\n' "${changed_sources[@]}"
+
+  mkdir -p "$CCACHE_TEMPDIR"
+
+  run_timed_stage "$level" "cmake --preset quality" cmake --preset quality
+  status=$?
+  if [[ $status -ne 0 ]]; then
+    return "$status"
+  fi
+
+  run_timed_stage "$level" "clang-tidy changed src files" run_clang_tidy_on_changed_sources "${changed_sources[@]}"
+  status=$?
+  if [[ $status -ne 0 ]]; then
+    return "$status"
+  fi
+}
+
+run_static_analysis_quality_pr_lane() {
+  echo "==> Running CI static-analysis-quality-pr lane"
+  run_static_analysis_quality_pr_lane_steps 1
+}
+
 run_static_analysis_lane() {
   local status
 
   echo "==> Running CI static-analysis lane"
-  run_timed_stage 1 "semgrep --version" bash -c 'command -v semgrep && semgrep --version'
+
+  run_timed_stage 1 "static-analysis-semgrep lane" run_static_analysis_semgrep_lane_steps 2
   status=$?
   if [[ $status -ne 0 ]]; then
     return "$status"
   fi
 
-  run_timed_stage 1 "semgrep scan" semgrep scan --error --metrics=off --config .semgrep.yml --config .semgrep/rules src tests
-  status=$?
-  if [[ $status -ne 0 ]]; then
-    return "$status"
-  fi
-
-  run_timed_stage 1 "python tests/semgrep/verify_semgrep_fixtures.py" python tests/semgrep/verify_semgrep_fixtures.py
-  status=$?
-  if [[ $status -ne 0 ]]; then
-    return "$status"
-  fi
-
-  run_timed_stage 1 "bash scripts/task/build.sh -p quality" bash "$SCRIPT_DIR/build.sh" -p quality
+  run_timed_stage 1 "static-analysis-quality lane" run_static_analysis_quality_lane_steps 2
   status=$?
   if [[ $status -ne 0 ]]; then
     return "$status"
@@ -486,6 +608,15 @@ while [[ $# -gt 0 ]]; do
       CACHE_MODE="${1#*=}"
       shift
       ;;
+    --base-ref)
+      [[ $# -ge 2 ]] || die "--base-ref requires a git ref"
+      BASE_REF="$2"
+      shift 2
+      ;;
+    --base-ref=*)
+      BASE_REF="${1#*=}"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -501,10 +632,10 @@ cd "$REPO_ROOT"
 CI_START_MS="$(now_ms)"
 
 case "$LANE" in
-  all|format|build-test|static-analysis)
+  all|format|build-test|static-analysis|static-analysis-semgrep|static-analysis-quality|static-analysis-quality-pr)
     ;;
   *)
-    die "Unknown lane '$LANE'. Use all, format, build-test, or static-analysis"
+    die "Unknown lane '$LANE'. Use all, format, build-test, static-analysis, static-analysis-semgrep, static-analysis-quality, or static-analysis-quality-pr"
     ;;
 esac
 
@@ -595,6 +726,18 @@ case "$LANE" in
     ;;
   static-analysis)
     run_timed_stage 0 "static-analysis lane" run_static_analysis_lane
+    status=$?
+    ;;
+  static-analysis-semgrep)
+    run_timed_stage 0 "static-analysis-semgrep lane" run_static_analysis_semgrep_lane
+    status=$?
+    ;;
+  static-analysis-quality)
+    run_timed_stage 0 "static-analysis-quality lane" run_static_analysis_quality_lane
+    status=$?
+    ;;
+  static-analysis-quality-pr)
+    run_timed_stage 0 "static-analysis-quality-pr lane" run_static_analysis_quality_pr_lane
     status=$?
     ;;
 esac
