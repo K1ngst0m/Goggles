@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "change_id": "ci-accelerate-static-analysis",
+  "artifact_digest": "fd63c311e599ed24685097345a7023671c1cf906bdc79767324c1cfa01dc4496",
+  "authoritative_contract_paths": [
+    "openspec/changes/ci-accelerate-static-analysis/proposal.md",
+    "openspec/changes/ci-accelerate-static-analysis/design.md",
+    "openspec/changes/ci-accelerate-static-analysis/tasks.md",
+    "openspec/changes/ci-accelerate-static-analysis/specs/ci/spec.md"
+  ],
+  "readiness": {
+    "ambiguity_closed": true,
+    "implementation_ready": true
+  },
+  "cross_cutting": {
+    "locked_constraints": [
+      "Semgrep and quality-build checks remain blocking PR gates.",
+      "Static-analysis optimization preserves equivalent PR coverage and does not move required checks to non-PR triggers.",
+      "Local reproduction remains repository-owned via pixi run ci lane entrypoints.",
+      "Build and static analysis orchestration remains Pixi/CMake preset aligned."
+    ],
+    "divergence_triggers": [
+      "Any workflow change that makes either Semgrep or quality-build non-blocking in PR.",
+      "Any lane refactor that removes or changes deterministic behavior of pixi run ci --lane static-analysis.",
+      "Any proposal to move required checks to post-merge, nightly, or scheduled-only execution.",
+      "Any implementation that updates CI composition without corresponding spec/task contract alignment."
+    ],
+    "verification_contract": {
+      "baseline_gates": [
+        "pixi run build -p debug",
+        "pixi run build -p asan",
+        "pixi run build -p quality"
+      ],
+      "environment_agnostic_checks": [
+        "pixi run ci --lane static-analysis",
+        "pixi run ci --lane build-test"
+      ],
+      "environment_sensitive_checks": [
+        "Inspect GitHub Actions PR run for split static-analysis jobs and equivalent required coverage"
+      ],
+      "manual_fallback": {
+        "allowed_only_for": [
+          "Comparing hosted CI timing deltas when run-to-run variance prevents strict local timing equivalence"
+        ],
+        "required_record": [
+          "run links",
+          "commit SHA",
+          "job durations"
+        ]
+      },
+      "mandatory_no_fallback": [
+        "Semgrep PR gate remains blocking",
+        "quality-build PR gate remains blocking"
+      ],
+      "pass_criteria": [
+        "Overall workflow wall-clock improves for equivalent PR coverage.",
+        "Static-analysis PR path duration improves for equivalent PR coverage.",
+        "Local pixi run ci static-analysis entrypoint remains deterministic and repository-owned.",
+        "Split static-analysis jobs preserve equivalent required PR checks."
+      ]
+    }
+  },
+  "task_groups": [
+    {
+      "group_id": "1",
+      "contract_refs": [
+        "openspec/changes/ci-accelerate-static-analysis/tasks.md#1-static-analysis-lane-decomposition",
+        "openspec/changes/ci-accelerate-static-analysis/specs/ci/spec.md#Requirement:-Static-Analysis-Coverage-Supports-Parallel-PR-Execution"
+      ],
+      "candidate_paths": [
+        "scripts/task/ci.sh"
+      ],
+      "candidate_symbols": [
+        "run_static_analysis_lane",
+        "run_timed_stage",
+        "container_lane_command",
+        "case \"$LANE\""
+      ],
+      "first_reads": [
+        "scripts/task/ci.sh:163",
+        "scripts/task/ci.sh:251",
+        "scripts/task/ci.sh:431",
+        "scripts/task/ci.sh:503",
+        "scripts/task/ci.sh:574"
+      ],
+      "suggested_checks": [
+        "pixi run ci --lane static-analysis",
+        "pixi run ci --lane static-analysis --runner container --cache-mode warm"
+      ],
+      "risks": [
+        "Lane split can unintentionally change failure propagation semantics.",
+        "Container and host lane dispatch may drift if lane names diverge."
+      ],
+      "confidence": 0.89
+    },
+    {
+      "group_id": "2",
+      "contract_refs": [
+        "openspec/changes/ci-accelerate-static-analysis/tasks.md#2-ci-workflow-graph-reshaping",
+        "openspec/changes/ci-accelerate-static-analysis/specs/ci/spec.md#Requirement:-Repo-Controlled-Semgrep-Gate"
+      ],
+      "candidate_paths": [
+        ".github/workflows/ci.yml"
+      ],
+      "candidate_symbols": [
+        "jobs.static-analysis-semgrep",
+        "jobs.static-analysis-quality",
+        "jobs.build-and-test",
+        "jobs.format-check"
+      ],
+      "first_reads": [
+        ".github/workflows/ci.yml:21",
+        ".github/workflows/ci.yml:77"
+      ],
+      "suggested_checks": [
+        "gh run view <run-id> --repo goggles-dev/Goggles --json jobs,status,conclusion"
+      ],
+      "risks": [
+        "PR protection can become weaker if one split job is not marked required.",
+        "Job split can reduce cache hit rate if ccache keys are not aligned."
+      ],
+      "confidence": 0.86
+    },
+    {
+      "group_id": "3",
+      "contract_refs": [
+        "openspec/changes/ci-accelerate-static-analysis/tasks.md#3-local-command-surface-alignment",
+        "openspec/changes/ci-accelerate-static-analysis/specs/ci/spec.md#Requirement:-Static-Analysis-Coverage-Supports-Parallel-PR-Execution"
+      ],
+      "candidate_paths": [
+        "pixi.toml",
+        "scripts/task/help.sh",
+        "scripts/task/ci.sh"
+      ],
+      "candidate_symbols": [
+        "tasks.ci",
+        "tasks.semgrep",
+        "usage()"
+      ],
+      "first_reads": [
+        "pixi.toml:41",
+        "pixi.toml:90",
+        "scripts/task/help.sh:10",
+        "scripts/task/ci.sh:166"
+      ],
+      "suggested_checks": [
+        "pixi run help",
+        "pixi run ci --lane static-analysis",
+        "pixi run semgrep"
+      ],
+      "risks": [
+        "Command help text may fall out of sync with implemented lane options.",
+        "Local reproduction claim can drift if split lane names are undocumented."
+      ],
+      "confidence": 0.82
+    },
+    {
+      "group_id": "4",
+      "contract_refs": [
+        "openspec/changes/ci-accelerate-static-analysis/tasks.md#4-verification",
+        "openspec/changes/ci-accelerate-static-analysis/proposal.md#Validation-Plan"
+      ],
+      "candidate_paths": [
+        "scripts/task/ci.sh",
+        ".github/workflows/ci.yml",
+        "pixi.toml"
+      ],
+      "candidate_symbols": [
+        "print_stage_summary",
+        "run_static_analysis_lane",
+        "jobs"
+      ],
+      "first_reads": [
+        "scripts/task/ci.sh:124",
+        "scripts/task/ci.sh:603",
+        ".github/workflows/ci.yml:109"
+      ],
+      "suggested_checks": [
+        "pixi run build -p debug",
+        "pixi run build -p asan",
+        "pixi run build -p quality",
+        "pixi run ci --lane static-analysis",
+        "pixi run ci --lane build-test"
+      ],
+      "risks": [
+        "Hosted CI timing variance can mask improvements if only one run is compared.",
+        "Verification can pass locally while PR required-check configuration regresses remotely."
+      ],
+      "confidence": 0.84
+    }
+  ]
+}

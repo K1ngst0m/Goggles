@@ -7,8 +7,11 @@ Build Commands
   pixi run build [-p PRESET]              Build app
   pixi run build-all-presets              Build all CMake presets
   pixi run test [-p PRESET]               Run tests
-  pixi run ci [--lane LANE] [--runner RUNNER] [--cache-mode MODE]
-                                           Run CI lanes locally on host or in a container
+  pixi run ci [--lane LANE] [--runner RUNNER] [--cache-mode MODE] [--base-ref REF]
+                                            Run CI lanes locally on host or in a container
+                                            Lanes: format, build-test, static-analysis,
+                                                   static-analysis-semgrep, static-analysis-quality,
+                                                   static-analysis-quality-pr
   pixi run smoke-filter-chain             Run local ABI smoke matrix (shared/static x clang/gcc)
 
 Run Commands
@@ -28,13 +31,21 @@ Options
   -p, --preset PRESET   Build preset (default: debug)
                         Valid: debug, release, relwithdebinfo, asan, ubsan, asan-ubsan, test, quality, profile,
                                smoke-static-clang, smoke-shared-clang, smoke-static-gcc, smoke-shared-gcc
+  --base-ref REF        Git ref used by `static-analysis-quality-pr` changed-file selection
 
 Examples
   pixi run build                          Build with default preset (debug)
   pixi run build -p release               Build with release preset
   pixi run ci --lane build-test           Run the CI build-and-test lane on host
+  pixi run ci --lane static-analysis      Run both static-analysis lanes sequentially
+  pixi run ci --lane static-analysis-semgrep
+                                            Run only the Semgrep static-analysis lane
+  pixi run ci --lane static-analysis-quality
+                                             Run only the quality-build static-analysis lane
+  pixi run ci --lane static-analysis-quality-pr --base-ref main
+                                             Run clang-tidy only on changed src files relative to main
   pixi run ci --runner container --cache-mode cold --lane build-test
-                                            Run the build-and-test lane in a fresh CI container
+                                              Run the build-and-test lane in a fresh CI container
   pixi run start -- vkcube                Run vkcube in the compositor
   pixi run start -p release -- vkcube     Run with release build
   pixi run profile -- vkcube              Capture a viewer Tracy trace
