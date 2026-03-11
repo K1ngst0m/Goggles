@@ -40,12 +40,13 @@ TEST_CASE("intermediate goldens compare per pass when present", "[visual][diagno
              "_pass0.png");
     }
 
-    auto capture = goggles::test::capture_runtime_outputs({
-        .preset_path = preset_path,
-        .preset_name = preset_name,
-        .frame_indices = {0U},
-        .intermediate_pass_ordinals = pass_ordinals,
-    });
+    goggles::test::RuntimeCapturePlan plan{};
+    plan.preset_path = preset_path;
+    plan.preset_name = preset_name;
+    plan.frame_indices = {0U};
+    plan.intermediate_pass_ordinals = pass_ordinals;
+
+    auto capture = goggles::test::capture_runtime_outputs(plan);
     if (!capture) {
         SKIP(capture.error().message);
     }

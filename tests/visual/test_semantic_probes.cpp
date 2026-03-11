@@ -45,12 +45,12 @@ TEST_CASE("semantic probe validates frame counter progression",
     const auto preset_path =
         std::filesystem::path(GOGGLES_SOURCE_DIR) /
         "tests/util/test_data/filter_chain_diagnostics/semantic_probes/frame_counter_probe.slangp";
-    auto capture = goggles::test::capture_runtime_outputs({
-        .preset_path = preset_path,
-        .preset_name = "frame_counter_probe",
-        .frame_indices = {0U, 1U, 2U, 3U},
-        .intermediate_pass_ordinals = {},
-    });
+    goggles::test::RuntimeCapturePlan plan{};
+    plan.preset_path = preset_path;
+    plan.preset_name = "frame_counter_probe";
+    plan.frame_indices = {0U, 1U, 2U, 3U};
+
+    auto capture = goggles::test::capture_runtime_outputs(plan);
     if (!capture) {
         SKIP(capture.error().message);
     }
@@ -67,24 +67,24 @@ TEST_CASE("semantic probe validates parameter isolation", "[visual][diagnostics]
     const auto preset_path = std::filesystem::path(GOGGLES_SOURCE_DIR) /
                              "tests/util/test_data/filter_chain_diagnostics/semantic_probes/"
                              "parameter_isolation_probe.slangp";
-    auto dim_capture = goggles::test::capture_runtime_outputs({
-        .preset_path = preset_path,
-        .preset_name = "parameter_isolation_dim",
-        .frame_indices = {0U},
-        .intermediate_pass_ordinals = {},
-        .control_overrides = {{"BRIGHTNESS", 0.0F}},
-    });
+    goggles::test::RuntimeCapturePlan dim_plan{};
+    dim_plan.preset_path = preset_path;
+    dim_plan.preset_name = "parameter_isolation_dim";
+    dim_plan.frame_indices = {0U};
+    dim_plan.control_overrides = {{"BRIGHTNESS", 0.0F}};
+
+    auto dim_capture = goggles::test::capture_runtime_outputs(dim_plan);
     if (!dim_capture) {
         SKIP(dim_capture.error().message);
     }
 
-    auto bright_capture = goggles::test::capture_runtime_outputs({
-        .preset_path = preset_path,
-        .preset_name = "parameter_isolation_bright",
-        .frame_indices = {0U},
-        .intermediate_pass_ordinals = {},
-        .control_overrides = {{"BRIGHTNESS", 1.0F}},
-    });
+    goggles::test::RuntimeCapturePlan bright_plan{};
+    bright_plan.preset_path = preset_path;
+    bright_plan.preset_name = "parameter_isolation_bright";
+    bright_plan.frame_indices = {0U};
+    bright_plan.control_overrides = {{"BRIGHTNESS", 1.0F}};
+
+    auto bright_capture = goggles::test::capture_runtime_outputs(bright_plan);
     if (!bright_capture) {
         SKIP(bright_capture.error().message);
     }

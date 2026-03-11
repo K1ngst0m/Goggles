@@ -22,7 +22,9 @@ auto make_session(CaptureMode mode) -> std::unique_ptr<DiagnosticSession> {
     manifest->add_pass(pass);
     session->set_chain_manifest(std::move(manifest));
 
-    session->set_authoring_verdict({.result = VerdictResult::degraded});
+    AuthoringVerdict verdict{};
+    verdict.result = VerdictResult::degraded;
+    session->set_authoring_verdict(verdict);
     session->record_binding({.pass_ordinal = 2,
                              .binding_slot = 1,
                              .status = BindingStatus::substituted,
@@ -35,8 +37,11 @@ auto make_session(CaptureMode mode) -> std::unique_ptr<DiagnosticSession> {
          .classification = SemanticClassification::semantic,
          .value = std::array<float, 4>{64.0F, 32.0F, 1.0F / 64.0F, 1.0F / 32.0F},
          .offset = 0});
-    session->record_timeline(
-        {.type = TimelineEventType::pass_start, .pass_ordinal = 2, .cpu_timestamp_ns = 1234});
+    TimelineEvent timeline_event{};
+    timeline_event.type = TimelineEventType::pass_start;
+    timeline_event.pass_ordinal = 2;
+    timeline_event.cpu_timestamp_ns = 1234;
+    session->record_timeline(timeline_event);
     session->record_degradation({.pass_ordinal = 2,
                                  .expected_resource = "History1",
                                  .substituted_resource = "Source",
@@ -49,7 +54,13 @@ auto make_session(CaptureMode mode) -> std::unique_ptr<DiagnosticSession> {
                    .localization = {.pass_ordinal = 2, .stage = "bind", .resource = "History1"},
                    .frame_index = 4,
                    .message = "Fallback used",
-                   .evidence = BindingEvidence{.resource_id = "Source", .is_fallback = true},
+                   .evidence =
+                       [] {
+                           BindingEvidence evidence{};
+                           evidence.resource_id = "Source";
+                           evidence.is_fallback = true;
+                           return evidence;
+                       }(),
                    .session_identity = std::nullopt});
     session->emit({.severity = Severity::info,
                    .original_severity = Severity::info,

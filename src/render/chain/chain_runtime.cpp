@@ -413,17 +413,23 @@ void ChainRuntime::sync_gpu_timestamp_pool() {
         return;
     }
 
-    auto pool_result = diagnostics::GpuTimestampPool::create(
-        m_resources->m_vk_ctx.device, m_resources->m_vk_ctx.physical_device,
-        static_cast<uint32_t>(std::max<size_t>(m_resources->pass_count(), 1U)),
-        m_resources->m_num_sync_indices);
-    if (!pool_result) {
-        emit_timestamp_event(m_diagnostic_session.get(), diagnostics::Severity::warning,
-                             "Failed to enable GPU timestamps: " + pool_result.error().message);
-        return;
-    }
+    std::unique_ptr<diagnostics::GpuTimestampPool> pool;
+    if (m_diagnostic_session->policy().gpu_timestamp_availability ==
+        diagnostics::GpuTimestampAvailabilityMode::force_unavailable) {
+        pool = diagnostics::GpuTimestampPool::create_unavailable();
+    } else {
+        auto pool_result = diagnostics::GpuTimestampPool::create(
+            m_resources->m_vk_ctx.device, m_resources->m_vk_ctx.physical_device,
+            static_cast<uint32_t>(std::max<size_t>(m_resources->pass_count(), 1U)),
+            m_resources->m_num_sync_indices);
+        if (!pool_result) {
+            emit_timestamp_event(m_diagnostic_session.get(), diagnostics::Severity::warning,
+                                 "Failed to enable GPU timestamps: " + pool_result.error().message);
+            return;
+        }
 
-    auto pool = std::move(*pool_result);
+        pool = std::move(*pool_result);
+    }
 
     if (!pool->is_available()) {
         emit_timestamp_event(m_diagnostic_session.get(), diagnostics::Severity::info,

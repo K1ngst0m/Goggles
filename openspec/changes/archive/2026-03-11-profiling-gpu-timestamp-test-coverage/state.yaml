@@ -1,0 +1,13 @@
+phase: archive
+artifact_store: hybrid
+artifacts:
+  proposal: true
+  specs: false
+  design: true
+  tasks: true
+  verify: true
+  archive: true
+notes:
+  source_of_truth: openspec/specs/profiling/spec.md
+  delta_spec: none
+last_updated: 2026-03-11

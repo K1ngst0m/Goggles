@@ -127,12 +127,13 @@ auto main(int argc, char** argv) -> int {
         return 1;
     }
 
-    auto capture = goggles::test::capture_runtime_outputs({
-        .preset_path = parsed->preset_path,
-        .preset_name = parsed->preset_name,
-        .frame_indices = parsed->frame_indices,
-        .intermediate_pass_ordinals = parsed->pass_ordinals,
-    });
+    goggles::test::RuntimeCapturePlan plan{};
+    plan.preset_path = parsed->preset_path;
+    plan.preset_name = parsed->preset_name;
+    plan.frame_indices = parsed->frame_indices;
+    plan.intermediate_pass_ordinals = parsed->pass_ordinals;
+
+    auto capture = goggles::test::capture_runtime_outputs(plan);
     if (!capture) {
         std::cerr << capture.error().message << '\n';
         return 1;

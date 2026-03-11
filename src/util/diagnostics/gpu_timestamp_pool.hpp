@@ -29,6 +29,9 @@ public:
                                      uint32_t max_passes, uint32_t frames_in_flight)
         -> Result<std::unique_ptr<GpuTimestampPool>>;
 
+    /// @brief Creates an explicit unavailable, no-op pool for deterministic diagnostics coverage.
+    [[nodiscard]] static auto create_unavailable() -> std::unique_ptr<GpuTimestampPool>;
+
     void reset_frame(vk::CommandBuffer cmd, uint32_t frame_index);
     void write_pass_timestamp(vk::CommandBuffer cmd, uint32_t frame_index, uint32_t pass_ordinal,
                               bool is_start);

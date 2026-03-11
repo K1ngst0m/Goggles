@@ -51,6 +51,7 @@ target_sources(goggles_tests PRIVATE
     render/test_source_provenance.cpp
     render/test_compile_report.cpp
     render/test_authoring_validation.cpp
+    render/test_gpu_timestamp_pool.cpp
     render/test_runtime_diagnostics.cpp
     render/test_shader_batch_report.cpp
     render/shader_batch_report.cpp

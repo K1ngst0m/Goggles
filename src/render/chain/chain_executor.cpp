@@ -1,5 +1,7 @@
 #include "chain_executor.hpp"
 
+#include "debug_label_scope.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -107,26 +109,6 @@ auto timestamps_active(diagnostics::DiagnosticSession* session,
     return session != nullptr && gpu_timestamp_pool != nullptr &&
            gpu_timestamp_pool->is_available() &&
            session->policy().tier >= diagnostics::ActivationTier::tier1;
-}
-
-void begin_debug_label(vk::CommandBuffer cmd, std::string_view name,
-                       const std::array<float, 4>& color) {
-    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBeginDebugUtilsLabelEXT == nullptr) {
-        return;
-    }
-
-    vk::DebugUtilsLabelEXT label{};
-    label.pLabelName = name.data();
-    std::copy(color.begin(), color.end(), label.color.begin());
-    cmd.beginDebugUtilsLabelEXT(label);
-}
-
-void end_debug_label(vk::CommandBuffer cmd) {
-    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdEndDebugUtilsLabelEXT == nullptr) {
-        return;
-    }
-
-    cmd.endDebugUtilsLabelEXT();
 }
 
 void flush_gpu_timestamps(diagnostics::DiagnosticSession* session,
@@ -698,10 +680,12 @@ void ChainExecutor::record(ChainResources& resources, vk::CommandBuffer cmd,
             gpu_timestamp_pool->write_pass_timestamp(cmd, frame_index, static_cast<uint32_t>(i),
                                                      true);
         }
-        begin_debug_label(cmd, std::format("Pass {} {}", i, pass->shader_name()),
-                          {0.18F, 0.46F, 0.92F, 1.0F});
-        pass->record(cmd, ctx);
-        end_debug_label(cmd);
+        {
+            const ScopedDebugLabel debug_label(cmd,
+                                               std::format("Pass {} {}", i, pass->shader_name()),
+                                               {0.18F, 0.46F, 0.92F, 1.0F});
+            pass->record(cmd, ctx);
+        }
         if (timestamps_active(session, gpu_timestamp_pool)) {
             gpu_timestamp_pool->write_pass_timestamp(cmd, frame_index, static_cast<uint32_t>(i),
                                                      false);
@@ -722,16 +706,19 @@ void ChainExecutor::record(ChainResources& resources, vk::CommandBuffer cmd,
                              gpu_timestamp_pool);
 
     if (resources.m_frame_history.is_initialized()) {
-        begin_debug_label(cmd, "History Push", {0.18F, 0.72F, 0.33F, 1.0F});
-        resources.m_frame_history.push(cmd, effective_original_image, effective_original_extent);
-        end_debug_label(cmd);
+        {
+            const ScopedDebugLabel debug_label(cmd, "History Push", {0.18F, 0.72F, 0.33F, 1.0F});
+            resources.m_frame_history.push(cmd, effective_original_image,
+                                           effective_original_extent);
+        }
         record_timeline(session, diagnostics::TimelineEventType::history_push,
                         diagnostics::LocalizationKey::CHAIN_LEVEL);
     }
 
-    begin_debug_label(cmd, "Feedback Copy", {0.85F, 0.52F, 0.18F, 1.0F});
-    copy_feedback_framebuffers(resources, cmd);
-    end_debug_label(cmd);
+    {
+        const ScopedDebugLabel debug_label(cmd, "Feedback Copy", {0.85F, 0.52F, 0.18F, 1.0F});
+        copy_feedback_framebuffers(resources, cmd);
+    }
     record_timeline(session, diagnostics::TimelineEventType::feedback_copy,
                     diagnostics::LocalizationKey::CHAIN_LEVEL);
     resources.m_frame_count++;

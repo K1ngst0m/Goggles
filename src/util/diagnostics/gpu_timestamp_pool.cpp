@@ -14,7 +14,7 @@ GpuTimestampPool::~GpuTimestampPool() {
 auto GpuTimestampPool::create(vk::Device device, vk::PhysicalDevice physical_device,
                               uint32_t max_passes, uint32_t frames_in_flight)
     -> Result<std::unique_ptr<GpuTimestampPool>> {
-    auto pool = std::unique_ptr<GpuTimestampPool>(new GpuTimestampPool());
+    auto pool = create_unavailable();
     pool->m_device = device;
     pool->m_max_passes = std::max(max_passes, 1U);
     pool->m_frames_in_flight = std::max(frames_in_flight, 1U);
@@ -22,8 +22,6 @@ auto GpuTimestampPool::create(vk::Device device, vk::PhysicalDevice physical_dev
     const auto properties = physical_device.getProperties();
     pool->m_timestamp_period = properties.limits.timestampPeriod;
     if (pool->m_timestamp_period <= 0.0F) {
-        pool->m_queries_per_frame = 0;
-        pool->m_available = false;
         return pool;
     }
 
@@ -45,6 +43,12 @@ auto GpuTimestampPool::create(vk::Device device, vk::PhysicalDevice physical_dev
 
     pool->m_pool = query_pool;
     pool->m_available = true;
+    return pool;
+}
+
+auto GpuTimestampPool::create_unavailable() -> std::unique_ptr<GpuTimestampPool> {
+    auto pool = std::unique_ptr<GpuTimestampPool>(new GpuTimestampPool());
+    pool->m_available = false;
     return pool;
 }
 

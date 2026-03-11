@@ -30,12 +30,13 @@ TEST_CASE("temporal golden infrastructure captures requested frames", "[visual][
              "_frame1.png");
     }
 
-    auto capture = goggles::test::capture_runtime_outputs({
-        .preset_path = preset_path,
-        .preset_name = preset_name,
-        .frame_indices = frame_indices,
-        .intermediate_pass_ordinals = pass_ordinals,
-    });
+    goggles::test::RuntimeCapturePlan plan{};
+    plan.preset_path = preset_path;
+    plan.preset_name = preset_name;
+    plan.frame_indices = frame_indices;
+    plan.intermediate_pass_ordinals = pass_ordinals;
+
+    auto capture = goggles::test::capture_runtime_outputs(plan);
     if (!capture) {
         SKIP(capture.error().message);
     }

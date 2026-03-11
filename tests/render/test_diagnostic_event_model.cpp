@@ -81,6 +81,7 @@ TEST_CASE("DiagnosticPolicy defaults are compatibility mode", "[diagnostics][pol
     REQUIRE(policy.mode == PolicyMode::compatibility);
     REQUIRE(policy.capture_mode == CaptureMode::standard);
     REQUIRE(policy.tier == ActivationTier::tier0);
+    REQUIRE(policy.gpu_timestamp_availability == GpuTimestampAvailabilityMode::auto_detect);
     REQUIRE_FALSE(policy.promote_fallback_to_error);
     REQUIRE_FALSE(policy.reflection_loss_is_fatal);
 }

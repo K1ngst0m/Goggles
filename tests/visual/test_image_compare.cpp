@@ -141,11 +141,14 @@ TEST_CASE("diff heatmap written with expected dimensions") {
 TEST_CASE("earliest divergence localization reports first failing pass") {
     const std::vector<uint32_t> pass_ordinals = {0U, 1U, 2U, 3U, 4U};
     std::unordered_map<uint32_t, goggles::test::CompareResult> comparisons;
-    comparisons.emplace(0U, goggles::test::CompareResult{.passed = true});
-    comparisons.emplace(1U, goggles::test::CompareResult{.passed = true});
-    comparisons.emplace(2U, goggles::test::CompareResult{.passed = false});
-    comparisons.emplace(3U, goggles::test::CompareResult{.passed = false});
-    comparisons.emplace(4U, goggles::test::CompareResult{.passed = false});
+    auto passing = goggles::test::CompareResult{};
+    passing.passed = true;
+    auto failing = goggles::test::CompareResult{};
+    comparisons.emplace(0U, passing);
+    comparisons.emplace(1U, passing);
+    comparisons.emplace(2U, failing);
+    comparisons.emplace(3U, failing);
+    comparisons.emplace(4U, failing);
 
     const auto localization =
         goggles::test::localize_earliest_divergence(pass_ordinals, comparisons);
