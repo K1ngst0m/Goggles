@@ -420,8 +420,11 @@ void ChainRuntime::sync_gpu_timestamp_pool() {
     } else {
         auto pool_result = diagnostics::GpuTimestampPool::create(
             m_resources->m_vk_ctx.device, m_resources->m_vk_ctx.physical_device,
-            static_cast<uint32_t>(std::max<size_t>(m_resources->pass_count(), 1U)),
-            m_resources->m_num_sync_indices);
+            diagnostics::GpuTimestampPoolCreateInfo{
+                .graphics_queue_family_index = m_resources->m_vk_ctx.graphics_queue_family_index,
+                .max_passes =
+                    static_cast<uint32_t>(std::max<size_t>(m_resources->pass_count(), 1U)),
+                .frames_in_flight = m_resources->m_num_sync_indices});
         if (!pool_result) {
             emit_timestamp_event(m_diagnostic_session.get(), diagnostics::Severity::warning,
                                  "Failed to enable GPU timestamps: " + pool_result.error().message);

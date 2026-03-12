@@ -2,17 +2,32 @@
 
 #include <algorithm>
 #include <array>
+#include <string>
 #include <string_view>
 #include <vulkan/vulkan.hpp>
 
 namespace goggles::render {
 
-struct DebugLabelDispatch {
-    PFN_vkCmdBeginDebugUtilsLabelEXT begin =
-        VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBeginDebugUtilsLabelEXT;
-    PFN_vkCmdEndDebugUtilsLabelEXT end = VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdEndDebugUtilsLabelEXT;
+using BeginDebugLabelFn = void (*)(vk::CommandBuffer, const vk::DebugUtilsLabelEXT&);
+using EndDebugLabelFn = void (*)(vk::CommandBuffer);
 
-    [[nodiscard]] auto is_available() const -> bool { return begin != nullptr && end != nullptr; }
+inline void begin_debug_label(vk::CommandBuffer cmd, const vk::DebugUtilsLabelEXT& label) {
+    cmd.beginDebugUtilsLabelEXT(label);
+}
+
+inline void end_debug_label(vk::CommandBuffer cmd) {
+    cmd.endDebugUtilsLabelEXT();
+}
+
+struct DebugLabelDispatch {
+    BeginDebugLabelFn begin = &begin_debug_label;
+    EndDebugLabelFn end = &end_debug_label;
+    bool enabled = VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBeginDebugUtilsLabelEXT != nullptr &&
+                   VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdEndDebugUtilsLabelEXT != nullptr;
+
+    [[nodiscard]] auto is_available() const -> bool {
+        return enabled && begin != nullptr && end != nullptr;
+    }
 };
 
 class ScopedDebugLabel {
@@ -24,17 +39,17 @@ public:
             return;
         }
 
-        VkDebugUtilsLabelEXT label{};
-        label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
-        label.pLabelName = name.data();
-        std::copy(color.begin(), color.end(), label.color);
-        dispatch.begin(static_cast<VkCommandBuffer>(cmd), &label);
+        const std::string label_name{name};
+        vk::DebugUtilsLabelEXT label{};
+        label.pLabelName = label_name.c_str();
+        std::copy(color.begin(), color.end(), label.color.begin());
+        dispatch.begin(cmd, label);
         m_end = dispatch.end;
     }
 
     ~ScopedDebugLabel() {
         if (m_end != nullptr) {
-            m_end(static_cast<VkCommandBuffer>(m_command_buffer));
+            m_end(m_command_buffer);
         }
     }
 
@@ -47,7 +62,7 @@ public:
 
 private:
     vk::CommandBuffer m_command_buffer;
-    PFN_vkCmdEndDebugUtilsLabelEXT m_end = nullptr;
+    EndDebugLabelFn m_end = nullptr;
 };
 
 } // namespace goggles::render

@@ -711,6 +711,7 @@ auto VulkanContext::boundary_context(vk::CommandPool command_pool) const
         .physical_device = physical_device,
         .command_pool = command_pool,
         .graphics_queue = graphics_queue,
+        .graphics_queue_family_index = graphics_queue_family,
     };
 }
 

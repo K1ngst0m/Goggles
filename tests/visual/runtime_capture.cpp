@@ -571,6 +571,7 @@ auto create_capture_runtime(const VulkanRuntimeFixture& fixture, const RuntimeCa
         .physical_device = vk::PhysicalDevice{fixture.physical_device},
         .command_pool = vk::CommandPool{fixture.command_pool},
         .graphics_queue = vk::Queue{fixture.queue},
+        .graphics_queue_family_index = fixture.queue_family_index,
     };
 
     auto runtime_result = render::ChainRuntime::create(

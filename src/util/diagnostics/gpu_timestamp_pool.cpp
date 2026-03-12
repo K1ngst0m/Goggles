@@ -12,29 +12,38 @@ GpuTimestampPool::~GpuTimestampPool() {
 }
 
 auto GpuTimestampPool::create(vk::Device device, vk::PhysicalDevice physical_device,
-                              uint32_t max_passes, uint32_t frames_in_flight)
+                              GpuTimestampPoolCreateInfo create_info)
     -> Result<std::unique_ptr<GpuTimestampPool>> {
     auto pool = create_unavailable();
     pool->m_device = device;
-    pool->m_max_passes = std::max(max_passes, 1U);
-    pool->m_frames_in_flight = std::max(frames_in_flight, 1U);
+    pool->m_max_passes = std::max(create_info.max_passes, 1U);
+    pool->m_frames_in_flight = std::max(create_info.frames_in_flight, 1U);
+
+    if (!supports_timestamps(physical_device, create_info.graphics_queue_family_index)) {
+        return pool;
+    }
 
     const auto properties = physical_device.getProperties();
     pool->m_timestamp_period = properties.limits.timestampPeriod;
     if (pool->m_timestamp_period <= 0.0F) {
-        return pool;
+        return make_error<std::unique_ptr<GpuTimestampPool>>(
+            ErrorCode::vulkan_init_failed,
+            std::format("Graphics queue family {} reports timestamp support with invalid "
+                        "timestampPeriod {}",
+                        create_info.graphics_queue_family_index, pool->m_timestamp_period));
     }
 
     pool->m_queries_per_frame = 2U * (pool->m_max_passes + 2U);
 
-    vk::QueryPoolCreateInfo create_info{};
-    create_info.queryType = vk::QueryType::eTimestamp;
-    create_info.queryCount = pool->m_queries_per_frame * pool->m_frames_in_flight;
+    vk::QueryPoolCreateInfo query_pool_info{};
+    query_pool_info.queryType = vk::QueryType::eTimestamp;
+    query_pool_info.queryCount = pool->m_queries_per_frame * pool->m_frames_in_flight;
 
     vk::QueryPool query_pool{};
     const auto result = static_cast<vk::Result>(VULKAN_HPP_DEFAULT_DISPATCHER.vkCreateQueryPool(
-        static_cast<VkDevice>(device), reinterpret_cast<const VkQueryPoolCreateInfo*>(&create_info),
-        nullptr, reinterpret_cast<VkQueryPool*>(&query_pool)));
+        static_cast<VkDevice>(device),
+        reinterpret_cast<const VkQueryPoolCreateInfo*>(&query_pool_info), nullptr,
+        reinterpret_cast<VkQueryPool*>(&query_pool)));
     if (result != vk::Result::eSuccess) {
         return make_error<std::unique_ptr<GpuTimestampPool>>(
             ErrorCode::vulkan_init_failed,
@@ -44,6 +53,25 @@ auto GpuTimestampPool::create(vk::Device device, vk::PhysicalDevice physical_dev
     pool->m_pool = query_pool;
     pool->m_available = true;
     return pool;
+}
+
+auto GpuTimestampPool::supports_timestamps(vk::PhysicalDevice physical_device,
+                                           uint32_t graphics_queue_family_index) -> bool {
+    const auto queue_families = physical_device.getQueueFamilyProperties();
+    if (graphics_queue_family_index >= queue_families.size()) {
+        return false;
+    }
+
+    const auto& queue_family = queue_families[graphics_queue_family_index];
+    const bool supports_graphics_or_compute =
+        (queue_family.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) !=
+        vk::QueueFlags{};
+    const auto properties = physical_device.getProperties();
+    if (properties.limits.timestampComputeAndGraphics && supports_graphics_or_compute) {
+        return true;
+    }
+
+    return queue_family.timestampValidBits > 0U;
 }
 
 auto GpuTimestampPool::create_unavailable() -> std::unique_ptr<GpuTimestampPool> {

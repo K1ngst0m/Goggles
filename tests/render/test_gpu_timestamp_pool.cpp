@@ -105,14 +105,10 @@ struct VulkanRuntimeFixture {
         return device != VK_NULL_HANDLE && command_pool != VK_NULL_HANDLE;
     }
 
-    [[nodiscard]] auto timestamp_period() const -> float {
-        if (physical_device == VK_NULL_HANDLE) {
-            return 0.0F;
-        }
-
-        VkPhysicalDeviceProperties properties{};
-        vkGetPhysicalDeviceProperties(physical_device, &properties);
-        return properties.limits.timestampPeriod;
+    [[nodiscard]] auto timestamps_supported() const -> bool {
+        return physical_device != VK_NULL_HANDLE &&
+               goggles::diagnostics::GpuTimestampPool::supports_timestamps(
+                   vk::PhysicalDevice{physical_device}, queue_family_index);
     }
 
     VkInstance instance = VK_NULL_HANDLE;
@@ -309,12 +305,16 @@ TEST_CASE("GpuTimestampPool records available timestamp regions",
     if (!fixture.available()) {
         SKIP("Skipping GPU timestamp pool test because no Vulkan graphics device is available");
     }
-    if (fixture.timestamp_period() <= 0.0F) {
+    if (!fixture.timestamps_supported()) {
         SKIP("Skipping GPU timestamp pool availability test because timestamps are unavailable");
     }
 
     auto pool_result = goggles::diagnostics::GpuTimestampPool::create(
-        vk::Device{fixture.device}, vk::PhysicalDevice{fixture.physical_device}, 2u, 1u);
+        vk::Device{fixture.device}, vk::PhysicalDevice{fixture.physical_device},
+        goggles::diagnostics::GpuTimestampPoolCreateInfo{.graphics_queue_family_index =
+                                                             fixture.queue_family_index,
+                                                         .max_passes = 2u,
+                                                         .frames_in_flight = 1u});
     REQUIRE(pool_result);
 
     auto pool = std::move(*pool_result);
@@ -405,12 +405,16 @@ TEST_CASE("GpuTimestampPool readback stays non-blocking while the next frame rec
         SKIP("Skipping GPU timestamp pool async test because no Vulkan graphics device is "
              "available");
     }
-    if (fixture.timestamp_period() <= 0.0F) {
+    if (!fixture.timestamps_supported()) {
         SKIP("Skipping GPU timestamp pool async test because timestamps are unavailable");
     }
 
     auto pool_result = goggles::diagnostics::GpuTimestampPool::create(
-        vk::Device{fixture.device}, vk::PhysicalDevice{fixture.physical_device}, 1u, 2u);
+        vk::Device{fixture.device}, vk::PhysicalDevice{fixture.physical_device},
+        goggles::diagnostics::GpuTimestampPoolCreateInfo{.graphics_queue_family_index =
+                                                             fixture.queue_family_index,
+                                                         .max_passes = 1u,
+                                                         .frames_in_flight = 2u});
     REQUIRE(pool_result);
 
     auto pool = std::move(*pool_result);

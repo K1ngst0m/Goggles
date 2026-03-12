@@ -395,6 +395,7 @@ auto create_runtime(const goggles_chain_vk_context_t* vk_context, const CreateIn
         .physical_device = vk::PhysicalDevice{vk_context->physical_device},
         .command_pool = command_pool,
         .graphics_queue = vk::Queue{vk_context->graphics_queue},
+        .graphics_queue_family_index = vk_context->graphics_queue_family_index,
     };
 
     FilterChainPaths paths{

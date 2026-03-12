@@ -16,6 +16,12 @@ struct GpuTimestampSample {
     double duration_us = 0.0;
 };
 
+struct GpuTimestampPoolCreateInfo {
+    uint32_t graphics_queue_family_index = UINT32_MAX;
+    uint32_t max_passes = 0;
+    uint32_t frames_in_flight = 0;
+};
+
 class GpuTimestampPool {
 public:
     ~GpuTimestampPool();
@@ -26,8 +32,11 @@ public:
     auto operator=(GpuTimestampPool&&) -> GpuTimestampPool& = delete;
 
     [[nodiscard]] static auto create(vk::Device device, vk::PhysicalDevice physical_device,
-                                     uint32_t max_passes, uint32_t frames_in_flight)
+                                     GpuTimestampPoolCreateInfo create_info)
         -> Result<std::unique_ptr<GpuTimestampPool>>;
+
+    [[nodiscard]] static auto supports_timestamps(vk::PhysicalDevice physical_device,
+                                                  uint32_t graphics_queue_family_index) -> bool;
 
     /// @brief Creates an explicit unavailable, no-op pool for deterministic diagnostics coverage.
     [[nodiscard]] static auto create_unavailable() -> std::unique_ptr<GpuTimestampPool>;

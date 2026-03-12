@@ -305,6 +305,25 @@ struct DebugLabelDispatcherOverride {
         }
     }
 
+    static void begin_label(vk::CommandBuffer command_buffer, const vk::DebugUtilsLabelEXT& label) {
+        (void)command_buffer;
+        if (active_capture == nullptr) {
+            return;
+        }
+
+        active_capture->begin_calls++;
+        if (label.pLabelName != nullptr) {
+            active_capture->labels.emplace_back(label.pLabelName);
+        }
+    }
+
+    static void end_label(vk::CommandBuffer command_buffer) {
+        (void)command_buffer;
+        if (active_capture != nullptr) {
+            active_capture->end_calls++;
+        }
+    }
+
     inline static DebugLabelCapture* active_capture = nullptr;
     PFN_vkCmdBeginDebugUtilsLabelEXT previous_begin = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT previous_end = nullptr;
@@ -371,7 +390,9 @@ TEST_CASE("ScopedDebugLabel skips incomplete debug-utils dispatch",
     {
         const goggles::render::ScopedDebugLabel label(
             vk::CommandBuffer{}, "Pass 0 Null Begin", {0.18F, 0.46F, 0.92F, 1.0F},
-            {.begin = nullptr, .end = &DebugLabelDispatcherOverride::end_stub});
+            goggles::render::DebugLabelDispatch{.begin = nullptr,
+                                                .end = &DebugLabelDispatcherOverride::end_label,
+                                                .enabled = true});
         CHECK_FALSE(label.active());
     }
     CHECK(capture.begin_calls == 0u);
@@ -380,7 +401,9 @@ TEST_CASE("ScopedDebugLabel skips incomplete debug-utils dispatch",
     {
         const goggles::render::ScopedDebugLabel label(
             vk::CommandBuffer{}, "Pass 0 Null End", {0.18F, 0.46F, 0.92F, 1.0F},
-            {.begin = &DebugLabelDispatcherOverride::begin_stub, .end = nullptr});
+            goggles::render::DebugLabelDispatch{.begin = &DebugLabelDispatcherOverride::begin_label,
+                                                .end = nullptr,
+                                                .enabled = true});
         CHECK_FALSE(label.active());
     }
     CHECK(capture.begin_calls == 0u);
@@ -389,8 +412,9 @@ TEST_CASE("ScopedDebugLabel skips incomplete debug-utils dispatch",
     {
         const goggles::render::ScopedDebugLabel label(
             vk::CommandBuffer{}, "Pass 0 Active", {0.18F, 0.46F, 0.92F, 1.0F},
-            {.begin = &DebugLabelDispatcherOverride::begin_stub,
-             .end = &DebugLabelDispatcherOverride::end_stub});
+            goggles::render::DebugLabelDispatch{.begin = &DebugLabelDispatcherOverride::begin_label,
+                                                .end = &DebugLabelDispatcherOverride::end_label,
+                                                .enabled = true});
         CHECK(label.active());
     }
     CHECK(capture.begin_calls == 1u);
@@ -416,6 +440,7 @@ TEST_CASE("ChainRuntime emits runtime diagnostics ledgers", "[render][diagnostic
         .physical_device = vk::PhysicalDevice{fixture.physical_device},
         .command_pool = vk::CommandPool{fixture.command_pool},
         .graphics_queue = vk::Queue{fixture.queue},
+        .graphics_queue_family_index = fixture.queue_family_index,
     };
 
     const auto cache_dir = std::filesystem::temp_directory_path() / "goggles_runtime_diag_cache";
@@ -510,6 +535,7 @@ TEST_CASE("Strict diagnostics forbid fallback pass execution", "[render][diagnos
         .physical_device = vk::PhysicalDevice{fixture.physical_device},
         .command_pool = vk::CommandPool{fixture.command_pool},
         .graphics_queue = vk::Queue{fixture.queue},
+        .graphics_queue_family_index = fixture.queue_family_index,
     };
 
     const auto cache_dir =
@@ -606,6 +632,7 @@ TEST_CASE("ChainRuntime captures pass outputs", "[render][diagnostics][capture]"
         .physical_device = vk::PhysicalDevice{fixture.physical_device},
         .command_pool = vk::CommandPool{fixture.command_pool},
         .graphics_queue = vk::Queue{fixture.queue},
+        .graphics_queue_family_index = fixture.queue_family_index,
     };
 
     const auto cache_dir =
@@ -736,6 +763,7 @@ TEST_CASE("ChainRuntime Tier 1 diagnostics expose GPU timing evidence",
         .physical_device = vk::PhysicalDevice{fixture.physical_device},
         .command_pool = vk::CommandPool{fixture.command_pool},
         .graphics_queue = vk::Queue{fixture.queue},
+        .graphics_queue_family_index = fixture.queue_family_index,
     };
 
     const auto cache_dir =
@@ -747,9 +775,8 @@ TEST_CASE("ChainRuntime Tier 1 diagnostics expose GPU timing evidence",
     REQUIRE(runtime_result);
     auto runtime = std::move(*runtime_result);
 
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(fixture.physical_device, &properties);
-    if (properties.limits.timestampPeriod <= 0.0F) {
+    if (!goggles::diagnostics::GpuTimestampPool::supports_timestamps(
+            vk::PhysicalDevice{fixture.physical_device}, fixture.queue_family_index)) {
         runtime->shutdown();
         std::filesystem::remove_all(cache_dir);
         SKIP("Skipping Tier 1 GPU timing runtime test because timestamps are unavailable");
@@ -864,6 +891,7 @@ TEST_CASE("ChainRuntime reports unavailable GPU timestamps deterministically",
         .physical_device = vk::PhysicalDevice{fixture.physical_device},
         .command_pool = vk::CommandPool{fixture.command_pool},
         .graphics_queue = vk::Queue{fixture.queue},
+        .graphics_queue_family_index = fixture.queue_family_index,
     };
 
     const auto cache_dir =
@@ -953,6 +981,7 @@ TEST_CASE("ChainRuntime emits profiling debug labels when dispatch is available"
         .physical_device = vk::PhysicalDevice{fixture.physical_device},
         .command_pool = vk::CommandPool{fixture.command_pool},
         .graphics_queue = vk::Queue{fixture.queue},
+        .graphics_queue_family_index = fixture.queue_family_index,
     };
 
     const auto cache_dir =
