@@ -1,10 +1,14 @@
 # Filter Chain Workflow
 
-This document describes the filter chain architecture for applying RetroArch shader presets to captured frames.
+This document describes the filter-chain render-domain library that applies RetroArch shader presets
+to captured frames.
 
 ## Overview
 
-The filter chain transforms captured DMA-BUF images through a series of shader passes before presenting to the display. It supports RetroArch `.slangp` preset files which define multi-pass post-processing effects (CRT simulation, scanlines, etc.).
+`filter-chain/` is a render-domain library that Goggles consumes through the
+`GogglesFilterChain` package boundary. It transforms captured DMA-BUF images through a series of
+shader passes before final presentation. It supports RetroArch `.slangp` preset files which define
+multi-pass post-processing effects (CRT simulation, scanlines, etc.).
 
 ```mermaid
 flowchart LR
@@ -21,9 +25,14 @@ flowchart LR
 
 ## Data Flow
 
+Goggles-side responsibility stays in `src/render/backend/`: import compositor frames, hand them to
+the filter-chain library, then present the final image.
+
 ### 1. Frame Capture
 
-The render loop receives a captured frame as a DMA-BUF file descriptor. `VulkanBackend` imports this into a Vulkan image with an associated image view. This becomes the "Original" texture available to all shader passes.
+The render loop receives a captured frame as a DMA-BUF file descriptor. `VulkanBackend` imports this
+into a Vulkan image with an associated image view, then passes that image into the filter-chain
+runtime. This becomes the "Original" texture available to all shader passes.
 
 ### 2. Filter Chain Recording
 
@@ -47,13 +56,13 @@ Passes execute sequentially. Each pass:
 
 Image barriers ensure correct read-after-write ordering between passes:
 - After each non-final pass: transition framebuffer from `COLOR_ATTACHMENT_OPTIMAL` to `SHADER_READ_ONLY_OPTIMAL`
-- The final pass writes directly to the swapchain image
+- The final pass writes directly to the swapchain image handed in by Goggles
 
 ## Key Components
 
 ### FilterChain
 
-Orchestrates the entire shader preset:
+Library entrypoint that orchestrates the shader preset:
 - Loads and parses `.slangp` preset files
 - Creates `FilterPass` instances for each shader pass
 - Manages intermediate `Framebuffer` objects between passes
@@ -70,7 +79,7 @@ Executes a single shader pass:
 ### OutputPass
 
 Fallback pass when no shader preset is loaded:
-- Simple blit from captured image to swapchain
+- Simple blit from the imported image to the Goggles-provided swapchain target
 - Uses basic vertex/fragment shaders
 - Provides passthrough rendering
 
@@ -140,7 +149,7 @@ Always uses the swapchain format (e.g., B8G8R8A8_UNORM) regardless of preset con
 
 When viewport dimensions change:
 
-1. `FilterChain::handle_resize()` is called
+1. `FilterChain::handle_resize()` is called from the Goggles render/backend seam
 2. Framebuffers with VIEWPORT scale type are resized
 3. SOURCE-scaled framebuffers remain unchanged
 4. Pipelines are not recreated (dynamic viewport/scissor)

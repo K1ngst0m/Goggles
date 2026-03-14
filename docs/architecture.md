@@ -34,17 +34,22 @@ flowchart TB
 |-----------|---------|
 | `compositor_server.*` | wlroots headless compositor, surface management, frame export |
 
-### `src/render/` - Rendering Pipeline
+### `src/render/` - Render/Backend Integration
 
-**Responsibility:** Import compositor frames, apply shader effects, present to display.
+**Responsibility:** Import compositor frames, integrate the render-domain library, and present to
+display.
 
 | Component | Purpose |
 |-----------|---------|
-| `backend/` | Vulkan device, swapchain, resource management |
-| `shader/` | Slang compilation, RetroArch preset parsing |
-| `chain/` | Multi-pass filter chain execution |
+| `backend/` | Vulkan device, swapchain, compositor-frame import, presentation |
 
-**Key pattern:** Filter chain applies RetroArch-compatible shader presets (`.slangp` files) as a sequence of render passes.
+### `filter-chain/` - Render-Domain Library
+
+**Responsibility:** Own RetroArch preset parsing, shader runtime behavior, pass-graph execution,
+and render-domain assets behind the `GogglesFilterChain` package boundary.
+
+**Key pattern:** Goggles hands imported frames to the filter-chain library, which applies
+RetroArch-compatible shader presets (`.slangp` files) as a sequence of render passes.
 
 See: [filter_chain_workflow.md](filter_chain_workflow.md), [retroarch.md](retroarch.md)
 
@@ -81,8 +86,8 @@ See: [threading.md](threading.md)
    └─▶ Waits on acquire fence (explicit sync)
    └─▶ Creates Vulkan image for shader sampling
 
-4. Filter chain processes frame
-   └─▶ Pass 0 → Pass 1 → ... → Pass N (shader effects)
+4. Filter-chain library processes frame
+    └─▶ Pass 0 → Pass 1 → ... → Pass N (shader effects)
 
 5. Final pass renders to swapchain
    └─▶ Signals release fence to compositor
