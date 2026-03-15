@@ -89,6 +89,14 @@ target_include_directories(fc_texture_obj PRIVATE
 target_include_directories(fc_texture_obj SYSTEM PRIVATE ${STB_IMAGE_INCLUDE_DIR})
 goggles_enable_pic_if_shared(fc_texture_obj)
 
+# stb_image implementation in a dedicated TU, excluded from clang-tidy
+# to avoid false-positive clang-analyzer-unix.Malloc diagnostics inside the header.
+add_library(fc_stb_image_obj OBJECT
+    src/texture/stb_image_impl.cpp
+)
+target_include_directories(fc_stb_image_obj SYSTEM PRIVATE ${STB_IMAGE_INCLUDE_DIR})
+goggles_enable_pic_if_shared(fc_stb_image_obj)
+
 set(FC_CHAIN_SOURCES
     src/chain/chain_runtime.cpp
     src/chain/chain_builder.cpp
@@ -195,6 +203,7 @@ add_library(goggles-filter-chain ${FILTER_CHAIN_LIBRARY_TYPE_NORMALIZED}
     $<TARGET_OBJECTS:fc_diagnostics_obj>
     $<TARGET_OBJECTS:fc_shader_obj>
     $<TARGET_OBJECTS:fc_texture_obj>
+    $<TARGET_OBJECTS:fc_stb_image_obj>
     $<TARGET_OBJECTS:fc_chain_obj>
     $<TARGET_OBJECTS:fc_runtime_obj>
     $<TARGET_OBJECTS:fc_api_obj>

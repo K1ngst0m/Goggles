@@ -71,6 +71,8 @@ configure_and_build() {
 
   rm -rf "$build_dir"
   cmake -S "$source_dir" -B "$build_dir" \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_PREFIX_PATH="$PREFIX_PATH"
   cmake --build "$build_dir"
 }

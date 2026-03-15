@@ -1,5 +1,11 @@
 @PACKAGE_INIT@
 
+# The filter-chain library is implemented in C++. When it is consumed as a
+# static library by a pure-C project, the linker must still resolve the C++
+# runtime.  Enabling the CXX language in the consuming project is the portable
+# way to ensure this (avoids hard-coding compiler-specific libraries).
+enable_language(CXX)
+
 include("${CMAKE_CURRENT_LIST_DIR}/FilterChainDependencies.cmake")
 
 include("${CMAKE_CURRENT_LIST_DIR}/GogglesFilterChainTargets.cmake")

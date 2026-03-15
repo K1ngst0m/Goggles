@@ -1,13 +1,11 @@
 #include "texture_loader.hpp"
 
-#include <cmath>
-#include <cstring>
-#include <limits>
-
-#define STB_IMAGE_IMPLEMENTATION
 #include "support/logging.hpp"
 #include "support/profiling.hpp"
 
+#include <cmath>
+#include <cstring>
+#include <limits>
 #include <stb_image.h>
 
 namespace goggles::render {
@@ -36,6 +34,7 @@ auto TextureLoader::load_from_file(const std::filesystem::path& path,
     int height = 0;
     int channels = 0;
 
+    // NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
     stbi_uc* pixels = stbi_load(path.string().c_str(), &width, &height, &channels, RGBA_CHANNELS);
     if (pixels == nullptr) {
         return make_error<TextureData>(ErrorCode::file_not_found,
