@@ -10,8 +10,6 @@ include("${CMAKE_CURRENT_LIST_DIR}/GogglesFilterChainTargets.cmake")
 if(@FILTER_CHAIN_LIBRARY_TYPE_IS_STATIC@)
     set(_goggles_filter_chain_cxx_runtime_libraries
         "@FILTER_CHAIN_CXX_IMPLICIT_LINK_LIBRARIES@")
-    set(_goggles_filter_chain_cxx_runtime_directories
-        "@FILTER_CHAIN_CXX_IMPLICIT_LINK_DIRECTORIES@")
 
     find_library(GOGGLES_FILTER_CHAIN_PRIVATE_SPDLOG_LIBRARY
         NAMES spdlog libspdlog
@@ -59,23 +57,9 @@ if(@FILTER_CHAIN_LIBRARY_TYPE_IS_STATIC@)
     endforeach()
     list(REMOVE_DUPLICATES _goggles_filter_chain_link_libraries)
 
-    get_target_property(_goggles_filter_chain_link_directories
-        GogglesFilterChain::goggles-filter-chain
-        INTERFACE_LINK_DIRECTORIES)
-    if(_goggles_filter_chain_link_directories STREQUAL
-       "_goggles_filter_chain_link_directories-NOTFOUND")
-        set(_goggles_filter_chain_link_directories "")
-    endif()
-    list(APPEND _goggles_filter_chain_link_directories
-        ${_goggles_filter_chain_cxx_runtime_directories})
-    list(REMOVE_DUPLICATES _goggles_filter_chain_link_directories)
-
     set_target_properties(GogglesFilterChain::goggles-filter-chain PROPERTIES
-        INTERFACE_LINK_LIBRARIES "${_goggles_filter_chain_link_libraries}"
-        INTERFACE_LINK_DIRECTORIES "${_goggles_filter_chain_link_directories}")
+        INTERFACE_LINK_LIBRARIES "${_goggles_filter_chain_link_libraries}")
     unset(_goggles_filter_chain_cxx_runtime_libraries)
-    unset(_goggles_filter_chain_cxx_runtime_directories)
-    unset(_goggles_filter_chain_link_directories)
     unset(_goggles_filter_chain_runtime_library)
     unset(_goggles_filter_chain_link_libraries)
 endif()

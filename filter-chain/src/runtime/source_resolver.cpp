@@ -23,7 +23,8 @@ auto SourceResolver::resolve(const goggles_fc_preset_source_t* source)
 
 auto SourceResolver::resolve_file(const goggles_fc_preset_source_t* source)
     -> goggles::Result<ResolvedSource> {
-    std::string path_str(source->path.data, source->path.size);
+    std::string path_str(source->path.data != nullptr ? source->path.data : "",
+                         source->path.data != nullptr ? source->path.size : 0);
 
     // Empty path is passthrough: return empty bytes so ChainBuilder creates a
     // single-pass blit chain.
@@ -61,7 +62,9 @@ auto SourceResolver::resolve_memory(const goggles_fc_preset_source_t* source)
     const auto* byte_data = static_cast<const uint8_t*>(source->bytes);
 
     ResolvedSource result;
-    result.bytes.assign(byte_data, byte_data + source->byte_count);
+    if (byte_data != nullptr && source->byte_count > 0) {
+        result.bytes.assign(byte_data, byte_data + source->byte_count);
+    }
     result.provenance.kind = GOGGLES_FC_PROVENANCE_MEMORY;
 
     if (source->source_name.data != nullptr && source->source_name.size > 0) {
@@ -91,23 +94,29 @@ auto SourceResolver::resolve_relative(const std::filesystem::path& base_path,
 
         auto import_status = import_callbacks->read_fn(rel_view, &out_bytes, &out_byte_count,
                                                        import_callbacks->user_data);
-        if (import_status == GOGGLES_FC_STATUS_OK && out_bytes != nullptr && out_byte_count > 0) {
-            std::vector<uint8_t> data(static_cast<const uint8_t*>(out_bytes),
-                                      static_cast<const uint8_t*>(out_bytes) + out_byte_count);
+        if (import_status == GOGGLES_FC_STATUS_OK) {
+            std::vector<uint8_t> data;
+            if (out_bytes != nullptr && out_byte_count > 0) {
+                data.assign(static_cast<const uint8_t*>(out_bytes),
+                            static_cast<const uint8_t*>(out_bytes) + out_byte_count);
+            }
 
-            if (import_callbacks->free_fn != nullptr) {
+            if (out_bytes != nullptr && import_callbacks->free_fn != nullptr) {
                 import_callbacks->free_fn(out_bytes, out_byte_count, import_callbacks->user_data);
             }
 
             return data;
         }
 
-        // If callback returned an error, propagate it
-        if (import_status != GOGGLES_FC_STATUS_OK) {
-            return goggles::make_error<std::vector<uint8_t>>(goggles::ErrorCode::file_not_found,
-                                                             "Import callback failed for: " +
-                                                                 std::string(relative_path));
+        // If callback returned an error, free any buffer it may have allocated
+        if (out_bytes != nullptr && import_callbacks->free_fn != nullptr) {
+            import_callbacks->free_fn(out_bytes, out_byte_count, import_callbacks->user_data);
         }
+
+        // Propagate the error
+        return goggles::make_error<std::vector<uint8_t>>(goggles::ErrorCode::file_not_found,
+                                                         "Import callback failed for: " +
+                                                             std::string(relative_path));
     }
 
     // Check embedded assets before filesystem fallback. Built-in shaders and
@@ -120,7 +129,15 @@ auto SourceResolver::resolve_relative(const std::filesystem::path& base_path,
 
     // Fall back to filesystem resolution via base_path
     if (!base_path.empty()) {
-        auto full_path = base_path / std::string(relative_path);
+        // Reject absolute paths to prevent imports from escaping the base directory.
+        std::filesystem::path rel_fs_path{std::string{relative_path}};
+        if (rel_fs_path.is_absolute()) {
+            return goggles::make_error<std::vector<uint8_t>>(goggles::ErrorCode::invalid_data,
+                                                             "Absolute import path rejected: " +
+                                                                 std::string(relative_path));
+        }
+
+        auto full_path = base_path / rel_fs_path;
         std::ifstream file(full_path, std::ios::binary);
         if (!file) {
             return goggles::make_error<std::vector<uint8_t>>(goggles::ErrorCode::file_not_found,

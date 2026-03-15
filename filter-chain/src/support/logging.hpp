@@ -69,6 +69,22 @@ void log_route_set_active(const LogRouter* router);
 
 } // namespace goggles::filter_chain::detail
 
+/// @brief Safe formatting wrapper that catches exceptions from std::format.
+/// On formatting failure, returns a fallback error indicator.
+/// This prevents exceptions from propagating through C ABI boundaries.
+namespace goggles::filter_chain::detail {
+
+template <typename... Args>
+auto safe_format(std::format_string<Args...> fmt, Args&&... args) noexcept -> std::string {
+    try {
+        return std::format(fmt, std::forward<Args>(args)...);
+    } catch (...) {
+        return "<log format error>";
+    }
+}
+
+} // namespace goggles::filter_chain::detail
+
 #ifdef GOGGLES_LOG_TAG
 #define GOGGLES_LOG_DOMAIN GOGGLES_LOG_TAG
 #else
@@ -81,25 +97,31 @@ void log_route_set_active(const LogRouter* router);
 // spdlog logger. These macros NEVER touch the process-global spdlog default.
 
 #define GOGGLES_LOG_TRACE(...)                                                                     \
-    ::goggles::filter_chain::detail::log_route(GOGGLES_FC_LOG_LEVEL_TRACE, GOGGLES_LOG_DOMAIN,     \
-                                               ::std::format(__VA_ARGS__))
+    ::goggles::filter_chain::detail::log_route(                                                    \
+        GOGGLES_FC_LOG_LEVEL_TRACE, GOGGLES_LOG_DOMAIN,                                            \
+        ::goggles::filter_chain::detail::safe_format(__VA_ARGS__))
 
 #define GOGGLES_LOG_DEBUG(...)                                                                     \
-    ::goggles::filter_chain::detail::log_route(GOGGLES_FC_LOG_LEVEL_DEBUG, GOGGLES_LOG_DOMAIN,     \
-                                               ::std::format(__VA_ARGS__))
+    ::goggles::filter_chain::detail::log_route(                                                    \
+        GOGGLES_FC_LOG_LEVEL_DEBUG, GOGGLES_LOG_DOMAIN,                                            \
+        ::goggles::filter_chain::detail::safe_format(__VA_ARGS__))
 
 #define GOGGLES_LOG_INFO(...)                                                                      \
-    ::goggles::filter_chain::detail::log_route(GOGGLES_FC_LOG_LEVEL_INFO, GOGGLES_LOG_DOMAIN,      \
-                                               ::std::format(__VA_ARGS__))
+    ::goggles::filter_chain::detail::log_route(                                                    \
+        GOGGLES_FC_LOG_LEVEL_INFO, GOGGLES_LOG_DOMAIN,                                             \
+        ::goggles::filter_chain::detail::safe_format(__VA_ARGS__))
 
 #define GOGGLES_LOG_WARN(...)                                                                      \
-    ::goggles::filter_chain::detail::log_route(GOGGLES_FC_LOG_LEVEL_WARN, GOGGLES_LOG_DOMAIN,      \
-                                               ::std::format(__VA_ARGS__))
+    ::goggles::filter_chain::detail::log_route(                                                    \
+        GOGGLES_FC_LOG_LEVEL_WARN, GOGGLES_LOG_DOMAIN,                                             \
+        ::goggles::filter_chain::detail::safe_format(__VA_ARGS__))
 
 #define GOGGLES_LOG_ERROR(...)                                                                     \
-    ::goggles::filter_chain::detail::log_route(GOGGLES_FC_LOG_LEVEL_ERROR, GOGGLES_LOG_DOMAIN,     \
-                                               ::std::format(__VA_ARGS__))
+    ::goggles::filter_chain::detail::log_route(                                                    \
+        GOGGLES_FC_LOG_LEVEL_ERROR, GOGGLES_LOG_DOMAIN,                                            \
+        ::goggles::filter_chain::detail::safe_format(__VA_ARGS__))
 
 #define GOGGLES_LOG_CRITICAL(...)                                                                  \
-    ::goggles::filter_chain::detail::log_route(GOGGLES_FC_LOG_LEVEL_CRITICAL, GOGGLES_LOG_DOMAIN,  \
-                                               ::std::format(__VA_ARGS__))
+    ::goggles::filter_chain::detail::log_route(                                                    \
+        GOGGLES_FC_LOG_LEVEL_CRITICAL, GOGGLES_LOG_DOMAIN,                                         \
+        ::goggles::filter_chain::detail::safe_format(__VA_ARGS__))

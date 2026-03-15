@@ -187,6 +187,7 @@ auto make_adapter_build_config(const VulkanRuntimeFixture& fixture,
                 .initial_prechain_width = 1u,
                 .initial_prechain_height = 1u,
             },
+        .diagnostics = std::nullopt,
     };
 }
 

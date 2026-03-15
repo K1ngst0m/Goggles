@@ -176,6 +176,62 @@ Preset provenance and relative resolution MUST follow these rules:
   `base_path` is provided, program creation MUST fail with a deterministic validation status rather
   than probing process working-directory state.
 
+### Requirement: Callback and Returned-String Lifetime Contract
+
+The standalone C API MUST define explicit lifetime and ownership rules for all callback-delivered
+data and for strings or buffers returned by API functions, so that FFI consumers in any language can
+manage memory correctly without relying on C-specific conventions.
+
+#### Callback-delivered data
+
+- Pointers passed into a host-provided callback (such as `goggles_fc_log_callback_t`) are borrowed
+  by the host for the duration of that callback invocation only. The library owns the backing memory,
+  and the host MUST NOT retain, free, or write through those pointers after the callback returns.
+  If the host needs the data beyond the callback scope it MUST copy the content before returning.
+
+- For import callbacks (`goggles_fc_import_read_fn_t`), the host (callee) allocates and returns a
+  buffer through `out_bytes` / `out_byte_count`. The library borrows that buffer and MUST release it
+  by calling the paired `goggles_fc_import_free_fn_t` with the same pointer and size once it has
+  finished reading. The host MUST NOT free the buffer itself; it MUST wait for the library's
+  `free_fn` call.
+
+#### Strings returned by query functions
+
+- The string returned by `goggles_fc_status_string(...)` is a pointer to a library-owned static
+  string literal. It remains valid for the lifetime of the process and MUST NOT be freed by the
+  caller.
+
+- UTF-8 views written into caller-provided output structs by query functions (for example the `name`
+  and `description` fields in `goggles_fc_control_info_t`, or the `source_name` and `source_path`
+  fields in `goggles_fc_program_source_info_t`) point into library-owned internal storage. These
+  pointers remain valid only as long as the owning object (program, chain, etc.) is alive and has not
+  undergone a state change that invalidates the queried data (such as `goggles_fc_chain_bind_program`
+  replacing the bound program). Callers that need the strings beyond that scope MUST copy them.
+
+#### Thread safety of callbacks
+
+- The library MAY invoke a logging callback from any thread that performs library work. The host
+  callback implementation MUST be safe to call concurrently from multiple threads if the host
+  performs multi-threaded recording or object creation on the same instance.
+
+- Import callbacks (`read_fn`, `free_fn`) are invoked synchronously on the calling thread during
+  `goggles_fc_program_create`. The library SHALL NOT invoke import callbacks from background threads.
+
+#### Scenario: Host copies log message in callback for deferred processing
+
+- GIVEN a host registers a `goggles_fc_log_callback_t` with the standalone instance
+- WHEN the library invokes the callback with a `goggles_fc_log_message_t` pointer
+- THEN the host SHALL treat the message and its embedded UTF-8 views as borrowed for the callback
+  duration only
+- AND the host SHALL copy any data it needs to retain before returning from the callback
+
+#### Scenario: Library frees import buffer through paired free callback
+
+- GIVEN a host provides `goggles_fc_import_read_fn_t` and `goggles_fc_import_free_fn_t` callbacks
+- WHEN the library calls `read_fn` and receives a host-allocated buffer
+- THEN the library SHALL release that buffer by calling `free_fn` with the original pointer and size
+- AND the host SHALL NOT free the buffer independently
+
 #### Scenario: Host loads a preset from memory only
 
 - GIVEN a host has preset content in memory and no preset file on disk

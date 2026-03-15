@@ -486,6 +486,37 @@ auto align_adapter_output(FilterChainController::FilterChainSlot& slot,
     return {};
 }
 
+auto diagnostics_capture_mode(const std::string& mode) -> uint32_t {
+    if (mode == "minimal") {
+        return GOGGLES_FC_DIAGNOSTIC_CAPTURE_MINIMAL;
+    }
+    if (mode == "investigate") {
+        return GOGGLES_FC_DIAGNOSTIC_CAPTURE_INVESTIGATE;
+    }
+    if (mode == "forensic") {
+        return GOGGLES_FC_DIAGNOSTIC_CAPTURE_FORENSIC;
+    }
+    return GOGGLES_FC_DIAGNOSTIC_CAPTURE_STANDARD;
+}
+
+void apply_diagnostics_policy(FilterChainController::FilterChainSlot& slot,
+                              const std::optional<Config::Diagnostics>& diagnostics) {
+    if (!diagnostics || !diagnostics->configured || !slot.chain) {
+        return;
+    }
+
+    auto policy = goggles_fc_diagnostic_policy_init();
+    policy.capture_mode = diagnostics_capture_mode(diagnostics->mode);
+    policy.activation_tier = diagnostics->tier;
+    policy.capture_frame_limit = diagnostics->capture_frame_limit;
+
+    auto result = goggles_fc_chain_create_diagnostic_session(slot.chain.handle(), &policy);
+    if (result != GOGGLES_FC_STATUS_OK) {
+        GOGGLES_LOG_WARN("Failed to create diagnostic session: {}",
+                         goggles_fc_status_string(result));
+    }
+}
+
 auto create_and_load_slot(const FilterChainController::AdapterBuildConfig& config,
                           const std::filesystem::path& preset_path)
     -> Result<FilterChainController::FilterChainSlot> {
@@ -497,6 +528,8 @@ auto create_and_load_slot(const FilterChainController::AdapterBuildConfig& confi
     } else {
         GOGGLES_TRY(load_preset_into_slot(new_slot, preset_path, config.chain_config));
     }
+
+    apply_diagnostics_policy(new_slot, config.diagnostics);
 
     return std::move(new_slot);
 }

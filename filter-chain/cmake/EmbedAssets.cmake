@@ -4,13 +4,12 @@
 # Usage:
 #   embed_assets(
 #       OUTPUT_SOURCE <output.cpp>
-#       OUTPUT_HEADER <output.hpp>
 #       ASSET_DIR <dir>
 #       ASSETS <id1:relative_path1> <id2:relative_path2> ...
 #   )
 
 function(embed_assets)
-    cmake_parse_arguments(EA "" "OUTPUT_SOURCE;OUTPUT_HEADER;ASSET_DIR" "ASSETS" ${ARGN})
+    cmake_parse_arguments(EA "" "OUTPUT_SOURCE;ASSET_DIR" "ASSETS" ${ARGN})
 
     if(NOT EA_OUTPUT_SOURCE)
         message(FATAL_ERROR "embed_assets: OUTPUT_SOURCE required")

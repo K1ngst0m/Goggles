@@ -14,6 +14,10 @@ auto Device::create(Instance* instance, const goggles_fc_vk_device_create_info_t
     goggles::filter_chain::detail::ScopedLogRouter log_scope(
         instance != nullptr ? instance->log_router() : nullptr);
 
+    if (create_info == nullptr || out_device == nullptr) {
+        return GOGGLES_FC_STATUS_INVALID_ARGUMENT;
+    }
+
     auto* device = new (std::nothrow) Device();
     if (device == nullptr) {
         *out_device = nullptr;
@@ -57,6 +61,7 @@ auto Device::create(Instance* instance, const goggles_fc_vk_device_create_info_t
         GOGGLES_LOG_ERROR("Failed to create device setup fence: VkResult={}",
                           static_cast<int>(vk_result));
         vkDestroyCommandPool(create_info->device, device->m_setup_command_pool, nullptr);
+        device->m_setup_command_pool = VK_NULL_HANDLE;
         delete device;
         *out_device = nullptr;
         return GOGGLES_FC_STATUS_VULKAN_ERROR;

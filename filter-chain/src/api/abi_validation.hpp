@@ -215,6 +215,14 @@ validate_vk_device_create_info(const goggles_fc_vk_device_create_info_t* info)
     if (status != GOGGLES_FC_STATUS_OK) {
         return status;
     }
+    // Validate UTF-8 on public text fields shared by all source kinds.
+    if (!validate_utf8_view_optional(source->source_name)) {
+        return GOGGLES_FC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!validate_utf8_view_optional(source->base_path)) {
+        return GOGGLES_FC_STATUS_INVALID_ARGUMENT;
+    }
+
     if (source->kind == GOGGLES_FC_PRESET_SOURCE_FILE) {
         // File sources accept:
         //   - Non-null data with size > 0: normal file path
@@ -223,8 +231,15 @@ validate_vk_device_create_info(const goggles_fc_vk_device_create_info_t* info)
         if (source->path.data == nullptr) {
             return GOGGLES_FC_STATUS_INVALID_ARGUMENT;
         }
+        if (source->path.size > 0 && !is_valid_utf8(source->path.data, source->path.size)) {
+            return GOGGLES_FC_STATUS_INVALID_ARGUMENT;
+        }
     } else if (source->kind == GOGGLES_FC_PRESET_SOURCE_MEMORY) {
         if (source->bytes == nullptr || source->byte_count == 0) {
+            return GOGGLES_FC_STATUS_INVALID_ARGUMENT;
+        }
+        // For memory sources, path is optional but must be valid UTF-8 if present.
+        if (!validate_utf8_view_optional(source->path)) {
             return GOGGLES_FC_STATUS_INVALID_ARGUMENT;
         }
     } else {

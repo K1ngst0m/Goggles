@@ -15,17 +15,44 @@ if [[ -n "${CONDA_PREFIX:-}" ]]; then
   PREFIX_PATH="$PREFIX_PATH;$CONDA_PREFIX"
 fi
 
+# Resolve CMAKE_BUILD_TYPE from the preset via CMakePresets.json.
+# Falls back to "Debug" when the preset is not found or jq is unavailable.
+BUILD_TYPE="${CMAKE_BUILD_TYPE:-}"
+if [[ -z "$BUILD_TYPE" ]] && command -v python3 >/dev/null 2>&1; then
+  BUILD_TYPE="$(python3 -c "
+import json, sys
+with open('$REPO_ROOT/CMakePresets.json') as f:
+    data = json.load(f)
+presets = {p['name']: p for p in data.get('configurePresets', [])}
+def resolve(name):
+    p = presets.get(name, {})
+    bt = p.get('cacheVariables', {}).get('CMAKE_BUILD_TYPE')
+    if bt:
+        return bt
+    for parent in p.get('inherits', []) if isinstance(p.get('inherits'), list) else [p.get('inherits', '')]:
+        result = resolve(parent)
+        if result:
+            return result
+    return ''
+print(resolve('$PRESET'))
+" 2>/dev/null || true)"
+fi
+BUILD_TYPE="${BUILD_TYPE:-Debug}"
+
+# Accept library type from the environment; default to STATIC.
+LIBRARY_TYPE="${FILTER_CHAIN_LIBRARY_TYPE:-STATIC}"
+
 # Build and install filter-chain as a standalone package for consumer validation.
 FILTER_CHAIN_BUILD_DIR="$REPO_ROOT/build/filter-chain-package/$PRESET"
 rm -rf "$INSTALL_DIR"
 cmake -S "$REPO_ROOT/filter-chain" -B "$FILTER_CHAIN_BUILD_DIR" \
   -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
   -DCMAKE_CXX_STANDARD=20 \
   -DCMAKE_CXX_STANDARD_REQUIRED=ON \
   -DCMAKE_CXX_EXTENSIONS=OFF \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-  -DFILTER_CHAIN_LIBRARY_TYPE=STATIC \
+  -DFILTER_CHAIN_LIBRARY_TYPE="$LIBRARY_TYPE" \
   -DFILTER_CHAIN_BUILD_TESTS=OFF
 cmake --build "$FILTER_CHAIN_BUILD_DIR"
 cmake --install "$FILTER_CHAIN_BUILD_DIR" --prefix "$INSTALL_DIR"

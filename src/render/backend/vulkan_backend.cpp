@@ -614,6 +614,7 @@ auto VulkanBackend::make_filter_chain_build_config() const
                 .initial_prechain_height =
                     m_filter_chain_controller.current_prechain_resolution().height,
             },
+        .diagnostics = m_diagnostics_config,
     };
 }
 

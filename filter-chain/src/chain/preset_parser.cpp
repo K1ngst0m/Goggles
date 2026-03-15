@@ -399,7 +399,12 @@ auto PresetParser::load(const filter_chain::runtime::ResolvedSource& resolved,
     std::string content(resolved.bytes.begin(), resolved.bytes.end());
     std::vector<std::string> visited_names;
     if (!resolved.provenance.source_name.empty()) {
-        visited_names.push_back(resolved.provenance.source_name);
+        // Normalize the initial source identity so that cycle detection
+        // compares canonical paths regardless of how the name was supplied.
+        auto seed_path = resolved.base_path.empty()
+                             ? std::filesystem::path(resolved.provenance.source_name)
+                             : resolved.base_path / resolved.provenance.source_name;
+        visited_names.push_back(std::filesystem::weakly_canonical(seed_path).string());
     }
 
     return load_recursive_resolved(content, resolved.base_path, 0, visited_names, resolver,
@@ -420,14 +425,20 @@ auto PresetParser::load_recursive_resolved(const std::string& content,
 
     auto ref_path = parse_reference(content);
     if (ref_path) {
-        // Check for circular references using source name.
+        // Normalize the reference identity to a canonical path so that cycle
+        // detection is independent of how the path is spelled.
+        auto resolved_ref =
+            base_path.empty() ? std::filesystem::path(*ref_path) : base_path / *ref_path;
+        auto normalized = std::filesystem::weakly_canonical(resolved_ref).string();
+
+        // Check for circular references using normalized identity.
         for (const auto& v : visited_names) {
-            if (v == *ref_path) {
+            if (v == normalized) {
                 return make_error<PresetConfig>(ErrorCode::parse_error,
                                                 "Circular reference detected: " + *ref_path);
             }
         }
-        visited_names.push_back(*ref_path);
+        visited_names.push_back(normalized);
 
         // Resolve the referenced file through the resolver.
         auto ref_bytes_result = resolver.resolve_relative(base_path, *ref_path, import_callbacks);

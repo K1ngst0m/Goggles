@@ -92,11 +92,14 @@ external consumer-facing package and SHALL NOT rely on special-case access to de
 the public contract.
 
 The installed standalone package MAY ship shared infrastructure headers (such as
-`FilterControlDescriptor`, `VulkanContext`, and the internal `goggles::ScaleMode` enum) alongside the
+`FilterControlDescriptor`, `VulkanContext`, and the `goggles::ScaleMode` enum) alongside the
 `goggles_fc_*` C API surface, provided those headers are self-contained (no Goggles `util/` or
 application dependencies). These shared types serve as standalone library-owned contracts consumed by
-both the library and any host (including Goggles). Host-specific scale mode values (`fill`, `dynamic`)
-are defined by the host's own `ScaleMode` enum, not by the standalone library's public surface.
+both the library and any host (including Goggles). The standalone library's public `goggles::ScaleMode`
+enum defines five values — `fit`, `fill`, `stretch`, `integer`, and `dynamic` — which correspond
+one-to-one with the C API constants `GOGGLES_FC_SCALE_MODE_FIT` through
+`GOGGLES_FC_SCALE_MODE_DYNAMIC`. All five scale modes are part of the standalone library's public
+surface and are available to any consumer.
 
 #### Scenario: Goggles consumer integration does not redefine the standalone API contract
 

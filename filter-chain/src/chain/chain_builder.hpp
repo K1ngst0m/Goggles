@@ -66,6 +66,12 @@ private:
                                                    TextureLoader& texture_loader,
                                                    const PresetConfig& preset)
         -> Result<std::unordered_map<std::string, LoadedTexture>>;
+    [[nodiscard]] static auto
+    load_preset_textures(const VulkanContext& vk_ctx, TextureLoader& texture_loader,
+                         const PresetConfig& preset,
+                         filter_chain::runtime::SourceResolver& resolver,
+                         const goggles_fc_import_callbacks_t* import_callbacks)
+        -> Result<std::unordered_map<std::string, LoadedTexture>>;
     [[nodiscard]] static auto create_texture_sampler(const VulkanContext& vk_ctx,
                                                      const TextureConfig& config)
         -> Result<vk::Sampler>;

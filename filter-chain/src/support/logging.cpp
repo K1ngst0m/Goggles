@@ -1,5 +1,6 @@
 #include "logging.hpp"
 
+#include <atomic>
 #include <memory>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -14,7 +15,7 @@ std::shared_ptr<spdlog::logger> g_library_logger;
 
 /// @brief The currently active log router for macro-based logging.
 /// Points to an Instance-owned LogRouter when one is registered.
-const LogRouter* g_active_router = nullptr;
+std::atomic<const LogRouter*> g_active_router{nullptr};
 
 thread_local const LogRouter* t_scoped_router = nullptr;
 
@@ -96,16 +97,18 @@ void log_route(const LogRouter* router, goggles_fc_log_level_t level, std::strin
 }
 
 void log_route(goggles_fc_log_level_t level, std::string_view domain, std::string_view message) {
-    const LogRouter* router = t_scoped_router != nullptr ? t_scoped_router : g_active_router;
+    const LogRouter* router = t_scoped_router != nullptr
+                                  ? t_scoped_router
+                                  : g_active_router.load(std::memory_order_acquire);
     log_route(router, level, domain, message);
 }
 
 void log_route_set_active(const LogRouter* router) {
-    g_active_router = router;
+    g_active_router.store(router, std::memory_order_release);
 }
 
 auto log_route_get_active() -> const LogRouter* {
-    return g_active_router;
+    return g_active_router.load(std::memory_order_acquire);
 }
 
 auto log_route_get_scoped() -> const LogRouter* {

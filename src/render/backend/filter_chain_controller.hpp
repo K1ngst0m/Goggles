@@ -53,6 +53,7 @@ struct FilterChainController {
     struct AdapterBuildConfig {
         VulkanDeviceInfo device_info;
         ChainConfig chain_config;
+        std::optional<Config::Diagnostics> diagnostics;
     };
 
     struct OutputTarget {
