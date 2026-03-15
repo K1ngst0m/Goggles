@@ -1,12 +1,11 @@
 #include "texture_loader.hpp"
 
-#include <cmath>
-#include <cstring>
-
-#define STB_IMAGE_IMPLEMENTATION
 #include "support/logging.hpp"
 #include "support/profiling.hpp"
 
+#include <cmath>
+#include <cstring>
+#include <limits>
 #include <stb_image.h>
 
 namespace goggles::render {
@@ -35,6 +34,7 @@ auto TextureLoader::load_from_file(const std::filesystem::path& path,
     int height = 0;
     int channels = 0;
 
+    // NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
     stbi_uc* pixels = stbi_load(path.string().c_str(), &width, &height, &channels, RGBA_CHANNELS);
     if (pixels == nullptr) {
         return make_error<TextureData>(ErrorCode::file_not_found,
@@ -63,6 +63,53 @@ auto TextureLoader::load_from_file(const std::filesystem::path& path,
 
     GOGGLES_LOG_DEBUG("Loaded texture: {} ({}x{}, {} mip levels)", path.filename().string(), width,
                       height, mip_levels);
+
+    return result;
+}
+
+auto TextureLoader::load_from_bytes(const uint8_t* data, size_t size, const std::string& label,
+                                    const TextureLoadConfig& config) -> Result<TextureData> {
+    GOGGLES_PROFILE_FUNCTION();
+
+    if (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return make_error<TextureData>(ErrorCode::invalid_data,
+                                       "Texture data too large for stbi: " + label);
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+
+    // NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
+    stbi_uc* pixels = stbi_load_from_memory(data, static_cast<int>(size), &width, &height,
+                                            &channels, RGBA_CHANNELS);
+    if (pixels == nullptr) {
+        return make_error<TextureData>(ErrorCode::invalid_data,
+                                       "Failed to decode texture: " + label);
+    }
+    if (width <= 0 || height <= 0) {
+        stbi_image_free(pixels);
+        return make_error<TextureData>(ErrorCode::invalid_data,
+                                       "Invalid texture dimensions: " + label);
+    }
+
+    uint32_t mip_levels = 1;
+    if (config.generate_mipmaps) {
+        mip_levels =
+            calculate_mip_levels(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    }
+
+    auto result = upload_to_gpu(pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                                mip_levels, config.linear);
+
+    stbi_image_free(pixels);
+
+    if (!result) {
+        return result;
+    }
+
+    GOGGLES_LOG_DEBUG("Loaded texture from bytes: {} ({}x{}, {} mip levels)", label, width, height,
+                      mip_levels);
 
     return result;
 }

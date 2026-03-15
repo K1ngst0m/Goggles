@@ -310,6 +310,41 @@ auto ShaderRuntime::compile_shader(const std::filesystem::path& source_path,
     return CompiledShader{.spirv = std::move(compiled), .entry_point = entry_point};
 }
 
+auto ShaderRuntime::compile_shader_from_source(const std::string& source,
+                                               const std::string& module_name,
+                                               const std::string& entry_point)
+    -> Result<CompiledShader> {
+    GOGGLES_PROFILE_FUNCTION();
+
+    auto source_hash = compute_source_hash(source);
+    const bool disk_cache_enabled = is_disk_cache_enabled();
+
+    // Build a synthetic cache path from the module name.
+    std::filesystem::path synthetic_path(module_name);
+    const auto cache_path =
+        disk_cache_enabled ? get_cache_path(synthetic_path, entry_point) : std::filesystem::path{};
+
+    if (disk_cache_enabled) {
+        auto cached = load_cached_spirv(cache_path, source_hash);
+        if (cached) {
+            GOGGLES_LOG_DEBUG("Loaded cached SPIR-V (embedded): {}", module_name);
+            return CompiledShader{.spirv = std::move(cached.value()), .entry_point = entry_point};
+        }
+    }
+
+    auto compiled = GOGGLES_TRY(compile_slang(module_name, source, entry_point));
+
+    if (disk_cache_enabled) {
+        auto save_result = save_cached_spirv(cache_path, source_hash, compiled);
+        if (!save_result) {
+            GOGGLES_LOG_WARN("Failed to cache SPIR-V (embedded): {}", save_result.error().message);
+        }
+    }
+
+    GOGGLES_LOG_INFO("Compiled shader from embedded source: {} ({})", module_name, entry_point);
+    return CompiledShader{.spirv = std::move(compiled), .entry_point = entry_point};
+}
+
 auto ShaderRuntime::get_cache_dir() const -> std::filesystem::path {
     return m_cache_dir;
 }

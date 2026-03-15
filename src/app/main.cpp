@@ -429,6 +429,9 @@ static auto run_windowed_mode(goggles::app::Application& app,
 
     while (app.is_running()) {
         app.process_event();
+        if (!app.is_running()) {
+            break;
+        }
         app.tick_frame();
 
         if (!child_exited) {

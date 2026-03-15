@@ -3,8 +3,7 @@
 #include "vulkan_debug.hpp"
 
 #include <cstdint>
-#include <goggles/filter_chain/result.hpp>
-#include <goggles/filter_chain/vulkan_context.hpp>
+#include <goggles_filter_chain.hpp>
 #include <optional>
 #include <string>
 #include <vulkan/vulkan.hpp>

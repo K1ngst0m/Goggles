@@ -15,23 +15,20 @@ namespace goggles::render {
 
 namespace {
 
-auto to_chain_scale_mode(ScaleMode scale_mode) -> ChainScaleMode {
+auto to_fc_scale_mode(ScaleMode scale_mode) -> uint32_t {
     switch (scale_mode) {
     case ScaleMode::fit:
-        return ChainScaleMode::fit;
+        return GOGGLES_FC_SCALE_MODE_FIT;
+    case ScaleMode::fill:
+        return GOGGLES_FC_SCALE_MODE_FILL;
     case ScaleMode::integer:
-        return ChainScaleMode::integer;
+        return GOGGLES_FC_SCALE_MODE_INTEGER;
+    case ScaleMode::dynamic:
+        return GOGGLES_FC_SCALE_MODE_DYNAMIC;
     case ScaleMode::stretch:
     default:
-        return ChainScaleMode::stretch;
+        return GOGGLES_FC_SCALE_MODE_STRETCH;
     }
-}
-
-auto to_chain_policy(const FilterChainStagePolicy& policy) -> ChainStagePolicy {
-    return ChainStagePolicy{
-        .prechain_enabled = policy.prechain_enabled,
-        .effect_stage_enabled = policy.effect_stage_enabled,
-    };
 }
 
 auto resolve_record_integer_scale(ScaleMode scale_mode, uint32_t integer_scale,
@@ -56,9 +53,7 @@ VulkanBackend::~VulkanBackend() {
     shutdown();
 }
 
-void VulkanBackend::initialize_paths(const std::filesystem::path& shader_dir,
-                                     const std::filesystem::path& cache_dir) {
-    m_shader_dir = shader_dir;
+void VulkanBackend::initialize_paths(const std::filesystem::path& cache_dir) {
     m_cache_dir = cache_dir;
     if (!m_cache_dir.empty()) {
         return;
@@ -83,14 +78,13 @@ void VulkanBackend::initialize_settings(const RenderSettings& settings) {
 }
 
 auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
-                           const std::filesystem::path& shader_dir,
                            const std::filesystem::path& cache_dir, const RenderSettings& settings)
     -> ResultPtr<VulkanBackend> {
     GOGGLES_PROFILE_FUNCTION();
 
     auto backend = std::unique_ptr<VulkanBackend>(new VulkanBackend());
 
-    backend->initialize_paths(shader_dir, cache_dir);
+    backend->initialize_paths(cache_dir);
 
     auto context_result =
         backend_internal::VulkanContext::create(window, enable_validation, settings.gpu_selector);
@@ -121,13 +115,12 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     return make_result_ptr(std::move(backend));
 }
 
-auto VulkanBackend::create_headless(bool enable_validation, const std::filesystem::path& shader_dir,
-                                    const std::filesystem::path& cache_dir,
+auto VulkanBackend::create_headless(bool enable_validation, const std::filesystem::path& cache_dir,
                                     const RenderSettings& settings) -> ResultPtr<VulkanBackend> {
     GOGGLES_PROFILE_FUNCTION();
 
     auto backend = std::unique_ptr<VulkanBackend>(new VulkanBackend());
-    backend->initialize_paths(shader_dir, cache_dir);
+    backend->initialize_paths(cache_dir);
 
     auto context_result =
         backend_internal::VulkanContext::create_headless(enable_validation, settings.gpu_selector);
@@ -249,14 +242,15 @@ auto VulkanBackend::init_filter_chain() -> Result<void> {
 }
 
 void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path) {
-    m_filter_chain_controller.load_shader_preset(preset_path);
+    m_filter_chain_controller.load_shader_preset(preset_path, [this]() { wait_all_frames(); });
 }
 
 void VulkanBackend::set_prechain_resolution(uint32_t width, uint32_t height) {
     m_filter_chain_controller.set_prechain_resolution(
         backend_internal::FilterChainController::PrechainResolutionConfig{
             .requested_resolution = vk::Extent2D{width, height},
-        });
+        },
+        [this]() { wait_all_frames(); });
 }
 
 auto VulkanBackend::get_prechain_resolution() const -> vk::Extent2D {
@@ -336,17 +330,20 @@ auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image
 
     const auto integer_scale = resolve_record_integer_scale(
         m_scale_mode, m_integer_scale, imported_source.extent, m_render_output.target_extent());
-    GOGGLES_TRY(m_filter_chain_controller.record(ChainRecordInfo{
-        .command_buffer = cmd,
-        .source_image = imported_source.image,
-        .source_view = imported_source.view,
-        .source_extent = imported_source.extent,
-        .target_view = m_render_output.target_view(image_index),
-        .target_extent = m_render_output.target_extent(),
-        .frame_index = m_render_output.current_frame_slot(),
-        .scale_mode = to_chain_scale_mode(m_scale_mode),
-        .integer_scale = integer_scale,
-    }));
+    GOGGLES_TRY(
+        m_filter_chain_controller.record(backend_internal::FilterChainController::RecordParams{
+            .command_buffer = cmd,
+            .source_image = imported_source.image,
+            .source_view = imported_source.view,
+            .source_width = imported_source.extent.width,
+            .source_height = imported_source.extent.height,
+            .target_view = m_render_output.target_view(image_index),
+            .target_width = m_render_output.target_extent().width,
+            .target_height = m_render_output.target_extent().height,
+            .frame_index = m_render_output.current_frame_slot(),
+            .scale_mode = to_fc_scale_mode(m_scale_mode),
+            .integer_scale = integer_scale,
+        }));
 
     if (ui_callback) {
         ui_callback(cmd, m_render_output.target_view(image_index), m_render_output.target_extent());
@@ -436,7 +433,7 @@ auto VulkanBackend::render(const util::ExternalImageFrame* frame,
     }
     m_filter_chain_controller.advance_frame();
     m_filter_chain_controller.check_pending_chain_swap([this]() { wait_all_frames(); });
-    m_filter_chain_controller.cleanup_retired_runtimes();
+    m_filter_chain_controller.cleanup_retired_adapters();
 
     if (m_render_output.is_headless()) {
         auto cmd = GOGGLES_TRY(m_render_output.prepare_headless_frame(m_vulkan_context));
@@ -484,17 +481,20 @@ auto VulkanBackend::render(const util::ExternalImageFrame* frame,
             const auto integer_scale =
                 resolve_record_integer_scale(m_scale_mode, m_integer_scale, imported_source.extent,
                                              m_render_output.target_extent());
-            GOGGLES_TRY(m_filter_chain_controller.record(ChainRecordInfo{
-                .command_buffer = cmd,
-                .source_image = imported_source.image,
-                .source_view = imported_source.view,
-                .source_extent = imported_source.extent,
-                .target_view = m_render_output.target_view(),
-                .target_extent = m_render_output.target_extent(),
-                .frame_index = 0,
-                .scale_mode = to_chain_scale_mode(m_scale_mode),
-                .integer_scale = integer_scale,
-            }));
+            GOGGLES_TRY(m_filter_chain_controller.record(
+                backend_internal::FilterChainController::RecordParams{
+                    .command_buffer = cmd,
+                    .source_image = imported_source.image,
+                    .source_view = imported_source.view,
+                    .source_width = imported_source.extent.width,
+                    .source_height = imported_source.extent.height,
+                    .target_view = m_render_output.target_view(),
+                    .target_width = m_render_output.target_extent().width,
+                    .target_height = m_render_output.target_extent().height,
+                    .frame_index = 0,
+                    .scale_mode = to_fc_scale_mode(m_scale_mode),
+                    .integer_scale = integer_scale,
+                }));
         } else {
             vk::ImageMemoryBarrier barrier{};
             barrier.srcAccessMask = vk::AccessFlagBits::eNone;
@@ -590,21 +590,31 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
 }
 
 void VulkanBackend::set_filter_chain_policy(const FilterChainStagePolicy& policy) {
-    m_filter_chain_controller.set_stage_policy(to_chain_policy(policy));
+    m_filter_chain_controller.set_stage_policy(policy.prechain_enabled, policy.effect_stage_enabled,
+                                               [this]() { wait_all_frames(); });
 }
 
 auto VulkanBackend::make_filter_chain_build_config() const
-    -> backend_internal::FilterChainController::RuntimeBuildConfig {
-    return backend_internal::FilterChainController::RuntimeBuildConfig{
-        .vulkan_context = m_vulkan_context.boundary_context(m_render_output.command_pool),
-        .graphics_queue_family_index = m_vulkan_context.graphics_queue_family,
-        .target_format = m_render_output.swapchain_format,
-        .target_extent = m_render_output.target_extent(),
-        .num_sync_indices = backend_internal::RenderOutput::MAX_FRAMES_IN_FLIGHT,
-        .shader_dir = m_shader_dir,
-        .cache_dir = m_cache_dir,
-        .initial_prechain_resolution = m_filter_chain_controller.current_prechain_resolution(),
-        .diagnostics_config = m_diagnostics_config,
+    -> backend_internal::FilterChainController::AdapterBuildConfig {
+    return backend_internal::FilterChainController::AdapterBuildConfig{
+        .device_info =
+            backend_internal::FilterChainController::VulkanDeviceInfo{
+                .physical_device = m_vulkan_context.physical_device,
+                .device = m_vulkan_context.device,
+                .graphics_queue = m_vulkan_context.graphics_queue,
+                .graphics_queue_family_index = m_vulkan_context.graphics_queue_family,
+                .cache_dir = m_cache_dir.string(),
+            },
+        .chain_config =
+            backend_internal::FilterChainController::ChainConfig{
+                .target_format = static_cast<VkFormat>(m_render_output.swapchain_format),
+                .frames_in_flight = backend_internal::RenderOutput::MAX_FRAMES_IN_FLIGHT,
+                .initial_prechain_width =
+                    m_filter_chain_controller.current_prechain_resolution().width,
+                .initial_prechain_height =
+                    m_filter_chain_controller.current_prechain_resolution().height,
+            },
+        .diagnostics = m_diagnostics_config,
     };
 }
 

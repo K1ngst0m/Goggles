@@ -89,7 +89,15 @@ target_include_directories(fc_texture_obj PRIVATE
 target_include_directories(fc_texture_obj SYSTEM PRIVATE ${STB_IMAGE_INCLUDE_DIR})
 goggles_enable_pic_if_shared(fc_texture_obj)
 
-add_library(fc_chain_obj OBJECT
+# stb_image implementation in a dedicated TU, excluded from clang-tidy
+# to avoid false-positive clang-analyzer-unix.Malloc diagnostics inside the header.
+add_library(fc_stb_image_obj OBJECT
+    src/texture/stb_image_impl.cpp
+)
+target_include_directories(fc_stb_image_obj SYSTEM PRIVATE ${STB_IMAGE_INCLUDE_DIR})
+goggles_enable_pic_if_shared(fc_stb_image_obj)
+
+set(FC_CHAIN_SOURCES
     src/chain/chain_runtime.cpp
     src/chain/chain_builder.cpp
     src/chain/chain_resources.cpp
@@ -103,9 +111,8 @@ add_library(fc_chain_obj OBJECT
     src/chain/preset_parser.cpp
     src/chain/frame_history.cpp
     src/chain/vulkan_dispatch.cpp
-    src/chain/c_api.cpp
-    src/chain/cpp_wrapper.cpp
 )
+add_library(fc_chain_obj OBJECT ${FC_CHAIN_SOURCES})
 target_compile_definitions(fc_chain_obj PRIVATE
     GOGGLES_LOG_TAG="render.chain"
 )
@@ -120,12 +127,68 @@ target_link_libraries(fc_chain_obj PRIVATE
 )
 goggles_enable_pic_if_shared(fc_chain_obj)
 
+# ── Embedded asset generation ────────────────────────────────────────────────
+include(cmake/EmbedAssets.cmake)
+
+set(FC_EMBEDDED_ASSETS_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_assets_data.cpp")
+embed_assets(
+    OUTPUT_SOURCE "${FC_EMBEDDED_ASSETS_SOURCE}"
+    ASSET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+    ASSETS
+        "internal/blit.vert:shaders/internal/blit.vert.slang"
+        "internal/blit.frag:shaders/internal/blit.frag.slang"
+        "internal/downsample.frag:shaders/internal/downsample.frag.slang"
+)
+
+add_library(fc_runtime_obj OBJECT
+    src/runtime/instance.cpp
+    src/runtime/device.cpp
+    src/runtime/program.cpp
+    src/runtime/chain.cpp
+    src/runtime/source_resolver.cpp
+    "${FC_EMBEDDED_ASSETS_SOURCE}"
+)
+target_compile_definitions(fc_runtime_obj PRIVATE
+    GOGGLES_LOG_TAG="render.runtime"
+)
+target_include_directories(fc_runtime_obj PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(fc_runtime_obj PRIVATE
+    Vulkan::Vulkan
+    spdlog::spdlog
+    slang::slang
+)
+target_include_directories(fc_runtime_obj SYSTEM PRIVATE ${STB_IMAGE_INCLUDE_DIR})
+goggles_enable_pic_if_shared(fc_runtime_obj)
+
+add_library(fc_api_obj OBJECT
+    src/api/c_api.cpp
+    src/api/cpp_wrapper.cpp
+)
+target_include_directories(fc_api_obj PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(fc_api_obj PRIVATE
+    Vulkan::Vulkan
+    nonstd::expected-lite
+)
+if(FILTER_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "SHARED")
+    target_compile_definitions(fc_api_obj PRIVATE GOGGLES_FC_BUILD_SHARED)
+endif()
+goggles_enable_pic_if_shared(fc_api_obj)
+
 foreach(target_name IN ITEMS
         fc_support_obj
         fc_diagnostics_obj
         fc_shader_obj
         fc_texture_obj
-        fc_chain_obj)
+        fc_chain_obj
+        fc_runtime_obj
+        fc_api_obj)
     target_compile_definitions(${target_name} PRIVATE
         VULKAN_HPP_NO_EXCEPTIONS
         VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
@@ -140,7 +203,10 @@ add_library(goggles-filter-chain ${FILTER_CHAIN_LIBRARY_TYPE_NORMALIZED}
     $<TARGET_OBJECTS:fc_diagnostics_obj>
     $<TARGET_OBJECTS:fc_shader_obj>
     $<TARGET_OBJECTS:fc_texture_obj>
+    $<TARGET_OBJECTS:fc_stb_image_obj>
     $<TARGET_OBJECTS:fc_chain_obj>
+    $<TARGET_OBJECTS:fc_runtime_obj>
+    $<TARGET_OBJECTS:fc_api_obj>
 )
 
 target_include_directories(goggles-filter-chain
@@ -152,10 +218,12 @@ target_include_directories(goggles-filter-chain
 )
 
 target_compile_definitions(goggles-filter-chain PRIVATE
-    $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:GOGGLES_CHAIN_BUILD_SHARED>
+    $<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>:GOGGLES_FC_BUILD_SHARED>
 )
 if(FILTER_CHAIN_LIBRARY_TYPE_NORMALIZED STREQUAL "SHARED")
-    target_compile_definitions(goggles-filter-chain INTERFACE GOGGLES_CHAIN_USE_SHARED)
+    target_compile_definitions(goggles-filter-chain INTERFACE
+        GOGGLES_FC_USE_SHARED
+    )
 endif()
 target_compile_definitions(goggles-filter-chain PUBLIC
     VULKAN_HPP_NO_EXCEPTIONS
@@ -203,9 +271,8 @@ install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-install(DIRECTORY assets/
-    DESTINATION share/goggles-filter-chain/assets
-)
+# Built-in runtime assets are embedded in the library binary via EmbedAssets.cmake.
+# The assets/ directory is no longer installed as a public package artifact.
 
 install(EXPORT GogglesFilterChainTargets
     NAMESPACE GogglesFilterChain::

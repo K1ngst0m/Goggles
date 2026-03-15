@@ -2,6 +2,7 @@
 
 #include "diagnostics/compile_report.hpp"
 #include "diagnostics/source_provenance.hpp"
+#include "runtime/source_resolver.hpp"
 #include "shader/retroarch_preprocessor.hpp"
 #include "support/logging.hpp"
 #include "support/profiling.hpp"
@@ -569,6 +570,110 @@ auto build_filter_pass(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtim
                               .compile_report = std::move(*compile_report)};
 }
 
+auto build_filter_pass_resolved(
+    const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime, uint32_t num_sync_indices,
+    RetroArchPreprocessor& preprocessor, const ShaderPassConfig& pass_config, uint32_t pass_ordinal,
+    filter_chain::runtime::SourceResolver& resolver,
+    const goggles_fc_import_callbacks_t* import_callbacks, diagnostics::DiagnosticSession* session,
+    diagnostics::AuthoringVerdict* verdict, std::string* expanded_source_material,
+    std::string* compiled_contract_material) -> Result<BuiltPassArtifacts> {
+    // Resolve shader source through the resolver instead of filesystem access.
+    auto shader_bytes_result =
+        resolver.resolve_relative(pass_config.shader_path.parent_path(),
+                                  pass_config.shader_path.filename().string(), import_callbacks);
+    if (!shader_bytes_result) {
+        if (session != nullptr) {
+            session->emit(
+                {.severity = diagnostics::Severity::error,
+                 .original_severity = diagnostics::Severity::error,
+                 .category = diagnostics::Category::authoring,
+                 .localization = {.pass_ordinal = pass_ordinal, .stage = "resolve", .resource = {}},
+                 .frame_index = 0,
+                 .timestamp_ns = 0,
+                 .message = shader_bytes_result.error().message,
+                 .evidence = {},
+                 .session_identity = std::nullopt});
+        }
+        return make_error<BuiltPassArtifacts>(shader_bytes_result.error().code,
+                                              shader_bytes_result.error().message);
+    }
+
+    std::string shader_source(shader_bytes_result->begin(), shader_bytes_result->end());
+
+    std::unique_ptr<diagnostics::SourceProvenanceMap> provenance;
+    if (session != nullptr) {
+        provenance = std::make_unique<diagnostics::SourceProvenanceMap>();
+    }
+
+    auto preprocessed = preprocessor.preprocess_source(
+        shader_source, pass_config.shader_path.parent_path(), provenance.get());
+    if (!preprocessed) {
+        if (session != nullptr) {
+            session->emit({.severity = diagnostics::Severity::error,
+                           .original_severity = diagnostics::Severity::error,
+                           .category = diagnostics::Category::authoring,
+                           .localization = {.pass_ordinal = pass_ordinal,
+                                            .stage = "preprocess",
+                                            .resource = {}},
+                           .frame_index = 0,
+                           .timestamp_ns = 0,
+                           .message = preprocessed.error().message,
+                           .evidence = {},
+                           .session_identity = std::nullopt});
+        }
+        return make_error<BuiltPassArtifacts>(preprocessed.error().code,
+                                              preprocessed.error().message);
+    }
+
+    if (session != nullptr && provenance && provenance->size() > 0) {
+        emit_include_graph_event(*session, pass_ordinal, pass_config.shader_path, *provenance);
+        emit_pass_provenance(*session, pass_ordinal, pass_config.shader_path, *provenance);
+    }
+
+    expanded_source_material->append(pass_config.shader_path.string());
+    expanded_source_material->push_back('\n');
+    expanded_source_material->append(preprocessed->vertex_source);
+    expanded_source_material->push_back('\n');
+    expanded_source_material->append(preprocessed->fragment_source);
+    expanded_source_material->push_back('\n');
+
+    auto compile_report = std::make_unique<diagnostics::CompileReport>();
+
+    FilterPassConfig config{
+        .target_format = pass_config.framebuffer_format,
+        .num_sync_indices = num_sync_indices,
+        .vertex_source = preprocessed->vertex_source,
+        .fragment_source = preprocessed->fragment_source,
+        .shader_name = pass_config.shader_path.stem().string(),
+        .filter_mode = pass_config.filter_mode,
+        .mipmap = pass_config.mipmap,
+        .wrap_mode = pass_config.wrap_mode,
+        .parameters = preprocessed->parameters,
+    };
+    auto pass = GOGGLES_TRY(FilterPass::create(
+        vk_ctx, shader_runtime, config, session != nullptr ? compile_report.get() : nullptr));
+
+    if (session != nullptr) {
+        emit_compile_diagnostics(*session, pass_ordinal, *compile_report, *verdict);
+    }
+
+    compiled_contract_material->append(pass_config.shader_path.string());
+    compiled_contract_material->push_back('\n');
+    append_reflection_signature(compiled_contract_material, pass->reflection());
+    compiled_contract_material->push_back('\n');
+
+    if (session != nullptr) {
+        emit_reflection_event(*session, pass_ordinal, *pass);
+        auto fatal = evaluate_reflection_gate(*session, pass_ordinal, *pass, *verdict);
+        if (fatal.has_value()) {
+            return make_error<BuiltPassArtifacts>(ErrorCode::shader_compile_failed, *fatal);
+        }
+    }
+
+    return BuiltPassArtifacts{.pass = std::move(pass),
+                              .compile_report = std::move(*compile_report)};
+}
+
 } // namespace
 
 auto ChainBuilder::build(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
@@ -696,6 +801,140 @@ auto ChainBuilder::build(const VulkanContext& vk_ctx, ShaderRuntime& shader_runt
     };
 }
 
+auto ChainBuilder::build(const VulkanContext& vk_ctx, ShaderRuntime& shader_runtime,
+                         uint32_t num_sync_indices, TextureLoader& texture_loader,
+                         const filter_chain::runtime::ResolvedSource& resolved,
+                         filter_chain::runtime::SourceResolver& resolver,
+                         const goggles_fc_import_callbacks_t* import_callbacks,
+                         diagnostics::DiagnosticSession* session) -> Result<CompiledChain> {
+    GOGGLES_PROFILE_FUNCTION();
+
+    PresetParser parser;
+    auto preset_result = parser.load(resolved, resolver, import_callbacks);
+    if (!preset_result) {
+        if (session != nullptr) {
+            session->emit(
+                {.severity = diagnostics::Severity::error,
+                 .original_severity = diagnostics::Severity::error,
+                 .category = diagnostics::Category::authoring,
+                 .localization = {.pass_ordinal = diagnostics::LocalizationKey::CHAIN_LEVEL,
+                                  .stage = "preset_parse",
+                                  .resource = {}},
+                 .frame_index = 0,
+                 .timestamp_ns = 0,
+                 .message = preset_result.error().message,
+                 .evidence = {},
+                 .session_identity = std::nullopt});
+        }
+        return make_error<CompiledChain>(preset_result.error().code, preset_result.error().message);
+    }
+
+    if (session != nullptr) {
+        update_identity_field(*session, [&](diagnostics::SessionIdentity* identity) {
+            identity->preset_hash = fnv1a_hash(serialize_preset(*preset_result));
+        });
+        // Use provenance source_name for the diagnostic event rather than a filesystem path
+        std::filesystem::path source_label(
+            resolved.provenance.source_name.empty() ? "<memory>" : resolved.provenance.source_name);
+        emit_preset_parse_event(*session, source_label, *preset_result);
+        emit_chain_manifest(*session, *preset_result);
+    }
+
+    std::vector<std::unique_ptr<FilterPass>> new_passes;
+    std::vector<diagnostics::CompileReport> compile_reports;
+    std::unordered_map<std::string, size_t> new_alias_map;
+    RetroArchPreprocessor preprocessor;
+
+    diagnostics::AuthoringVerdict verdict;
+    verdict.result = diagnostics::VerdictResult::pass;
+    std::string expanded_source_material;
+    std::string compiled_contract_material;
+
+    for (size_t i = 0; i < preset_result->passes.size(); ++i) {
+        const auto& pass_config = preset_result->passes[i];
+        auto pass_ordinal = static_cast<uint32_t>(i);
+
+        auto artifacts = GOGGLES_TRY(build_filter_pass_resolved(
+            vk_ctx, shader_runtime, num_sync_indices, preprocessor, pass_config, pass_ordinal,
+            resolver, import_callbacks, session, &verdict, &expanded_source_material,
+            &compiled_contract_material));
+        compile_reports.push_back(std::move(artifacts.compile_report));
+
+        for (const auto& override : preset_result->parameters) {
+            artifacts.pass->set_parameter_override(override.name, override.value);
+        }
+        auto ubo_result = artifacts.pass->update_ubo_parameters();
+        if (!ubo_result) {
+            return make_error<CompiledChain>(ubo_result.error().code, ubo_result.error().message);
+        }
+
+        new_passes.push_back(std::move(artifacts.pass));
+
+        if (pass_config.alias.has_value()) {
+            new_alias_map[*pass_config.alias] = i;
+        }
+    }
+
+    uint32_t required_history_depth = 0;
+    std::unordered_set<size_t> feedback_pass_indices;
+    for (const auto& pass : new_passes) {
+        for (const auto& tex : pass->texture_bindings()) {
+            if (auto idx = parse_original_history_index(tex.name)) {
+                required_history_depth = std::max(required_history_depth, *idx + 1);
+            }
+            if (auto alias = parse_feedback_alias(tex.name)) {
+                if (auto it = new_alias_map.find(*alias); it != new_alias_map.end()) {
+                    feedback_pass_indices.insert(it->second);
+                    GOGGLES_LOG_DEBUG("Detected feedback texture '{}' -> pass {} (alias '{}')",
+                                      tex.name, it->second, *alias);
+                }
+            }
+            if (auto fb_idx = parse_pass_feedback_index(tex.name)) {
+                if (*fb_idx < new_passes.size()) {
+                    feedback_pass_indices.insert(*fb_idx);
+                    GOGGLES_LOG_DEBUG("Detected PassFeedback{} texture", *fb_idx);
+                }
+            }
+        }
+    }
+    if (required_history_depth > 0) {
+        required_history_depth = std::min(required_history_depth, FrameHistory::MAX_HISTORY);
+        GOGGLES_LOG_DEBUG("Detected OriginalHistory usage, depth={}", required_history_depth);
+    }
+
+    auto texture_registry = GOGGLES_TRY(
+        load_preset_textures(vk_ctx, texture_loader, *preset_result, resolver, import_callbacks));
+
+    if (session != nullptr) {
+        update_identity_field(*session, [&](diagnostics::SessionIdentity* identity) {
+            identity->expanded_source_hash = fnv1a_hash(expanded_source_material);
+            identity->compiled_contract_hash = fnv1a_hash(compiled_contract_material);
+        });
+        emit_authoring_verdict(*session, verdict);
+    }
+
+    std::string source_display = resolved.provenance.source_name.empty()
+                                     ? std::string("<memory>")
+                                     : resolved.provenance.source_name;
+    GOGGLES_LOG_INFO(
+        "FilterChain loaded preset: {} ({} passes, {} textures, {} aliases, {} params)",
+        source_display, new_passes.size(), texture_registry.size(), new_alias_map.size(),
+        preset_result->parameters.size());
+    for (const auto& [alias, pass_idx] : new_alias_map) {
+        GOGGLES_LOG_DEBUG("  Alias '{}' -> pass {}", alias, pass_idx);
+    }
+
+    return CompiledChain{
+        .preset = std::move(*preset_result),
+        .passes = std::move(new_passes),
+        .compile_reports = std::move(compile_reports),
+        .alias_to_pass_index = std::move(new_alias_map),
+        .required_history_depth = required_history_depth,
+        .texture_registry = std::move(texture_registry),
+        .feedback_pass_indices = std::move(feedback_pass_indices),
+    };
+}
+
 auto ChainBuilder::load_preset_textures(const VulkanContext& vk_ctx, TextureLoader& texture_loader,
                                         const PresetConfig& preset)
     -> Result<std::unordered_map<std::string, LoadedTexture>> {
@@ -733,6 +972,56 @@ auto ChainBuilder::load_preset_textures(const VulkanContext& vk_ctx, TextureLoad
 
         GOGGLES_LOG_DEBUG("Loaded texture '{}' from {}", tex_config.name,
                           tex_config.path.filename().string());
+    }
+    return registry;
+}
+
+auto ChainBuilder::load_preset_textures(const VulkanContext& vk_ctx, TextureLoader& texture_loader,
+                                        const PresetConfig& preset,
+                                        filter_chain::runtime::SourceResolver& resolver,
+                                        const goggles_fc_import_callbacks_t* import_callbacks)
+    -> Result<std::unordered_map<std::string, LoadedTexture>> {
+    GOGGLES_PROFILE_SCOPE("LoadPresetTextures");
+
+    std::unordered_map<std::string, LoadedTexture> registry;
+
+    for (const auto& tex_config : preset.textures) {
+        TextureLoadConfig load_cfg{.generate_mipmaps = tex_config.mipmap,
+                                   .linear = tex_config.linear};
+
+        // Resolve texture data through the resolver instead of filesystem access.
+        auto tex_bytes_result = resolver.resolve_relative(
+            tex_config.path.parent_path(), tex_config.path.filename().string(), import_callbacks);
+        if (!tex_bytes_result) {
+            return nonstd::make_unexpected(tex_bytes_result.error());
+        }
+
+        auto tex_data_result = texture_loader.load_from_bytes(
+            tex_bytes_result->data(), tex_bytes_result->size(), tex_config.name, load_cfg);
+        if (!tex_data_result) {
+            return nonstd::make_unexpected(tex_data_result.error());
+        }
+
+        auto sampler_result = create_texture_sampler(vk_ctx, tex_config);
+        if (!sampler_result) {
+            auto& loaded = tex_data_result.value();
+            if (loaded.view) {
+                vk_ctx.device.destroyImageView(loaded.view);
+            }
+            if (loaded.memory) {
+                vk_ctx.device.freeMemory(loaded.memory);
+            }
+            if (loaded.image) {
+                vk_ctx.device.destroyImage(loaded.image);
+            }
+            return nonstd::make_unexpected(sampler_result.error());
+        }
+        auto sampler = sampler_result.value();
+
+        auto texture_data = tex_data_result.value();
+        registry[tex_config.name] = LoadedTexture{.data = texture_data, .sampler = sampler};
+
+        GOGGLES_LOG_DEBUG("Loaded texture '{}' via resolver", tex_config.name);
     }
     return registry;
 }

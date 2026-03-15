@@ -116,6 +116,67 @@ TEST_CASE("Feedback layout continuity safeguards", "[filter_chain][feedback]") {
             std::string::npos);
 }
 
+TEST_CASE("FilterChain image-backed resource teardown destroys images before memory",
+          "[filter_chain][lifetime]") {
+    const auto framebuffer_path = contract_root() / "src/chain/framebuffer.cpp";
+    const auto resources_path = contract_root() / "src/chain/chain_resources.cpp";
+
+    auto framebuffer_text = read_text_file(framebuffer_path);
+    auto resources_text = read_text_file(resources_path);
+    REQUIRE(framebuffer_text.has_value());
+    REQUIRE(resources_text.has_value());
+
+    const auto resize_pos = framebuffer_text->find("auto Framebuffer::resize(");
+    const auto shutdown_pos = framebuffer_text->find("void Framebuffer::shutdown()");
+    REQUIRE(resize_pos != std::string::npos);
+    REQUIRE(shutdown_pos != std::string::npos);
+
+    // Bound resize search to the resize function body (before shutdown).
+    const auto resize_destroy_pos =
+        framebuffer_text->find("m_device.destroyImage(m_image);", resize_pos);
+    const auto resize_free_pos =
+        framebuffer_text->find("m_device.freeMemory(m_memory);", resize_pos);
+    REQUIRE(resize_destroy_pos != std::string::npos);
+    REQUIRE(resize_destroy_pos < shutdown_pos);
+    REQUIRE(resize_free_pos != std::string::npos);
+    REQUIRE(resize_free_pos < shutdown_pos);
+    REQUIRE(resize_destroy_pos < resize_free_pos);
+
+    // Bound shutdown search to the shutdown function body (before next function).
+    const auto after_shutdown_pos =
+        framebuffer_text->find("auto Framebuffer::create_image()", shutdown_pos);
+    REQUIRE(after_shutdown_pos != std::string::npos);
+
+    const auto shutdown_destroy_pos =
+        framebuffer_text->find("m_device.destroyImage(m_image);", shutdown_pos);
+    const auto shutdown_free_pos =
+        framebuffer_text->find("m_device.freeMemory(m_memory);", shutdown_pos);
+    REQUIRE(shutdown_destroy_pos != std::string::npos);
+    REQUIRE(shutdown_destroy_pos < after_shutdown_pos);
+    REQUIRE(shutdown_free_pos != std::string::npos);
+    REQUIRE(shutdown_free_pos < after_shutdown_pos);
+    REQUIRE(shutdown_destroy_pos < shutdown_free_pos);
+
+    const auto cleanup_pos =
+        resources_text->find("void ChainResources::cleanup_texture_registry()");
+    REQUIRE(cleanup_pos != std::string::npos);
+
+    // Bound cleanup search to the cleanup function body (before next function).
+    const auto after_cleanup_pos =
+        resources_text->find("void ChainResources::set_prechain_resolution(", cleanup_pos);
+    REQUIRE(after_cleanup_pos != std::string::npos);
+
+    const auto cleanup_destroy_pos =
+        resources_text->find("m_vk_ctx.device.destroyImage(tex.data.image);", cleanup_pos);
+    const auto cleanup_free_pos =
+        resources_text->find("m_vk_ctx.device.freeMemory(tex.data.memory);", cleanup_pos);
+    REQUIRE(cleanup_destroy_pos != std::string::npos);
+    REQUIRE(cleanup_destroy_pos < after_cleanup_pos);
+    REQUIRE(cleanup_free_pos != std::string::npos);
+    REQUIRE(cleanup_free_pos < after_cleanup_pos);
+    REQUIRE(cleanup_destroy_pos < cleanup_free_pos);
+}
+
 TEST_CASE("OriginalHistory sampler name parsing", "[filter_chain][history]") {
     SECTION("Valid OriginalHistory names") {
         auto idx0 = parse_original_history_index("OriginalHistory0");

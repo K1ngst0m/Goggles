@@ -5,159 +5,365 @@
 #include <cstddef>
 #include <cstdint>
 #else
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #endif
 
 #include <vulkan/vulkan.h>
 
+/* ── Visibility / calling-convention ─────────────────────────────────────── */
+
 #if defined(_WIN32)
-#if defined(GOGGLES_CHAIN_BUILD_SHARED)
-#define GOGGLES_CHAIN_API __declspec(dllexport)
-#elif defined(GOGGLES_CHAIN_USE_SHARED)
-#define GOGGLES_CHAIN_API __declspec(dllimport)
+#if defined(GOGGLES_FC_BUILD_SHARED)
+#define GOGGLES_FC_API __declspec(dllexport)
+#elif defined(GOGGLES_FC_USE_SHARED)
+#define GOGGLES_FC_API __declspec(dllimport)
 #endif
-#elif defined(__GNUC__) && defined(GOGGLES_CHAIN_BUILD_SHARED)
-#define GOGGLES_CHAIN_API __attribute__((visibility("default")))
-#endif
-
-#ifndef GOGGLES_CHAIN_API
-#define GOGGLES_CHAIN_API
+#elif defined(__GNUC__) && defined(GOGGLES_FC_BUILD_SHARED)
+#define GOGGLES_FC_API __attribute__((visibility("default")))
 #endif
 
-#ifndef GOGGLES_CHAIN_CALL
+#ifndef GOGGLES_FC_API
+#define GOGGLES_FC_API
+#endif
+
+#ifndef GOGGLES_FC_CALL
 #if defined(_WIN32)
-#define GOGGLES_CHAIN_CALL __cdecl
+#define GOGGLES_FC_CALL __cdecl
 #else
-#define GOGGLES_CHAIN_CALL
+#define GOGGLES_FC_CALL
 #endif
 #endif
 
-#if defined(_MSC_VER)
-#define GOGGLES_CHAIN_DEPRECATED(msg) __declspec(deprecated(msg))
-#elif defined(__clang__) || defined(__GNUC__)
-#define GOGGLES_CHAIN_DEPRECATED(msg) __attribute__((deprecated(msg)))
-#else
-#define GOGGLES_CHAIN_DEPRECATED(msg)
-#endif
+/* ── Version macros ──────────────────────────────────────────────────────── */
 
-#define GOGGLES_CHAIN_MAKE_VERSION(major, minor, patch)                                            \
+#define GOGGLES_FC_MAKE_VERSION(major, minor, patch)                                               \
     ((((uint32_t)(major) & 0x3ffu) << 22) | (((uint32_t)(minor) & 0x3ffu) << 12) |                 \
      ((uint32_t)(patch) & 0xfffu))
 
-#define GOGGLES_CHAIN_API_VERSION GOGGLES_CHAIN_MAKE_VERSION(1u, 0u, 0u)
-#define GOGGLES_CHAIN_ABI_VERSION 1u
-#define GOGGLES_CHAIN_STRUCT_SIZE(type) ((uint32_t)sizeof(type))
+#define GOGGLES_FC_API_VERSION GOGGLES_FC_MAKE_VERSION(1u, 0u, 0u)
+#define GOGGLES_FC_ABI_VERSION 1u
+#define GOGGLES_FC_STRUCT_SIZE(type) ((uint32_t)sizeof(type))
+
+/* ── Status codes ────────────────────────────────────────────────────────── */
+
+#define GOGGLES_FC_STATUS_OK ((uint32_t)0u)
+#define GOGGLES_FC_STATUS_INVALID_ARGUMENT ((uint32_t)1u)
+#define GOGGLES_FC_STATUS_NOT_INITIALIZED ((uint32_t)2u)
+#define GOGGLES_FC_STATUS_NOT_FOUND ((uint32_t)3u)
+#define GOGGLES_FC_STATUS_PRESET_ERROR ((uint32_t)4u)
+#define GOGGLES_FC_STATUS_IO_ERROR ((uint32_t)5u)
+#define GOGGLES_FC_STATUS_VULKAN_ERROR ((uint32_t)6u)
+#define GOGGLES_FC_STATUS_OUT_OF_MEMORY ((uint32_t)7u)
+#define GOGGLES_FC_STATUS_NOT_SUPPORTED ((uint32_t)8u)
+#define GOGGLES_FC_STATUS_RUNTIME_ERROR ((uint32_t)9u)
+#define GOGGLES_FC_STATUS_INVALID_DEPENDENCY ((uint32_t)10u)
+#define GOGGLES_FC_STATUS_VALIDATION_ERROR ((uint32_t)11u)
+
+/* ── Capability flags ────────────────────────────────────────────────────── */
+
+#define GOGGLES_FC_CAPABILITY_NONE ((uint32_t)0u)
+#define GOGGLES_FC_CAPABILITY_VULKAN ((uint32_t)(1u << 0))
+#define GOGGLES_FC_CAPABILITY_FILE_SOURCE ((uint32_t)(1u << 1))
+#define GOGGLES_FC_CAPABILITY_MEMORY_SOURCE ((uint32_t)(1u << 2))
+#define GOGGLES_FC_CAPABILITY_LOG_CALLBACK ((uint32_t)(1u << 3))
+
+/* ── Log levels ──────────────────────────────────────────────────────────── */
+
+#define GOGGLES_FC_LOG_LEVEL_TRACE ((uint32_t)0u)
+#define GOGGLES_FC_LOG_LEVEL_DEBUG ((uint32_t)1u)
+#define GOGGLES_FC_LOG_LEVEL_INFO ((uint32_t)2u)
+#define GOGGLES_FC_LOG_LEVEL_WARN ((uint32_t)3u)
+#define GOGGLES_FC_LOG_LEVEL_ERROR ((uint32_t)4u)
+#define GOGGLES_FC_LOG_LEVEL_CRITICAL ((uint32_t)5u)
+
+/* ── Preset source kinds ─────────────────────────────────────────────────── */
+
+#define GOGGLES_FC_PRESET_SOURCE_FILE ((uint32_t)0u)
+#define GOGGLES_FC_PRESET_SOURCE_MEMORY ((uint32_t)1u)
+
+/* ── Scale modes ─────────────────────────────────────────────────────────── */
+
+#define GOGGLES_FC_SCALE_MODE_STRETCH ((uint32_t)0u)
+#define GOGGLES_FC_SCALE_MODE_FIT ((uint32_t)1u)
+#define GOGGLES_FC_SCALE_MODE_INTEGER ((uint32_t)2u)
+#define GOGGLES_FC_SCALE_MODE_FILL ((uint32_t)3u)
+#define GOGGLES_FC_SCALE_MODE_DYNAMIC ((uint32_t)4u)
+
+/* ── Stage identifiers and masks ─────────────────────────────────────────── */
+
+#define GOGGLES_FC_STAGE_PRECHAIN ((uint32_t)0u)
+#define GOGGLES_FC_STAGE_EFFECT ((uint32_t)1u)
+#define GOGGLES_FC_STAGE_POSTCHAIN ((uint32_t)2u)
+
+#define GOGGLES_FC_STAGE_MASK_PRECHAIN ((uint32_t)(1u << 0))
+#define GOGGLES_FC_STAGE_MASK_EFFECT ((uint32_t)(1u << 1))
+#define GOGGLES_FC_STAGE_MASK_POSTCHAIN ((uint32_t)(1u << 2))
+#define GOGGLES_FC_STAGE_MASK_ALL                                                                  \
+    ((uint32_t)(GOGGLES_FC_STAGE_MASK_PRECHAIN | GOGGLES_FC_STAGE_MASK_EFFECT |                    \
+                GOGGLES_FC_STAGE_MASK_POSTCHAIN))
+
+/* ── Provenance kinds ────────────────────────────────────────────────────── */
+
+#define GOGGLES_FC_PROVENANCE_FILE ((uint32_t)0u)
+#define GOGGLES_FC_PROVENANCE_MEMORY ((uint32_t)1u)
+
+/* ── Diagnostic capture modes ────────────────────────────────────────────── */
+
+#define GOGGLES_FC_DIAGNOSTIC_CAPTURE_MINIMAL ((uint32_t)0u)
+#define GOGGLES_FC_DIAGNOSTIC_CAPTURE_STANDARD ((uint32_t)1u)
+#define GOGGLES_FC_DIAGNOSTIC_CAPTURE_INVESTIGATE ((uint32_t)2u)
+#define GOGGLES_FC_DIAGNOSTIC_CAPTURE_FORENSIC ((uint32_t)3u)
+
+/* ── Diagnostic activation tiers ─────────────────────────────────────────── */
+
+#define GOGGLES_FC_DIAGNOSTIC_TIER_0 ((uint32_t)0u)
+#define GOGGLES_FC_DIAGNOSTIC_TIER_1 ((uint32_t)1u)
+#define GOGGLES_FC_DIAGNOSTIC_TIER_2 ((uint32_t)2u)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/* ── Portable null / void-arg helpers ────────────────────────────────────── */
+
 #ifdef __cplusplus
-#define GOGGLES_CHAIN_NOARGS
-#define GOGGLES_CHAIN_NULLPTR nullptr
+#define GOGGLES_FC_NOARGS
+#define GOGGLES_FC_NULLPTR nullptr
 #else
-#define GOGGLES_CHAIN_NOARGS void
-#define GOGGLES_CHAIN_NULLPTR NULL
+#define GOGGLES_FC_NOARGS void
+#define GOGGLES_FC_NULLPTR NULL
 #endif
 
-/// @brief Opaque runtime handle created by `goggles_chain_create_vk*`.
-struct goggles_chain;
-/// @brief Opaque control snapshot handle returned by control-list APIs.
-struct goggles_chain_control_snapshot;
+/* ── Scalar typedefs ─────────────────────────────────────────────────────── */
 
-/// @brief Define a width/height extent in pixels.
-struct GogglesChainExtent2D {
+#ifdef __cplusplus
+using goggles_fc_status_t = uint32_t;
+using goggles_fc_log_level_t = uint32_t;
+using goggles_fc_capability_flags_t = uint32_t;
+using goggles_fc_preset_source_kind_t = uint32_t;
+#else
+typedef uint32_t goggles_fc_status_t;
+typedef uint32_t goggles_fc_log_level_t;
+typedef uint32_t goggles_fc_capability_flags_t;
+typedef uint32_t goggles_fc_preset_source_kind_t;
+#endif
+
+/* ── Opaque handle forward declarations ──────────────────────────────────── */
+
+struct goggles_fc_instance;
+struct goggles_fc_device;
+struct goggles_fc_program;
+struct goggles_fc_chain;
+
+#ifdef __cplusplus
+using goggles_fc_instance_t = goggles_fc_instance;
+using goggles_fc_device_t = goggles_fc_device;
+using goggles_fc_program_t = goggles_fc_program;
+using goggles_fc_chain_t = goggles_fc_chain;
+#else
+typedef struct goggles_fc_instance goggles_fc_instance_t;
+typedef struct goggles_fc_device goggles_fc_device_t;
+typedef struct goggles_fc_program goggles_fc_program_t;
+typedef struct goggles_fc_chain goggles_fc_chain_t;
+#endif
+
+/* ── POD structs: UTF-8 view ─────────────────────────────────────────────── */
+
+struct GogglesFcUtf8View {
+    const char* data;
+    size_t size;
+};
+
+struct GogglesFcExtent2D {
     uint32_t width;
     uint32_t height;
 };
 
-/// @brief Provide Vulkan context handles required for runtime creation.
-/// @note These remain host-owned handles. Keep them valid until `goggles_chain_destroy`
-/// completes.
-struct GogglesChainVkContext {
-    VkDevice device;
+#ifdef __cplusplus
+using goggles_fc_utf8_view_t = GogglesFcUtf8View;
+using goggles_fc_extent_2d_t = GogglesFcExtent2D;
+#else
+typedef struct GogglesFcUtf8View goggles_fc_utf8_view_t;
+typedef struct GogglesFcExtent2D goggles_fc_extent_2d_t;
+#endif
+
+/* ── POD structs: logging callback ───────────────────────────────────────── */
+
+struct GogglesFcLogMessage {
+    uint32_t struct_size;
+    goggles_fc_log_level_t level;
+    goggles_fc_utf8_view_t domain;
+    goggles_fc_utf8_view_t message;
+};
+
+#ifdef __cplusplus
+using goggles_fc_log_message_t = GogglesFcLogMessage;
+#else
+typedef struct GogglesFcLogMessage goggles_fc_log_message_t;
+#endif
+
+#ifdef __cplusplus
+using goggles_fc_log_callback_t = void(GOGGLES_FC_CALL*)(const goggles_fc_log_message_t* message,
+                                                         void* user_data);
+#else
+typedef void(GOGGLES_FC_CALL* goggles_fc_log_callback_t)(const goggles_fc_log_message_t* message,
+                                                         void* user_data);
+#endif
+
+/* ── POD structs: instance creation ──────────────────────────────────────── */
+
+struct GogglesFcInstanceCreateInfo {
+    uint32_t struct_size;
+    goggles_fc_log_callback_t log_callback;
+    void* log_user_data;
+};
+
+#ifdef __cplusplus
+using goggles_fc_instance_create_info_t = GogglesFcInstanceCreateInfo;
+#else
+typedef struct GogglesFcInstanceCreateInfo goggles_fc_instance_create_info_t;
+#endif
+
+/* ── POD structs: Vulkan device creation ─────────────────────────────────── */
+
+struct GogglesFcVkDeviceCreateInfo {
+    uint32_t struct_size;
     VkPhysicalDevice physical_device;
+    VkDevice device;
     VkQueue graphics_queue;
     uint32_t graphics_queue_family_index;
+    goggles_fc_utf8_view_t cache_dir;
 };
 
-/// @brief Describe create parameters using NUL-terminated UTF-8 paths.
-/// @note Set `struct_size` with
-/// `GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_vk_create_info_t)`.
-struct GogglesChainVkCreateInfo {
+#ifdef __cplusplus
+using goggles_fc_vk_device_create_info_t = GogglesFcVkDeviceCreateInfo;
+#else
+typedef struct GogglesFcVkDeviceCreateInfo goggles_fc_vk_device_create_info_t;
+#endif
+
+/* ── POD structs: import callbacks for memory-backed presets ─────────────── */
+
+struct GogglesFcImportCallbacks;
+
+#ifdef __cplusplus
+using goggles_fc_import_result_t = goggles_fc_status_t;
+using goggles_fc_import_read_fn_t = goggles_fc_import_result_t(GOGGLES_FC_CALL*)(
+    goggles_fc_utf8_view_t relative_path, void** out_bytes, size_t* out_byte_count,
+    void* user_data);
+using goggles_fc_import_free_fn_t = void(GOGGLES_FC_CALL*)(void* bytes, size_t byte_count,
+                                                           void* user_data);
+#else
+typedef goggles_fc_status_t goggles_fc_import_result_t;
+typedef goggles_fc_import_result_t(GOGGLES_FC_CALL* goggles_fc_import_read_fn_t)(
+    goggles_fc_utf8_view_t relative_path, void** out_bytes, size_t* out_byte_count,
+    void* user_data);
+typedef void(GOGGLES_FC_CALL* goggles_fc_import_free_fn_t)(void* bytes, size_t byte_count,
+                                                           void* user_data);
+#endif
+
+struct GogglesFcImportCallbacks {
+    uint32_t struct_size;
+    goggles_fc_import_read_fn_t read_fn;
+    goggles_fc_import_free_fn_t free_fn;
+    void* user_data;
+};
+
+#ifdef __cplusplus
+using goggles_fc_import_callbacks_t = GogglesFcImportCallbacks;
+#else
+typedef struct GogglesFcImportCallbacks goggles_fc_import_callbacks_t;
+#endif
+
+/* ── POD structs: preset source descriptor ───────────────────────────────── */
+
+/**
+ * @brief Preset source descriptor for loading filter presets.
+ *
+ * When @c kind is @c GOGGLES_FC_PRESET_SOURCE_FILE:
+ *   - @c path.data non-null with @c path.size > 0: loads the preset from the
+ *     filesystem path given by @c path.
+ *   - @c path.data non-null with @c path.size == 0: passthrough mode. No preset
+ *     file is loaded; the runtime creates a built-in single-pass blit pipeline
+ *     that copies the source image to the target without applying any filters.
+ *   - @c path.data null: rejected with @c GOGGLES_FC_STATUS_INVALID_ARGUMENT.
+ */
+struct GogglesFcPresetSource {
+    uint32_t struct_size;
+    goggles_fc_preset_source_kind_t kind;
+    goggles_fc_utf8_view_t source_name;
+    const void* bytes;
+    size_t byte_count;
+    goggles_fc_utf8_view_t path;
+    goggles_fc_utf8_view_t base_path;
+    const goggles_fc_import_callbacks_t* import_callbacks;
+};
+
+#ifdef __cplusplus
+using goggles_fc_preset_source_t = GogglesFcPresetSource;
+#else
+typedef struct GogglesFcPresetSource goggles_fc_preset_source_t;
+#endif
+
+/* ── POD structs: chain creation ─────────────────────────────────────────── */
+
+struct GogglesFcChainCreateInfo {
     uint32_t struct_size;
     VkFormat target_format;
-    uint32_t num_sync_indices;
-    const char* shader_dir_utf8;
-    const char* cache_dir_utf8;
-    struct GogglesChainExtent2D initial_prechain_resolution;
+    uint32_t frames_in_flight;
+    uint32_t initial_stage_mask;
+    goggles_fc_extent_2d_t initial_prechain_resolution;
 };
 
-/// @brief Describe create parameters using explicit UTF-8 byte spans.
-/// @note Set `struct_size` with
-/// `GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_vk_create_info_ex_t)`.
-struct GogglesChainVkCreateInfoEx {
+#ifdef __cplusplus
+using goggles_fc_chain_create_info_t = GogglesFcChainCreateInfo;
+#else
+typedef struct GogglesFcChainCreateInfo goggles_fc_chain_create_info_t;
+#endif
+
+/* ── POD structs: chain target info (retarget) ───────────────────────────── */
+
+struct GogglesFcChainTargetInfo {
     uint32_t struct_size;
     VkFormat target_format;
-    uint32_t num_sync_indices;
-    const char* shader_dir_utf8;
-    size_t shader_dir_len;
-    const char* cache_dir_utf8;
-    size_t cache_dir_len;
-    struct GogglesChainExtent2D initial_prechain_resolution;
 };
 
-/// @brief Describe one frame record call.
-/// @note Command buffer, source image/view, and target view remain host-owned record-time inputs.
-/// @note Set `struct_size` with
-/// `GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_vk_record_info_t)`.
-struct GogglesChainVkRecordInfo {
+#ifdef __cplusplus
+using goggles_fc_chain_target_info_t = GogglesFcChainTargetInfo;
+#else
+typedef struct GogglesFcChainTargetInfo goggles_fc_chain_target_info_t;
+#endif
+
+/* ── POD structs: Vulkan record info ─────────────────────────────────────── */
+
+struct GogglesFcRecordInfoVk {
     uint32_t struct_size;
     VkCommandBuffer command_buffer;
     VkImage source_image;
     VkImageView source_view;
-    struct GogglesChainExtent2D source_extent;
+    goggles_fc_extent_2d_t source_extent;
     VkImageView target_view;
-    struct GogglesChainExtent2D target_extent;
+    goggles_fc_extent_2d_t target_extent;
     uint32_t frame_index;
     uint32_t scale_mode;
     uint32_t integer_scale;
 };
 
-/// @brief Configure which pipeline stages are enabled at record time.
-/// @note Set `struct_size` with
-/// `GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_stage_policy_t)`.
-struct GogglesChainStagePolicy {
-    uint32_t struct_size;
-    uint32_t enabled_stage_mask;
-};
+#ifdef __cplusplus
+using goggles_fc_record_info_vk_t = GogglesFcRecordInfoVk;
+#else
+typedef struct GogglesFcRecordInfoVk goggles_fc_record_info_vk_t;
+#endif
 
-/// @brief Report optional API capabilities and limits.
-/// @note Set `struct_size` with
-/// `GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_capabilities_t)`.
-struct GogglesChainCapabilities {
-    uint32_t struct_size;
-    uint32_t capability_flags;
-    uint32_t max_sync_indices;
-};
+/* ── POD structs: control metadata ───────────────────────────────────────── */
 
-/// @brief Report structured details about the most recent runtime failure.
-/// @note Set `struct_size` with
-/// `GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_error_last_info_t)`.
-struct GogglesChainErrorLastInfo {
+struct GogglesFcControlInfo {
     uint32_t struct_size;
-    uint32_t status;
-    int32_t vk_result;
-    uint32_t subsystem_code;
-};
-
-/// @brief Describe one mutable shader control from a control snapshot.
-struct GogglesChainControlDesc {
-    uint64_t control_id;
+    uint32_t index;
     uint32_t stage;
-    const char* name_utf8;
-    const char* description_utf8;
+    goggles_fc_utf8_view_t name;
+    goggles_fc_utf8_view_t description;
     float current_value;
     float default_value;
     float min_value;
@@ -165,160 +371,168 @@ struct GogglesChainControlDesc {
     float step;
 };
 
-struct GogglesChainDiagnosticsCreateInfo;
-struct GogglesChainDiagnosticsSummary;
-
 #ifdef __cplusplus
-using goggles_chain_t = goggles_chain;
-using goggles_chain_control_snapshot_t = goggles_chain_control_snapshot;
-using goggles_chain_status_t = uint32_t;
-using goggles_chain_stage_t = uint32_t;
-using goggles_chain_stage_mask_t = uint32_t;
-using goggles_chain_scale_mode_t = uint32_t;
-using goggles_chain_capability_flags_t = uint32_t;
-using goggles_chain_control_id_t = uint64_t;
-using goggles_chain_extent2d_t = GogglesChainExtent2D;
-using goggles_chain_vk_context_t = GogglesChainVkContext;
-using goggles_chain_vk_create_info_t = GogglesChainVkCreateInfo;
-using goggles_chain_vk_create_info_ex_t = GogglesChainVkCreateInfoEx;
-using goggles_chain_vk_record_info_t = GogglesChainVkRecordInfo;
-using goggles_chain_stage_policy_t = GogglesChainStagePolicy;
-using goggles_chain_capabilities_t = GogglesChainCapabilities;
-using goggles_chain_error_last_info_t = GogglesChainErrorLastInfo;
-using goggles_chain_control_desc_t = GogglesChainControlDesc;
-using goggles_chain_diagnostics_create_info_t = GogglesChainDiagnosticsCreateInfo;
-using goggles_chain_diagnostics_summary_t = GogglesChainDiagnosticsSummary;
-using goggles_chain_diagnostic_event_cb = void(GOGGLES_CHAIN_CALL*)(uint32_t severity,
-                                                                    uint32_t category,
-                                                                    uint32_t pass_ordinal,
-                                                                    const char* message_utf8,
-                                                                    void* user_data);
+using goggles_fc_control_info_t = GogglesFcControlInfo;
 #else
-typedef struct goggles_chain goggles_chain_t;
-typedef struct goggles_chain_control_snapshot goggles_chain_control_snapshot_t;
-typedef uint32_t goggles_chain_status_t;
-typedef uint32_t goggles_chain_stage_t;
-typedef uint32_t goggles_chain_stage_mask_t;
-typedef uint32_t goggles_chain_scale_mode_t;
-typedef uint32_t goggles_chain_capability_flags_t;
-typedef uint64_t goggles_chain_control_id_t;
-typedef struct GogglesChainExtent2D goggles_chain_extent2d_t;
-typedef struct GogglesChainVkContext goggles_chain_vk_context_t;
-typedef struct GogglesChainVkCreateInfo goggles_chain_vk_create_info_t;
-typedef struct GogglesChainVkCreateInfoEx goggles_chain_vk_create_info_ex_t;
-typedef struct GogglesChainVkRecordInfo goggles_chain_vk_record_info_t;
-typedef struct GogglesChainStagePolicy goggles_chain_stage_policy_t;
-typedef struct GogglesChainCapabilities goggles_chain_capabilities_t;
-typedef struct GogglesChainErrorLastInfo goggles_chain_error_last_info_t;
-typedef struct GogglesChainControlDesc goggles_chain_control_desc_t;
-typedef struct GogglesChainDiagnosticsCreateInfo goggles_chain_diagnostics_create_info_t;
-typedef struct GogglesChainDiagnosticsSummary goggles_chain_diagnostics_summary_t;
-typedef void(GOGGLES_CHAIN_CALL* goggles_chain_diagnostic_event_cb)(uint32_t severity,
-                                                                    uint32_t category,
-                                                                    uint32_t pass_ordinal,
-                                                                    const char* message_utf8,
-                                                                    void* user_data);
+typedef struct GogglesFcControlInfo goggles_fc_control_info_t;
 #endif
 
-#define GOGGLES_CHAIN_STATUS_OK ((goggles_chain_status_t)0u)
-#define GOGGLES_CHAIN_STATUS_INVALID_ARGUMENT ((goggles_chain_status_t)1u)
-#define GOGGLES_CHAIN_STATUS_NOT_INITIALIZED ((goggles_chain_status_t)2u)
-#define GOGGLES_CHAIN_STATUS_NOT_FOUND ((goggles_chain_status_t)3u)
-#define GOGGLES_CHAIN_STATUS_PRESET_ERROR ((goggles_chain_status_t)4u)
-#define GOGGLES_CHAIN_STATUS_IO_ERROR ((goggles_chain_status_t)5u)
-#define GOGGLES_CHAIN_STATUS_VULKAN_ERROR ((goggles_chain_status_t)6u)
-#define GOGGLES_CHAIN_STATUS_OUT_OF_MEMORY ((goggles_chain_status_t)7u)
-#define GOGGLES_CHAIN_STATUS_NOT_SUPPORTED ((goggles_chain_status_t)8u)
-#define GOGGLES_CHAIN_STATUS_RUNTIME_ERROR ((goggles_chain_status_t)9u)
-#define GOGGLES_CHAIN_STATUS_DIAGNOSTICS_NOT_ACTIVE ((goggles_chain_status_t)10u)
+/* ── POD structs: program source info ────────────────────────────────────── */
 
-#define GOGGLES_CHAIN_DIAG_MODE_MINIMAL ((uint32_t)0u)
-#define GOGGLES_CHAIN_DIAG_MODE_STANDARD ((uint32_t)1u)
-#define GOGGLES_CHAIN_DIAG_MODE_INVESTIGATE ((uint32_t)2u)
-#define GOGGLES_CHAIN_DIAG_MODE_FORENSIC ((uint32_t)3u)
-
-#define GOGGLES_CHAIN_DIAG_POLICY_COMPATIBILITY ((uint32_t)0u)
-#define GOGGLES_CHAIN_DIAG_POLICY_STRICT ((uint32_t)1u)
-
-struct GogglesChainDiagnosticsCreateInfo {
+struct GogglesFcProgramSourceInfo {
     uint32_t struct_size;
-    uint32_t reporting_mode;
-    uint32_t policy_mode;
+    uint32_t provenance;
+    goggles_fc_utf8_view_t source_name;
+    goggles_fc_utf8_view_t source_path;
+    uint32_t pass_count;
+};
+
+#ifdef __cplusplus
+using goggles_fc_program_source_info_t = GogglesFcProgramSourceInfo;
+#else
+typedef struct GogglesFcProgramSourceInfo goggles_fc_program_source_info_t;
+#endif
+
+/* ── POD structs: program report ─────────────────────────────────────────── */
+
+struct GogglesFcProgramReport {
+    uint32_t struct_size;
+    uint32_t shader_count;
+    uint32_t pass_count;
+    uint32_t texture_count;
+};
+
+#ifdef __cplusplus
+using goggles_fc_program_report_t = GogglesFcProgramReport;
+#else
+typedef struct GogglesFcProgramReport goggles_fc_program_report_t;
+#endif
+
+/* ── POD structs: chain report ───────────────────────────────────────────── */
+
+struct GogglesFcChainReport {
+    uint32_t struct_size;
+    uint32_t pass_count;
+    uint32_t frames_rendered;
+    uint32_t current_stage_mask;
+};
+
+#ifdef __cplusplus
+using goggles_fc_chain_report_t = GogglesFcChainReport;
+#else
+typedef struct GogglesFcChainReport goggles_fc_chain_report_t;
+#endif
+
+/* ── POD structs: chain error info ───────────────────────────────────────── */
+
+struct GogglesFcChainErrorInfo {
+    uint32_t struct_size;
+    uint32_t status;
+    int32_t vk_result;
+    uint32_t subsystem_code;
+};
+
+#ifdef __cplusplus
+using goggles_fc_chain_error_info_t = GogglesFcChainErrorInfo;
+#else
+typedef struct GogglesFcChainErrorInfo goggles_fc_chain_error_info_t;
+#endif
+
+/* ── POD structs: diagnostic policy ──────────────────────────────────────── */
+
+struct GogglesFcDiagnosticPolicy {
+    uint32_t struct_size;
+    uint32_t capture_mode;
     uint32_t activation_tier;
     uint32_t capture_frame_limit;
-    uint64_t retention_bytes;
 };
 
-struct GogglesChainDiagnosticsSummary {
+#ifdef __cplusplus
+using goggles_fc_diagnostic_policy_t = GogglesFcDiagnosticPolicy;
+#else
+typedef struct GogglesFcDiagnosticPolicy goggles_fc_diagnostic_policy_t;
+#endif
+
+/* ── POD structs: diagnostic summary ─────────────────────────────────────── */
+
+struct GogglesFcDiagnosticSummary {
     uint32_t struct_size;
-    uint32_t reporting_mode;
-    uint32_t policy_mode;
-    uint32_t error_count;
-    uint32_t warning_count;
+    bool session_active;
+    uint32_t debug_count;
     uint32_t info_count;
+    uint32_t warning_count;
+    uint32_t error_count;
+    uint32_t current_frame;
+    uint32_t total_events;
 };
 
-#define GOGGLES_CHAIN_STAGE_PRECHAIN ((goggles_chain_stage_t)0u)
-#define GOGGLES_CHAIN_STAGE_EFFECT ((goggles_chain_stage_t)1u)
-#define GOGGLES_CHAIN_STAGE_POSTCHAIN ((goggles_chain_stage_t)2u)
+#ifdef __cplusplus
+using goggles_fc_diagnostic_summary_t = GogglesFcDiagnosticSummary;
+#else
+typedef struct GogglesFcDiagnosticSummary goggles_fc_diagnostic_summary_t;
+#endif
 
-#define GOGGLES_CHAIN_STAGE_MASK_PRECHAIN ((goggles_chain_stage_mask_t)(1u << 0))
-#define GOGGLES_CHAIN_STAGE_MASK_EFFECT ((goggles_chain_stage_mask_t)(1u << 1))
-#define GOGGLES_CHAIN_STAGE_MASK_POSTCHAIN ((goggles_chain_stage_mask_t)(1u << 2))
-#define GOGGLES_CHAIN_STAGE_MASK_ALL                                                               \
-    ((goggles_chain_stage_mask_t)(GOGGLES_CHAIN_STAGE_MASK_PRECHAIN |                              \
-                                  GOGGLES_CHAIN_STAGE_MASK_EFFECT |                                \
-                                  GOGGLES_CHAIN_STAGE_MASK_POSTCHAIN))
+/* ── Inline struct initializers ──────────────────────────────────────────── */
 
-#define GOGGLES_CHAIN_SCALE_MODE_STRETCH ((goggles_chain_scale_mode_t)0u)
-#define GOGGLES_CHAIN_SCALE_MODE_FIT ((goggles_chain_scale_mode_t)1u)
-#define GOGGLES_CHAIN_SCALE_MODE_INTEGER ((goggles_chain_scale_mode_t)2u)
+static inline goggles_fc_instance_create_info_t
+goggles_fc_instance_create_info_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_instance_create_info_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_instance_create_info_t);
+    value.log_callback = GOGGLES_FC_NULLPTR;
+    value.log_user_data = GOGGLES_FC_NULLPTR;
+    return value;
+}
 
-#define GOGGLES_CHAIN_CAPABILITY_NONE ((goggles_chain_capability_flags_t)0u)
-#define GOGGLES_CHAIN_CAPABILITY_LAST_ERROR_INFO ((goggles_chain_capability_flags_t)(1u << 0))
+static inline goggles_fc_vk_device_create_info_t
+goggles_fc_vk_device_create_info_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_vk_device_create_info_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_vk_device_create_info_t);
+    value.physical_device = VK_NULL_HANDLE;
+    value.device = VK_NULL_HANDLE;
+    value.graphics_queue = VK_NULL_HANDLE;
+    value.graphics_queue_family_index = 0u;
+    value.cache_dir.data = GOGGLES_FC_NULLPTR;
+    value.cache_dir.size = 0u;
+    return value;
+}
 
-/// @brief Initialize `goggles_chain_vk_create_info_t` with ABI-safe defaults.
-/// @return Return a struct with `struct_size` set and optional pointers
-/// cleared.
-static inline goggles_chain_vk_create_info_t
-goggles_chain_vk_create_info_init(GOGGLES_CHAIN_NOARGS) {
-    goggles_chain_vk_create_info_t value;
-    value.struct_size = GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_vk_create_info_t);
+static inline goggles_fc_preset_source_t goggles_fc_preset_source_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_preset_source_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_preset_source_t);
+    value.kind = GOGGLES_FC_PRESET_SOURCE_FILE;
+    value.source_name.data = GOGGLES_FC_NULLPTR;
+    value.source_name.size = 0u;
+    value.bytes = GOGGLES_FC_NULLPTR;
+    value.byte_count = 0u;
+    value.path.data = GOGGLES_FC_NULLPTR;
+    value.path.size = 0u;
+    value.base_path.data = GOGGLES_FC_NULLPTR;
+    value.base_path.size = 0u;
+    value.import_callbacks = GOGGLES_FC_NULLPTR;
+    return value;
+}
+
+static inline goggles_fc_chain_create_info_t goggles_fc_chain_create_info_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_chain_create_info_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_chain_create_info_t);
     value.target_format = VK_FORMAT_UNDEFINED;
-    value.num_sync_indices = 1u;
-    value.shader_dir_utf8 = GOGGLES_CHAIN_NULLPTR;
-    value.cache_dir_utf8 = GOGGLES_CHAIN_NULLPTR;
+    value.frames_in_flight = 1u;
+    value.initial_stage_mask = GOGGLES_FC_STAGE_MASK_ALL;
     value.initial_prechain_resolution.width = 0u;
     value.initial_prechain_resolution.height = 0u;
     return value;
 }
 
-/// @brief Initialize `goggles_chain_vk_create_info_ex_t` with ABI-safe
-/// defaults.
-/// @return Return a struct with `struct_size` set and explicit lengths set to
-/// zero.
-static inline goggles_chain_vk_create_info_ex_t
-goggles_chain_vk_create_info_ex_init(GOGGLES_CHAIN_NOARGS) {
-    goggles_chain_vk_create_info_ex_t value;
-    value.struct_size = GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_vk_create_info_ex_t);
+static inline goggles_fc_chain_target_info_t goggles_fc_chain_target_info_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_chain_target_info_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_chain_target_info_t);
     value.target_format = VK_FORMAT_UNDEFINED;
-    value.num_sync_indices = 1u;
-    value.shader_dir_utf8 = GOGGLES_CHAIN_NULLPTR;
-    value.shader_dir_len = 0u;
-    value.cache_dir_utf8 = GOGGLES_CHAIN_NULLPTR;
-    value.cache_dir_len = 0u;
-    value.initial_prechain_resolution.width = 0u;
-    value.initial_prechain_resolution.height = 0u;
     return value;
 }
 
-/// @brief Initialize `goggles_chain_vk_record_info_t` with record-safe
-/// defaults.
-/// @return Return a struct with null Vulkan handles and stretch scaling.
-static inline goggles_chain_vk_record_info_t
-goggles_chain_vk_record_info_init(GOGGLES_CHAIN_NOARGS) {
-    goggles_chain_vk_record_info_t value;
-    value.struct_size = GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_vk_record_info_t);
+static inline goggles_fc_record_info_vk_t goggles_fc_record_info_vk_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_record_info_vk_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_record_info_vk_t);
     value.command_buffer = VK_NULL_HANDLE;
     value.source_image = VK_NULL_HANDLE;
     value.source_view = VK_NULL_HANDLE;
@@ -328,287 +542,238 @@ goggles_chain_vk_record_info_init(GOGGLES_CHAIN_NOARGS) {
     value.target_extent.width = 0u;
     value.target_extent.height = 0u;
     value.frame_index = 0u;
-    value.scale_mode = GOGGLES_CHAIN_SCALE_MODE_STRETCH;
+    value.scale_mode = GOGGLES_FC_SCALE_MODE_STRETCH;
     value.integer_scale = 1u;
     return value;
 }
 
-/// @brief Initialize `goggles_chain_stage_policy_t` to enable all stages.
-/// @return Return a struct with
-/// `enabled_stage_mask = GOGGLES_CHAIN_STAGE_MASK_ALL`.
-static inline goggles_chain_stage_policy_t goggles_chain_stage_policy_init(GOGGLES_CHAIN_NOARGS) {
-    goggles_chain_stage_policy_t value;
-    value.struct_size = GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_stage_policy_t);
-    value.enabled_stage_mask = GOGGLES_CHAIN_STAGE_MASK_ALL;
+static inline goggles_fc_log_message_t goggles_fc_log_message_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_log_message_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_log_message_t);
+    value.level = GOGGLES_FC_LOG_LEVEL_INFO;
+    value.domain.data = GOGGLES_FC_NULLPTR;
+    value.domain.size = 0u;
+    value.message.data = GOGGLES_FC_NULLPTR;
+    value.message.size = 0u;
     return value;
 }
 
-/// @brief Initialize `goggles_chain_capabilities_t` for a capability query.
-/// @return Return a struct with `struct_size` set and output fields cleared.
-static inline goggles_chain_capabilities_t goggles_chain_capabilities_init(GOGGLES_CHAIN_NOARGS) {
-    goggles_chain_capabilities_t value;
-    value.struct_size = GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_capabilities_t);
-    value.capability_flags = GOGGLES_CHAIN_CAPABILITY_NONE;
-    value.max_sync_indices = 0u;
+static inline goggles_fc_control_info_t goggles_fc_control_info_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_control_info_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_control_info_t);
+    value.index = 0u;
+    value.stage = GOGGLES_FC_STAGE_EFFECT;
+    value.name.data = GOGGLES_FC_NULLPTR;
+    value.name.size = 0u;
+    value.description.data = GOGGLES_FC_NULLPTR;
+    value.description.size = 0u;
+    value.current_value = 0.0f;
+    value.default_value = 0.0f;
+    value.min_value = 0.0f;
+    value.max_value = 0.0f;
+    value.step = 0.0f;
     return value;
 }
 
-/// @brief Initialize `goggles_chain_error_last_info_t` for diagnostics queries.
-/// @return Return a struct with `status = GOGGLES_CHAIN_STATUS_OK` and zeroed
-/// details.
-static inline goggles_chain_error_last_info_t
-goggles_chain_error_last_info_init(GOGGLES_CHAIN_NOARGS) {
-    goggles_chain_error_last_info_t value;
-    value.struct_size = GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_error_last_info_t);
-    value.status = GOGGLES_CHAIN_STATUS_OK;
+static inline goggles_fc_program_source_info_t
+goggles_fc_program_source_info_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_program_source_info_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_program_source_info_t);
+    value.provenance = GOGGLES_FC_PROVENANCE_FILE;
+    value.source_name.data = GOGGLES_FC_NULLPTR;
+    value.source_name.size = 0u;
+    value.source_path.data = GOGGLES_FC_NULLPTR;
+    value.source_path.size = 0u;
+    value.pass_count = 0u;
+    return value;
+}
+
+static inline goggles_fc_program_report_t goggles_fc_program_report_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_program_report_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_program_report_t);
+    value.shader_count = 0u;
+    value.pass_count = 0u;
+    value.texture_count = 0u;
+    return value;
+}
+
+static inline goggles_fc_chain_report_t goggles_fc_chain_report_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_chain_report_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_chain_report_t);
+    value.pass_count = 0u;
+    value.frames_rendered = 0u;
+    value.current_stage_mask = GOGGLES_FC_STAGE_MASK_ALL;
+    return value;
+}
+
+static inline goggles_fc_chain_error_info_t goggles_fc_chain_error_info_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_chain_error_info_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_chain_error_info_t);
+    value.status = GOGGLES_FC_STATUS_OK;
     value.vk_result = 0;
     value.subsystem_code = 0u;
     return value;
 }
 
-static inline goggles_chain_diagnostics_create_info_t
-goggles_chain_diagnostics_create_info_init(GOGGLES_CHAIN_NOARGS) {
-    goggles_chain_diagnostics_create_info_t value;
-    value.struct_size = GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_diagnostics_create_info_t);
-    value.reporting_mode = GOGGLES_CHAIN_DIAG_MODE_STANDARD;
-    value.policy_mode = GOGGLES_CHAIN_DIAG_POLICY_COMPATIBILITY;
-    value.activation_tier = 0u;
+static inline goggles_fc_import_callbacks_t goggles_fc_import_callbacks_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_import_callbacks_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_import_callbacks_t);
+    value.read_fn = GOGGLES_FC_NULLPTR;
+    value.free_fn = GOGGLES_FC_NULLPTR;
+    value.user_data = GOGGLES_FC_NULLPTR;
+    return value;
+}
+
+static inline goggles_fc_diagnostic_policy_t goggles_fc_diagnostic_policy_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_diagnostic_policy_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_diagnostic_policy_t);
+    value.capture_mode = GOGGLES_FC_DIAGNOSTIC_CAPTURE_STANDARD;
+    value.activation_tier = GOGGLES_FC_DIAGNOSTIC_TIER_0;
     value.capture_frame_limit = 1u;
-    value.retention_bytes = 256ULL * 1024ULL * 1024ULL;
     return value;
 }
 
-static inline goggles_chain_diagnostics_summary_t
-goggles_chain_diagnostics_summary_init(GOGGLES_CHAIN_NOARGS) {
-    goggles_chain_diagnostics_summary_t value;
-    value.struct_size = GOGGLES_CHAIN_STRUCT_SIZE(goggles_chain_diagnostics_summary_t);
-    value.reporting_mode = GOGGLES_CHAIN_DIAG_MODE_STANDARD;
-    value.policy_mode = GOGGLES_CHAIN_DIAG_POLICY_COMPATIBILITY;
-    value.error_count = 0u;
-    value.warning_count = 0u;
+static inline goggles_fc_diagnostic_summary_t
+goggles_fc_diagnostic_summary_init(GOGGLES_FC_NOARGS) {
+    goggles_fc_diagnostic_summary_t value;
+    value.struct_size = GOGGLES_FC_STRUCT_SIZE(goggles_fc_diagnostic_summary_t);
+    value.session_active = false;
+    value.debug_count = 0u;
     value.info_count = 0u;
+    value.warning_count = 0u;
+    value.error_count = 0u;
+    value.current_frame = 0u;
+    value.total_events = 0u;
     return value;
 }
 
-/// @brief Return the packed API semantic version
-/// (`major << 22 | minor << 12 | patch`).
-GOGGLES_CHAIN_API uint32_t GOGGLES_CHAIN_CALL goggles_chain_api_version(GOGGLES_CHAIN_NOARGS);
+/* ── Process-global queries ──────────────────────────────────────────────── */
 
-/// @brief Return the ABI major version for symbol/struct compatibility checks.
-GOGGLES_CHAIN_API uint32_t GOGGLES_CHAIN_CALL goggles_chain_abi_version(GOGGLES_CHAIN_NOARGS);
+GOGGLES_FC_API uint32_t GOGGLES_FC_CALL goggles_fc_get_api_version(GOGGLES_FC_NOARGS);
 
-/// @brief Query optional capability flags and runtime limits.
-/// @param out_caps Receive capability data when `out_caps->struct_size` is
-/// valid.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success, otherwise leave
-/// `out_caps` unchanged.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_capabilities_get(goggles_chain_capabilities_t* out_caps);
+GOGGLES_FC_API uint32_t GOGGLES_FC_CALL goggles_fc_get_abi_version(GOGGLES_FC_NOARGS);
 
-/// @brief Map a status code to a stable static string.
-/// @param status Provide a `goggles_chain_status_t` value.
-/// @return Return a non-null static string; unknown values map to
-/// `"UNKNOWN_STATUS"`.
-GOGGLES_CHAIN_API const char* GOGGLES_CHAIN_CALL
-goggles_chain_status_to_string(goggles_chain_status_t status);
+GOGGLES_FC_API
+goggles_fc_capability_flags_t GOGGLES_FC_CALL goggles_fc_get_capabilities(GOGGLES_FC_NOARGS);
 
-/// @brief Create a runtime using NUL-terminated UTF-8 create paths.
-/// @param vk Provide Vulkan handles that remain valid until runtime destroy.
-/// @param create_info Provide creation options with valid `struct_size` and
-/// extents.
-/// @param out_chain Receive a caller-owned runtime handle on success.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success; on failure set
-/// `*out_chain = NULL`.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_create_vk(
-    const goggles_chain_vk_context_t* vk, const goggles_chain_vk_create_info_t* create_info,
-    goggles_chain_t** out_chain);
+GOGGLES_FC_API const char* GOGGLES_FC_CALL goggles_fc_status_string(goggles_fc_status_t status);
 
-/// @brief Create a runtime using explicit-length UTF-8 create paths.
-/// @param vk Provide Vulkan handles that remain valid until runtime destroy.
-/// @param create_info Provide creation options with explicit path lengths.
-/// @param out_chain Receive a caller-owned runtime handle on success.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success; on failure set
-/// `*out_chain = NULL`.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_create_vk_ex(
-    const goggles_chain_vk_context_t* vk, const goggles_chain_vk_create_info_ex_t* create_info,
-    goggles_chain_t** out_chain);
+GOGGLES_FC_API bool GOGGLES_FC_CALL goggles_fc_is_success(goggles_fc_status_t status);
 
-/// @brief Destroy a runtime and clear its handle.
-/// @param chain Pass a pointer to the owned runtime handle.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` for null or valid handles, or
-/// `GOGGLES_CHAIN_STATUS_INVALID_ARGUMENT` for invalid non-null handles.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_destroy(goggles_chain_t** chain);
+GOGGLES_FC_API bool GOGGLES_FC_CALL goggles_fc_is_error(goggles_fc_status_t status);
 
-/// @brief Load a preset from a NUL-terminated UTF-8 path.
-/// @param chain Provide a live runtime in `CREATED` or `READY` state.
-/// @param preset_path_utf8 Provide a non-empty UTF-8 path.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success and transition or keep runtime in `READY`.
-/// @note This remains the explicit preset/runtime rebuild path.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_preset_load(goggles_chain_t* chain, const char* preset_path_utf8);
+/* ── Instance lifecycle ──────────────────────────────────────────────────── */
 
-/// @brief Load a preset from an explicit-length UTF-8 byte span.
-/// @param chain Provide a live runtime in `CREATED` or `READY` state.
-/// @param preset_path_utf8 Provide UTF-8 bytes with no embedded NUL.
-/// @param preset_path_len Provide the byte length of `preset_path_utf8`.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success and transition or keep runtime in `READY`.
-/// @note This remains the explicit preset/runtime rebuild path.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_preset_load_ex(
-    goggles_chain_t* chain, const char* preset_path_utf8, size_t preset_path_len);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_instance_create(
+    const goggles_fc_instance_create_info_t* create_info, goggles_fc_instance_t** out_instance);
 
-/// @brief Update runtime sizing state after a host resize event.
-/// @param chain Provide a live runtime in `CREATED` or `READY` state.
-/// @param new_target_extent Provide non-zero target dimensions.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_handle_resize(goggles_chain_t* chain, goggles_chain_extent2d_t new_target_extent);
+GOGGLES_FC_API void GOGGLES_FC_CALL goggles_fc_instance_destroy(goggles_fc_instance_t* instance);
 
-/// @brief Rebuild output-side runtime state for a new host target format.
-/// @param chain Provide a live runtime in `CREATED` or `READY` state.
-/// @param target_format Provide a concrete Vulkan color format.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success.
-/// @note This retarget operation is distinct from preset load/reload. It preserves active preset
-/// identity and source-independent runtime state on success while rebuilding only output-bound
-/// library state for the new host-owned presentation target.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_output_retarget_vk(goggles_chain_t* chain, VkFormat target_format);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_instance_set_log_callback(
+    goggles_fc_instance_t* instance, goggles_fc_log_callback_t log_callback, void* user_data);
 
-/// @brief Record filter-chain commands into a host command buffer.
-/// @param chain Provide a runtime in `READY` state.
-/// @param record_info Provide valid frame input/output views and frame index.
-/// @return Return status of the record operation. This call does not submit or
-/// present. Invalid arguments record no commands.
-/// @note Swapchain lifecycle, submission, and present remain host responsibilities.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_record_vk(goggles_chain_t* chain, const goggles_chain_vk_record_info_t* record_info);
+/* ── Device lifecycle ────────────────────────────────────────────────────── */
 
-/// @brief Set which stages execute during `goggles_chain_record_vk`.
-/// @param chain Provide a live runtime in `CREATED` or `READY` state.
-/// @param policy Provide a non-zero stage mask that contains known stage bits
-/// only.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_stage_policy_set(goggles_chain_t* chain, const goggles_chain_stage_policy_t* policy);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_device_create_vk(
+    goggles_fc_instance_t* instance, const goggles_fc_vk_device_create_info_t* create_info,
+    goggles_fc_device_t** out_device);
 
-/// @brief Read the current stage policy.
-/// @param chain Provide a live runtime in `CREATED` or `READY` state.
-/// @param out_policy Receive current policy when `out_policy->struct_size` is
-/// valid.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success, otherwise leave
-/// `out_policy` unchanged.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_stage_policy_get(
-    const goggles_chain_t* chain, goggles_chain_stage_policy_t* out_policy);
+GOGGLES_FC_API void GOGGLES_FC_CALL goggles_fc_device_destroy(goggles_fc_device_t* device);
 
-/// @brief Set the pre-chain resolution policy.
-/// @param chain Provide a live runtime in `CREATED` or `READY` state.
-/// @param resolution Provide an explicit extent, or set one axis to `0` to
-/// preserve source aspect from the other axis. Set both axes to `0` to disable
-/// pre-chain downsampling.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_prechain_resolution_set(goggles_chain_t* chain, goggles_chain_extent2d_t resolution);
+/* ── Program lifecycle ───────────────────────────────────────────────────── */
 
-/// @brief Read the current pre-chain resolution policy.
-/// @param chain Provide a live runtime in `CREATED` or `READY` state.
-/// @param out_resolution Receive the current resolution.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success, otherwise leave output
-/// unchanged.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_prechain_resolution_get(
-    const goggles_chain_t* chain, goggles_chain_extent2d_t* out_resolution);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_program_create(goggles_fc_device_t* device, const goggles_fc_preset_source_t* source,
+                          goggles_fc_program_t** out_program);
 
-/// @brief List all controls in deterministic order: prechain, effect, then
-/// postchain.
-/// @param chain Provide a runtime in `READY` state.
-/// @param out_snapshot Receive a caller-owned snapshot on success.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success; on failure set
-/// `*out_snapshot = NULL`.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_control_list(
-    const goggles_chain_t* chain, goggles_chain_control_snapshot_t** out_snapshot);
+GOGGLES_FC_API void GOGGLES_FC_CALL goggles_fc_program_destroy(goggles_fc_program_t* program);
 
-/// @brief List controls for one stage.
-/// @param chain Provide a runtime in `READY` state.
-/// @param stage Provide one value from `goggles_chain_stage_t`.
-/// @param out_snapshot Receive a caller-owned snapshot on success.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success; on failure set
-/// `*out_snapshot = NULL`.
-/// @note For `GOGGLES_CHAIN_STAGE_POSTCHAIN`, v1 returns a valid empty
-/// snapshot.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_control_list_stage(const goggles_chain_t* chain, goggles_chain_stage_t stage,
-                                 goggles_chain_control_snapshot_t** out_snapshot);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_program_get_source_info(
+    const goggles_fc_program_t* program, goggles_fc_program_source_info_t* out_source_info);
 
-/// @brief Return the number of controls stored in a snapshot.
-/// @param snapshot Provide a snapshot returned by list APIs, or `NULL`.
-/// @return Return control count; return `0` for `NULL` snapshots.
-GOGGLES_CHAIN_API size_t GOGGLES_CHAIN_CALL
-goggles_chain_control_snapshot_get_count(const goggles_chain_control_snapshot_t* snapshot);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_program_get_report(
+    const goggles_fc_program_t* program, goggles_fc_program_report_t* out_report);
 
-/// @brief Return borrowed descriptor storage for a snapshot.
-/// @param snapshot Provide a snapshot returned by list APIs, or `NULL`.
-/// @return Return borrowed descriptor data; return `NULL` for `NULL` snapshots.
-GOGGLES_CHAIN_API const goggles_chain_control_desc_t* GOGGLES_CHAIN_CALL
-goggles_chain_control_snapshot_get_data(const goggles_chain_control_snapshot_t* snapshot);
+/* ── Chain lifecycle ─────────────────────────────────────────────────────── */
 
-/// @brief Destroy a control snapshot and clear its handle.
-/// @param snapshot Pass a pointer to an owned snapshot handle.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` for null or valid handles, or
-/// `GOGGLES_CHAIN_STATUS_INVALID_ARGUMENT` for invalid non-null handles.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_control_snapshot_destroy(goggles_chain_control_snapshot_t** snapshot);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_create(
+    goggles_fc_device_t* device, const goggles_fc_program_t* program,
+    const goggles_fc_chain_create_info_t* create_info, goggles_fc_chain_t** out_chain);
 
-/// @brief Set one control value by stable `control_id`.
-/// @param chain Provide a runtime in `READY` state.
-/// @param control_id Provide the control identifier from a snapshot descriptor.
-/// @param value Provide a finite value; runtime clamps to descriptor bounds.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_control_set_value(
-    goggles_chain_t* chain, goggles_chain_control_id_t control_id, float value);
+GOGGLES_FC_API void GOGGLES_FC_CALL goggles_fc_chain_destroy(goggles_fc_chain_t* chain);
 
-/// @brief Reset one control to its default value.
-/// @param chain Provide a runtime in `READY` state.
-/// @param control_id Provide the control identifier from a snapshot descriptor.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_control_reset_value(goggles_chain_t* chain, goggles_chain_control_id_t control_id);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_bind_program(goggles_fc_chain_t* chain, const goggles_fc_program_t* program);
 
-/// @brief Reset all controls to default values.
-/// @param chain Provide a runtime in `READY` state.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_control_reset_all(goggles_chain_t* chain);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_clear(goggles_fc_chain_t* chain);
 
-/// @brief Query structured diagnostics for the last failed runtime call.
-/// @param chain Provide a live runtime handle.
-/// @param out_info Receive diagnostics when `out_info->struct_size` is valid.
-/// @return Return `GOGGLES_CHAIN_STATUS_OK` on success. Otherwise return a
-/// state or validation status.
-/// @note Leave `out_info` unchanged on failure.
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_error_last_info_get(
-    const goggles_chain_t* chain, goggles_chain_error_last_info_t* out_info);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_resize(goggles_fc_chain_t* chain, const goggles_fc_extent_2d_t* new_source_extent);
 
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_diagnostics_session_create(
-    goggles_chain_t* chain, const goggles_chain_diagnostics_create_info_t* create_info);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_set_prechain_resolution(
+    goggles_fc_chain_t* chain, const goggles_fc_extent_2d_t* resolution);
 
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_diagnostics_session_destroy(goggles_chain_t* chain);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_set_stage_mask(goggles_fc_chain_t* chain, uint32_t stage_mask);
 
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_diagnostics_sink_register(
-    goggles_chain_t* chain, goggles_chain_diagnostic_event_cb callback, void* user_data,
-    uint32_t* out_sink_id);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_retarget(
+    goggles_fc_chain_t* chain, const goggles_fc_chain_target_info_t* target_info);
 
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL
-goggles_chain_diagnostics_sink_unregister(goggles_chain_t* chain, uint32_t sink_id);
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_record_vk(
+    goggles_fc_chain_t* chain, const goggles_fc_record_info_vk_t* record_info);
 
-GOGGLES_CHAIN_API goggles_chain_status_t GOGGLES_CHAIN_CALL goggles_chain_diagnostics_summary_get(
-    const goggles_chain_t* chain, goggles_chain_diagnostics_summary_t* out_summary);
+/* ── Chain report / error queries ────────────────────────────────────────── */
 
-#undef GOGGLES_CHAIN_NOARGS
-#undef GOGGLES_CHAIN_NULLPTR
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_get_report(const goggles_fc_chain_t* chain, goggles_fc_chain_report_t* out_report);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_get_last_error(
+    const goggles_fc_chain_t* chain, goggles_fc_chain_error_info_t* out_error);
+
+/* ── Chain control queries and mutation ───────────────────────────────────── */
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_get_control_count(const goggles_fc_chain_t* chain, uint32_t* out_count);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_get_control_info(
+    const goggles_fc_chain_t* chain, uint32_t index, goggles_fc_control_info_t* out_control);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_find_control_index(const goggles_fc_chain_t* chain, uint32_t stage,
+                                    goggles_fc_utf8_view_t name, uint32_t* out_index);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_set_control_value_f32(goggles_fc_chain_t* chain, uint32_t index, float value);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_set_control_value_f32_by_name(
+    goggles_fc_chain_t* chain, uint32_t stage, goggles_fc_utf8_view_t name, float value);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_reset_control_value(goggles_fc_chain_t* chain, uint32_t index);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_reset_all_controls(goggles_fc_chain_t* chain);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_get_prechain_resolution(
+    const goggles_fc_chain_t* chain, goggles_fc_extent_2d_t* out_resolution);
+
+/* ── Chain diagnostics ───────────────────────────────────────────────────── */
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_create_diagnostic_session(
+    goggles_fc_chain_t* chain, const goggles_fc_diagnostic_policy_t* policy);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL
+goggles_fc_chain_destroy_diagnostic_session(goggles_fc_chain_t* chain);
+
+GOGGLES_FC_API goggles_fc_status_t GOGGLES_FC_CALL goggles_fc_chain_get_diagnostic_summary(
+    const goggles_fc_chain_t* chain, goggles_fc_diagnostic_summary_t* out_summary);
+
+#undef GOGGLES_FC_NOARGS
+#undef GOGGLES_FC_NULLPTR
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif
+#endif /* GOGGLES_FILTER_CHAIN_H */

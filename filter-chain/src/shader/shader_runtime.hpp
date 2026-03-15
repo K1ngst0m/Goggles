@@ -50,6 +50,16 @@ public:
                                       const std::string& entry_point = "main")
         -> Result<CompiledShader>;
 
+    /// @brief Compiles a shader from in-memory source bytes and returns SPIR-V.
+    ///
+    /// Used by the embedded asset registry to compile built-in shaders without
+    /// requiring filesystem access. The module_name is used for cache keys and
+    /// diagnostic messages.
+    [[nodiscard]] auto compile_shader_from_source(const std::string& source,
+                                                  const std::string& module_name,
+                                                  const std::string& entry_point = "main")
+        -> Result<CompiledShader>;
+
     /// @brief Compiles a RetroArch shader pass and returns SPIR-V plus reflection.
     [[nodiscard]] auto compile_retroarch_shader(const std::string& vertex_source,
                                                 const std::string& fragment_source,

@@ -108,9 +108,9 @@ auto Application::init_vulkan_backend(const Config& config, const util::AppDirs&
 
     GOGGLES_LOG_INFO("Scale mode: {}", to_string(config.render.scale_mode));
 
-    m_vulkan_backend = GOGGLES_MUST(render::VulkanBackend::create(
-        m_window, config.render.enable_validation, util::resource_path(app_dirs, "shaders"),
-        util::cache_path(app_dirs, "shaders"), render_settings));
+    m_vulkan_backend = GOGGLES_MUST(
+        render::VulkanBackend::create(m_window, config.render.enable_validation,
+                                      util::cache_path(app_dirs, "shaders"), render_settings));
 
     m_vulkan_backend->load_shader_preset(config.shader.preset);
     return Result<void>{};
@@ -249,8 +249,7 @@ auto Application::create_headless(const Config& config, const util::AppDirs& app
     };
 
     app->m_vulkan_backend = GOGGLES_MUST(render::VulkanBackend::create_headless(
-        config.render.enable_validation, util::resource_path(app_dirs, "shaders"),
-        util::cache_path(app_dirs, "shaders"), render_settings));
+        config.render.enable_validation, util::cache_path(app_dirs, "shaders"), render_settings));
 
     app->m_vulkan_backend->load_shader_preset(config.shader.preset);
 

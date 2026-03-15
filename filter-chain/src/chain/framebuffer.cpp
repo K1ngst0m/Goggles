@@ -80,13 +80,13 @@ auto Framebuffer::resize(vk::Extent2D new_extent) -> Result<void> {
         m_device.destroyImageView(m_view);
         m_view = nullptr;
     }
-    if (m_memory) {
-        m_device.freeMemory(m_memory);
-        m_memory = nullptr;
-    }
     if (m_image) {
         m_device.destroyImage(m_image);
         m_image = nullptr;
+    }
+    if (m_memory) {
+        m_device.freeMemory(m_memory);
+        m_memory = nullptr;
     }
 
     m_extent = new_extent;
@@ -112,13 +112,13 @@ void Framebuffer::shutdown() {
         m_device.destroyImageView(m_view);
         m_view = nullptr;
     }
-    if (m_memory) {
-        m_device.freeMemory(m_memory);
-        m_memory = nullptr;
-    }
     if (m_image) {
         m_device.destroyImage(m_image);
         m_image = nullptr;
+    }
+    if (m_memory) {
+        m_device.freeMemory(m_memory);
+        m_memory = nullptr;
     }
     m_format = vk::Format::eUndefined;
     m_extent = vk::Extent2D{0, 0};

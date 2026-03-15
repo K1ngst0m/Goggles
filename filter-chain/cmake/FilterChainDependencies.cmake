@@ -1,5 +1,8 @@
 find_package(Vulkan REQUIRED)
-find_package(expected-lite REQUIRED)
+find_package(expected-lite CONFIG REQUIRED
+    HINTS
+        "$ENV{CONDA_PREFIX}"
+        "$ENV{CONDA_PREFIX}/lib/cmake/expected-lite")
 
 if(NOT DEFINED GOGGLES_FILTER_CHAIN_FIND_PRIVATE_DEPS)
     set(GOGGLES_FILTER_CHAIN_FIND_PRIVATE_DEPS OFF)

@@ -13,15 +13,7 @@ include(cmake/Dependencies.cmake)
 include(cmake/CompilerConfig.cmake)
 include(cmake/CodeQuality.cmake)
 
-option(GOGGLES_USE_BUNDLED_FILTER_CHAIN
-    "Build filter-chain from the in-repo subdirectory instead of using find_package()"
-    OFF)
-
-if(GOGGLES_USE_BUNDLED_FILTER_CHAIN)
-    add_subdirectory(filter-chain ${CMAKE_BINARY_DIR}/filter-chain)
-else()
-    find_package(GogglesFilterChain CONFIG REQUIRED)
-endif()
+add_subdirectory(filter-chain)
 
 # Project structure
 add_subdirectory(src)

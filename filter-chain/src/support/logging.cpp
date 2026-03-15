@@ -1,129 +1,118 @@
 #include "logging.hpp"
 
-#include "support/profiling.hpp"
-
-#include <algorithm>
-#include <filesystem>
+#include <atomic>
 #include <memory>
-#include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
 
-namespace goggles {
+namespace goggles::filter_chain::detail {
 
 namespace {
-std::shared_ptr<spdlog::logger> g_logger;
-std::shared_ptr<spdlog::sinks::stdout_color_sink_mt> g_console_sink;
-std::shared_ptr<spdlog::sinks::sink> g_file_sink;
-bool g_timestamp_enabled = false;
+
+/// @brief Library-private spdlog logger, never installed as the process default.
+/// Used only as a fallback when no host callback is registered.
+std::shared_ptr<spdlog::logger> g_library_logger;
+
+/// @brief The currently active log router for macro-based logging.
+/// Points to an Instance-owned LogRouter when one is registered.
+std::atomic<const LogRouter*> g_active_router{nullptr};
+
+thread_local const LogRouter* t_scoped_router = nullptr;
 
 constexpr auto CONSOLE_PATTERN = "[%^%l%$] %v";
-constexpr auto CONSOLE_PATTERN_TIMESTAMP = "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v";
-constexpr auto FILE_PATTERN = "[%l] %v";
-constexpr auto FILE_PATTERN_TIMESTAMP = "[%Y-%m-%d %H:%M:%S.%e] [%l] %v";
 
-auto remove_file_sink() -> void {
-    if (!g_logger || !g_file_sink) {
-        return;
+auto ensure_library_logger() -> std::shared_ptr<spdlog::logger> {
+    if (!g_library_logger) {
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        console_sink->set_pattern(CONSOLE_PATTERN);
+        spdlog::sinks_init_list sinks = {console_sink};
+        g_library_logger = std::make_shared<spdlog::logger>("goggles-filter-chain", sinks);
+#ifdef NDEBUG
+        g_library_logger->set_level(spdlog::level::info);
+#else
+        g_library_logger->set_level(spdlog::level::debug);
+#endif
+        g_library_logger->flush_on(spdlog::level::err);
+        // Deliberately NOT calling spdlog::set_default_logger — this logger
+        // is library-private and must not affect process-global state.
     }
-
-    auto& sinks = g_logger->sinks();
-    sinks.erase(std::remove(sinks.begin(), sinks.end(), g_file_sink), sinks.end());
-    g_file_sink.reset();
+    return g_library_logger;
 }
 
-auto update_sink_patterns() -> void {
-    if (!g_logger || !g_console_sink) {
-        return;
-    }
-
-    g_console_sink->set_pattern(g_timestamp_enabled ? CONSOLE_PATTERN_TIMESTAMP : CONSOLE_PATTERN);
-
-    if (g_file_sink) {
-        g_file_sink->set_pattern(g_timestamp_enabled ? FILE_PATTERN_TIMESTAMP : FILE_PATTERN);
+auto fc_level_to_spdlog(goggles_fc_log_level_t level) -> spdlog::level::level_enum {
+    switch (level) {
+    case GOGGLES_FC_LOG_LEVEL_TRACE:
+        return spdlog::level::trace;
+    case GOGGLES_FC_LOG_LEVEL_DEBUG:
+        return spdlog::level::debug;
+    case GOGGLES_FC_LOG_LEVEL_INFO:
+        return spdlog::level::info;
+    case GOGGLES_FC_LOG_LEVEL_WARN:
+        return spdlog::level::warn;
+    case GOGGLES_FC_LOG_LEVEL_ERROR:
+        return spdlog::level::err;
+    case GOGGLES_FC_LOG_LEVEL_CRITICAL:
+        return spdlog::level::critical;
+    default:
+        return spdlog::level::info;
     }
 }
+
+void deliver_via_spdlog(goggles_fc_log_level_t level, std::string_view domain,
+                        std::string_view message) {
+    auto logger = ensure_library_logger();
+    auto spdlog_level = fc_level_to_spdlog(level);
+    if (!domain.empty()) {
+        logger->log(spdlog_level, "[{}] {}", domain, message);
+    } else {
+        logger->log(spdlog_level, "{}", message);
+    }
+}
+
 } // namespace
 
-void initialize_logger(std::string_view app_name) {
-    GOGGLES_PROFILE_FUNCTION();
-    if (g_logger) {
+ScopedLogRouter::ScopedLogRouter(const LogRouter* router) : m_previous_router(t_scoped_router) {
+    t_scoped_router = router;
+}
+
+ScopedLogRouter::~ScopedLogRouter() {
+    t_scoped_router = m_previous_router;
+}
+
+void log_route(const LogRouter* router, goggles_fc_log_level_t level, std::string_view domain,
+               std::string_view message) {
+    if (router != nullptr && router->callback != nullptr) {
+        goggles_fc_log_message_t msg = goggles_fc_log_message_init();
+        msg.level = level;
+        msg.domain.data = domain.data();
+        msg.domain.size = domain.size();
+        msg.message.data = message.data();
+        msg.message.size = message.size();
+        router->callback(&msg, router->user_data);
         return;
     }
 
-    g_console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-
-    g_console_sink->set_pattern(CONSOLE_PATTERN);
-
-    g_logger = std::make_shared<spdlog::logger>(std::string(app_name), g_console_sink);
-
-#ifdef NDEBUG
-    g_logger->set_level(spdlog::level::info);
-#else
-    g_logger->set_level(spdlog::level::debug);
-#endif
-
-    g_logger->flush_on(spdlog::level::err);
-    spdlog::set_default_logger(g_logger);
+    // Fallback to the library-private spdlog logger.
+    deliver_via_spdlog(level, domain, message);
 }
 
-auto get_logger() -> std::shared_ptr<spdlog::logger> {
-    if (!g_logger) {
-        initialize_logger();
-    }
-    return g_logger;
+void log_route(goggles_fc_log_level_t level, std::string_view domain, std::string_view message) {
+    const LogRouter* router = t_scoped_router != nullptr
+                                  ? t_scoped_router
+                                  : g_active_router.load(std::memory_order_acquire);
+    log_route(router, level, domain, message);
 }
 
-void set_log_level(spdlog::level::level_enum level) {
-    GOGGLES_PROFILE_FUNCTION();
-    if (g_logger) {
-        g_logger->set_level(level);
-    }
+void log_route_set_active(const LogRouter* router) {
+    g_active_router.store(router, std::memory_order_release);
 }
 
-void set_log_timestamp_enabled(bool enabled) {
-    if (!g_logger) {
-        return;
-    }
-
-    g_timestamp_enabled = enabled;
-    update_sink_patterns();
+auto log_route_get_active() -> const LogRouter* {
+    return g_active_router.load(std::memory_order_acquire);
 }
 
-auto set_log_file_path(const std::filesystem::path& path) -> Result<void> {
-    GOGGLES_PROFILE_FUNCTION();
-    if (!g_logger) {
-        initialize_logger();
-    }
-
-    if (path.empty()) {
-        remove_file_sink();
-        return {};
-    }
-
-    std::error_code ec;
-    const auto parent = path.parent_path();
-    if (!parent.empty()) {
-        std::filesystem::create_directories(parent, ec);
-        if (ec) {
-            return make_error<void>(ErrorCode::file_write_failed,
-                                    "Failed to create log directory '" + parent.string() +
-                                        "': " + ec.message());
-        }
-    }
-
-    std::shared_ptr<spdlog::sinks::basic_file_sink_mt> new_sink;
-    try {
-        new_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path.string(), true);
-    } catch (const spdlog::spdlog_ex& e) {
-        return make_error<void>(ErrorCode::file_write_failed,
-                                "Failed to open log file '" + path.string() + "': " + e.what());
-    }
-
-    remove_file_sink();
-    g_file_sink = new_sink;
-    g_logger->sinks().push_back(g_file_sink);
-    update_sink_patterns();
-    return {};
+auto log_route_get_scoped() -> const LogRouter* {
+    return t_scoped_router;
 }
 
-} // namespace goggles
+} // namespace goggles::filter_chain::detail

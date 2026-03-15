@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <goggles/filter_chain/error.hpp>
+#include <string>
 #include <vulkan/vulkan.hpp>
 
 namespace goggles::render {
@@ -39,6 +41,15 @@ public:
     /// @return Texture data or an error.
     [[nodiscard]] auto load_from_file(const std::filesystem::path& path,
                                       const TextureLoadConfig& config = {}) -> Result<TextureData>;
+
+    /// @brief Loads an image from raw bytes in memory and uploads it to the GPU.
+    /// @param data Pointer to the image file bytes (PNG, JPEG, etc.).
+    /// @param size Number of bytes.
+    /// @param label Descriptive label for diagnostics.
+    /// @param config Loading options.
+    /// @return Texture data or an error.
+    [[nodiscard]] auto load_from_bytes(const uint8_t* data, size_t size, const std::string& label,
+                                       const TextureLoadConfig& config = {}) -> Result<TextureData>;
 
 private:
     struct StagingResources {

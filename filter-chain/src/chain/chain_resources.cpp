@@ -344,13 +344,13 @@ void ChainResources::cleanup_texture_registry() {
             m_vk_ctx.device.destroyImageView(tex.data.view);
             tex.data.view = nullptr;
         }
-        if (tex.data.memory) {
-            m_vk_ctx.device.freeMemory(tex.data.memory);
-            tex.data.memory = nullptr;
-        }
         if (tex.data.image) {
             m_vk_ctx.device.destroyImage(tex.data.image);
             tex.data.image = nullptr;
+        }
+        if (tex.data.memory) {
+            m_vk_ctx.device.freeMemory(tex.data.memory);
+            tex.data.memory = nullptr;
         }
     }
     m_texture_registry.clear();

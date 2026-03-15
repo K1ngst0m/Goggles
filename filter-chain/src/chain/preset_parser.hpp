@@ -2,10 +2,16 @@
 
 #include <filesystem>
 #include <goggles/filter_chain/result.hpp>
+#include <goggles_filter_chain.h>
 #include <optional>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+
+namespace goggles::filter_chain::runtime {
+struct ResolvedSource;
+class SourceResolver;
+} // namespace goggles::filter_chain::runtime
 
 namespace goggles::render {
 
@@ -63,10 +69,31 @@ public:
     /// @return Parsed configuration or an error.
     [[nodiscard]] auto load(const std::filesystem::path& preset_path) -> Result<PresetConfig>;
 
+    /// @brief Loads a preset from a resolved source (file or memory).
+    ///
+    /// The resolved source provides already-loaded bytes plus a base_path for
+    /// relative reference resolution. When import_callbacks is non-null, relative
+    /// includes are resolved through the callback before falling back to base_path
+    /// filesystem resolution.
+    ///
+    /// @param resolved   Pre-resolved source bytes with provenance and base_path.
+    /// @param resolver   Source resolver for relative #reference and include resolution.
+    /// @param import_callbacks  Optional import callbacks for host-driven resolution.
+    /// @return Parsed configuration or an error.
+    [[nodiscard]] auto load(const filter_chain::runtime::ResolvedSource& resolved,
+                            filter_chain::runtime::SourceResolver& resolver,
+                            const goggles_fc_import_callbacks_t* import_callbacks)
+        -> Result<PresetConfig>;
+
 private:
     [[nodiscard]] auto load_recursive(const std::filesystem::path& preset_path, int depth,
                                       std::vector<std::filesystem::path>& visited)
         -> Result<PresetConfig>;
+
+    [[nodiscard]] auto load_recursive_resolved(
+        const std::string& content, const std::filesystem::path& base_path, int depth,
+        std::vector<std::string>& visited_names, filter_chain::runtime::SourceResolver& resolver,
+        const goggles_fc_import_callbacks_t* import_callbacks) -> Result<PresetConfig>;
 
     [[nodiscard]] auto parse_ini(const std::string& content, const std::filesystem::path& base_path)
         -> Result<PresetConfig>;

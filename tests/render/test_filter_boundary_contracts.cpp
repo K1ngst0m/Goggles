@@ -1,4 +1,5 @@
 #include "compositor/compositor_runtime_metrics.hpp"
+#include "render/backend/filter_chain_controller.hpp"
 #include "render/backend/vulkan_backend.hpp"
 #include "ui/imgui_layer.hpp"
 
@@ -9,7 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <goggles/filter_chain/filter_controls.hpp>
+#include <goggles_filter_chain.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -53,16 +54,6 @@ auto collect_app_ui_sources() -> std::vector<std::filesystem::path> {
 
     std::sort(files.begin(), files.end());
     return files;
-}
-
-auto count_occurrences(std::string_view text, std::string_view needle) -> size_t {
-    size_t count = 0;
-    size_t pos = text.find(needle);
-    while (pos != std::string_view::npos) {
-        ++count;
-        pos = text.find(needle, pos + needle.size());
-    }
-    return count;
 }
 
 auto surface_token(std::uintptr_t value) -> goggles::input::wlr_surface* {
@@ -126,8 +117,7 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_context.hpp";
     auto backend_context_text = read_text_file(backend_context_path);
     REQUIRE(backend_context_text.has_value());
-    REQUIRE(backend_context_text->find("goggles/filter_chain/vulkan_context.hpp") !=
-            std::string::npos);
+    REQUIRE(backend_context_text->find("goggles_filter_chain.hpp") != std::string::npos);
     REQUIRE(backend_context_text->find("boundary_context(") != std::string::npos);
 
     const auto prechain_list_pos =
@@ -235,8 +225,7 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
     REQUIRE(backend_text.has_value());
     REQUIRE(controller_text.has_value());
     REQUIRE(render_output_text.has_value());
-    REQUIRE(backend_text->find("m_vulkan_context.boundary_context(m_render_output.command_pool)") !=
-            std::string::npos);
+    REQUIRE(backend_text->find("make_filter_chain_build_config()") != std::string::npos);
 
     const auto check_swap_pos =
         controller_text->find("void FilterChainController::check_pending_chain_swap(");
@@ -244,7 +233,7 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
 
     const auto failure_branch_pos = controller_text->find("if (!result) {", check_swap_pos);
     const auto failure_reset_pos =
-        controller_text->find("destroy_filter_chain(pending_filter_chain", failure_branch_pos);
+        controller_text->find("shutdown_slot(pending_slot)", failure_branch_pos);
     const auto failure_clear_ready_pos =
         controller_text->find("pending_chain_ready.store(false", failure_reset_pos);
     const auto failure_return_pos = controller_text->find("return;", failure_clear_ready_pos);
@@ -261,56 +250,48 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
     REQUIRE(failure_clear_ready_pos < failure_return_pos);
     REQUIRE(failure_return_pos < success_signal_pos);
 
-    const auto swap_restore_decl_pos =
-        controller_text->find("auto restore_result =", check_swap_pos);
-    const auto swap_apply_state_pos =
-        controller_text->find("apply_runtime_state(pending_filter_chain,", swap_restore_decl_pos);
-    const auto swap_authoritative_controls_pos = controller_text->find(
-        "source_resolution, authoritative_control_overrides,", swap_apply_state_pos);
-    const auto swap_restore_failure_pos =
-        controller_text->find("if (!restore_result) {", swap_apply_state_pos);
-    const auto swap_restore_destroy_pos = controller_text->find(
-        "destroy_filter_chain(pending_filter_chain", swap_restore_failure_pos);
+    const auto swap_controls_decl_pos =
+        controller_text->find("auto controls_result =", check_swap_pos);
+    const auto swap_apply_controls_pos =
+        controller_text->find("apply_adapter_controls(pending_slot,", swap_controls_decl_pos);
+    const auto swap_controls_failure_pos =
+        controller_text->find("if (!controls_result) {", swap_apply_controls_pos);
+    const auto swap_controls_destroy_pos =
+        controller_text->find("shutdown_slot(pending_slot)", swap_controls_failure_pos);
     const auto swap_retire_pos =
-        controller_text->find("retire_runtime_with_bounded_fallback(", swap_restore_failure_pos);
-    REQUIRE(swap_restore_decl_pos != std::string::npos);
-    REQUIRE(swap_apply_state_pos != std::string::npos);
-    REQUIRE(swap_authoritative_controls_pos != std::string::npos);
-    REQUIRE(swap_restore_failure_pos != std::string::npos);
-    REQUIRE(swap_restore_destroy_pos != std::string::npos);
+        controller_text->find("retire_adapter_with_bounded_fallback(", swap_controls_failure_pos);
+    REQUIRE(swap_controls_decl_pos != std::string::npos);
+    REQUIRE(swap_apply_controls_pos != std::string::npos);
+    REQUIRE(swap_controls_failure_pos != std::string::npos);
+    REQUIRE(swap_controls_destroy_pos != std::string::npos);
     REQUIRE(swap_retire_pos != std::string::npos);
-    REQUIRE(swap_restore_decl_pos < swap_apply_state_pos);
-    REQUIRE(swap_apply_state_pos < swap_restore_failure_pos);
-    REQUIRE(swap_authoritative_controls_pos < swap_restore_failure_pos);
-    REQUIRE(swap_restore_failure_pos < swap_retire_pos);
-    REQUIRE(swap_restore_destroy_pos < swap_retire_pos);
+    REQUIRE(swap_controls_decl_pos < swap_apply_controls_pos);
+    REQUIRE(swap_apply_controls_pos < swap_controls_failure_pos);
+    REQUIRE(swap_controls_failure_pos < swap_retire_pos);
+    REQUIRE(swap_controls_destroy_pos < swap_retire_pos);
     REQUIRE(swap_retire_pos < success_signal_pos);
-    REQUIRE(controller_text->find("apply_runtime_state(filter_chain,", check_swap_pos) ==
-            std::string::npos);
 
     REQUIRE(controller_text->find("requested_controls = authoritative_control_overrides.empty()") !=
             std::string::npos);
-    REQUIRE(controller_text->find("apply_runtime_state(pending_chain, requested_policy,") !=
+    REQUIRE(controller_text->find("apply_adapter_controls(new_adapter, requested_controls,") !=
             std::string::npos);
-    REQUIRE(controller_text->find("authoritative_control_overrides = snapshot_runtime_controls(") !=
+    REQUIRE(controller_text->find("authoritative_control_overrides = snapshot_adapter_controls(") !=
             std::string::npos);
     REQUIRE(controller_text->find("source_resolution = config.requested_resolution;") !=
             std::string::npos);
-    REQUIRE(controller_text->find(
-                "filter_chain.set_prechain_resolution(config.requested_resolution)") !=
+    REQUIRE(controller_text->find("active_slot.chain.set_prechain_resolution(&resolution)") !=
             std::string::npos);
     REQUIRE(controller_text->find("resolve_initial_prechain_resolution") == std::string::npos);
 
-    REQUIRE(controller_text->find("retire_runtime_with_bounded_fallback(") != std::string::npos);
+    REQUIRE(controller_text->find("retire_adapter_with_bounded_fallback(") != std::string::npos);
     REQUIRE(
-        controller_text->find("cleanup_retired_runtime_tracker(retired_runtimes, frame_count);") !=
+        controller_text->find("cleanup_retired_adapter_tracker(retired_adapters, frame_count);") !=
         std::string::npos);
-    REQUIRE(controller_text->find("shutdown_retired_runtime_tracker(retired_runtimes);") !=
+    REQUIRE(controller_text->find("shutdown_retired_adapter_tracker(retired_adapters);") !=
             std::string::npos);
-    REQUIRE(controller_text->find("RetiredRuntimeTracker::FALLBACK_RETIRE_DELAY_FRAMES") !=
+    REQUIRE(controller_text->find("RetiredAdapterTracker::FALLBACK_RETIRE_DELAY_FRAMES") !=
             std::string::npos);
-    REQUIRE(controller_text->find("RetiredRuntimeTracker::MAX_RETIRED_RUNTIMES") !=
-            std::string::npos);
+    REQUIRE(controller_text->find("RetiredAdapterTracker::MAX_RETIRED") != std::string::npos);
     REQUIRE(backend_text->find("m_filter_chain_controller.handle_resize(") != std::string::npos);
     REQUIRE(backend_text->find("m_external_frame_importer.import_external_image") !=
             std::string::npos);
@@ -352,11 +333,10 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
             std::string::npos);
 }
 
-TEST_CASE("Filter chain wrapper boundary contract coverage", "[filter_chain][wrapper_contract]") {
+TEST_CASE("Filter chain standalone API boundary contract coverage",
+          "[filter_chain][wrapper_contract]") {
     const auto c_api_hpp =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/include/goggles_filter_chain.h";
-    const auto wrapper_hpp =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/include/goggles_filter_chain.hpp";
     const auto canonical_filter_controls_hpp =
         std::filesystem::path(GOGGLES_SOURCE_DIR) /
         "filter-chain/include/goggles/filter_chain/filter_controls.hpp";
@@ -372,7 +352,6 @@ TEST_CASE("Filter chain wrapper boundary contract coverage", "[filter_chain][wra
         "filter-chain/include/goggles/filter_chain/scale_mode.hpp";
 
     auto c_api_text = read_text_file(c_api_hpp);
-    auto header_text = read_text_file(wrapper_hpp);
     auto canonical_filter_controls_text = read_text_file(canonical_filter_controls_hpp);
     auto canonical_vulkan_context_text = read_text_file(canonical_vulkan_context_hpp);
     auto canonical_error_text = read_text_file(canonical_error_hpp);
@@ -380,37 +359,26 @@ TEST_CASE("Filter chain wrapper boundary contract coverage", "[filter_chain][wra
     auto canonical_scale_mode_text = read_text_file(canonical_scale_mode_hpp);
 
     REQUIRE(c_api_text.has_value());
-    REQUIRE(header_text.has_value());
     REQUIRE(canonical_filter_controls_text.has_value());
     REQUIRE(canonical_vulkan_context_text.has_value());
     REQUIRE(canonical_error_text.has_value());
     REQUIRE(canonical_result_text.has_value());
     REQUIRE(canonical_scale_mode_text.has_value());
 
-    REQUIRE(header_text->find("class GOGGLES_CHAIN_CPP_API FilterChainRuntime") !=
-            std::string::npos);
-    REQUIRE(header_text->find("FilterChainRuntime(const FilterChainRuntime&) = delete;") !=
-            std::string::npos);
-    REQUIRE(header_text->find(
-                "operator=(const FilterChainRuntime&) -> FilterChainRuntime& = delete;") !=
-            std::string::npos);
-    REQUIRE(header_text->find("FilterChainRuntime(FilterChainRuntime&& other) noexcept") !=
-            std::string::npos);
-    REQUIRE(header_text->find(
-                "operator=(FilterChainRuntime&& other) noexcept -> FilterChainRuntime&") !=
-            std::string::npos);
-    REQUIRE(header_text->find("goggles_chain_t**") == std::string::npos);
-    REQUIRE(header_text->find("#include <goggles_filter_chain.h>") != std::string::npos);
-    REQUIRE(header_text->find("render/chain/api/c/goggles_filter_chain.h") == std::string::npos);
-    REQUIRE(header_text->find("#include <goggles/filter_chain/result.hpp>") != std::string::npos);
-    REQUIRE(header_text->find("util/error.hpp") == std::string::npos);
-    REQUIRE(header_text->find("util/config.hpp") == std::string::npos);
+    // Legacy chain wrappers must not exist.
+    const auto legacy_chain_cpp_wrapper =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/cpp_wrapper.cpp";
+    const auto legacy_chain_c_api =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/c_api.cpp";
+    const auto legacy_chain_header =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/goggles_chain_legacy.h";
+    REQUIRE(!std::filesystem::exists(legacy_chain_cpp_wrapper));
+    REQUIRE(!std::filesystem::exists(legacy_chain_c_api));
+    REQUIRE(!std::filesystem::exists(legacy_chain_header));
 
     REQUIRE(c_api_text->find("util/") == std::string::npos);
-    REQUIRE(c_api_text->find("distinct from preset load/reload") != std::string::npos);
-    REQUIRE(c_api_text->find(
-                "Swapchain lifecycle, submission, and present remain host responsibilities") !=
-            std::string::npos);
+    // The goggles_fc_* C header uses the standalone API naming.
+    REQUIRE(c_api_text->find("goggles_fc_") != std::string::npos);
 
     REQUIRE(canonical_filter_controls_text->find("util/") == std::string::npos);
     REQUIRE(canonical_vulkan_context_text->find("util/") == std::string::npos);
@@ -418,47 +386,47 @@ TEST_CASE("Filter chain wrapper boundary contract coverage", "[filter_chain][wra
     REQUIRE(canonical_result_text->find("util/") == std::string::npos);
     REQUIRE(canonical_scale_mode_text->find("util/") == std::string::npos);
 
-    using goggles::render::ChainStageMask;
-    using goggles::render::ChainStagePolicy;
-    using goggles::render::stage_policy_mask;
+    // Verify the standalone C API stage mask constants cover the expected bit values.
+    const uint32_t all_mask = GOGGLES_FC_STAGE_MASK_ALL;
+    const uint32_t prechain_mask = GOGGLES_FC_STAGE_MASK_PRECHAIN;
+    const uint32_t effect_mask = GOGGLES_FC_STAGE_MASK_EFFECT;
+    const uint32_t postchain_mask = GOGGLES_FC_STAGE_MASK_POSTCHAIN;
 
-    const auto all_enabled =
-        stage_policy_mask(ChainStagePolicy{.prechain_enabled = true, .effect_stage_enabled = true});
-    const auto pre_only = stage_policy_mask(
-        ChainStagePolicy{.prechain_enabled = true, .effect_stage_enabled = false});
-    const auto effect_only = stage_policy_mask(
-        ChainStagePolicy{.prechain_enabled = false, .effect_stage_enabled = true});
-    const auto output_only = stage_policy_mask(
-        ChainStagePolicy{.prechain_enabled = false, .effect_stage_enabled = false});
+    REQUIRE((all_mask & postchain_mask) == postchain_mask);
+    REQUIRE((all_mask & prechain_mask) == prechain_mask);
+    REQUIRE((all_mask & effect_mask) == effect_mask);
 
-    REQUIRE((all_enabled & ChainStageMask::postchain) == ChainStageMask::postchain);
-    REQUIRE((all_enabled & ChainStageMask::prechain) == ChainStageMask::prechain);
-    REQUIRE((all_enabled & ChainStageMask::effect) == ChainStageMask::effect);
+    const uint32_t pre_only = prechain_mask | postchain_mask;
+    REQUIRE((pre_only & postchain_mask) == postchain_mask);
+    REQUIRE((pre_only & prechain_mask) == prechain_mask);
+    REQUIRE((pre_only & effect_mask) == 0u);
 
-    REQUIRE((pre_only & ChainStageMask::postchain) == ChainStageMask::postchain);
-    REQUIRE((pre_only & ChainStageMask::prechain) == ChainStageMask::prechain);
-    REQUIRE((pre_only & ChainStageMask::effect) == ChainStageMask::none);
+    const uint32_t effect_only = effect_mask | postchain_mask;
+    REQUIRE((effect_only & postchain_mask) == postchain_mask);
+    REQUIRE((effect_only & prechain_mask) == 0u);
+    REQUIRE((effect_only & effect_mask) == effect_mask);
 
-    REQUIRE((effect_only & ChainStageMask::postchain) == ChainStageMask::postchain);
-    REQUIRE((effect_only & ChainStageMask::prechain) == ChainStageMask::none);
-    REQUIRE((effect_only & ChainStageMask::effect) == ChainStageMask::effect);
+    const uint32_t output_only_mask = postchain_mask;
+    REQUIRE((output_only_mask & postchain_mask) == postchain_mask);
+    REQUIRE((output_only_mask & prechain_mask) == 0u);
+    REQUIRE((output_only_mask & effect_mask) == 0u);
 
-    REQUIRE((output_only & ChainStageMask::postchain) == ChainStageMask::postchain);
-    REQUIRE((output_only & ChainStageMask::prechain) == ChainStageMask::none);
-    REQUIRE((output_only & ChainStageMask::effect) == ChainStageMask::none);
+    REQUIRE(GOGGLES_FC_SCALE_MODE_STRETCH == 0u);
+    REQUIRE(GOGGLES_FC_SCALE_MODE_FIT == 1u);
+    REQUIRE(GOGGLES_FC_SCALE_MODE_INTEGER == 2u);
+    REQUIRE(GOGGLES_FC_SCALE_MODE_FILL == 3u);
+    REQUIRE(GOGGLES_FC_SCALE_MODE_DYNAMIC == 4u);
 
-    const auto wrapper_cpp =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/cpp_wrapper.cpp";
-    auto wrapper_text = read_text_file(wrapper_cpp);
-    REQUIRE(wrapper_text.has_value());
-
-    REQUIRE(wrapper_text->find("goggles_chain_create_vk_ex") != std::string::npos);
-    REQUIRE(wrapper_text->find("goggles_chain_destroy") != std::string::npos);
-    REQUIRE(wrapper_text->find("goggles_chain_record_vk") != std::string::npos);
-
-    REQUIRE(count_occurrences(*wrapper_text, "GOGGLES_LOG_WARN(") == 2);
-    REQUIRE(wrapper_text->find("GOGGLES_LOG_ERROR(") == std::string::npos);
-    REQUIRE(wrapper_text->find("GOGGLES_LOG_INFO(") == std::string::npos);
+    REQUIRE(static_cast<uint32_t>(goggles::filter_chain::ScaleMode::stretch) ==
+            GOGGLES_FC_SCALE_MODE_STRETCH);
+    REQUIRE(static_cast<uint32_t>(goggles::filter_chain::ScaleMode::fit) ==
+            GOGGLES_FC_SCALE_MODE_FIT);
+    REQUIRE(static_cast<uint32_t>(goggles::filter_chain::ScaleMode::integer) ==
+            GOGGLES_FC_SCALE_MODE_INTEGER);
+    REQUIRE(static_cast<uint32_t>(goggles::filter_chain::ScaleMode::fill) ==
+            GOGGLES_FC_SCALE_MODE_FILL);
+    REQUIRE(static_cast<uint32_t>(goggles::filter_chain::ScaleMode::dynamic) ==
+            GOGGLES_FC_SCALE_MODE_DYNAMIC);
 }
 
 TEST_CASE("Runtime metrics keep root ownership while tracking the current capture surface",
@@ -563,4 +531,264 @@ TEST_CASE("Capture pacing only publishes through the paced target callback path"
             std::string::npos);
     REQUIRE(compositor_present_text->find("capture_pacing->has_pending_frame = false;") !=
             std::string::npos);
+}
+
+TEST_CASE("filter_chain controller uses standalone API boundary",
+          "[filter_chain][adapter_boundary]") {
+    const auto c_api_hpp =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/include/goggles_filter_chain.h";
+    const auto controller_hpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
+                                "src/render/backend/filter_chain_controller.hpp";
+    const auto controller_cpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
+                                "src/render/backend/filter_chain_controller.cpp";
+    const auto backend_hpp =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_backend.hpp";
+    const auto backend_cpp =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_backend.cpp";
+
+    auto c_api_text = read_text_file(c_api_hpp);
+    auto controller_hpp_text = read_text_file(controller_hpp);
+    auto controller_cpp_text = read_text_file(controller_cpp);
+    auto backend_hpp_text = read_text_file(backend_hpp);
+    auto backend_cpp_text = read_text_file(backend_cpp);
+
+    REQUIRE(c_api_text.has_value());
+    REQUIRE(controller_hpp_text.has_value());
+    REQUIRE(controller_cpp_text.has_value());
+    REQUIRE(backend_hpp_text.has_value());
+    REQUIRE(backend_cpp_text.has_value());
+
+    SECTION("controller header includes standalone API, not filter-chain internals") {
+        // The controller header MUST include the umbrella C++ header — this is the
+        // canonical integration point with the standalone filter-chain package.
+        REQUIRE(controller_hpp_text->find("goggles_filter_chain.hpp") != std::string::npos);
+
+        // The controller MUST NOT include any filter-chain internal headers.
+        REQUIRE(controller_hpp_text->find("filter-chain/src/") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("chain_runtime.hpp") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("chain_builder.hpp") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("chain_resources.hpp") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("chain_executor.hpp") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("chain_controls.hpp") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("shader_runtime.hpp") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("texture_loader.hpp") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("preset_parser.hpp") == std::string::npos);
+        // Check for the internal runtime/chain.hpp — use a path-anchored pattern
+        // to avoid false-positive matches against the umbrella goggles_filter_chain.hpp.
+        REQUIRE(controller_hpp_text->find("runtime/chain.hpp") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("FilterChainRuntime") == std::string::npos);
+    }
+
+    SECTION("controller implementation includes standalone API, not internals") {
+        // The implementation file must include its own header.
+        REQUIRE(controller_cpp_text->find("filter_chain_controller.hpp") != std::string::npos);
+
+        // The implementation must NOT include filter-chain internal headers directly.
+        REQUIRE(controller_cpp_text->find("filter-chain/src/") == std::string::npos);
+        REQUIRE(controller_cpp_text->find("chain_runtime.hpp") == std::string::npos);
+        REQUIRE(controller_cpp_text->find("chain_builder.hpp") == std::string::npos);
+        REQUIRE(controller_cpp_text->find("chain_resources.hpp") == std::string::npos);
+        REQUIRE(controller_cpp_text->find("shader_runtime.hpp") == std::string::npos);
+    }
+
+    SECTION("controller slot owns the goggles_fc_* object graph") {
+        // The FilterChainSlot holds the RAII C++ wrappers (Instance, Device, Program, Chain)
+        // which in turn call the goggles_fc_* C API.
+        REQUIRE(controller_hpp_text->find("goggles::filter_chain::Instance instance") !=
+                std::string::npos);
+        REQUIRE(controller_hpp_text->find("goggles::filter_chain::Device device") !=
+                std::string::npos);
+        REQUIRE(controller_hpp_text->find("goggles::filter_chain::Program program") !=
+                std::string::npos);
+        REQUIRE(controller_hpp_text->find("goggles::filter_chain::Chain chain") !=
+                std::string::npos);
+
+        // Verify the slot does NOT own raw goggles_fc_*_t handles — it uses
+        // the RAII wrappers which handle destroy automatically.
+        REQUIRE(controller_hpp_text->find("goggles_fc_instance_t*") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("goggles_fc_device_t*") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("goggles_fc_program_t*") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("goggles_fc_chain_t*") == std::string::npos);
+    }
+
+    SECTION("controller forwards host Vulkan handles without creating its own") {
+        // The controller's VulkanDeviceInfo carries host-owned Vulkan handles.
+        REQUIRE(controller_hpp_text->find("VkPhysicalDevice physical_device") != std::string::npos);
+        REQUIRE(controller_hpp_text->find("VkDevice device") != std::string::npos);
+        REQUIRE(controller_hpp_text->find("VkQueue graphics_queue") != std::string::npos);
+
+        // The controller implementation forwards these handles to the standalone API
+        // via goggles_fc_vk_device_create_info_init().
+        REQUIRE(controller_cpp_text->find("goggles_fc_vk_device_create_info_init()") !=
+                std::string::npos);
+        REQUIRE(controller_cpp_text->find(
+                    "dev_info.physical_device = device_info.physical_device") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("dev_info.device = device_info.device") !=
+                std::string::npos);
+        REQUIRE(controller_cpp_text->find("dev_info.graphics_queue = device_info.graphics_queue") !=
+                std::string::npos);
+
+        // The controller must NOT create a VkInstance, VkDevice, or VkQueue internally.
+        REQUIRE(controller_cpp_text->find("vkCreateInstance") == std::string::npos);
+        REQUIRE(controller_cpp_text->find("vkCreateDevice") == std::string::npos);
+    }
+
+    SECTION("controller manages program and chain lifecycle through standalone API") {
+        // Program creation goes through the standalone API.
+        REQUIRE(controller_cpp_text->find("goggles_fc_preset_source_init()") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("goggles::filter_chain::Program::create(") !=
+                std::string::npos);
+        REQUIRE(controller_cpp_text->find("goggles::filter_chain::Chain::create(") !=
+                std::string::npos);
+
+        // Chain operations go through the RAII wrapper methods on the slot.
+        REQUIRE(controller_cpp_text->find("slot.chain.record_vk(") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("slot.chain.retarget(") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("slot.chain.resize(") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("slot.chain.get_control_count()") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("slot.chain.get_control_info(") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("slot.chain.set_control_value_f32(") !=
+                std::string::npos);
+
+        // shutdown_slot clears the full object graph in reverse order.
+        const auto shutdown_slot_pos = controller_cpp_text->find("void shutdown_slot(");
+        REQUIRE(shutdown_slot_pos != std::string::npos);
+        const auto chain_clear_pos =
+            controller_cpp_text->find("slot.chain = {};", shutdown_slot_pos);
+        const auto program_clear_pos =
+            controller_cpp_text->find("slot.program = {};", chain_clear_pos);
+        const auto device_clear_pos =
+            controller_cpp_text->find("slot.device = {};", program_clear_pos);
+        const auto instance_clear_pos =
+            controller_cpp_text->find("slot.instance = {};", device_clear_pos);
+        REQUIRE(chain_clear_pos != std::string::npos);
+        REQUIRE(program_clear_pos != std::string::npos);
+        REQUIRE(device_clear_pos != std::string::npos);
+        REQUIRE(instance_clear_pos != std::string::npos);
+        REQUIRE(chain_clear_pos < program_clear_pos);
+        REQUIRE(program_clear_pos < device_clear_pos);
+        REQUIRE(device_clear_pos < instance_clear_pos);
+    }
+
+    SECTION("log forwarding is mediated by controller log_callback") {
+        // The controller sets up a static log callback that receives filter-chain log
+        // messages and forwards them to the Goggles logging system.
+        REQUIRE(controller_cpp_text->find("instance_info.log_callback = &log_callback") !=
+                std::string::npos);
+
+        // The callback maps filter-chain log levels to Goggles log macros.
+        REQUIRE(controller_cpp_text->find("GOGGLES_FC_LOG_LEVEL_TRACE") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("GOGGLES_FC_LOG_LEVEL_DEBUG") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("GOGGLES_FC_LOG_LEVEL_INFO") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("GOGGLES_FC_LOG_LEVEL_WARN") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("GOGGLES_FC_LOG_LEVEL_ERROR") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("GOGGLES_FC_LOG_LEVEL_CRITICAL") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("GOGGLES_LOG_TRACE(") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("GOGGLES_LOG_ERROR(") != std::string::npos);
+    }
+
+    SECTION("controller owns slots directly, not filter-chain internals") {
+        // The controller owns FilterChainSlot instances (active + pending).
+        REQUIRE(controller_hpp_text->find("FilterChainSlot active_slot;") != std::string::npos);
+        REQUIRE(controller_hpp_text->find("FilterChainSlot pending_slot;") != std::string::npos);
+
+        // The controller does NOT expose a filter_chain_runtime() accessor.
+        REQUIRE(controller_hpp_text->find("filter_chain_runtime()") == std::string::npos);
+
+        // The controller implementation routes all lifecycle through slot helpers.
+        REQUIRE(controller_cpp_text->find("initialize_slot(") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("shutdown_slot(active_slot)") != std::string::npos);
+        REQUIRE(controller_cpp_text->find("shutdown_slot(pending_slot)") != std::string::npos);
+    }
+
+    SECTION("Goggles-side code does not include filter-chain internal headers") {
+        // Scan all src/render/backend/ source files for forbidden internal header paths.
+        const auto backend_root = std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend";
+
+        std::vector<std::filesystem::path> backend_files;
+        std::error_code ec;
+        for (auto it = std::filesystem::directory_iterator(backend_root, ec);
+             it != std::filesystem::directory_iterator() && !ec; it.increment(ec)) {
+            if (!it->is_regular_file(ec) || ec) {
+                continue;
+            }
+            auto ext = it->path().extension();
+            if (ext == ".cpp" || ext == ".hpp") {
+                backend_files.push_back(it->path());
+            }
+        }
+        std::sort(backend_files.begin(), backend_files.end());
+
+        // These patterns would indicate direct filter-chain internal header usage,
+        // bypassing the controller boundary. None should appear in Goggles code.
+        const std::array<std::string_view, 7> forbidden_internal_patterns = {
+            "filter-chain/src/",  "chain_runtime.hpp",  "chain_builder.hpp",  "chain_resources.hpp",
+            "chain_executor.hpp", "shader_runtime.hpp", "texture_loader.hpp",
+        };
+
+        for (const auto& file_path : backend_files) {
+            auto file_text = read_text_file(file_path);
+            REQUIRE(file_text.has_value());
+            for (const auto& pattern : forbidden_internal_patterns) {
+                INFO("File: " << file_path << ", forbidden pattern: " << pattern);
+                REQUIRE(file_text->find(pattern) == std::string::npos);
+            }
+        }
+    }
+
+    SECTION("controller exposes only controller-level types") {
+        // The controller class lives in backend_internal namespace.
+        REQUIRE(controller_hpp_text->find("namespace goggles::render::backend_internal") !=
+                std::string::npos);
+
+        // The controller's public types are VulkanDeviceInfo, ChainConfig, RecordParams —
+        // these are controller-level abstractions, not filter-chain internals.
+        REQUIRE(controller_hpp_text->find("struct VulkanDeviceInfo") != std::string::npos);
+        REQUIRE(controller_hpp_text->find("struct ChainConfig") != std::string::npos);
+        REQUIRE(controller_hpp_text->find("struct RecordParams") != std::string::npos);
+
+        // The controller does NOT expose filter-chain internal types in its public interface.
+        REQUIRE(controller_hpp_text->find("ChainRuntime") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("ChainBuilder") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("ChainResources") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("ShaderRuntime") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("CompiledChain") == std::string::npos);
+        REQUIRE(controller_hpp_text->find("PresetParser") == std::string::npos);
+    }
+
+    SECTION("retarget goes through controller slot to standalone API") {
+        // The controller's align_adapter_output uses goggles_fc_chain_target_info_init.
+        REQUIRE(controller_cpp_text->find("goggles_fc_chain_target_info_init()") !=
+                std::string::npos);
+        REQUIRE(controller_cpp_text->find("target_info.target_format = slot.target_format") !=
+                std::string::npos);
+        REQUIRE(controller_cpp_text->find("slot.chain.retarget(&target_info)") !=
+                std::string::npos);
+
+        // The controller's retarget path uses align_adapter_output.
+        REQUIRE(controller_cpp_text->find("align_adapter_output(") != std::string::npos);
+    }
+
+    SECTION("prechain resolution update stays distinct from output resize") {
+        REQUIRE(c_api_text->find("goggles_fc_chain_set_prechain_resolution(") != std::string::npos);
+
+        const auto controller_prechain_pos =
+            controller_cpp_text->find("void FilterChainController::set_prechain_resolution(");
+        const auto controller_handle_resize_pos =
+            controller_cpp_text->find("auto FilterChainController::handle_resize(");
+        REQUIRE(controller_prechain_pos != std::string::npos);
+        REQUIRE(controller_handle_resize_pos != std::string::npos);
+        // set_prechain_resolution uses set_prechain_resolution API, not resize
+        REQUIRE(controller_cpp_text->find("active_slot.chain.set_prechain_resolution(&resolution)",
+                                          controller_prechain_pos) != std::string::npos);
+        // handle_resize uses chain.resize, not set_prechain_resolution
+        REQUIRE(controller_cpp_text->find("active_slot.chain.resize(&extent)",
+                                          controller_handle_resize_pos) != std::string::npos);
+    }
+
+    // Compile-time verification: controller type traits prove Goggles consumes the
+    // standalone boundary — the controller is move-only (no accidental copies).
+    using Controller = goggles::render::backend_internal::FilterChainController;
+    static_assert(!std::is_copy_constructible_v<Controller>, "controller must be move-only");
+    static_assert(!std::is_copy_assignable_v<Controller>, "controller must be move-only");
 }

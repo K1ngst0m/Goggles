@@ -9,9 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <goggles/filter_chain/filter_controls.hpp>
-#include <goggles/filter_chain/result.hpp>
-#include <goggles/filter_chain/scale_mode.hpp>
+#include <goggles_filter_chain.hpp>
 #include <optional>
 #include <util/config.hpp>
 #include <util/external_image.hpp>
@@ -41,13 +39,11 @@ public:
     /// @brief Creates a Vulkan backend bound to an SDL window.
     /// @return A backend or an error.
     [[nodiscard]] static auto create(SDL_Window* window, bool enable_validation = false,
-                                     const std::filesystem::path& shader_dir = "shaders",
                                      const std::filesystem::path& cache_dir = {},
                                      const RenderSettings& settings = {})
         -> ResultPtr<VulkanBackend>;
     /// @brief Creates a headless Vulkan backend without a window or swapchain.
     [[nodiscard]] static auto create_headless(bool enable_validation = false,
-                                              const std::filesystem::path& shader_dir = "shaders",
                                               const std::filesystem::path& cache_dir = {},
                                               const RenderSettings& settings = {})
         -> ResultPtr<VulkanBackend>;
@@ -146,14 +142,13 @@ public:
 private:
     VulkanBackend() = default;
 
-    void initialize_paths(const std::filesystem::path& shader_dir,
-                          const std::filesystem::path& cache_dir);
+    void initialize_paths(const std::filesystem::path& cache_dir);
     void initialize_settings(const RenderSettings& settings);
     void update_target_fps(uint32_t target_fps) { m_render_output.set_target_fps(target_fps); }
 
     [[nodiscard]] auto init_filter_chain() -> Result<void>;
     [[nodiscard]] auto make_filter_chain_build_config() const
-        -> backend_internal::FilterChainController::RuntimeBuildConfig;
+        -> backend_internal::FilterChainController::AdapterBuildConfig;
 
     [[nodiscard]] auto record_render_commands(vk::CommandBuffer cmd, uint32_t image_index,
                                               const UiRenderCallback& ui_callback = nullptr)
@@ -169,7 +164,6 @@ private:
     backend_internal::ExternalFrameImporter m_external_frame_importer;
     backend_internal::FilterChainController m_filter_chain_controller;
 
-    std::filesystem::path m_shader_dir;
     std::filesystem::path m_cache_dir;
     std::optional<Config::Diagnostics> m_diagnostics_config;
 

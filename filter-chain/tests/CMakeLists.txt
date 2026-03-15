@@ -1,7 +1,5 @@
-add_executable(fc_tests
+set(FC_TEST_SOURCES
     contract/test_filter_chain.cpp
-    contract/test_filter_chain_c_api_contracts.cpp
-    contract/test_filter_chain_retarget_contract.cpp
     contract/test_filter_controls.cpp
     contract/test_preset_parser.cpp
     contract/test_retroarch_preprocessor.cpp
@@ -22,7 +20,11 @@ add_executable(fc_tests
     contract/test_gpu_timestamp_pool.cpp
     contract/test_shader_batch_report.cpp
     contract/shader_batch_report.cpp
+    contract/test_runtime_diagnostics.cpp
+    contract/test_filter_chain_c_api_contracts.cpp
 )
+
+add_executable(fc_tests ${FC_TEST_SOURCES})
 
 target_include_directories(fc_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src

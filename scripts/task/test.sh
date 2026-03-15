@@ -15,3 +15,6 @@ fi
 
 # Run tests
 ctest --preset "$PRESET" --output-on-failure "${CTEST_LABEL_EXCLUDE_ARGS[@]}"
+
+# Validate installed downstream consumers against the packaged standalone library.
+"$SCRIPT_DIR/validate-installed-consumers.sh" -p "$PRESET"

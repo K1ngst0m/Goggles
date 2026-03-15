@@ -1,5 +1,6 @@
 #include "output_pass.hpp"
 
+#include "runtime/embedded_assets.hpp"
 #include "shader/shader_runtime.hpp"
 #include "support/logging.hpp"
 #include "support/profiling.hpp"
@@ -226,11 +227,31 @@ auto OutputPass::create_pipeline_layout() -> Result<void> {
 
 auto OutputPass::create_pipeline(ShaderRuntime& shader_runtime,
                                  const std::filesystem::path& shader_dir) -> Result<void> {
-    // Internal shaders - abort on failure since they're bundled with the app
-    auto vert_compiled =
-        GOGGLES_MUST(shader_runtime.compile_shader(shader_dir / "internal/blit.vert.slang"));
-    auto frag_compiled =
-        GOGGLES_MUST(shader_runtime.compile_shader(shader_dir / "internal/blit.frag.slang"));
+    // Try embedded assets first for internal shaders, then fall back to filesystem.
+    CompiledShader vert_compiled;
+    CompiledShader frag_compiled;
+
+    auto vert_asset = filter_chain::runtime::EmbeddedAssetRegistry::find("internal/blit.vert");
+    if (vert_asset) {
+        std::string vert_source(reinterpret_cast<const char*>(vert_asset->data.data()),
+                                vert_asset->data.size());
+        vert_compiled =
+            GOGGLES_MUST(shader_runtime.compile_shader_from_source(vert_source, "blit.vert"));
+    } else {
+        vert_compiled =
+            GOGGLES_MUST(shader_runtime.compile_shader(shader_dir / "internal/blit.vert.slang"));
+    }
+
+    auto frag_asset = filter_chain::runtime::EmbeddedAssetRegistry::find("internal/blit.frag");
+    if (frag_asset) {
+        std::string frag_source(reinterpret_cast<const char*>(frag_asset->data.data()),
+                                frag_asset->data.size());
+        frag_compiled =
+            GOGGLES_MUST(shader_runtime.compile_shader_from_source(frag_source, "blit.frag"));
+    } else {
+        frag_compiled =
+            GOGGLES_MUST(shader_runtime.compile_shader(shader_dir / "internal/blit.frag.slang"));
+    }
 
     vk::ShaderModuleCreateInfo vert_module_info{};
     vert_module_info.codeSize = vert_compiled.spirv.size() * sizeof(uint32_t);

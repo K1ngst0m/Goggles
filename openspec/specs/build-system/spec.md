@@ -190,23 +190,24 @@ requiring Goggles-specific wrappers.
   imported target
 - **AND** the config SHALL resolve transitive PUBLIC dependencies before defining the target
 
-### Requirement: Goggles External Dependency Primary Path
+### Requirement: Goggles In-Tree Subdirectory Primary Path
 
-Goggles SHALL consume the extracted filter runtime through `find_package(...)` as the primary
-integration path. `add_subdirectory(...)` MAY remain available only as an explicit local-development
-convenience and SHALL NOT be the required or default downstream integration contract.
+Goggles SHALL consume the in-repo filter runtime through `add_subdirectory(filter-chain)` as the
+primary and default integration path. The standalone build and `find_package(...)` path SHALL remain
+available for validating the exported package contract (installed consumer tests) but SHALL NOT be
+required for normal Goggles builds.
 
-#### Scenario: Goggles normal integration uses package discovery
-- **GIVEN** Goggles is configured against an installed standalone filter-chain package
-- **WHEN** render targets resolve the filter runtime dependency
-- **THEN** Goggles SHALL obtain the dependency through `find_package(...)`
-- **AND** normal integration guidance SHALL treat package discovery as the primary supported path
+#### Scenario: Goggles normal build uses subdirectory inclusion
+- **GIVEN** the filter-chain source tree is present under `filter-chain/` in the Goggles repo
+- **WHEN** Goggles is configured with any build preset
+- **THEN** the build SHALL include the filter runtime via `add_subdirectory(filter-chain)`
+- **AND** no separate pre-build, install, or `CMAKE_PREFIX_PATH` step SHALL be required
 
-#### Scenario: Local development subdirectory path stays optional
-- **GIVEN** a developer is iterating on Goggles and a local checkout of the extracted library together
-- **WHEN** the developer opts into a local-development source-based workflow
-- **THEN** `add_subdirectory(...)` MAY be used to wire that checkout for development convenience
-- **AND** Goggles release acceptance SHALL NOT depend on `add_subdirectory(...)` being the primary consumer path
+#### Scenario: Installed package validation remains available
+- **GIVEN** the standalone filter-chain project can be configured, built, and installed independently
+- **WHEN** maintainers run installed-consumer validation (e.g. `validate-installed-consumers.sh`)
+- **THEN** the validation script SHALL perform its own standalone build and install
+- **AND** the exported `find_package(GogglesFilterChain CONFIG REQUIRED)` contract SHALL continue to work for downstream consumers outside the Goggles repo
 
 ### Requirement: Paired Static and Shared Package Outputs
 

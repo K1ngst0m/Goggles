@@ -67,8 +67,6 @@ TEST_CASE("Vulkan backend seam declarations stay compile-safe", "[vulkan-backend
     namespace backend_internal = goggles::render::backend_internal;
 
     static_assert(!std::is_same_v<backend_internal::VulkanContext, goggles::render::VulkanContext>);
-    static_assert(std::is_same_v<backend_internal::FilterChainController::BoundaryVulkanContext,
-                                 goggles::render::VulkanContext>);
     static_assert(backend_internal::RenderOutput::MAX_FRAMES_IN_FLIGHT == 2u);
     using BoundaryContextAdapterSig =
         goggles::render::VulkanContext (backend_internal::VulkanContext::*)(vk::CommandPool) const;
@@ -91,7 +89,7 @@ TEST_CASE("Vulkan backend seam declarations stay compile-safe", "[vulkan-backend
     REQUIRE(importer.wait_semaphore(0) == vk::Semaphore{});
     REQUIRE(controller.prechain_policy_enabled);
     REQUIRE(controller.effect_stage_policy_enabled);
-    REQUIRE(controller.retired_runtimes.retired_count == 0u);
+    REQUIRE(controller.retired_adapters.retired_count == 0u);
     REQUIRE(controller.pending_preset_path.empty());
     REQUIRE(controller.authoritative_output_target.format == vk::Format::eUndefined);
     REQUIRE(controller.authoritative_output_target.extent == vk::Extent2D{});
@@ -128,8 +126,7 @@ TEST_CASE("Vulkan backend dependency edge audits stay explicit", "[vulkan-backen
     REQUIRE(find_text(*importer_cpp_text, "prepare_wait_semaphore") != std::string::npos);
     REQUIRE(find_text(*importer_cpp_text, "retire_wait_semaphore") != std::string::npos);
     REQUIRE(find_text(*importer_cpp_text, "clear_current_source()") != std::string::npos);
-    REQUIRE(find_text(*controller_text, "goggles/filter_chain/vulkan_context.hpp") !=
-            std::string::npos);
+    REQUIRE(find_text(*controller_text, "filter_chain_adapter.hpp") == std::string::npos);
     REQUIRE(find_text(*controller_text, "render/chain/vulkan_context.hpp") == std::string::npos);
     REQUIRE(find_text(*controller_text, "struct OutputTarget") != std::string::npos);
     REQUIRE(find_text(*controller_text, "retarget_filter_chain") != std::string::npos);
@@ -184,22 +181,22 @@ TEST_CASE("Vulkan backend teardown audit hooks stay aligned with shutdown order"
     const auto clear_ready_pos = find_text(*controller_text, "pending_chain_ready.store(false",
                                            controller_shutdown_impl_pos);
     const auto wait_idle_pos = find_text(*controller_text, "wait_for_gpu_idle();", clear_ready_pos);
-    const auto active_chain_pos =
-        find_text(*controller_text, "destroy_filter_chain(filter_chain", wait_idle_pos);
-    const auto pending_chain_pos =
-        find_text(*controller_text, "destroy_filter_chain(pending_filter_chain", active_chain_pos);
-    const auto retired_tracker_shutdown_pos = find_text(
-        *controller_text, "shutdown_retired_runtime_tracker(retired_runtimes);", pending_chain_pos);
+    const auto active_adapter_pos =
+        find_text(*controller_text, "shutdown_slot(active_slot)", wait_idle_pos);
+    const auto pending_adapter_pos =
+        find_text(*controller_text, "shutdown_slot(pending_slot)", active_adapter_pos);
+    const auto retired_tracker_shutdown_pos =
+        find_text(*controller_text, "shutdown_retired_adapter_tracker(retired_adapters);",
+                  pending_adapter_pos);
     const auto retired_helper_pos =
-        find_text(*controller_text, "void shutdown_retired_runtime_tracker(");
-    const auto retired_chain_pos = find_text(
-        *controller_text, "destroy_filter_chain(retired_runtimes.retired_runtimes[i].filter_chain",
-        retired_helper_pos);
+        find_text(*controller_text, "void shutdown_retired_adapter_tracker(");
+    const auto retired_adapter_shutdown_pos =
+        find_text(*controller_text, "shutdown_slot(retired.retired[i].slot)", retired_helper_pos);
     const auto retired_reset_pos =
-        find_text(*controller_text, "retired_runtimes.retired_runtimes[i].destroy_after_frame = 0;",
-                  retired_chain_pos);
+        find_text(*controller_text, "retired.retired[i].destroy_after_frame = 0;",
+                  retired_adapter_shutdown_pos);
     const auto retired_count_reset_pos =
-        find_text(*controller_text, "retired_runtimes.retired_count = 0;", retired_reset_pos);
+        find_text(*controller_text, "retired.retired_count = 0;", retired_reset_pos);
 
     const auto output_shutdown_pos =
         find_text(*render_output_text, "void RenderOutput::destroy(VulkanContext& context)");
@@ -227,11 +224,11 @@ TEST_CASE("Vulkan backend teardown audit hooks stay aligned with shutdown order"
     REQUIRE(controller_shutdown_impl_pos != std::string::npos);
     REQUIRE(clear_ready_pos != std::string::npos);
     REQUIRE(wait_idle_pos != std::string::npos);
-    REQUIRE(active_chain_pos != std::string::npos);
-    REQUIRE(pending_chain_pos != std::string::npos);
+    REQUIRE(active_adapter_pos != std::string::npos);
+    REQUIRE(pending_adapter_pos != std::string::npos);
     REQUIRE(retired_tracker_shutdown_pos != std::string::npos);
     REQUIRE(retired_helper_pos != std::string::npos);
-    REQUIRE(retired_chain_pos != std::string::npos);
+    REQUIRE(retired_adapter_shutdown_pos != std::string::npos);
     REQUIRE(retired_reset_pos != std::string::npos);
     REQUIRE(retired_count_reset_pos != std::string::npos);
     REQUIRE(importer_cleanup_pos != std::string::npos);
@@ -250,11 +247,11 @@ TEST_CASE("Vulkan backend teardown audit hooks stay aligned with shutdown order"
 
     REQUIRE(controller_shutdown_pos < importer_cleanup_pos);
     REQUIRE(clear_ready_pos < wait_idle_pos);
-    REQUIRE(wait_idle_pos < active_chain_pos);
-    REQUIRE(active_chain_pos < pending_chain_pos);
-    REQUIRE(pending_chain_pos < retired_tracker_shutdown_pos);
-    REQUIRE(retired_helper_pos < retired_chain_pos);
-    REQUIRE(retired_chain_pos < retired_reset_pos);
+    REQUIRE(wait_idle_pos < active_adapter_pos);
+    REQUIRE(active_adapter_pos < pending_adapter_pos);
+    REQUIRE(pending_adapter_pos < retired_tracker_shutdown_pos);
+    REQUIRE(retired_helper_pos < retired_adapter_shutdown_pos);
+    REQUIRE(retired_adapter_shutdown_pos < retired_reset_pos);
     REQUIRE(retired_reset_pos < retired_count_reset_pos);
     REQUIRE(importer_cleanup_pos < output_cleanup_pos);
     REQUIRE(output_cleanup_pos < context_destroy_pos);
@@ -276,12 +273,32 @@ TEST_CASE("Vulkan backend teardown audit hooks stay aligned with shutdown order"
         *backend_text, "m_filter_chain_controller.handle_resize(", format_change_branch_pos);
     const auto explicit_reload_pos =
         find_text(*backend_text, "m_filter_chain_controller.reload_shader_preset(");
+    const auto set_policy_pos =
+        find_text(*backend_text, "void VulkanBackend::set_filter_chain_policy(");
+    const auto policy_controller_pos =
+        find_text(*backend_text, "m_filter_chain_controller.set_stage_policy(", set_policy_pos);
+    const auto policy_wait_lambda_pos =
+        find_text(*backend_text, "[this]() { wait_all_frames(); }", set_policy_pos);
+    const auto set_prechain_pos =
+        find_text(*backend_text, "void VulkanBackend::set_prechain_resolution(");
+    const auto prechain_controller_pos = find_text(
+        *backend_text, "m_filter_chain_controller.set_prechain_resolution(", set_prechain_pos);
+    const auto prechain_wait_lambda_pos =
+        find_text(*backend_text, "[this]() { wait_all_frames(); }", set_prechain_pos);
 
     REQUIRE(recreate_swapchain_pos != std::string::npos);
     REQUIRE(format_change_branch_pos != std::string::npos);
     REQUIRE(retarget_call_pos != std::string::npos);
     REQUIRE(resize_call_pos != std::string::npos);
     REQUIRE(explicit_reload_pos != std::string::npos);
+    REQUIRE(set_policy_pos != std::string::npos);
+    REQUIRE(policy_controller_pos != std::string::npos);
+    REQUIRE(policy_wait_lambda_pos != std::string::npos);
+    REQUIRE(set_prechain_pos != std::string::npos);
+    REQUIRE(prechain_controller_pos != std::string::npos);
+    REQUIRE(prechain_wait_lambda_pos != std::string::npos);
     REQUIRE(format_change_branch_pos < retarget_call_pos);
     REQUIRE(retarget_call_pos < resize_call_pos);
+    REQUIRE(policy_controller_pos < policy_wait_lambda_pos);
+    REQUIRE(prechain_controller_pos < prechain_wait_lambda_pos);
 }

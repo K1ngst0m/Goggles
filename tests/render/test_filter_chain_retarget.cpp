@@ -6,10 +6,12 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <goggles_filter_chain.hpp>
+#include <limits>
 #include <optional>
+#include <spdlog/spdlog.h>
 #include <string>
 #include <thread>
+#include <util/logging.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -130,17 +132,14 @@ struct VulkanRuntimeFixture {
 
     [[nodiscard]] auto available() const -> bool { return m_device != VK_NULL_HANDLE; }
 
-    [[nodiscard]] auto create_info() const -> goggles::render::ChainCreateInfo {
-        return goggles::render::ChainCreateInfo{
-            .device = vk::Device{m_device},
-            .physical_device = vk::PhysicalDevice{m_physical_device},
-            .graphics_queue = vk::Queue{m_queue},
+    [[nodiscard]] auto device_info() const
+        -> goggles::render::backend_internal::FilterChainController::VulkanDeviceInfo {
+        return goggles::render::backend_internal::FilterChainController::VulkanDeviceInfo{
+            .physical_device = m_physical_device,
+            .device = m_device,
+            .graphics_queue = m_queue,
             .graphics_queue_family_index = m_queue_family_index,
-            .target_format = vk::Format::eB8G8R8A8Unorm,
-            .num_sync_indices = TEST_SYNC_INDICES,
-            .shader_dir = {},
             .cache_dir = {},
-            .initial_prechain_resolution = {},
         };
     }
 
@@ -163,16 +162,6 @@ struct CacheDirGuard {
     std::filesystem::path dir;
 };
 
-auto find_control(const std::vector<goggles::render::ChainControlDescriptor>& controls,
-                  std::string_view name) -> const goggles::render::ChainControlDescriptor* {
-    for (const auto& control : controls) {
-        if (control.name == name) {
-            return &control;
-        }
-    }
-    return nullptr;
-}
-
 auto find_filter_control(const std::vector<goggles::render::FilterControlDescriptor>& controls,
                          std::string_view name) -> const goggles::render::FilterControlDescriptor* {
     for (const auto& control : controls) {
@@ -183,26 +172,22 @@ auto find_filter_control(const std::vector<goggles::render::FilterControlDescrip
     return nullptr;
 }
 
-auto make_runtime_build_config(const VulkanRuntimeFixture& fixture,
-                               const std::filesystem::path& shader_root,
+auto make_adapter_build_config(const VulkanRuntimeFixture& fixture,
                                const std::filesystem::path& cache_dir,
-                               vk::Format target_format = vk::Format::eB8G8R8A8Unorm,
-                               vk::Extent2D target_extent = {1u, 1u})
-    -> goggles::render::backend_internal::FilterChainController::RuntimeBuildConfig {
+                               VkFormat target_format = VK_FORMAT_B8G8R8A8_UNORM)
+    -> goggles::render::backend_internal::FilterChainController::AdapterBuildConfig {
+    auto dev_info = fixture.device_info();
+    dev_info.cache_dir = cache_dir.string();
     return {
-        .vulkan_context = {.device = vk::Device{fixture.create_info().device},
-                           .physical_device =
-                               vk::PhysicalDevice{fixture.create_info().physical_device},
-                           .command_pool = vk::CommandPool{},
-                           .graphics_queue = vk::Queue{fixture.create_info().graphics_queue}},
-        .graphics_queue_family_index = fixture.create_info().graphics_queue_family_index,
-        .target_format = target_format,
-        .target_extent = target_extent,
-        .num_sync_indices = TEST_SYNC_INDICES,
-        .shader_dir = shader_root,
-        .cache_dir = cache_dir,
-        .initial_prechain_resolution = {1u, 1u},
-        .diagnostics_config = std::nullopt,
+        .device_info = dev_info,
+        .chain_config =
+            goggles::render::backend_internal::FilterChainController::ChainConfig{
+                .target_format = target_format,
+                .frames_in_flight = TEST_SYNC_INDICES,
+                .initial_prechain_width = 1u,
+                .initial_prechain_height = 1u,
+            },
+        .diagnostics = std::nullopt,
     };
 }
 
@@ -210,7 +195,7 @@ void configure_controller_runtime(
     goggles::render::backend_internal::FilterChainController& controller,
     const std::filesystem::path& preset_path) {
     controller.preset_path = preset_path;
-    controller.set_stage_policy({.prechain_enabled = true, .effect_stage_enabled = false});
+    controller.set_stage_policy(true, false);
     controller.set_prechain_resolution({.requested_resolution = {2u, 3u}});
 
     const auto controls =
@@ -225,16 +210,20 @@ void require_controller_state(goggles::render::backend_internal::FilterChainCont
     REQUIRE(controller.current_preset_path() == preset_path);
     REQUIRE(controller.current_prechain_resolution() == vk::Extent2D{2u, 3u});
 
-    const auto policy_result = controller.filter_chain.get_stage_policy();
-    REQUIRE(policy_result.has_value());
-    REQUIRE(policy_result->prechain_enabled);
-    REQUIRE(!policy_result->effect_stage_enabled);
+    // Stage policy is stored as boolean flags on the controller.
+    REQUIRE(controller.prechain_policy_enabled);
+    REQUIRE(!controller.effect_stage_policy_enabled);
 
     const auto controls =
         controller.list_filter_controls(goggles::render::FilterControlStage::prechain);
     const auto* filter_type = find_filter_control(controls, "filter_type");
     REQUIRE(filter_type != nullptr);
     REQUIRE(filter_type->current_value == Catch::Approx(2.0F));
+
+    auto report_result = controller.get_chain_report();
+    REQUIRE(report_result.has_value());
+    REQUIRE(report_result->current_stage_mask ==
+            (GOGGLES_FC_STAGE_MASK_PRECHAIN | GOGGLES_FC_STAGE_MASK_POSTCHAIN));
 }
 
 void wait_for_reload_start(
@@ -257,58 +246,6 @@ void wait_for_reload_start(
 
 } // namespace
 
-TEST_CASE("Filter chain output retarget preserves runtime state", "[filter_chain][retarget]") {
-    VulkanRuntimeFixture fixture;
-    if (!fixture.available()) {
-        SKIP("Skipping Vulkan-backed retarget test because no Vulkan graphics device is available");
-    }
-
-    const auto shader_root = std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders";
-    const auto preset_path =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/test/format.slangp";
-    REQUIRE(std::filesystem::exists(shader_root));
-    REQUIRE(std::filesystem::exists(preset_path));
-
-    CacheDirGuard cache_dir_guard(make_cache_dir());
-    auto create_info = fixture.create_info();
-    create_info.shader_dir = shader_root;
-    create_info.cache_dir = cache_dir_guard.dir;
-    create_info.initial_prechain_resolution = vk::Extent2D{1u, 1u};
-
-    auto runtime_result = goggles::render::FilterChainRuntime::create(create_info);
-    REQUIRE(runtime_result.has_value());
-    auto runtime = std::move(runtime_result.value());
-
-    REQUIRE(runtime.load_preset(preset_path).has_value());
-    REQUIRE(runtime.set_stage_policy({.prechain_enabled = true, .effect_stage_enabled = false})
-                .has_value());
-    REQUIRE(runtime.set_prechain_resolution(vk::Extent2D{2u, 3u}).has_value());
-
-    auto controls_result = runtime.list_controls(goggles::render::ChainControlStage::prechain);
-    REQUIRE(controls_result.has_value());
-    const auto* filter_type = find_control(*controls_result, "filter_type");
-    REQUIRE(filter_type != nullptr);
-    REQUIRE(runtime.set_control_value(filter_type->control_id, 2.0F).has_value());
-    REQUIRE(runtime.set_control_value(filter_type->control_id, 2.0F).value());
-
-    REQUIRE(runtime.retarget_output(vk::Format::eB8G8R8A8Srgb).has_value());
-
-    auto policy_result = runtime.get_stage_policy();
-    REQUIRE(policy_result.has_value());
-    REQUIRE(policy_result->prechain_enabled);
-    REQUIRE(!policy_result->effect_stage_enabled);
-
-    auto resolution_result = runtime.get_prechain_resolution();
-    REQUIRE(resolution_result.has_value());
-    REQUIRE(*resolution_result == vk::Extent2D{2u, 3u});
-
-    controls_result = runtime.list_controls(goggles::render::ChainControlStage::prechain);
-    REQUIRE(controls_result.has_value());
-    filter_type = find_control(*controls_result, "filter_type");
-    REQUIRE(filter_type != nullptr);
-    REQUIRE(filter_type->current_value == Catch::Approx(2.0F));
-}
-
 TEST_CASE("Controller retarget preserves active runtime without swap signaling",
           "[filter_chain][retarget][runtime]") {
     VulkanRuntimeFixture fixture;
@@ -317,15 +254,13 @@ TEST_CASE("Controller retarget preserves active runtime without swap signaling",
              "available");
     }
 
-    const auto shader_root = std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders";
     const auto preset_path =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/test/format.slangp";
-    REQUIRE(std::filesystem::exists(shader_root));
     REQUIRE(std::filesystem::exists(preset_path));
 
     CacheDirGuard cache_dir_guard(make_cache_dir());
     auto controller = goggles::render::backend_internal::FilterChainController{};
-    auto build_config = make_runtime_build_config(fixture, shader_root, cache_dir_guard.dir);
+    auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
     REQUIRE(controller.recreate_filter_chain(build_config).has_value());
     configure_controller_runtime(controller, preset_path);
@@ -338,9 +273,7 @@ TEST_CASE("Controller retarget preserves active runtime without swap signaling",
     REQUIRE_FALSE(controller.consume_chain_swapped());
     require_controller_state(controller, preset_path);
 
-    controller.shutdown([device = fixture.create_info().device]() {
-        REQUIRE(device.waitIdle() == vk::Result::eSuccess);
-    });
+    controller.shutdown([&fixture]() { vkDeviceWaitIdle(fixture.device_info().device); });
 }
 
 TEST_CASE("Controller retarget failure keeps the previous runtime usable",
@@ -351,15 +284,13 @@ TEST_CASE("Controller retarget failure keeps the previous runtime usable",
              "device is available");
     }
 
-    const auto shader_root = std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders";
     const auto preset_path =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/test/format.slangp";
-    REQUIRE(std::filesystem::exists(shader_root));
     REQUIRE(std::filesystem::exists(preset_path));
 
     CacheDirGuard cache_dir_guard(make_cache_dir());
     auto controller = goggles::render::backend_internal::FilterChainController{};
-    auto build_config = make_runtime_build_config(fixture, shader_root, cache_dir_guard.dir);
+    auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
     REQUIRE(controller.recreate_filter_chain(build_config).has_value());
     configure_controller_runtime(controller, preset_path);
@@ -374,9 +305,7 @@ TEST_CASE("Controller retarget failure keeps the previous runtime usable",
                     {.format = vk::Format::eB8G8R8A8Srgb, .extent = vk::Extent2D{4u, 5u}})
                 .has_value());
 
-    controller.shutdown([device = fixture.create_info().device]() {
-        REQUIRE(device.waitIdle() == vk::Result::eSuccess);
-    });
+    controller.shutdown([&fixture]() { vkDeviceWaitIdle(fixture.device_info().device); });
 }
 
 TEST_CASE("Pending reload swaps only after activation and preserves authoritative state",
@@ -388,15 +317,13 @@ TEST_CASE("Pending reload swaps only after activation and preserves authoritativ
             "is available");
     }
 
-    const auto shader_root = std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders";
     const auto preset_path =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/test/format.slangp";
-    REQUIRE(std::filesystem::exists(shader_root));
     REQUIRE(std::filesystem::exists(preset_path));
 
     CacheDirGuard cache_dir_guard(make_cache_dir());
     auto controller = goggles::render::backend_internal::FilterChainController{};
-    auto build_config = make_runtime_build_config(fixture, shader_root, cache_dir_guard.dir);
+    auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
     REQUIRE(controller.recreate_filter_chain(build_config).has_value());
     configure_controller_runtime(controller, preset_path);
@@ -417,9 +344,7 @@ TEST_CASE("Pending reload swaps only after activation and preserves authoritativ
     REQUIRE_FALSE(controller.pending_chain_ready.load(std::memory_order_acquire));
     require_controller_state(controller, preset_path);
 
-    controller.shutdown([device = fixture.create_info().device]() {
-        REQUIRE(device.waitIdle() == vk::Result::eSuccess);
-    });
+    controller.shutdown([&fixture]() { vkDeviceWaitIdle(fixture.device_info().device); });
 }
 
 TEST_CASE("Explicit reload failure preserves the previous runtime",
@@ -430,18 +355,16 @@ TEST_CASE("Explicit reload failure preserves the previous runtime",
              "available");
     }
 
-    const auto shader_root = std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders";
     const auto preset_path =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/test/format.slangp";
     const auto missing_preset_path =
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/test/missing.slangp";
-    REQUIRE(std::filesystem::exists(shader_root));
     REQUIRE(std::filesystem::exists(preset_path));
     REQUIRE_FALSE(std::filesystem::exists(missing_preset_path));
 
     CacheDirGuard cache_dir_guard(make_cache_dir());
     auto controller = goggles::render::backend_internal::FilterChainController{};
-    auto build_config = make_runtime_build_config(fixture, shader_root, cache_dir_guard.dir);
+    auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
     REQUIRE(controller.recreate_filter_chain(build_config).has_value());
     configure_controller_runtime(controller, preset_path);
@@ -461,9 +384,67 @@ TEST_CASE("Explicit reload failure preserves the previous runtime",
                     {.format = vk::Format::eB8G8R8A8Srgb, .extent = vk::Extent2D{4u, 5u}})
                 .has_value());
 
-    controller.shutdown([device = fixture.create_info().device]() {
-        REQUIRE(device.waitIdle() == vk::Result::eSuccess);
-    });
+    controller.shutdown([&fixture]() { vkDeviceWaitIdle(fixture.device_info().device); });
+}
+
+TEST_CASE("Reload across different control surfaces skips stale restore warnings",
+          "[filter_chain][retarget][runtime]") {
+    VulkanRuntimeFixture fixture;
+    if (!fixture.available()) {
+        SKIP("Skipping Vulkan-backed reload warning test because no Vulkan graphics device is "
+             "available");
+    }
+
+    const auto preset_path =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "shaders/retroarch/test/format.slangp";
+    REQUIRE(std::filesystem::exists(preset_path));
+
+    CacheDirGuard cache_dir_guard(make_cache_dir());
+    CacheDirGuard log_dir_guard(make_cache_dir());
+    const auto log_path = log_dir_guard.dir / "filter_chain_reload.log";
+
+    goggles::initialize_logger("filter_chain_retarget_tests");
+    goggles::set_log_level(spdlog::level::warn);
+    REQUIRE(goggles::set_log_file_path(log_path).has_value());
+
+    auto controller = goggles::render::backend_internal::FilterChainController{};
+    auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
+
+    REQUIRE(controller.recreate_filter_chain(build_config).has_value());
+    controller.set_stage_policy(true, true);
+    controller.set_prechain_resolution({.requested_resolution = {2u, 3u}});
+    controller.load_shader_preset(preset_path);
+
+    const auto prechain_controls_before =
+        controller.list_filter_controls(goggles::render::FilterControlStage::prechain);
+    const auto* filter_type_before = find_filter_control(prechain_controls_before, "filter_type");
+    REQUIRE(filter_type_before != nullptr);
+    REQUIRE(controller.set_filter_control_value(filter_type_before->control_id, 2.0F));
+    controller.authoritative_control_overrides.push_back(
+        {.control_id = std::numeric_limits<goggles::render::FilterControlId>::max(),
+         .value = 1.0F});
+
+    REQUIRE(controller.reload_shader_preset({}, build_config).has_value());
+    wait_for_reload_start(controller);
+    controller.check_pending_chain_swap([] {});
+    REQUIRE(controller.consume_chain_swapped());
+
+    const auto prechain_controls =
+        controller.list_filter_controls(goggles::render::FilterControlStage::prechain);
+    const auto* filter_type = find_filter_control(prechain_controls, "filter_type");
+    REQUIRE(filter_type != nullptr);
+    CHECK(filter_type->current_value == Catch::Approx(2.0F));
+
+    goggles::get_logger()->flush();
+    auto log_text = read_text_file(log_path);
+    REQUIRE(log_text.has_value());
+    CHECK(log_text->find("Failed to restore filter control before swap") == std::string::npos);
+    CHECK(log_text->find("Failed to restore filter control value before swap") ==
+          std::string::npos);
+    CHECK(log_text->find("Control id not found on active chain") == std::string::npos);
+
+    REQUIRE(goggles::set_log_file_path({}).has_value());
+    controller.shutdown([&fixture]() { vkDeviceWaitIdle(fixture.device_info().device); });
 }
 
 TEST_CASE("Controller and backend retarget path stays distinct from reload",
@@ -480,9 +461,9 @@ TEST_CASE("Controller and backend retarget path stays distinct from reload",
 
     REQUIRE(controller_text->find("authoritative_output_target = OutputTarget{") !=
             std::string::npos);
-    REQUIRE(controller_text->find("align_runtime_output_target(") != std::string::npos);
-    REQUIRE(controller_text->find("pending_chain, requested_output_target,") != std::string::npos);
-    REQUIRE(controller_text->find("pending_filter_chain, authoritative_output_target,") !=
+    REQUIRE(controller_text->find("align_adapter_output(") != std::string::npos);
+    REQUIRE(controller_text->find("new_adapter, requested_output_target,") != std::string::npos);
+    REQUIRE(controller_text->find("pending_slot, authoritative_output_target,") !=
             std::string::npos);
 
     const auto recreate_swapchain_pos =
@@ -529,14 +510,69 @@ TEST_CASE("Retarget failure path stays staged and non-destructive",
     const auto controller_retarget_end =
         controller_text->find("void FilterChainController::shutdown(", controller_retarget_pos);
     const auto align_active_pos = controller_text->find(
-        "align_runtime_output_target(filter_chain, authoritative_output_target,",
-        controller_retarget_pos);
+        "align_adapter_output(active_slot, authoritative_output_target,", controller_retarget_pos);
     const auto destroy_active_pos =
-        controller_text->find("destroy_filter_chain(filter_chain", controller_retarget_pos);
+        controller_text->find("adapter.shutdown()", controller_retarget_pos);
 
     REQUIRE(controller_retarget_pos != std::string::npos);
     REQUIRE(controller_retarget_end != std::string::npos);
     REQUIRE(align_active_pos != std::string::npos);
     REQUIRE(
         (destroy_active_pos == std::string::npos || destroy_active_pos >= controller_retarget_end));
+}
+
+TEST_CASE("Scale mode boundary preserves fill and dynamic semantics",
+          "[filter_chain][retarget_contract]") {
+    const auto runtime_cpp =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/runtime/chain.cpp";
+    const auto backend_cpp =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_backend.cpp";
+
+    auto runtime_text = read_text_file(runtime_cpp);
+    auto backend_text = read_text_file(backend_cpp);
+    REQUIRE(runtime_text.has_value());
+    REQUIRE(backend_text.has_value());
+
+    REQUIRE(runtime_text->find("case GOGGLES_FC_SCALE_MODE_FILL:") != std::string::npos);
+    REQUIRE(runtime_text->find("return goggles::ScaleMode::fill;") != std::string::npos);
+    REQUIRE(runtime_text->find("case GOGGLES_FC_SCALE_MODE_DYNAMIC:") != std::string::npos);
+    REQUIRE(runtime_text->find("return goggles::ScaleMode::dynamic;") != std::string::npos);
+
+    REQUIRE(backend_text->find("case ScaleMode::fill:") != std::string::npos);
+    REQUIRE(backend_text->find("return GOGGLES_FC_SCALE_MODE_FILL;") != std::string::npos);
+    REQUIRE(backend_text->find("case ScaleMode::dynamic:") != std::string::npos);
+    REQUIRE(backend_text->find("return GOGGLES_FC_SCALE_MODE_DYNAMIC;") != std::string::npos);
+}
+
+TEST_CASE("Structural live updates rebuild the active adapter contract",
+          "[filter_chain][retarget_contract]") {
+    const auto controller_cpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
+                                "src/render/backend/filter_chain_controller.cpp";
+
+    auto controller_text = read_text_file(controller_cpp);
+    REQUIRE(controller_text.has_value());
+
+    // set_prechain_resolution must call slot.chain.set_prechain_resolution (not resize)
+    const auto prechain_update_pos =
+        controller_text->find("FilterChainController::set_prechain_resolution(");
+    const auto prechain_update_end =
+        controller_text->find("FilterChainController::handle_resize(", prechain_update_pos);
+    REQUIRE(prechain_update_pos != std::string::npos);
+    REQUIRE(prechain_update_end != std::string::npos);
+    REQUIRE(controller_text->find("active_slot.chain.set_prechain_resolution(&resolution)",
+                                  prechain_update_pos) != std::string::npos);
+    // resize must NOT appear inside set_prechain_resolution (it belongs in handle_resize)
+    const auto resize_call_pos =
+        controller_text->find("active_slot.chain.resize(&extent)", prechain_update_pos);
+    REQUIRE((resize_call_pos == std::string::npos || resize_call_pos >= prechain_update_end));
+
+    // reload_shader_preset must propagate stage mask and prechain dimensions into the build config
+    REQUIRE(controller_text->find(
+                "config.chain_config.initial_stage_mask =",
+                controller_text->find("auto FilterChainController::reload_shader_preset(")) !=
+            std::string::npos);
+    REQUIRE(controller_text->find(
+                "config.chain_config.initial_prechain_width = source_resolution.width;",
+                controller_text->find("auto FilterChainController::reload_shader_preset(")) !=
+            std::string::npos);
 }

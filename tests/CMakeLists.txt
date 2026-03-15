@@ -15,6 +15,7 @@ add_executable(goggles_tests)
 target_sources(goggles_tests PRIVATE
     # App module tests
     app/test_cli.cpp
+    app/test_windowed_shutdown_contracts.cpp
     ${CMAKE_SOURCE_DIR}/src/app/cli.cpp
 
     # Utility module tests
