@@ -58,11 +58,3 @@ file = ""
 
 # Include timestamp prefix in console logs.
 timestamp = false
-
-# =============================================================================
-# Diagnostics Settings
-# =============================================================================
-# [diagnostics]
-# mode = "standard"       # "minimal" | "standard" | "investigate" | "forensic"
-# strict = false          # Promote fallback substitutions to errors
-# tier = 0               # 0 = runtime checks, 1 = GPU timestamps, 2 = forensic capture

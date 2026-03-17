@@ -69,7 +69,6 @@ void VulkanBackend::initialize_paths(const std::filesystem::path& cache_dir) {
 void VulkanBackend::initialize_settings(const RenderSettings& settings) {
     m_scale_mode = settings.scale_mode;
     m_integer_scale = settings.integer_scale;
-    m_diagnostics_config = settings.diagnostics;
     update_target_fps(settings.target_fps);
     m_filter_chain_controller.set_prechain_resolution(
         backend_internal::FilterChainController::PrechainResolutionConfig{
@@ -257,20 +256,22 @@ auto VulkanBackend::get_prechain_resolution() const -> vk::Extent2D {
     return m_filter_chain_controller.current_prechain_resolution();
 }
 
-auto VulkanBackend::list_filter_controls() const -> std::vector<FilterControlDescriptor> {
+auto VulkanBackend::list_filter_controls() const
+    -> std::vector<goggles::fc::FilterControlDescriptor> {
     return m_filter_chain_controller.list_filter_controls();
 }
 
-auto VulkanBackend::list_filter_controls(FilterControlStage stage) const
-    -> std::vector<FilterControlDescriptor> {
+auto VulkanBackend::list_filter_controls(goggles::fc::FilterControlStage stage) const
+    -> std::vector<goggles::fc::FilterControlDescriptor> {
     return m_filter_chain_controller.list_filter_controls(stage);
 }
 
-auto VulkanBackend::set_filter_control_value(FilterControlId control_id, float value) -> bool {
+auto VulkanBackend::set_filter_control_value(goggles::fc::FilterControlId control_id, float value)
+    -> bool {
     return m_filter_chain_controller.set_filter_control_value(control_id, value);
 }
 
-auto VulkanBackend::reset_filter_control_value(FilterControlId control_id) -> bool {
+auto VulkanBackend::reset_filter_control_value(goggles::fc::FilterControlId control_id) -> bool {
     return m_filter_chain_controller.reset_filter_control_value(control_id);
 }
 
@@ -614,7 +615,6 @@ auto VulkanBackend::make_filter_chain_build_config() const
                 .initial_prechain_height =
                     m_filter_chain_controller.current_prechain_resolution().height,
             },
-        .diagnostics = m_diagnostics_config,
     };
 }
 

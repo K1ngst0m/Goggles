@@ -49,7 +49,7 @@ static auto scan_presets(const std::filesystem::path& dir) -> std::vector<std::f
 
 static void update_ui_parameters(render::VulkanBackend& vulkan_backend,
                                  ui::ImGuiLayer& imgui_layer) {
-    auto controls = vulkan_backend.list_filter_controls(render::FilterControlStage::effect);
+    auto controls = vulkan_backend.list_filter_controls(goggles::fc::FilterControlStage::effect);
     std::vector<ui::ParameterState> ui_params;
     ui_params.reserve(controls.size());
 
@@ -101,9 +101,6 @@ auto Application::init_vulkan_backend(const Config& config, const util::AppDirs&
         .gpu_selector = config.render.gpu_selector,
         .source_width = config.render.source_width,
         .source_height = config.render.source_height,
-        .diagnostics = config.diagnostics.configured
-                           ? std::optional<Config::Diagnostics>{config.diagnostics}
-                           : std::nullopt,
     };
 
     GOGGLES_LOG_INFO("Scale mode: {}", to_string(config.render.scale_mode));
@@ -149,7 +146,7 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
     m_imgui_layer->state().shader_enabled = !config.shader.preset.empty();
 
     m_imgui_layer->set_parameter_change_callback(
-        [&backend = *m_vulkan_backend](render::FilterControlId control_id, float value) {
+        [&backend = *m_vulkan_backend](goggles::fc::FilterControlId control_id, float value) {
             static_cast<void>(backend.set_filter_control_value(control_id, value));
         });
     m_imgui_layer->set_parameter_reset_callback(
@@ -162,7 +159,7 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
             backend.set_prechain_resolution(width, height);
         });
     m_imgui_layer->set_prechain_parameter_callback(
-        [&backend = *m_vulkan_backend](render::FilterControlId control_id, float value) {
+        [&backend = *m_vulkan_backend](goggles::fc::FilterControlId control_id, float value) {
             static_cast<void>(backend.set_filter_control_value(control_id, value));
         });
     m_imgui_layer->set_prechain_scale_mode_callback([this](ScaleMode mode, uint32_t integer_scale) {
@@ -174,7 +171,7 @@ auto Application::init_shader_system(const Config& config, const util::AppDirs& 
     m_imgui_layer->set_prechain_state(prechain_res, m_vulkan_backend->get_scale_mode(),
                                       m_vulkan_backend->get_integer_scale());
     m_imgui_layer->set_prechain_parameters(
-        m_vulkan_backend->list_filter_controls(render::FilterControlStage::prechain));
+        m_vulkan_backend->list_filter_controls(goggles::fc::FilterControlStage::prechain));
 
     update_ui_parameters(*m_vulkan_backend, *m_imgui_layer);
     return Result<void>{};
@@ -243,9 +240,6 @@ auto Application::create_headless(const Config& config, const util::AppDirs& app
         .gpu_selector = config.render.gpu_selector,
         .source_width = config.render.source_width,
         .source_height = config.render.source_height,
-        .diagnostics = config.diagnostics.configured
-                           ? std::optional<Config::Diagnostics>{config.diagnostics}
-                           : std::nullopt,
     };
 
     app->m_vulkan_backend = GOGGLES_MUST(render::VulkanBackend::create_headless(
@@ -492,7 +486,8 @@ void Application::sync_prechain_ui() {
     }
 
     if (prechain.pass_parameters.empty()) {
-        auto params = m_vulkan_backend->list_filter_controls(render::FilterControlStage::prechain);
+        auto params =
+            m_vulkan_backend->list_filter_controls(goggles::fc::FilterControlStage::prechain);
         if (!params.empty()) {
             m_imgui_layer->set_prechain_parameters(std::move(params));
         }
@@ -743,7 +738,7 @@ void Application::sync_ui_state() {
         m_imgui_layer->state().current_preset = m_vulkan_backend->current_preset_path();
         update_ui_parameters(*m_vulkan_backend, *m_imgui_layer);
         m_imgui_layer->set_prechain_parameters(
-            m_vulkan_backend->list_filter_controls(render::FilterControlStage::prechain));
+            m_vulkan_backend->list_filter_controls(goggles::fc::FilterControlStage::prechain));
     }
 
     m_imgui_layer->begin_frame();

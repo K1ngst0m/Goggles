@@ -80,6 +80,16 @@ run_clang_format_i() {
   printf '%s\0' "$@" | xargs -0 clang-format -i --
 }
 
+collect_existing_git_files() {
+  local file
+
+  git ls-files -z "$@" | while IFS= read -r -d '' file; do
+    if [[ -e "$file" ]]; then
+      printf '%s\0' "$file"
+    fi
+  done
+}
+
 run_taplo_fmt() {
   printf '%s\0' "$@" | xargs -0 taplo fmt
 }
@@ -374,8 +384,8 @@ run_format_lane_impl() {
 
   cp "$REPO_ROOT/.clang-format" "$temp_dir/.clang-format"
 
-  mapfile -d '' -t cpp_files < <(git ls-files -z '*.c' '*.h' '*.cpp' '*.hpp')
-  mapfile -d '' -t toml_files < <(git ls-files -z '*.toml' | grep -zv 'test_data/' || true)
+  mapfile -d '' -t cpp_files < <(collect_existing_git_files '*.c' '*.h' '*.cpp' '*.hpp')
+  mapfile -d '' -t toml_files < <(collect_existing_git_files '*.toml' | grep -zv 'test_data/' || true)
 
   for file in "${cpp_files[@]}"; do
     mkdir -p "$temp_dir/$(dirname "$file")"

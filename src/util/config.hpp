@@ -41,15 +41,6 @@ struct Config {
         std::string file;
         bool timestamp = false;
     } logging;
-
-    struct Diagnostics {
-        bool configured = false;
-        std::string mode = "standard";
-        bool strict = false;
-        uint32_t tier = 0;
-        uint32_t capture_frame_limit = 1;
-        uint64_t retention_bytes = 256ULL * 1024 * 1024;
-    } diagnostics;
 };
 
 /// @brief Loads a configuration file from disk.

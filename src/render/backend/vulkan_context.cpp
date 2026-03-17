@@ -704,12 +704,10 @@ void VulkanContext::destroy() {
     present_wait_supported = false;
 }
 
-auto VulkanContext::boundary_context(vk::CommandPool command_pool) const
-    -> ::goggles::render::VulkanContext {
-    return ::goggles::render::VulkanContext{
+auto VulkanContext::boundary_context() const -> ::goggles::fc::VulkanContext {
+    return ::goggles::fc::VulkanContext{
         .device = device,
         .physical_device = physical_device,
-        .command_pool = command_pool,
         .graphics_queue = graphics_queue,
         .graphics_queue_family_index = graphics_queue_family,
     };

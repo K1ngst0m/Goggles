@@ -1,6 +1,6 @@
 # Golden Reference Images
 
-This directory contains reference PNG images used by the shader and diagnostics visual regression tests.
+This directory contains reference PNG images used by the remaining Goggles-owned shader visual regression tests.
 
 ## What are golden images?
 
@@ -10,12 +10,6 @@ Golden images are pre-captured frames that represent the expected visual output 
 
 - `shader_bypass_quadrant.png` — output with no shader (passthrough mode), quadrant client input
 - `shader_zfast_quadrant.png` — output with the zfast-crt shader applied, quadrant client input
-- `runtime_format_pass0.png` / `runtime_format_pass1.png` — intermediate pass captures for the
-  diagnostics format preset
-- `runtime_history_frame1.png` / `runtime_history_frame3.png` — temporal final-output captures for
-  the diagnostics history preset
-- `runtime_history_pass0_frame1.png` / `runtime_history_pass0_frame3.png` — temporal intermediate
-  captures for the diagnostics history preset
 
 ## How to generate golden images
 
@@ -26,8 +20,8 @@ pixi run update-golden
 ```
 
 This rebuilds the project (debug preset by default) and captures fresh reference frames for the
-existing shader regressions plus the diagnostics intermediate and temporal workflows. Override the
-preset with the `BUILD_PRESET` environment variable:
+remaining Goggles shader regressions. Override the preset with the `BUILD_PRESET` environment
+variable:
 
 ```
 BUILD_PRESET=release pixi run update-golden
@@ -40,8 +34,6 @@ Inspect the PNG files directly:
 ```
 feh tests/golden/shader_bypass_quadrant.png
 feh tests/golden/shader_zfast_quadrant.png
-feh tests/golden/runtime_format_pass0.png
-feh tests/golden/runtime_history_frame1.png
 ```
 
 The bypass image should show the raw quadrant client output. The zfast image should show the same content with CRT scanline and curvature effects applied.
@@ -63,6 +55,7 @@ Regenerate golden images after any intentional change to:
 - Shader code (`shaders/retroarch/crt/crt-lottes-fast.slangp` or dependencies)
 - Render pipeline output (color space, blending, format)
 - Headless capture logic
-- Runtime diagnostics capture behavior or the `format.slangp` / `history.slangp` test presets
+- Standalone filter-chain ownership for intermediate-pass or diagnostics-heavy goldens now lives in
+  `filter-chain/tests/golden/`
 
 Do not update goldens to paper over unexpected regressions — investigate the cause first.

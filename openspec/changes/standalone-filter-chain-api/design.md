@@ -243,7 +243,7 @@ Library owns:
 |------|--------|-------------|
 | `filter-chain/include/goggles_filter_chain.h` | Modify | Replace the current `goggles_chain_*` ABI with the new `goggles_fc_*` object model, status types, source descriptors, logging callbacks, and Vulkan create/record structs. |
 | `filter-chain/include/goggles_filter_chain.hpp` | Delete | Remove the current `goggles::render::FilterChainRuntime` wrapper so the old API shape cannot leak forward. |
-| `filter-chain/include/goggles/filter_chain/api.hpp` | Create | Define the new thin C++ wrapper in `namespace goggles::filter_chain` over the C ABI. |
+| `filter-chain/include/goggles/filter_chain.hpp` | Create | Define the canonical thin C++ wrapper entrypoint in `namespace goggles::filter_chain` over the C ABI. |
 | `filter-chain/include/goggles/filter_chain/common.hpp` | Create | Hold public C++ enums and POD wrapper types shared by the wrapper surface. |
 | `filter-chain/src/api/c_api.cpp` | Create | Implement handle validation, ABI marshaling, status mapping, and the exported `goggles_fc_*` functions. |
 | `filter-chain/src/api/cpp_wrapper.cpp` | Create | Implement the thin RAII C++ wrapper using only the C ABI. |

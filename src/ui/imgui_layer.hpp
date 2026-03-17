@@ -44,7 +44,7 @@ struct ImGuiConfig {
 
 /// @brief UI state for a single shader parameter.
 struct ParameterState {
-    render::FilterControlDescriptor descriptor;
+    goggles::fc::FilterControlDescriptor descriptor;
     float current_value;
 };
 
@@ -68,7 +68,7 @@ struct PreChainState {
     uint32_t target_width = 0;
     uint32_t target_height = 0;
     bool dirty = false;
-    std::vector<render::FilterControlDescriptor> pass_parameters;
+    std::vector<goggles::fc::FilterControlDescriptor> pass_parameters;
 };
 
 /// @brief Aggregate UI state for shader controls.
@@ -86,11 +86,11 @@ struct ShaderControlState {
 };
 
 using ParameterChangeCallback =
-    std::function<void(render::FilterControlId control_id, float value)>;
+    std::function<void(goggles::fc::FilterControlId control_id, float value)>;
 using ParameterResetCallback = std::function<void()>;
 using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t height)>;
 using PreChainParameterCallback =
-    std::function<void(render::FilterControlId control_id, float value)>;
+    std::function<void(goggles::fc::FilterControlId control_id, float value)>;
 using PreChainScaleModeCallback = std::function<void(ScaleMode mode, uint32_t integer_scale)>;
 using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
 using SurfaceFilterToggleCallback = std::function<void(uint32_t surface_id, bool enabled)>;
@@ -145,7 +145,7 @@ public:
     /// @brief Initializes pre-chain UI state from backend values.
     void set_prechain_state(vk::Extent2D resolution, ScaleMode scale_mode, uint32_t integer_scale);
     /// @brief Updates pre-chain pass parameters for UI display.
-    void set_prechain_parameters(std::vector<render::FilterControlDescriptor> params);
+    void set_prechain_parameters(std::vector<goggles::fc::FilterControlDescriptor> params);
     /// @brief Sets a callback invoked when a pre-chain pass parameter is changed.
     void set_prechain_parameter_callback(PreChainParameterCallback callback);
     /// @brief Sets a callback invoked when the pre-chain scale mode changes.

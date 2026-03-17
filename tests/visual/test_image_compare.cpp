@@ -4,7 +4,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <filesystem>
-#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -136,32 +135,4 @@ TEST_CASE("diff heatmap written with expected dimensions") {
     CHECK(heatmap_result->height == actual.height);
 
     std::filesystem::remove(heatmap_path);
-}
-
-TEST_CASE("earliest divergence localization reports first failing pass") {
-    const std::vector<uint32_t> pass_ordinals = {0U, 1U, 2U, 3U, 4U};
-    std::unordered_map<uint32_t, goggles::test::CompareResult> comparisons;
-    auto passing = goggles::test::CompareResult{};
-    passing.passed = true;
-    auto failing = goggles::test::CompareResult{};
-    comparisons.emplace(0U, passing);
-    comparisons.emplace(1U, passing);
-    comparisons.emplace(2U, failing);
-    comparisons.emplace(3U, failing);
-    comparisons.emplace(4U, failing);
-
-    const auto localization =
-        goggles::test::localize_earliest_divergence(pass_ordinals, comparisons);
-    REQUIRE(localization.has_intermediate_goldens);
-    REQUIRE(localization.earliest_pass.has_value());
-    CHECK(*localization.earliest_pass == 2U);
-    CHECK(localization.downstream_passes == std::vector<uint32_t>{3U, 4U});
-    CHECK(localization.summary.find("Earliest divergent pass: 2") != std::string::npos);
-}
-
-TEST_CASE("earliest divergence localization falls back when no intermediates exist") {
-    const auto localization = goggles::test::localize_earliest_divergence({}, {});
-    CHECK_FALSE(localization.has_intermediate_goldens);
-    CHECK_FALSE(localization.earliest_pass.has_value());
-    CHECK(localization.summary.find("cannot be localized") != std::string::npos);
 }

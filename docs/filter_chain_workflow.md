@@ -5,10 +5,13 @@ to captured frames.
 
 ## Overview
 
-`filter-chain/` is a render-domain library that Goggles consumes through the
-`GogglesFilterChain` package boundary. It transforms captured DMA-BUF images through a series of
-shader passes before final presentation. It supports RetroArch `.slangp` preset files which define
-multi-pass post-processing effects (CRT simulation, scanlines, etc.).
+`filter-chain/` is the submodule-backed checkout of the standalone render-domain library that
+Goggles consumes through the `GogglesFilterChain` package boundary. It transforms captured DMA-BUF
+images through a series of shader passes before final presentation. It supports RetroArch `.slangp`
+preset files which define multi-pass post-processing effects (CRT simulation, scanlines, etc.).
+
+For local co-development, keep the submodule pinned and set
+`GOGGLES_FILTER_CHAIN_SOURCE_DIR=/abs/path/to/goggles-filter-chain` at configure time.
 
 ```mermaid
 flowchart LR

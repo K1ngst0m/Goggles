@@ -162,8 +162,8 @@ struct CacheDirGuard {
     std::filesystem::path dir;
 };
 
-auto find_filter_control(const std::vector<goggles::render::FilterControlDescriptor>& controls,
-                         std::string_view name) -> const goggles::render::FilterControlDescriptor* {
+auto find_filter_control(const std::vector<goggles::fc::FilterControlDescriptor>& controls,
+                         std::string_view name) -> const goggles::fc::FilterControlDescriptor* {
     for (const auto& control : controls) {
         if (control.name == name) {
             return &control;
@@ -187,7 +187,6 @@ auto make_adapter_build_config(const VulkanRuntimeFixture& fixture,
                 .initial_prechain_width = 1u,
                 .initial_prechain_height = 1u,
             },
-        .diagnostics = std::nullopt,
     };
 }
 
@@ -199,7 +198,7 @@ void configure_controller_runtime(
     controller.set_prechain_resolution({.requested_resolution = {2u, 3u}});
 
     const auto controls =
-        controller.list_filter_controls(goggles::render::FilterControlStage::prechain);
+        controller.list_filter_controls(goggles::fc::FilterControlStage::prechain);
     const auto* filter_type = find_filter_control(controls, "filter_type");
     REQUIRE(filter_type != nullptr);
     REQUIRE(controller.set_filter_control_value(filter_type->control_id, 2.0F));
@@ -215,7 +214,7 @@ void require_controller_state(goggles::render::backend_internal::FilterChainCont
     REQUIRE(!controller.effect_stage_policy_enabled);
 
     const auto controls =
-        controller.list_filter_controls(goggles::render::FilterControlStage::prechain);
+        controller.list_filter_controls(goggles::fc::FilterControlStage::prechain);
     const auto* filter_type = find_filter_control(controls, "filter_type");
     REQUIRE(filter_type != nullptr);
     REQUIRE(filter_type->current_value == Catch::Approx(2.0F));
@@ -416,13 +415,12 @@ TEST_CASE("Reload across different control surfaces skips stale restore warnings
     controller.load_shader_preset(preset_path);
 
     const auto prechain_controls_before =
-        controller.list_filter_controls(goggles::render::FilterControlStage::prechain);
+        controller.list_filter_controls(goggles::fc::FilterControlStage::prechain);
     const auto* filter_type_before = find_filter_control(prechain_controls_before, "filter_type");
     REQUIRE(filter_type_before != nullptr);
     REQUIRE(controller.set_filter_control_value(filter_type_before->control_id, 2.0F));
     controller.authoritative_control_overrides.push_back(
-        {.control_id = std::numeric_limits<goggles::render::FilterControlId>::max(),
-         .value = 1.0F});
+        {.control_id = std::numeric_limits<goggles::fc::FilterControlId>::max(), .value = 1.0F});
 
     REQUIRE(controller.reload_shader_preset({}, build_config).has_value());
     wait_for_reload_start(controller);
@@ -430,7 +428,7 @@ TEST_CASE("Reload across different control surfaces skips stale restore warnings
     REQUIRE(controller.consume_chain_swapped());
 
     const auto prechain_controls =
-        controller.list_filter_controls(goggles::render::FilterControlStage::prechain);
+        controller.list_filter_controls(goggles::fc::FilterControlStage::prechain);
     const auto* filter_type = find_filter_control(prechain_controls, "filter_type");
     REQUIRE(filter_type != nullptr);
     CHECK(filter_type->current_value == Catch::Approx(2.0F));
@@ -476,72 +474,6 @@ TEST_CASE("Controller and backend retarget path stays distinct from reload",
     REQUIRE(retarget_call_pos != std::string::npos);
     REQUIRE(reload_call_pos != std::string::npos);
     REQUIRE(recreate_swapchain_pos < retarget_call_pos);
-}
-
-TEST_CASE("Retarget failure path stays staged and non-destructive",
-          "[filter_chain][retarget_contract]") {
-    const auto resources_cpp =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/chain_resources.cpp";
-    const auto controller_cpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
-                                "src/render/backend/filter_chain_controller.cpp";
-
-    auto resources_text = read_text_file(resources_cpp);
-    auto controller_text = read_text_file(controller_cpp);
-    REQUIRE(resources_text.has_value());
-    REQUIRE(controller_text.has_value());
-
-    const auto retarget_pos = resources_text->find("auto ChainResources::retarget_output(");
-    const auto build_candidate_pos =
-        resources_text->find("auto candidate = GOGGLES_TRY(build_output_state(", retarget_pos);
-    const auto shutdown_old_pos =
-        resources_text->find("shutdown_output_state(m_output_state);", build_candidate_pos);
-    const auto swap_candidate_pos =
-        resources_text->find("m_output_state = std::move(candidate);", shutdown_old_pos);
-
-    REQUIRE(retarget_pos != std::string::npos);
-    REQUIRE(build_candidate_pos != std::string::npos);
-    REQUIRE(shutdown_old_pos != std::string::npos);
-    REQUIRE(swap_candidate_pos != std::string::npos);
-    REQUIRE(build_candidate_pos < shutdown_old_pos);
-    REQUIRE(shutdown_old_pos < swap_candidate_pos);
-
-    const auto controller_retarget_pos =
-        controller_text->find("auto FilterChainController::retarget_filter_chain(");
-    const auto controller_retarget_end =
-        controller_text->find("void FilterChainController::shutdown(", controller_retarget_pos);
-    const auto align_active_pos = controller_text->find(
-        "align_adapter_output(active_slot, authoritative_output_target,", controller_retarget_pos);
-    const auto destroy_active_pos =
-        controller_text->find("adapter.shutdown()", controller_retarget_pos);
-
-    REQUIRE(controller_retarget_pos != std::string::npos);
-    REQUIRE(controller_retarget_end != std::string::npos);
-    REQUIRE(align_active_pos != std::string::npos);
-    REQUIRE(
-        (destroy_active_pos == std::string::npos || destroy_active_pos >= controller_retarget_end));
-}
-
-TEST_CASE("Scale mode boundary preserves fill and dynamic semantics",
-          "[filter_chain][retarget_contract]") {
-    const auto runtime_cpp =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/runtime/chain.cpp";
-    const auto backend_cpp =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_backend.cpp";
-
-    auto runtime_text = read_text_file(runtime_cpp);
-    auto backend_text = read_text_file(backend_cpp);
-    REQUIRE(runtime_text.has_value());
-    REQUIRE(backend_text.has_value());
-
-    REQUIRE(runtime_text->find("case GOGGLES_FC_SCALE_MODE_FILL:") != std::string::npos);
-    REQUIRE(runtime_text->find("return goggles::ScaleMode::fill;") != std::string::npos);
-    REQUIRE(runtime_text->find("case GOGGLES_FC_SCALE_MODE_DYNAMIC:") != std::string::npos);
-    REQUIRE(runtime_text->find("return goggles::ScaleMode::dynamic;") != std::string::npos);
-
-    REQUIRE(backend_text->find("case ScaleMode::fill:") != std::string::npos);
-    REQUIRE(backend_text->find("return GOGGLES_FC_SCALE_MODE_FILL;") != std::string::npos);
-    REQUIRE(backend_text->find("case ScaleMode::dynamic:") != std::string::npos);
-    REQUIRE(backend_text->find("return GOGGLES_FC_SCALE_MODE_DYNAMIC;") != std::string::npos);
 }
 
 TEST_CASE("Structural live updates rebuild the active adapter contract",

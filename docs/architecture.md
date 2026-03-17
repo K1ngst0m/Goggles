@@ -48,6 +48,10 @@ display.
 **Responsibility:** Own RetroArch preset parsing, shader runtime behavior, pass-graph execution,
 and render-domain assets behind the `GogglesFilterChain` package boundary.
 
+**Integration:** Goggles consumes the standalone repository through the pinned `filter-chain/`
+submodule by default, with `GOGGLES_FILTER_CHAIN_SOURCE_DIR` available as a local checkout override
+for co-development.
+
 **Key pattern:** Goggles hands imported frames to the filter-chain library, which applies
 RetroArch-compatible shader presets (`.slangp` files) as a sequence of render passes.
 

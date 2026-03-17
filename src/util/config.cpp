@@ -166,62 +166,6 @@ auto parse_logging(const toml::value& data, Config& config) -> Result<void> {
     }
 }
 
-auto parse_diagnostics(const toml::value& data, Config& config) -> Result<void> {
-    GOGGLES_PROFILE_FUNCTION();
-    try {
-        if (!data.contains("diagnostics")) {
-            return {};
-        }
-        const auto diag = toml::find(data, "diagnostics");
-        config.diagnostics.configured = true;
-        if (diag.contains("mode")) {
-            config.diagnostics.mode = toml::find<std::string>(diag, "mode");
-            const auto& mode = config.diagnostics.mode;
-            if (mode != "minimal" && mode != "standard" && mode != "investigate" &&
-                mode != "forensic") {
-                return make_error<void>(
-                    ErrorCode::invalid_config,
-                    "Invalid diagnostics mode: " + mode +
-                        " (expected: minimal, standard, investigate, forensic)");
-            }
-        }
-        if (diag.contains("strict")) {
-            config.diagnostics.strict = toml::find<bool>(diag, "strict");
-        }
-        if (diag.contains("tier")) {
-            auto tier = toml::find<int64_t>(diag, "tier");
-            if (tier < 0 || tier > 2) {
-                return make_error<void>(ErrorCode::invalid_config,
-                                        "Invalid diagnostics tier: " + std::to_string(tier) +
-                                            " (expected: 0, 1, or 2)");
-            }
-            config.diagnostics.tier = static_cast<uint32_t>(tier);
-        }
-        if (diag.contains("capture_frame_limit")) {
-            auto limit = toml::find<int64_t>(diag, "capture_frame_limit");
-            if (limit < 1) {
-                return make_error<void>(ErrorCode::invalid_config,
-                                        "Invalid diagnostics capture_frame_limit: " +
-                                            std::to_string(limit));
-            }
-            config.diagnostics.capture_frame_limit = static_cast<uint32_t>(limit);
-        }
-        if (diag.contains("retention_bytes")) {
-            auto bytes = toml::find<int64_t>(diag, "retention_bytes");
-            if (bytes < 0) {
-                return make_error<void>(ErrorCode::invalid_config,
-                                        "Invalid diagnostics retention_bytes: " +
-                                            std::to_string(bytes));
-            }
-            config.diagnostics.retention_bytes = static_cast<uint64_t>(bytes);
-        }
-        return {};
-    } catch (const std::exception& e) {
-        return make_error<void>(ErrorCode::invalid_config,
-                                "Invalid [diagnostics] configuration: " + std::string(e.what()));
-    }
-}
-
 } // namespace
 
 auto default_config() -> Config {
@@ -255,8 +199,6 @@ auto load_config(const std::filesystem::path& path) -> Result<Config> {
     GOGGLES_TRY(parse_shader(data, config));
     GOGGLES_TRY(parse_render(data, config));
     GOGGLES_TRY(parse_logging(data, config));
-    GOGGLES_TRY(parse_diagnostics(data, config));
-
     return config;
 }
 

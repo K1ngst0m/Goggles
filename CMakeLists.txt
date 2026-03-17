@@ -13,7 +13,21 @@ include(cmake/Dependencies.cmake)
 include(cmake/CompilerConfig.cmake)
 include(cmake/CodeQuality.cmake)
 
-add_subdirectory(filter-chain)
+set(
+  GOGGLES_FILTER_CHAIN_SOURCE_DIR
+  "${CMAKE_SOURCE_DIR}/filter-chain"
+  CACHE PATH "Path to the goggles-filter-chain checkout or submodule"
+)
+
+if(NOT EXISTS "${GOGGLES_FILTER_CHAIN_SOURCE_DIR}/CMakeLists.txt")
+  message(
+    FATAL_ERROR
+      "GOGGLES_FILTER_CHAIN_SOURCE_DIR must point to a goggles-filter-chain checkout "
+      "containing CMakeLists.txt (current: ${GOGGLES_FILTER_CHAIN_SOURCE_DIR})"
+  )
+endif()
+
+add_subdirectory("${GOGGLES_FILTER_CHAIN_SOURCE_DIR}" filter-chain)
 
 # Project structure
 add_subdirectory(src)

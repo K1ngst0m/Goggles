@@ -438,7 +438,7 @@ void ImGuiLayer::set_prechain_state(vk::Extent2D resolution, ScaleMode scale_mod
     }
 }
 
-void ImGuiLayer::set_prechain_parameters(std::vector<render::FilterControlDescriptor> params) {
+void ImGuiLayer::set_prechain_parameters(std::vector<goggles::fc::FilterControlDescriptor> params) {
     m_state.prechain.pass_parameters = std::move(params);
 }
 

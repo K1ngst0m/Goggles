@@ -1,0 +1,3 @@
+[submodule "filter-chain"]
+	path = filter-chain
+	url = git@github.com:goggles-dev/goggles-filter-chain.git

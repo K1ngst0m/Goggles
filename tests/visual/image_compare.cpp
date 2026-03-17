@@ -37,17 +37,6 @@ auto build_invalid_roi_message(const Rect& roi) -> std::string {
            ", width=" + std::to_string(roi.width) + ", height=" + std::to_string(roi.height);
 }
 
-auto join_pass_list(const std::vector<uint32_t>& pass_ordinals) -> std::string {
-    std::string output;
-    for (std::size_t index = 0; index < pass_ordinals.size(); ++index) {
-        if (index > 0) {
-            output += ", ";
-        }
-        output += std::to_string(pass_ordinals[index]);
-    }
-    return output;
-}
-
 auto compute_roi_bounds(const Image& image, const Rect* roi) -> std::optional<RoiBounds> {
     if (roi == nullptr) {
         return RoiBounds{.x0 = 0, .y0 = 0, .x1 = image.width, .y1 = image.height};
@@ -313,41 +302,6 @@ auto generate_diff_heatmap(const Image& actual, const Image& reference,
     }
 
     return {};
-}
-
-auto localize_earliest_divergence(const std::vector<uint32_t>& pass_ordinals,
-                                  const std::unordered_map<uint32_t, CompareResult>& comparisons)
-    -> DivergenceLocalization {
-    DivergenceLocalization localization{};
-    localization.has_intermediate_goldens = !comparisons.empty();
-
-    if (comparisons.empty()) {
-        localization.summary =
-            "Intermediate golden baselines are unavailable; final output failure cannot be "
-            "localized to a pass.";
-        return localization;
-    }
-
-    for (std::size_t index = 0; index < pass_ordinals.size(); ++index) {
-        const auto pass_ordinal = pass_ordinals[index];
-        const auto comparison_it = comparisons.find(pass_ordinal);
-        if (comparison_it == comparisons.end() || comparison_it->second.passed) {
-            continue;
-        }
-
-        localization.earliest_pass = pass_ordinal;
-        localization.downstream_passes.assign(
-            pass_ordinals.begin() + static_cast<std::ptrdiff_t>(index + 1), pass_ordinals.end());
-        localization.summary = "Earliest divergent pass: " + std::to_string(pass_ordinal);
-        if (!localization.downstream_passes.empty()) {
-            localization.summary +=
-                "; downstream passes: " + join_pass_list(localization.downstream_passes);
-        }
-        return localization;
-    }
-
-    localization.summary = "No intermediate divergence detected.";
-    return localization;
 }
 
 } // namespace goggles::test
