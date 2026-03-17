@@ -157,7 +157,7 @@ The diagnostics system SHALL support three activation tiers that control the cos
 
 ### Requirement: Diagnostic Policy Configuration
 
-The diagnostics system SHALL support a policy configuration that controls strict versus compatibility mode, capture depth, retention limits, and per-degradation severity rules.
+The diagnostics system SHALL support a library-internal policy configuration that controls strict versus compatibility behavior, capture depth, retention limits, and per-degradation severity rules without exposing the policy struct through the public boundary.
 
 #### Scenario: Strict mode forbids silent fallback
 - GIVEN diagnostic policy is set to strict mode
@@ -178,28 +178,25 @@ The diagnostics system SHALL support a policy configuration that controls strict
 - THEN the diagnostics system SHALL read capture mode, strict/compatibility toggle, and retention policy from the configuration
 - AND missing configuration keys SHALL fall back to documented defaults
 
-#### Scenario: Concrete policy shape matches runtime config
-- GIVEN the runtime diagnostics policy is created from Goggles config and boundary API inputs
-- WHEN the active policy is inspected
-- THEN it SHALL consist of `mode`, `capture_mode`, `tier`, `capture_frame_limit`, `retention_bytes`, `promote_fallback_to_error`, and `reflection_loss_is_fatal`
-- AND the TOML-backed configuration surface SHALL map `mode`, `strict`, `tier`, `capture_frame_limit`, and `retention_bytes` onto that policy
+#### Scenario: Concrete policy shape remains internal
+- GIVEN the runtime diagnostics policy is derived from host configuration and library defaults
+- WHEN the active policy is applied inside the filter-chain implementation
+- THEN the library MAY use whatever internal fields it requires to enforce diagnostics behavior
+- AND the public boundary SHALL NOT expose the concrete policy struct shape as a contract
 
-#### Scenario: Policy struct shape is library-owned
+#### Scenario: Policy struct shape is not public API
 
 - **GIVEN** the standalone filter-chain library's diagnostics policy type
-- **WHEN** a diagnostic session is created
-- **THEN** the policy struct fields (`mode`, `capture_mode`, `tier`, `capture_frame_limit`,
-  `retention_bytes`, `promote_fallback_to_error`, `reflection_loss_is_fatal`) SHALL be defined
-  by the standalone library
-- **AND** the library SHALL enforce policy semantics (strict vs. compatibility, tier activation)
-  based on the provided struct values
+- **WHEN** host code interacts through the public boundary
+- **THEN** the library SHALL keep policy fields and policy object layout internal
+- **AND** the public diagnostics contract SHALL remain limited to summary retrieval via `get_diagnostic_summary()`
 
 #### Scenario: TOML mapping responsibility stays with host
 
 - **GIVEN** Goggles configuration contains a `[diagnostics]` TOML section
 - **WHEN** the application initializes diagnostic policy
 - **THEN** the host application code SHALL parse TOML keys (`mode`, `strict`, `tier`,
-  `capture_frame_limit`, `retention_bytes`) and construct the library-owned policy struct
+  `capture_frame_limit`, `retention_bytes`) and supply any resulting configuration through library-internal integration paths
 - **AND** the standalone library SHALL NOT import or link TOML parsing libraries
 
 ### Requirement: Reporting Modes
@@ -432,21 +429,21 @@ SHALL build as part of the standalone filter-chain project without linking or de
 
 TOML-based diagnostic policy configuration (reading `[diagnostics]` sections from `goggles.toml`)
 SHALL remain a host-side concern owned by the Goggles application. The standalone diagnostics
-library SHALL accept policy values through programmatic API parameters, not by reading TOML
-configuration files directly.
+library SHALL NOT read TOML configuration files directly, and the public boundary SHALL NOT expose
+policy-setting or diagnostic-session-creation API parameters.
 
-#### Scenario: Standalone library accepts policy through API, not TOML
+#### Scenario: Standalone library keeps policy internal and avoids TOML
 
-- **GIVEN** a diagnostic session is created through the standalone library's boundary API
-- **WHEN** the caller specifies reporting mode, strict/compatibility policy, and tier
-- **THEN** the library SHALL accept those values as API parameters
+- **GIVEN** the standalone library evaluates diagnostics behavior during runtime operation
+- **WHEN** policy decisions are applied
+- **THEN** the library SHALL use internal policy state rather than public boundary API parameters
 - **AND** the library SHALL NOT read TOML configuration files or depend on `toml11` for policy resolution
 
-#### Scenario: Goggles host maps TOML config to API parameters
+#### Scenario: Goggles host maps TOML config into internal integration
 
 - **GIVEN** the Goggles application reads `[diagnostics]` from its TOML configuration
-- **WHEN** it creates a diagnostic session on the filter-chain runtime
-- **THEN** the host SHALL translate TOML configuration values into boundary API parameters
+- **WHEN** it initializes filter-chain diagnostics behavior
+- **THEN** the host SHALL translate TOML configuration values into internal library integration state
 - **AND** the TOML parsing dependency SHALL remain in the Goggles host, not in the standalone library
 
 ### Requirement: Diagnostic Test Ownership Transfer
@@ -467,5 +464,5 @@ NOT retain copies of these tests.
 - **GIVEN** the diagnostics unit test files have been moved to the standalone project
 - **WHEN** the Goggles `tests/` directory is inspected
 - **THEN** the moved diagnostics unit test files SHALL NOT be present
-- **AND** Goggles MAY retain host integration tests that exercise diagnostic session creation
+- **AND** Goggles MAY retain host integration tests that exercise public diagnostic summary retrieval
   through the filter-chain boundary API

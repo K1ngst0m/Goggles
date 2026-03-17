@@ -5,11 +5,18 @@ SCRIPT_DIR="$(dirname "$0")"
 source "$SCRIPT_DIR/parse-preset.sh" "$@"
 
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+FILTER_CHAIN_SOURCE_DIR="${GOGGLES_FILTER_CHAIN_SOURCE_DIR:-$REPO_ROOT/filter-chain}"
 INSTALL_DIR="$REPO_ROOT/build/filter-chain-install/$PRESET"
 VALIDATION_ROOT="$REPO_ROOT/build/filter-chain-consumers/$PRESET"
 FIXTURE_DIR="$REPO_ROOT/build/filter-chain-consumer-fixtures/$PRESET"
 FIXTURE_PATH="$FIXTURE_DIR/minimal.slangp"
 PREFIX_PATH="$INSTALL_DIR"
+
+if [[ ! -f "$FILTER_CHAIN_SOURCE_DIR/CMakeLists.txt" ]]; then
+  printf 'error: GOGGLES_FILTER_CHAIN_SOURCE_DIR must point to a filter-chain checkout with CMakeLists.txt\n' >&2
+  printf '       current value: %s\n' "$FILTER_CHAIN_SOURCE_DIR" >&2
+  exit 1
+fi
 
 if [[ -n "${CONDA_PREFIX:-}" ]]; then
   PREFIX_PATH="$PREFIX_PATH;$CONDA_PREFIX"
@@ -45,7 +52,7 @@ LIBRARY_TYPE="${FILTER_CHAIN_LIBRARY_TYPE:-STATIC}"
 # Build and install filter-chain as a standalone package for consumer validation.
 FILTER_CHAIN_BUILD_DIR="$REPO_ROOT/build/filter-chain-package/$PRESET"
 rm -rf "$INSTALL_DIR"
-cmake -S "$REPO_ROOT/filter-chain" -B "$FILTER_CHAIN_BUILD_DIR" \
+cmake -S "$FILTER_CHAIN_SOURCE_DIR" -B "$FILTER_CHAIN_BUILD_DIR" \
   -G Ninja \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
   -DCMAKE_CXX_STANDARD=20 \
@@ -77,8 +84,8 @@ configure_and_build() {
   cmake --build "$build_dir"
 }
 
-configure_and_build "c_api" "$REPO_ROOT/filter-chain/tests/consumer/c_api"
-configure_and_build "static" "$REPO_ROOT/filter-chain/tests/consumer/static"
+configure_and_build "c_api" "$FILTER_CHAIN_SOURCE_DIR/tests/consumer/c_api"
+configure_and_build "static" "$FILTER_CHAIN_SOURCE_DIR/tests/consumer/static"
 
 # Detect whether a shared library was actually installed.
 # If only STATIC was built (the default), the shared consumer test would
@@ -92,7 +99,7 @@ for ext in so dylib dll; do
 done
 
 if $has_shared_lib; then
-  configure_and_build "shared" "$REPO_ROOT/filter-chain/tests/consumer/shared"
+  configure_and_build "shared" "$FILTER_CHAIN_SOURCE_DIR/tests/consumer/shared"
 else
   echo "⚠  Shared library not found in $INSTALL_DIR — skipping shared consumer test."
   echo "   Build with -DFILTER_CHAIN_LIBRARY_TYPE=SHARED to validate shared linkage."

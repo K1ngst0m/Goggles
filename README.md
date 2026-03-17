@@ -32,9 +32,22 @@ Goggles runs target apps inside a nested Wayland compositor, applies a shader fi
 
 This project uses [Pixi](https://pixi.sh) for dependency management and build tasks.
 
+After cloning, initialize the extracted `filter-chain/` dependency before configuring or building:
+
+```bash
+git submodule update --init --recursive
+```
+
 ```bash
 pixi run help # view all available tasks and their descriptions
 pixi run <task-name> [args]... # run a task
+```
+
+For local co-development against a sibling `goggles-filter-chain` checkout, keep the committed
+submodule untouched and point CMake at the alternate source tree instead:
+
+```bash
+cmake --preset debug -DGOGGLES_FILTER_CHAIN_SOURCE_DIR=/abs/path/to/goggles-filter-chain
 ```
 
 Build output:

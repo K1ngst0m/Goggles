@@ -1,1 +1,2 @@
 tests/semgrep/fixtures/**
+filter-chain/**

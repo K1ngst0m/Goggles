@@ -228,24 +228,18 @@ TEST_CASE("default_config returns expected diagnostics defaults", "[config]") {
     auto config = default_config();
     REQUIRE(config.diagnostics.configured == false);
     REQUIRE(config.diagnostics.mode == "standard");
-    REQUIRE(config.diagnostics.strict == false);
-    REQUIRE(config.diagnostics.tier == 0);
-    REQUIRE(config.diagnostics.capture_frame_limit == 1);
-    REQUIRE(config.diagnostics.retention_bytes == 256ULL * 1024 * 1024);
 }
 
 TEST_CASE("load_config parses diagnostics section", "[config]") {
     const std::string temp_config = "util/test_data/diag_valid.toml";
     std::ofstream file(temp_config);
-    file << "[diagnostics]\nmode = \"investigate\"\nstrict = true\ntier = 2\n";
+    file << "[diagnostics]\nmode = \"investigate\"\n";
     file.close();
 
     auto result = load_config(temp_config);
     REQUIRE(result.has_value());
     REQUIRE(result.value().diagnostics.configured == true);
     REQUIRE(result.value().diagnostics.mode == "investigate");
-    REQUIRE(result.value().diagnostics.strict == true);
-    REQUIRE(result.value().diagnostics.tier == 2);
 
     std::filesystem::remove(temp_config);
 }
@@ -255,22 +249,6 @@ TEST_CASE("load_config without diagnostics section uses defaults", "[config]") {
     REQUIRE(result.has_value());
     REQUIRE(result.value().diagnostics.configured == false);
     REQUIRE(result.value().diagnostics.mode == "standard");
-    REQUIRE(result.value().diagnostics.strict == false);
-    REQUIRE(result.value().diagnostics.tier == 0);
-}
-
-TEST_CASE("load_config validates diagnostics tier value", "[config]") {
-    const std::string temp_config = "util/test_data/diag_invalid_tier.toml";
-    std::ofstream file(temp_config);
-    file << "[diagnostics]\ntier = 5\n";
-    file.close();
-
-    auto result = load_config(temp_config);
-    REQUIRE(!result.has_value());
-    REQUIRE(result.error().code == ErrorCode::invalid_config);
-    REQUIRE(result.error().message.find("Invalid diagnostics tier") != std::string::npos);
-
-    std::filesystem::remove(temp_config);
 }
 
 TEST_CASE("load_config validates diagnostics mode value", "[config]") {

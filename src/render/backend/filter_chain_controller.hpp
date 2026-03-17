@@ -5,7 +5,9 @@
 #include <filesystem>
 #include <functional>
 #include <future>
-#include <goggles_filter_chain.hpp>
+#include <goggles/filter_chain.h>
+#include <goggles/filter_chain.hpp>
+#include <goggles/filter_chain/filter_controls.hpp>
 #include <util/config.hpp>
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -16,7 +18,7 @@ namespace goggles::render::backend_internal {
 /// @brief Backend-side filter coordination state owning the full filter-chain object graph.
 struct FilterChainController {
     struct ControlOverride {
-        FilterControlId control_id = 0;
+        goggles::fc::FilterControlId control_id = 0;
         float value = 0.0F;
     };
 
@@ -101,11 +103,13 @@ struct FilterChainController {
 
     [[nodiscard]] auto get_chain_report() const -> goggles::Result<goggles_fc_chain_report_t>;
 
-    [[nodiscard]] auto list_filter_controls() const -> std::vector<FilterControlDescriptor>;
-    [[nodiscard]] auto list_filter_controls(FilterControlStage stage) const
-        -> std::vector<FilterControlDescriptor>;
-    [[nodiscard]] auto set_filter_control_value(FilterControlId control_id, float value) -> bool;
-    [[nodiscard]] auto reset_filter_control_value(FilterControlId control_id) -> bool;
+    [[nodiscard]] auto list_filter_controls() const
+        -> std::vector<goggles::fc::FilterControlDescriptor>;
+    [[nodiscard]] auto list_filter_controls(goggles::fc::FilterControlStage stage) const
+        -> std::vector<goggles::fc::FilterControlDescriptor>;
+    [[nodiscard]] auto set_filter_control_value(goggles::fc::FilterControlId control_id,
+                                                float value) -> bool;
+    [[nodiscard]] auto reset_filter_control_value(goggles::fc::FilterControlId control_id) -> bool;
     void reset_filter_controls();
 
     /// @brief Owns the full goggles_fc_* object graph for one filter-chain instance.

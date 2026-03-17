@@ -23,7 +23,7 @@ namespace {
 // ---------------------------------------------------------------------------
 
 struct ControlSnapshot {
-    goggles::render::FilterControlId control_id = 0;
+    goggles::fc::FilterControlId control_id = 0;
     float value = 0.0F;
 };
 
@@ -40,20 +40,20 @@ auto to_utf8_bytes(const std::filesystem::path& path) -> std::string {
 // Stage / control translation helpers
 // ---------------------------------------------------------------------------
 
-auto to_filter_stage(uint32_t fc_stage) -> FilterControlStage {
+auto to_filter_stage(uint32_t fc_stage) -> goggles::fc::FilterControlStage {
     switch (fc_stage) {
     case GOGGLES_FC_STAGE_PRECHAIN:
-        return FilterControlStage::prechain;
+        return goggles::fc::FilterControlStage::prechain;
     case GOGGLES_FC_STAGE_EFFECT:
     default:
-        return FilterControlStage::effect;
+        return goggles::fc::FilterControlStage::effect;
     }
 }
 
 auto make_control_id_from_info(const goggles_fc_control_info_t& info)
-    -> goggles::render::FilterControlId {
+    -> goggles::fc::FilterControlId {
     const std::string_view name{info.name.data != nullptr ? info.name.data : "", info.name.size};
-    return goggles::render::make_filter_control_id(to_filter_stage(info.stage), name);
+    return goggles::fc::make_filter_control_id(to_filter_stage(info.stage), name);
 }
 
 auto stage_mask_from_policy(bool prechain_enabled, bool effect_stage_enabled) -> uint32_t {
@@ -67,11 +67,12 @@ auto stage_mask_from_policy(bool prechain_enabled, bool effect_stage_enabled) ->
     return mask;
 }
 
-auto to_filter_descriptor(const goggles_fc_control_info_t& info) -> FilterControlDescriptor {
+auto to_filter_descriptor(const goggles_fc_control_info_t& info)
+    -> goggles::fc::FilterControlDescriptor {
     const auto stage = to_filter_stage(info.stage);
     std::string name = info.name.data != nullptr ? std::string(info.name.data, info.name.size) : "";
-    return FilterControlDescriptor{
-        .control_id = make_filter_control_id(stage, name),
+    return goggles::fc::FilterControlDescriptor{
+        .control_id = goggles::fc::make_filter_control_id(stage, name),
         .stage = stage,
         .name = std::move(name),
         .description = info.description.data != nullptr
@@ -166,7 +167,7 @@ auto snapshot_slot_controls(const FilterChainController::FilterChainSlot& slot)
 }
 
 auto resolve_slot_control_index(const FilterChainController::FilterChainSlot& slot,
-                                FilterControlId control_id) -> Result<uint32_t> {
+                                goggles::fc::FilterControlId control_id) -> Result<uint32_t> {
     if (!slot.chain) {
         return make_error<uint32_t>(ErrorCode::vulkan_init_failed, "Chain not initialized");
     }
@@ -398,7 +399,7 @@ auto snapshot_adapter_controls(const FilterChainController::FilterChainSlot& slo
 }
 
 auto snapshot_adapter_control_ids(const FilterChainController::FilterChainSlot& slot)
-    -> std::vector<FilterControlId> {
+    -> std::vector<goggles::fc::FilterControlId> {
     if (!slot.chain) {
         return {};
     }
@@ -409,7 +410,7 @@ auto snapshot_adapter_control_ids(const FilterChainController::FilterChainSlot& 
         return {};
     }
 
-    std::vector<FilterControlId> control_ids;
+    std::vector<goggles::fc::FilterControlId> control_ids;
     const uint32_t count = count_result.value();
     control_ids.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
@@ -486,35 +487,24 @@ auto align_adapter_output(FilterChainController::FilterChainSlot& slot,
     return {};
 }
 
-auto diagnostics_capture_mode(const std::string& mode) -> uint32_t {
-    if (mode == "minimal") {
-        return GOGGLES_FC_DIAGNOSTIC_CAPTURE_MINIMAL;
-    }
-    if (mode == "investigate") {
-        return GOGGLES_FC_DIAGNOSTIC_CAPTURE_INVESTIGATE;
-    }
-    if (mode == "forensic") {
-        return GOGGLES_FC_DIAGNOSTIC_CAPTURE_FORENSIC;
-    }
-    return GOGGLES_FC_DIAGNOSTIC_CAPTURE_STANDARD;
-}
-
 void apply_diagnostics_policy(FilterChainController::FilterChainSlot& slot,
                               const std::optional<Config::Diagnostics>& diagnostics) {
     if (!diagnostics || !diagnostics->configured || !slot.chain) {
         return;
     }
 
-    auto policy = goggles_fc_diagnostic_policy_init();
-    policy.capture_mode = diagnostics_capture_mode(diagnostics->mode);
-    policy.activation_tier = diagnostics->tier;
-    policy.capture_frame_limit = diagnostics->capture_frame_limit;
-
-    auto result = goggles_fc_chain_create_diagnostic_session(slot.chain.handle(), &policy);
-    if (result != GOGGLES_FC_STATUS_OK) {
-        GOGGLES_LOG_WARN("Failed to create diagnostic session: {}",
-                         goggles_fc_status_string(result));
+    auto summary_result = slot.chain.get_diagnostic_summary();
+    if (!summary_result) {
+        GOGGLES_LOG_WARN("Failed to query filter-chain diagnostic summary: {}",
+                         summary_result.error().message);
+        return;
     }
+
+    const auto& summary = summary_result.value();
+    GOGGLES_LOG_DEBUG(
+        "Filter-chain diagnostic summary: frame={} total={} info={} warnings={} errors={}",
+        summary.current_frame, summary.total_events, summary.info_count, summary.warning_count,
+        summary.error_count);
 }
 
 auto create_and_load_slot(const FilterChainController::AdapterBuildConfig& config,
@@ -964,7 +954,8 @@ auto FilterChainController::get_chain_report() const -> goggles::Result<goggles_
     return active_slot.chain.get_report();
 }
 
-auto FilterChainController::list_filter_controls() const -> std::vector<FilterControlDescriptor> {
+auto FilterChainController::list_filter_controls() const
+    -> std::vector<goggles::fc::FilterControlDescriptor> {
     if (!active_slot.chain) {
         return {};
     }
@@ -975,7 +966,7 @@ auto FilterChainController::list_filter_controls() const -> std::vector<FilterCo
         return {};
     }
 
-    std::vector<FilterControlDescriptor> controls;
+    std::vector<goggles::fc::FilterControlDescriptor> controls;
     const uint32_t count = count_result.value();
     controls.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
@@ -988,8 +979,8 @@ auto FilterChainController::list_filter_controls() const -> std::vector<FilterCo
     return controls;
 }
 
-auto FilterChainController::list_filter_controls(FilterControlStage stage) const
-    -> std::vector<FilterControlDescriptor> {
+auto FilterChainController::list_filter_controls(goggles::fc::FilterControlStage stage) const
+    -> std::vector<goggles::fc::FilterControlDescriptor> {
     if (!active_slot.chain) {
         return {};
     }
@@ -1000,7 +991,7 @@ auto FilterChainController::list_filter_controls(FilterControlStage stage) const
         return {};
     }
 
-    std::vector<FilterControlDescriptor> controls;
+    std::vector<goggles::fc::FilterControlDescriptor> controls;
     const uint32_t count = count_result.value();
     for (uint32_t i = 0; i < count; ++i) {
         auto info_result = active_slot.chain.get_control_info(i);
@@ -1015,8 +1006,8 @@ auto FilterChainController::list_filter_controls(FilterControlStage stage) const
     return controls;
 }
 
-auto FilterChainController::set_filter_control_value(FilterControlId control_id, float value)
-    -> bool {
+auto FilterChainController::set_filter_control_value(goggles::fc::FilterControlId control_id,
+                                                     float value) -> bool {
     if (!active_slot.chain) {
         return false;
     }
@@ -1035,7 +1026,8 @@ auto FilterChainController::set_filter_control_value(FilterControlId control_id,
     return true;
 }
 
-auto FilterChainController::reset_filter_control_value(FilterControlId control_id) -> bool {
+auto FilterChainController::reset_filter_control_value(goggles::fc::FilterControlId control_id)
+    -> bool {
     if (!active_slot.chain) {
         return false;
     }

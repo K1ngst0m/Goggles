@@ -3,8 +3,6 @@
 #include "render/backend/render_output.hpp"
 #include "render/backend/vulkan_context.hpp"
 
-#include <algorithm>
-#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <filesystem>
@@ -14,7 +12,6 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <vector>
 
 namespace {
 
@@ -26,37 +23,6 @@ auto read_text_file(const std::filesystem::path& path) -> std::optional<std::str
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
-auto collect_render_boundary_sources() -> std::vector<std::filesystem::path> {
-    std::vector<std::filesystem::path> files;
-    std::array<std::filesystem::path, 3> directories = {
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain",
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/shader",
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/texture",
-    };
-
-    for (const auto& dir : directories) {
-        std::error_code ec;
-        if (!std::filesystem::exists(dir, ec) || ec) {
-            continue;
-        }
-
-        for (auto it = std::filesystem::recursive_directory_iterator(dir, ec);
-             it != std::filesystem::recursive_directory_iterator() && !ec; it.increment(ec)) {
-            if (!it->is_regular_file(ec) || ec) {
-                continue;
-            }
-
-            const auto ext = it->path().extension();
-            if (ext == ".cpp" || ext == ".hpp") {
-                files.push_back(it->path());
-            }
-        }
-    }
-
-    std::sort(files.begin(), files.end());
-    return files;
-}
-
 auto find_text(std::string_view text, std::string_view needle, size_t offset = 0) -> size_t {
     return text.find(needle, offset);
 }
@@ -66,10 +32,10 @@ auto find_text(std::string_view text, std::string_view needle, size_t offset = 0
 TEST_CASE("Vulkan backend seam declarations stay compile-safe", "[vulkan-backend-module-layout]") {
     namespace backend_internal = goggles::render::backend_internal;
 
-    static_assert(!std::is_same_v<backend_internal::VulkanContext, goggles::render::VulkanContext>);
+    static_assert(!std::is_same_v<backend_internal::VulkanContext, goggles::fc::VulkanContext>);
     static_assert(backend_internal::RenderOutput::MAX_FRAMES_IN_FLIGHT == 2u);
     using BoundaryContextAdapterSig =
-        goggles::render::VulkanContext (backend_internal::VulkanContext::*)(vk::CommandPool) const;
+        goggles::fc::VulkanContext (backend_internal::VulkanContext::*)() const;
     static_assert(std::is_same_v<decltype(&backend_internal::VulkanContext::boundary_context),
                                  BoundaryContextAdapterSig>);
 
@@ -77,7 +43,7 @@ TEST_CASE("Vulkan backend seam declarations stay compile-safe", "[vulkan-backend
     backend_internal::RenderOutput output{};
     backend_internal::ExternalFrameImporter importer{};
     backend_internal::FilterChainController controller{};
-    const auto boundary_context = context.boundary_context(vk::CommandPool{});
+    const auto boundary_context = context.boundary_context();
 
     REQUIRE(context.graphics_queue_family == UINT32_MAX);
     REQUIRE(output.command_pool == vk::CommandPool{});
@@ -93,7 +59,6 @@ TEST_CASE("Vulkan backend seam declarations stay compile-safe", "[vulkan-backend
     REQUIRE(controller.pending_preset_path.empty());
     REQUIRE(controller.authoritative_output_target.format == vk::Format::eUndefined);
     REQUIRE(controller.authoritative_output_target.extent == vk::Extent2D{});
-    REQUIRE(boundary_context.command_pool == vk::CommandPool{});
     REQUIRE(boundary_context.device == vk::Device{});
 }
 
@@ -135,14 +100,6 @@ TEST_CASE("Vulkan backend dependency edge audits stay explicit", "[vulkan-backen
     REQUIRE(find_text(*controller_text, "external_frame_importer.hpp") == std::string::npos);
     REQUIRE(find_text(*backend_header_text, "m_gpu_selector") == std::string::npos);
     REQUIRE(find_text(*backend_header_text, "MAX_FRAMES_IN_FLIGHT =") == std::string::npos);
-
-    const auto boundary_sources = collect_render_boundary_sources();
-    for (const auto& source_path : boundary_sources) {
-        auto source_text = read_text_file(source_path);
-        REQUIRE(source_text.has_value());
-        INFO("File: " << source_path);
-        REQUIRE(find_text(*source_text, "render/backend/vulkan_context.hpp") == std::string::npos);
-    }
 }
 
 TEST_CASE("Vulkan backend teardown audit hooks stay aligned with shutdown order",

@@ -2,9 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <optional>
 #include <string>
-#include <unordered_map>
 #include <util/error.hpp>
 #include <vector>
 
@@ -34,13 +32,6 @@ struct CompareResult {
     std::string error_message;
 };
 
-struct DivergenceLocalization {
-    bool has_intermediate_goldens = false;
-    std::optional<uint32_t> earliest_pass;
-    std::vector<uint32_t> downstream_passes;
-    std::string summary;
-};
-
 [[nodiscard]] auto load_png(const std::filesystem::path& path) -> goggles::Result<Image>;
 
 [[nodiscard]] auto compare_images(const Image& actual, const Image& reference, double tolerance,
@@ -53,10 +44,5 @@ struct DivergenceLocalization {
 
 [[nodiscard]] auto generate_diff_heatmap(const Image& actual, const Image& reference,
                                          const std::filesystem::path& output) -> Result<void>;
-
-[[nodiscard]] auto
-localize_earliest_divergence(const std::vector<uint32_t>& pass_ordinals,
-                             const std::unordered_map<uint32_t, CompareResult>& comparisons)
-    -> DivergenceLocalization;
 
 } // namespace goggles::test

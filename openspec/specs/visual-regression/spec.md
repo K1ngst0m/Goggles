@@ -1,309 +1,192 @@
 # visual-regression Specification
 
 ## Purpose
-Defines requirements for the image comparison library, CLI tool, headless pipeline smoke test, aspect ratio visual tests, shader visual tests, and golden image workflow that form the visual regression testing foundation for Goggles. Phase 1 established the infrastructure (`test-framework-phase1`); Phase 2 introduced the first batch of automated visual tests (`test-framework-phase2`).
+Defines the current Goggles visual regression contract: the image-comparison library and CLI, the headless smoke check, the aspect-ratio and shader-golden tests, the golden refresh workflow, and the labeling/scope boundaries for Goggles-owned visual regression coverage.
+
 ## Requirements
 ### Requirement: Image comparison library
-
-The system SHALL provide a C++ image comparison library at `tests/visual/image_compare.hpp` that compares two PNG images with configurable per-channel tolerance and supports additional perceptual quality metrics.
+The system MUST provide an image-comparison library with an explicit `Image` model, `load_png(...)` loader, `compare_images(...)` overloads for whole-image and ROI comparison, and `generate_diff_heatmap(...)`. `compare_images(...)` MUST compare already-loaded `Image` values rather than file paths.
 
 #### Scenario: Identical images pass
-- **GIVEN** two PNG files with identical pixel data
-- **WHEN** `compare_images(actual_path, reference_path, tolerance)` is called with any tolerance ≥ 0
+- **GIVEN** two loaded images with identical pixel data
+- **WHEN** `compare_images(actual, reference, tolerance)` is called with any tolerance greater than or equal to `0.0`
 - **THEN** `CompareResult.passed` SHALL be `true`
 - **AND** `CompareResult.max_channel_diff` SHALL be `0.0`
 - **AND** `CompareResult.failing_pixels` SHALL be `0`
 
 #### Scenario: Differing images fail at zero tolerance
-- **GIVEN** two PNG files where at least one pixel differs by 1 channel value
-- **WHEN** `compare_images()` is called with `tolerance = 0.0`
+- **GIVEN** two loaded images where at least one pixel differs by one channel value
+- **WHEN** `compare_images(...)` is called with `tolerance = 0.0`
 - **THEN** `CompareResult.passed` SHALL be `false`
-- **AND** `CompareResult.failing_pixels` SHALL be ≥ 1
+- **AND** `CompareResult.failing_pixels` SHALL be at least `1`
 
 #### Scenario: Tolerance allows small differences
-- **GIVEN** two PNG files where all pixels differ by at most 2/255 per channel
-- **WHEN** `compare_images()` is called with `tolerance = 2.0/255.0`
+- **GIVEN** two loaded images where all channels differ by at most `2/255`
+- **WHEN** `compare_images(...)` is called with `tolerance = 2.0/255.0`
 - **THEN** `CompareResult.passed` SHALL be `true`
 
-#### Scenario: CompareResult fields are populated
-- **GIVEN** a comparison that produces failures
-- **WHEN** `compare_images()` returns
-- **THEN** `CompareResult.max_channel_diff` SHALL be the maximum per-channel delta across all pixels (normalized 0.0–1.0)
-- **AND** `CompareResult.mean_diff` SHALL be the mean per-pixel average-channel delta
-- **AND** `CompareResult.failing_percentage` SHALL equal `failing_pixels / (width * height)` × 100
+#### Scenario: Result metrics are populated
+- **GIVEN** a comparison is performed over either the whole image or an ROI
+- **WHEN** `compare_images(...)` returns
+- **THEN** `CompareResult` SHALL report `max_channel_diff`, `mean_diff`, `failing_pixels`, and `failing_percentage`
+- **AND** `failing_percentage` SHALL be based on the compared pixel count for the selected image region
 
 #### Scenario: Diff image is generated on failure
-- **GIVEN** a comparison that fails AND `diff_output_path` is provided
-- **WHEN** `compare_images()` returns
-- **THEN** a PNG SHALL be written at `diff_output_path`
-- **AND** pixels that exceeded tolerance SHALL be highlighted in red (255, 0, 0, 255) in the diff image
-- **AND** passing pixels SHALL be shown at reduced intensity (≤ 25% of original value)
+- **GIVEN** a comparison fails and a diff output path is provided
+- **WHEN** `compare_images(...)` returns
+- **THEN** a PNG SHALL be written at the diff path
+- **AND** pixels that exceeded tolerance SHALL be highlighted in red
+- **AND** non-failing pixels SHALL be shown at reduced intensity
 
-#### Scenario: Size mismatch is a failure
-- **GIVEN** two PNG files with different dimensions
-- **WHEN** `compare_images()` is called
+#### Scenario: Size mismatch is reported as comparison failure
+- **GIVEN** two loaded images with different dimensions
+- **WHEN** `compare_images(...)` is called
 - **THEN** `CompareResult.passed` SHALL be `false`
-- **AND** an error message describing the dimension mismatch SHALL be set
+- **AND** `CompareResult.error_message` SHALL describe the dimension mismatch
 
-#### Scenario: Structural similarity metric
-- **GIVEN** two PNG files of the same dimensions
-- **WHEN** `compare_images()` is called with structural similarity enabled
-- **THEN** `CompareResult` SHALL include a `structural_similarity` field with a value between 0.0 and 1.0
-- **AND** the structural similarity metric SHALL complement per-channel tolerance for perceptual quality assessment
+#### Scenario: Structural similarity is optional
+- **GIVEN** two loaded images of the same dimensions
+- **WHEN** `compare_images(...)` is called with structural similarity enabled
+- **THEN** `CompareResult.structural_similarity` SHALL report a value in the range `[0.0, 1.0]`
 
-#### Scenario: Region-of-interest comparison
-- **GIVEN** two PNG files and a specified rectangular region of interest
-- **WHEN** `compare_images()` is called with the region specification
-- **THEN** comparison metrics SHALL be computed only within the specified region
-- **AND** `CompareResult.failing_pixels` SHALL count only pixels within the region that exceed tolerance
+#### Scenario: ROI comparison scopes the evaluated region
+- **GIVEN** two loaded images and a rectangular region of interest
+- **WHEN** the ROI overload of `compare_images(...)` is called
+- **THEN** comparison metrics SHALL be computed only over the ROI bounds
+- **AND** invalid ROI inputs SHALL produce a failed result with an explanatory error message
+
+#### Scenario: Heatmap generation is available as a separate helper
+- **GIVEN** two loaded images of the same dimensions
+- **WHEN** `generate_diff_heatmap(...)` is called
+- **THEN** the helper SHALL write a heatmap PNG representing per-pixel difference magnitude
+- **AND** size mismatches SHALL be reported as an error result
 
 ### Requirement: Image comparison CLI tool
-The system SHALL provide a `goggles_image_compare` CLI binary that wraps the comparison library for use in shell scripts and pixi tasks.
+The system MUST provide a `goggles_image_compare` CLI binary that loads two PNG files, compares them through the image-comparison library, accepts optional `--tolerance` and `--diff` arguments, and uses process exit codes to report success or failure.
 
 #### Scenario: Pass exit code
-- **WHEN** `goggles_image_compare actual.png reference.png --tolerance 0.01` is run and images match within tolerance
-- **THEN** the process SHALL exit with code 0
+- **WHEN** `goggles_image_compare actual.png reference.png --tolerance 0.01` is run and the images match within tolerance
+- **THEN** the process SHALL exit with code `0`
 
-#### Scenario: Fail exit code
-- **WHEN** `goggles_image_compare actual.png reference.png --tolerance 0.0` is run and images differ
-- **THEN** the process SHALL exit with code 1
-- **AND** a summary SHALL be printed to stdout including `failing_pixels` and `max_channel_diff`
+#### Scenario: Fail exit code and summary output
+- **WHEN** `goggles_image_compare actual.png reference.png --tolerance 0.0` is run and the images differ
+- **THEN** the process SHALL exit with code `1`
+- **AND** stdout SHALL include `failing_pixels`, `max_channel_diff`, and `failing_percentage`
+
+#### Scenario: Usage or load errors return code 2
+- **WHEN** required positional arguments are missing, an option value is invalid, or either input PNG fails to load
+- **THEN** the process SHALL exit with code `2`
 
 #### Scenario: Diff image output
 - **WHEN** `--diff diff.png` is passed and the comparison fails
 - **THEN** a diff PNG SHALL be written to `diff.png`
 
-#### Scenario: Missing file error
-- **WHEN** either `actual.png` or `reference.png` does not exist
-- **THEN** the process SHALL exit with code 2 and print an error to stderr
-
 ### Requirement: Headless pipeline smoke test
-The system SHALL provide a CTest integration test that exercises the full `Application::create_headless()` → filter chain → `readback_to_png()` pipeline.
+The system MUST provide a headless smoke test that runs Goggles for a small fixed frame count, writes a PNG, and verifies that the output file exists. This smoke coverage MUST remain labeled as `integration` rather than `visual`.
 
-#### Scenario: Smoke test produces a valid PNG
-- **GIVEN** the project is built (includes `goggles` binary and `solid_color_client`)
-- **WHEN** CTest runs the headless smoke test
-- **THEN** `goggles --headless --frames 5 --output <tmp>/smoke.png -- solid_color_client` SHALL exit with code 0
-- **AND** `<tmp>/smoke.png` SHALL exist and be a non-empty file
+#### Scenario: Smoke test produces a PNG
+- **GIVEN** the project is built with the required binaries
+- **WHEN** the headless smoke test runs
+- **THEN** Goggles SHALL exit successfully after rendering a fixed small number of frames
+- **AND** the configured smoke-test PNG output SHALL exist
 
-#### Scenario: Smoke test is labeled integration
-- **GIVEN** any CTest configuration
-- **WHEN** `ctest -L integration` is run
-- **THEN** the headless smoke test SHALL be included in the run
-
-#### Scenario: Smoke test is excluded from unit tier
-- **WHEN** `ctest -L unit` is run
-- **THEN** the headless smoke test SHALL NOT be included
+#### Scenario: Smoke test is integration-labeled
+- **WHEN** CTest labels are inspected
+- **THEN** the headless smoke test SHALL be in the `integration` tier
+- **AND** it SHALL NOT be part of the `visual` label contract
 
 ### Requirement: Aspect ratio visual tests
-The system SHALL provide 8 Catch2 visual tests in `tests/visual/test_aspect_ratio.cpp` that assert correct pixel-region geometry for each scale mode using `quadrant_client` as the fixed 640×480 source.
+The system MUST provide eight Catch2 visual tests that validate the rendered geometry for fit, fill, stretch, integer-1x, integer-2x, integer-auto, and dynamic scale-mode scenarios using the quadrant client as the deterministic source.
 
-#### Scenario: fit — source narrower than viewport (letterbox)
-- **GIVEN** goggles runs headless at 1920×1080 with `scale_mode = "fit"` and a 640×480 source
+#### Scenario: Fit letterbox geometry
+- **GIVEN** headless output at `1920x1080` in fit mode with the fixed `640x480` quadrant source
 - **WHEN** the output PNG is captured
-- **THEN** pixels at x<240 and x≥1680 SHALL be black (pillarbox side bars)
-- **AND** the content rectangle [240, 0, 1440, 1080] SHALL contain the correct quadrant colors within `CONTENT_TOLERANCE = 2/255`
+- **THEN** side bars SHALL be black at the expected pillarbox positions
+- **AND** the content rectangle SHALL show the expected quadrant colors within the configured content tolerance
 
-#### Scenario: fit — source aspect ratio matches viewport (no bars)
-- **GIVEN** goggles runs headless at 800×600 with `scale_mode = "fit"` and a 640×480 source
+#### Scenario: Fit perfect 4:3 geometry
+- **GIVEN** headless output forced to `800x600` in fit mode with the same quadrant source
 - **WHEN** the output PNG is captured
-- **THEN** no black bars SHALL be present
-- **AND** the full 800×600 output SHALL contain the correct quadrant colors
+- **THEN** the full output SHALL contain the expected quadrant colors with no black bars
 
-#### Scenario: fill — content overflows viewport
-- **GIVEN** goggles runs headless at 1920×1080 with `scale_mode = "fill"` and a 640×480 source
+#### Scenario: Fill geometry covers the viewport
+- **GIVEN** headless output at `1920x1080` in fill mode
 - **WHEN** the output PNG is captured
-- **THEN** the center pixel (960, 540) SHALL NOT be black
+- **THEN** the viewport center SHALL contain non-black content rather than border fill
 
-#### Scenario: stretch — entire viewport covered
-- **GIVEN** goggles runs headless at 1920×1080 with `scale_mode = "stretch"` and a 640×480 source
+#### Scenario: Stretch geometry fills the viewport
+- **GIVEN** headless output at `1920x1080` in stretch mode
 - **WHEN** the output PNG is captured
-- **THEN** the full 1920×1080 output SHALL contain the correct quadrant colors with no black bars
+- **THEN** the full viewport SHALL contain the expected quadrant colors with no black bars
 
-#### Scenario: integer scale 1x
-- **GIVEN** goggles runs headless at 1920×1080 with `scale_mode = "integer"`, `integer_scale = 1`
+#### Scenario: Integer scale geometries match their fixed rectangles
+- **GIVEN** headless output at `1920x1080` in integer mode with scale `1`, scale `2`, or auto scale
 - **WHEN** the output PNG is captured
-- **THEN** the content rectangle SHALL be 640×480 at offset (640, 300)
-- **AND** black border pixels SHALL be present in all four surrounding regions
+- **THEN** the content rectangle and black-border regions SHALL match the expected centered geometry for each case
+- **AND** auto scale SHALL resolve to the same geometry as `2x` for the fixed quadrant source
 
-#### Scenario: integer scale 2x
-- **GIVEN** goggles runs headless at 1920×1080 with `scale_mode = "integer"`, `integer_scale = 2`
+#### Scenario: Dynamic mode falls back to fit for stable source size
+- **GIVEN** headless output at `1920x1080` in dynamic mode with no mid-stream source-size change
 - **WHEN** the output PNG is captured
-- **THEN** the content rectangle SHALL be 1280×960 at offset (320, 60)
-- **AND** black border pixels SHALL be present in all four surrounding regions
-
-#### Scenario: integer scale auto
-- **GIVEN** goggles runs headless at 1920×1080 with `scale_mode = "integer"`, `integer_scale = 0` (auto)
-- **WHEN** the output PNG is captured
-- **THEN** auto scale SHALL resolve to 2 (min(1920÷640, 1080÷480) = min(3,2) = 2)
-- **AND** geometry SHALL match the integer 2x scenario
-
-#### Scenario: dynamic scale mode
-- **GIVEN** goggles runs headless at 1920×1080 with `scale_mode = "dynamic"` and a 640×480 source
-- **WHEN** the source resolution is stable (no mid-stream change)
-- **THEN** dynamic SHALL fall back to fit behaviour
-- **AND** geometry SHALL match the fit letterbox scenario (side bars at x<240, x≥1680)
+- **THEN** the geometry SHALL match the fit-letterbox case
 
 ### Requirement: Shader visual tests with golden image comparison
-The system SHALL provide 3 Catch2 visual tests in `tests/visual/test_shader_basic.cpp` that compare rendered output to golden reference images within explicit tolerance contracts.
+The system MUST provide three Catch2 shader visual tests covering bypass, zfast-crt, and a bypass-vs-zfast toggle distinction. These tests MUST compare captured output images against golden PNGs using explicit tolerance and failing-percentage thresholds.
 
-#### Scenario: bypass shader matches golden
-- **GIVEN** golden `tests/golden/shader_bypass_quadrant.png` exists
-- **WHEN** goggles runs headless with no shader preset and the output is compared to the golden
-- **THEN** the comparison SHALL pass with `tolerance = 2/255` and `max_failing_pct ≤ 0.1%`
+#### Scenario: Bypass shader matches golden
+- **GIVEN** the bypass golden image is present
+- **WHEN** Goggles renders the bypass shader scenario and compares the output against the golden
+- **THEN** the comparison SHALL pass within the bypass tolerance and failing-percentage threshold
 
-#### Scenario: crt-lottes-fast shader matches golden
-- **GIVEN** golden `tests/golden/shader_zfast_quadrant.png` exists
-- **WHEN** goggles runs headless with `crt-lottes-fast.slangp` and the output is compared to the golden
-- **THEN** the comparison SHALL pass with `tolerance = 0.05` and `max_failing_pct ≤ 5.0%`
+#### Scenario: Zfast shader matches golden
+- **GIVEN** the zfast-crt golden image is present
+- **WHEN** Goggles renders the zfast scenario and compares the output against the golden
+- **THEN** the comparison SHALL pass within the zfast tolerance and failing-percentage threshold
 
-#### Scenario: filter-chain toggle produces distinct bypass and crt outputs
-- **GIVEN** both golden images exist
-- **WHEN** goggles is run twice — once with bypass config and once with crt config
-- **THEN** the bypass run SHALL match the bypass golden within bypass tolerance
-- **AND** the crt run SHALL match the crt golden within crt tolerance
+#### Scenario: Toggle scenarios remain distinct and valid
+- **GIVEN** both shader goldens are present
+- **WHEN** Goggles renders the bypass and zfast scenarios separately
+- **THEN** each output SHALL match its corresponding golden contract
 
-#### Scenario: tests skip gracefully when goldens are absent
-- **GIVEN** golden images have not been generated (e.g. fresh checkout without GPU)
-- **WHEN** CTest runs the shader visual tests
-- **THEN** each test SHALL emit a Catch2 SKIP (not FAIL) with a message directing the user to run `pixi run update-golden`
+#### Scenario: Missing goldens skip instead of fail
+- **GIVEN** one or more required shader goldens are absent
+- **WHEN** the shader visual tests run
+- **THEN** the affected tests SHALL emit Catch2 `SKIP` results rather than failures
+- **AND** the skip message SHALL direct the user to run `pixi run update-golden`
 
 ### Requirement: Golden image update workflow
+The system MUST provide a reproducible workflow to refresh Goggles-owned golden PNGs through `pixi run update-golden`. The Goggles visual-regression contract only requires final-output shader goldens for the active visual tests.
 
-The system SHALL provide a reproducible mechanism to regenerate golden reference images including intermediate pass goldens and temporal sequence goldens.
+#### Scenario: Golden refresh updates the shader goldens
+- **GIVEN** the project is built on a machine that can execute the capture workflow
+- **WHEN** `pixi run update-golden` is executed
+- **THEN** the bypass and zfast shader goldens SHALL be regenerated from current captures
 
-#### Scenario: update-golden script captures both goldens
-- **GIVEN** the project is built (`pixi run build` completed)
-- **WHEN** `pixi run update-golden` is executed on a machine with a GPU
-- **THEN** `tests/golden/shader_bypass_quadrant.png` SHALL be overwritten with the current bypass render
-- **AND** `tests/golden/shader_zfast_quadrant.png` SHALL be overwritten with the current zfast render
-
-#### Scenario: golden PNGs are tracked via Git LFS
-- **GIVEN** Git LFS is configured in the repository
-- **WHEN** `*.png` files are committed to `tests/golden/`
-- **THEN** they SHALL be stored as LFS pointers per `tests/golden/.gitattributes`
-
-#### Scenario: update-golden captures intermediate goldens
-- **GIVEN** the project is built and intermediate golden generation is configured
-- **WHEN** `pixi run update-golden` is executed with intermediate pass specification
-- **THEN** golden images for the specified intermediate passes SHALL be captured and stored
-- **AND** intermediate goldens SHALL be stored alongside final goldens with pass-ordinal naming
+#### Scenario: Golden PNGs remain Git LFS tracked
+- **GIVEN** golden PNGs are committed under the golden-image directory
+- **WHEN** repository LFS tracking rules are applied
+- **THEN** those PNGs SHALL remain tracked through Git LFS
 
 ### Requirement: Visual test CTest label isolation
-Visual tests SHALL carry only the `visual` CTest label; they MUST NOT carry `unit` or `integration` labels.
+The visual regression executables registered through the visual test CMake wiring MUST carry the `visual` label and MUST NOT also be labeled `unit` or `integration`.
 
-#### Scenario: visual label selects new tests
+#### Scenario: Visual label selects visual tests
 - **WHEN** `ctest --preset test -L visual` is run
-- **THEN** `test_aspect_ratio` and `test_shader_basic` SHALL be included
+- **THEN** the aspect-ratio and shader visual tests SHALL be included
 
-#### Scenario: unit label excludes visual tests
+#### Scenario: Unit label excludes visual tests
 - **WHEN** `ctest --preset test -L unit` is run
-- **THEN** `test_aspect_ratio` and `test_shader_basic` SHALL NOT be included
+- **THEN** the aspect-ratio and shader visual tests SHALL NOT be included
 
-#### Scenario: integration label excludes visual tests
+#### Scenario: Integration label excludes visual tests
 - **WHEN** `ctest --preset test -L integration` is run
-- **THEN** `test_aspect_ratio` and `test_shader_basic` SHALL NOT be included
+- **THEN** the aspect-ratio and shader visual tests SHALL NOT be included
 
-### Requirement: Per-Pass Intermediate Output Golden Baselines
+### Requirement: Goggles visual-regression scope excludes standalone filter-chain diagnostics workflows
+Goggles-owned visual regression requirements SHALL cover final-output image comparison, CLI/library helpers, headless smoke, aspect-ratio tests, shader goldens, and visual CTest labeling. Intermediate-pass golden baselines, earliest-divergence localization, temporal-sequence golden requirements, and semantic-probe preset requirements are OUT OF SCOPE for the current Goggles visual-regression contract.
 
-The visual regression system SHALL support golden image baselines for selected intermediate pass outputs, not only the final composited output.
-
-#### Scenario: Intermediate golden for a specific pass
-- **GIVEN** a golden reference image exists for pass ordinal 2 of a specific preset
-- **WHEN** the headless pipeline captures intermediate output for pass 2 and compares it to the golden
-- **THEN** the comparison SHALL use the same tolerance and metric infrastructure as final-output comparisons
-- **AND** the comparison result SHALL identify the pass ordinal in its report
-
-#### Scenario: Multiple intermediate goldens per preset
-- **GIVEN** golden reference images exist for passes 0, 2, and 4 of a multi-pass preset
-- **WHEN** the visual regression suite runs for that preset
-- **THEN** each intermediate golden SHALL be compared independently
-- **AND** failures SHALL be reported per pass with pass ordinal in the failure message
-
-#### Scenario: Intermediate golden update workflow
-- **GIVEN** the golden update mechanism (`pixi run update-golden`)
-- **WHEN** intermediate golden generation is requested for a preset
-- **THEN** the tool SHALL capture and store intermediate outputs for the specified pass ordinals
-- **AND** intermediate goldens SHALL follow the naming convention `{preset_name}_pass{ordinal}.png`
-
-#### Scenario: Missing intermediate golden is a skip, not a failure
-- **GIVEN** no intermediate golden reference exists for a pass
-- **WHEN** visual regression attempts to compare intermediate output for that pass
-- **THEN** the test SHALL emit a Catch2 SKIP (not FAIL)
-- **AND** the skip message SHALL direct the user to generate the intermediate golden
-
-### Requirement: Earliest-Divergence Localization
-
-The visual regression system SHALL support locating the earliest intermediate pass whose output diverges from its golden baseline, enabling failure localization to a specific pass rather than only the final output.
-
-#### Scenario: Divergence localized to earliest failing pass
-- **GIVEN** intermediate goldens exist for passes 0 through 4
-- **WHEN** pass 2 intermediate output diverges from its golden but passes 0 and 1 match
-- **THEN** the regression report SHALL identify pass 2 as the earliest divergent pass
-- **AND** the report SHALL note that passes 3 and 4 are downstream of the divergence
-
-#### Scenario: No intermediate goldens available falls back to final-only
-- **GIVEN** no intermediate goldens exist for a preset
-- **WHEN** the final output diverges from its golden
-- **THEN** the regression report SHALL report the final output failure
-- **AND** the report SHALL note that intermediate golden baselines are unavailable for pass-level localization
-
-### Requirement: Temporal Sequence Golden Baselines
-
-The visual regression system SHALL support golden baselines for multi-frame temporal sequences, validating that history and feedback surfaces produce expected results across frames.
-
-#### Scenario: Multi-frame golden sequence
-- **GIVEN** golden reference images exist for frames 1, 3, and 5 of a temporal preset
-- **WHEN** the headless pipeline captures outputs at those frame indices and compares to goldens
-- **THEN** each frame comparison SHALL be independent
-- **AND** failures SHALL report the frame index alongside the comparison metrics
-
-#### Scenario: Feedback surface golden validation
-- **GIVEN** a preset that uses feedback routing and golden references exist for the feedback consumer pass at frames 2 and 4
-- **WHEN** the visual regression suite captures intermediate outputs at those frames
-- **THEN** the comparison SHALL validate that the feedback surface correctly carries the prior frame's pass output
-
-#### Scenario: Temporal golden update workflow
-- **GIVEN** the golden update mechanism is invoked with frame range specification
-- **WHEN** temporal golden generation is requested
-- **THEN** the tool SHALL capture outputs at the specified frame indices
-- **AND** temporal goldens SHALL follow the naming convention `{preset_name}_frame{index}.png` for final outputs and `{preset_name}_pass{ordinal}_frame{index}.png` for intermediates
-
-### Requirement: Semantic-Probe Presets for Contract Testing
-
-The visual regression system SHALL support synthetic semantic-probe presets that test specific contract behaviors such as size semantic correctness, frame counter progression, and parameter isolation.
-
-#### Scenario: Size semantic probe
-- **GIVEN** a synthetic preset designed to encode source size and output size into pixel values
-- **WHEN** the headless pipeline runs the probe at known source and viewport sizes
-- **THEN** the captured output SHALL encode the expected size values
-- **AND** the regression suite SHALL validate the encoded values against expected values rather than using pixel-diff comparison
-
-#### Scenario: Frame counter probe
-- **GIVEN** a synthetic preset designed to encode the frame count modulo a known value into pixel intensity
-- **WHEN** the headless pipeline captures multiple frames
-- **THEN** each frame's output SHALL encode the expected frame count value
-- **AND** temporal progression SHALL be verified across the captured sequence
-
-#### Scenario: Parameter isolation probe
-- **GIVEN** a synthetic preset where a single parameter controls a measurable visual property
-- **WHEN** the parameter is set to two distinct values and both outputs are captured
-- **THEN** only the expected visual property SHALL differ between the two captures
-- **AND** the regression suite SHALL report any unexpected pixel differences outside the expected region
-
-### Requirement: Diff Heatmap Generation
-
-The visual regression system SHALL support generating diff heatmaps that visually highlight regions of divergence between actual and golden images.
-
-#### Scenario: Heatmap generated on comparison failure
-- **GIVEN** a golden comparison that fails
-- **WHEN** heatmap generation is enabled
-- **THEN** a heatmap image SHALL be produced that maps per-pixel error magnitude to a color gradient
-- **AND** the heatmap SHALL use a perceptually uniform color scale from no-error to maximum-error
-
-#### Scenario: Heatmap for intermediate pass failures
-- **GIVEN** an intermediate pass golden comparison that fails
-- **WHEN** heatmap generation is enabled
-- **THEN** the heatmap SHALL be generated for the intermediate pass output
-- **AND** the heatmap file SHALL include the pass ordinal in its filename
-
+#### Scenario: Consumer reads the Goggles visual-regression contract
+- **GIVEN** a reader wants to know what Goggles visual tests currently guarantee
+- **WHEN** it inspects this living spec
+- **THEN** it SHALL find requirements for the actively maintained Goggles visual test surface
+- **AND** it SHALL NOT interpret standalone filter-chain diagnostic workflows as required Goggles visual-regression behavior

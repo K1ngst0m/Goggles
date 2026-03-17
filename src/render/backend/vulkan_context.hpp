@@ -3,7 +3,7 @@
 #include "vulkan_debug.hpp"
 
 #include <cstdint>
-#include <goggles_filter_chain.hpp>
+#include <goggles/filter_chain/vulkan_context.hpp>
 #include <optional>
 #include <string>
 #include <vulkan/vulkan.hpp>
@@ -31,8 +31,7 @@ struct VulkanContext {
 
     void destroy();
 
-    [[nodiscard]] auto boundary_context(vk::CommandPool command_pool) const
-        -> ::goggles::render::VulkanContext;
+    [[nodiscard]] auto boundary_context() const -> ::goggles::fc::VulkanContext;
     [[nodiscard]] auto initialized() const -> bool { return static_cast<bool>(device); }
     [[nodiscard]] auto is_headless() const -> bool { return headless; }
 

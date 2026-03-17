@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <goggles/filter_chain/result.hpp>
+#include <util/error.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 

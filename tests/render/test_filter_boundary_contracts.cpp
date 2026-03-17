@@ -10,7 +10,9 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <goggles_filter_chain.hpp>
+#include <goggles/filter_chain.h>
+#include <goggles/filter_chain.hpp>
+#include <goggles/filter_chain/filter_controls.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -64,9 +66,9 @@ auto surface_token(std::uintptr_t value) -> goggles::input::wlr_surface* {
 } // namespace
 
 TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][boundary_contract]") {
-    using goggles::render::FilterControlDescriptor;
-    using goggles::render::FilterControlId;
-    using goggles::render::FilterControlStage;
+    using goggles::fc::FilterControlDescriptor;
+    using goggles::fc::FilterControlId;
+    using goggles::fc::FilterControlStage;
     using goggles::render::VulkanBackend;
 
     using ListAllSig = std::vector<FilterControlDescriptor> (VulkanBackend::*)() const;
@@ -90,10 +92,22 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
                                  std::function<void(FilterControlId, float)>>);
     static_assert(
         std::is_same_v<goggles::ui::TargetFpsChangeCallback, std::function<void(uint32_t)>>);
+    static_assert(std::is_same_v<decltype(goggles::ui::ParameterState{}.descriptor),
+                                 FilterControlDescriptor>);
+    static_assert(std::is_same_v<decltype(goggles::ui::PreChainState{}.pass_parameters),
+                                 std::vector<FilterControlDescriptor>>);
 
-    REQUIRE(std::string_view{goggles::render::to_string(FilterControlStage::prechain)} ==
-            "prechain");
-    REQUIRE(std::string_view{goggles::render::to_string(FilterControlStage::effect)} == "effect");
+    using SetParametersSig =
+        void (goggles::ui::ImGuiLayer::*)(std::vector<goggles::ui::ParameterState>);
+    using SetPrechainParametersSig =
+        void (goggles::ui::ImGuiLayer::*)(std::vector<FilterControlDescriptor>);
+    static_assert(
+        std::is_same_v<decltype(&goggles::ui::ImGuiLayer::set_parameters), SetParametersSig>);
+    static_assert(std::is_same_v<decltype(&goggles::ui::ImGuiLayer::set_prechain_parameters),
+                                 SetPrechainParametersSig>);
+
+    REQUIRE(std::string_view{goggles::fc::to_string(FilterControlStage::prechain)} == "prechain");
+    REQUIRE(std::string_view{goggles::fc::to_string(FilterControlStage::effect)} == "effect");
 
     const auto app_path = std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/app/application.cpp";
     auto app_text = read_text_file(app_path);
@@ -104,11 +118,6 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
              app_text->find("reset_filter_controls(") != std::string::npos));
     REQUIRE(app_text->find("filter_chain(") == std::string::npos);
 
-    const auto chain_path =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/chain_controls.cpp";
-    auto chain_text = read_text_file(chain_path);
-    REQUIRE(chain_text.has_value());
-
     const auto imgui_path = std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/ui/imgui_layer.cpp";
     auto imgui_text = read_text_file(imgui_path);
     REQUIRE(imgui_text.has_value());
@@ -117,24 +126,9 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
         std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend/vulkan_context.hpp";
     auto backend_context_text = read_text_file(backend_context_path);
     REQUIRE(backend_context_text.has_value());
-    REQUIRE(backend_context_text->find("goggles_filter_chain.hpp") != std::string::npos);
+    REQUIRE(backend_context_text->find("goggles/filter_chain/vulkan_context.hpp") !=
+            std::string::npos);
     REQUIRE(backend_context_text->find("boundary_context(") != std::string::npos);
-
-    const auto prechain_list_pos =
-        chain_text->find("auto prechain_controls = collect_prechain_controls(resources);");
-    const auto effect_list_pos = chain_text->find(
-        "auto effect_controls = collect_effect_controls(resources);", prechain_list_pos);
-    const auto merge_pos = chain_text->find("prechain_controls.insert(", effect_list_pos);
-    REQUIRE(prechain_list_pos != std::string::npos);
-    REQUIRE(effect_list_pos != std::string::npos);
-    REQUIRE(merge_pos != std::string::npos);
-    REQUIRE(prechain_list_pos < effect_list_pos);
-    REQUIRE(effect_list_pos < merge_pos);
-
-    REQUIRE(
-        chain_text->find("const float clamped = clamp_filter_control_value(descriptor, value);") !=
-        std::string::npos);
-    REQUIRE(chain_text->find("std::round(clamped)") != std::string::npos);
 
     REQUIRE(imgui_text->find("FILTER_TYPE_LABELS") != std::string::npos);
     REQUIRE(imgui_text->find("\"Nearest\"") != std::string::npos);
@@ -335,8 +329,35 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
 
 TEST_CASE("Filter chain standalone API boundary contract coverage",
           "[filter_chain][wrapper_contract]") {
+    using InstanceCreateSig = goggles::Result<goggles::filter_chain::Instance> (*)(
+        const goggles_fc_instance_create_info_t* create_info);
+    using DeviceCreateSig = goggles::Result<goggles::filter_chain::Device> (*)(
+        goggles::filter_chain::Instance& instance,
+        const goggles_fc_vk_device_create_info_t* create_info);
+    using ProgramCreateSig = goggles::Result<goggles::filter_chain::Program> (*)(
+        goggles::filter_chain::Device& device, const goggles_fc_preset_source_t* source);
+    using ChainCreateSig = goggles::Result<goggles::filter_chain::Chain> (*)(
+        goggles::filter_chain::Device& device, const goggles::filter_chain::Program& program,
+        const goggles_fc_chain_create_info_t* create_info);
+
+    static_assert(
+        std::is_same_v<decltype(&goggles::filter_chain::Instance::create), InstanceCreateSig>);
+    static_assert(
+        std::is_same_v<decltype(&goggles::filter_chain::Device::create), DeviceCreateSig>);
+    static_assert(
+        std::is_same_v<decltype(&goggles::filter_chain::Program::create), ProgramCreateSig>);
+    static_assert(std::is_same_v<decltype(&goggles::filter_chain::Chain::create), ChainCreateSig>);
+    static_assert(std::is_move_constructible_v<goggles::filter_chain::Instance>);
+    static_assert(std::is_move_constructible_v<goggles::filter_chain::Device>);
+    static_assert(std::is_move_constructible_v<goggles::filter_chain::Program>);
+    static_assert(std::is_move_constructible_v<goggles::filter_chain::Chain>);
+    static_assert(!std::is_copy_constructible_v<goggles::filter_chain::Instance>);
+    static_assert(!std::is_copy_constructible_v<goggles::filter_chain::Device>);
+    static_assert(!std::is_copy_constructible_v<goggles::filter_chain::Program>);
+    static_assert(!std::is_copy_constructible_v<goggles::filter_chain::Chain>);
+
     const auto c_api_hpp =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/include/goggles_filter_chain.h";
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/include/goggles/filter_chain.h";
     const auto canonical_filter_controls_hpp =
         std::filesystem::path(GOGGLES_SOURCE_DIR) /
         "filter-chain/include/goggles/filter_chain/filter_controls.hpp";
@@ -364,17 +385,6 @@ TEST_CASE("Filter chain standalone API boundary contract coverage",
     REQUIRE(canonical_error_text.has_value());
     REQUIRE(canonical_result_text.has_value());
     REQUIRE(canonical_scale_mode_text.has_value());
-
-    // Legacy chain wrappers must not exist.
-    const auto legacy_chain_cpp_wrapper =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/cpp_wrapper.cpp";
-    const auto legacy_chain_c_api =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/c_api.cpp";
-    const auto legacy_chain_header =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/src/chain/goggles_chain_legacy.h";
-    REQUIRE(!std::filesystem::exists(legacy_chain_cpp_wrapper));
-    REQUIRE(!std::filesystem::exists(legacy_chain_c_api));
-    REQUIRE(!std::filesystem::exists(legacy_chain_header));
 
     REQUIRE(c_api_text->find("util/") == std::string::npos);
     // The goggles_fc_* C header uses the standalone API naming.
@@ -536,7 +546,7 @@ TEST_CASE("Capture pacing only publishes through the paced target callback path"
 TEST_CASE("filter_chain controller uses standalone API boundary",
           "[filter_chain][adapter_boundary]") {
     const auto c_api_hpp =
-        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/include/goggles_filter_chain.h";
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/include/goggles/filter_chain.h";
     const auto controller_hpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
                                 "src/render/backend/filter_chain_controller.hpp";
     const auto controller_cpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
@@ -559,9 +569,11 @@ TEST_CASE("filter_chain controller uses standalone API boundary",
     REQUIRE(backend_cpp_text.has_value());
 
     SECTION("controller header includes standalone API, not filter-chain internals") {
-        // The controller header MUST include the umbrella C++ header — this is the
-        // canonical integration point with the standalone filter-chain package.
-        REQUIRE(controller_hpp_text->find("goggles_filter_chain.hpp") != std::string::npos);
+        // The controller header MUST include only the explicit standalone API headers it uses.
+        REQUIRE(controller_hpp_text->find("goggles/filter_chain.hpp") != std::string::npos);
+        REQUIRE(controller_hpp_text->find("goggles/filter_chain/filter_controls.hpp") !=
+                std::string::npos);
+        REQUIRE(controller_hpp_text->find("goggles/filter_chain.h") != std::string::npos);
 
         // The controller MUST NOT include any filter-chain internal headers.
         REQUIRE(controller_hpp_text->find("filter-chain/src/") == std::string::npos);
@@ -573,8 +585,7 @@ TEST_CASE("filter_chain controller uses standalone API boundary",
         REQUIRE(controller_hpp_text->find("shader_runtime.hpp") == std::string::npos);
         REQUIRE(controller_hpp_text->find("texture_loader.hpp") == std::string::npos);
         REQUIRE(controller_hpp_text->find("preset_parser.hpp") == std::string::npos);
-        // Check for the internal runtime/chain.hpp — use a path-anchored pattern
-        // to avoid false-positive matches against the umbrella goggles_filter_chain.hpp.
+        // Check for the internal runtime/chain.hpp using a path-anchored pattern.
         REQUIRE(controller_hpp_text->find("runtime/chain.hpp") == std::string::npos);
         REQUIRE(controller_hpp_text->find("FilterChainRuntime") == std::string::npos);
     }
@@ -701,39 +712,30 @@ TEST_CASE("filter_chain controller uses standalone API boundary",
         REQUIRE(controller_cpp_text->find("shutdown_slot(pending_slot)") != std::string::npos);
     }
 
-    SECTION("Goggles-side code does not include filter-chain internal headers") {
-        // Scan all src/render/backend/ source files for forbidden internal header paths.
-        const auto backend_root = std::filesystem::path(GOGGLES_SOURCE_DIR) / "src/render/backend";
+    SECTION("Goggles-side code binds only public filter-chain boundary types") {
+        using Controller = goggles::render::backend_internal::FilterChainController;
+        using ControllerReportSig =
+            goggles::Result<goggles_fc_chain_report_t> (Controller::*)() const;
+        using ControllerListSig =
+            std::vector<goggles::fc::FilterControlDescriptor> (Controller::*)() const;
+        using ControllerListStageSig = std::vector<goggles::fc::FilterControlDescriptor> (
+            Controller::*)(goggles::fc::FilterControlStage) const;
 
-        std::vector<std::filesystem::path> backend_files;
-        std::error_code ec;
-        for (auto it = std::filesystem::directory_iterator(backend_root, ec);
-             it != std::filesystem::directory_iterator() && !ec; it.increment(ec)) {
-            if (!it->is_regular_file(ec) || ec) {
-                continue;
-            }
-            auto ext = it->path().extension();
-            if (ext == ".cpp" || ext == ".hpp") {
-                backend_files.push_back(it->path());
-            }
-        }
-        std::sort(backend_files.begin(), backend_files.end());
-
-        // These patterns would indicate direct filter-chain internal header usage,
-        // bypassing the controller boundary. None should appear in Goggles code.
-        const std::array<std::string_view, 7> forbidden_internal_patterns = {
-            "filter-chain/src/",  "chain_runtime.hpp",  "chain_builder.hpp",  "chain_resources.hpp",
-            "chain_executor.hpp", "shader_runtime.hpp", "texture_loader.hpp",
-        };
-
-        for (const auto& file_path : backend_files) {
-            auto file_text = read_text_file(file_path);
-            REQUIRE(file_text.has_value());
-            for (const auto& pattern : forbidden_internal_patterns) {
-                INFO("File: " << file_path << ", forbidden pattern: " << pattern);
-                REQUIRE(file_text->find(pattern) == std::string::npos);
-            }
-        }
+        static_assert(std::is_same_v<decltype(Controller::FilterChainSlot{}.instance),
+                                     goggles::filter_chain::Instance>);
+        static_assert(std::is_same_v<decltype(Controller::FilterChainSlot{}.device),
+                                     goggles::filter_chain::Device>);
+        static_assert(std::is_same_v<decltype(Controller::FilterChainSlot{}.program),
+                                     goggles::filter_chain::Program>);
+        static_assert(std::is_same_v<decltype(Controller::FilterChainSlot{}.chain),
+                                     goggles::filter_chain::Chain>);
+        static_assert(std::is_same_v<decltype(&Controller::get_chain_report), ControllerReportSig>);
+        static_assert(std::is_same_v<decltype(static_cast<ControllerListSig>(
+                                         &Controller::list_filter_controls)),
+                                     ControllerListSig>);
+        static_assert(std::is_same_v<decltype(static_cast<ControllerListStageSig>(
+                                         &Controller::list_filter_controls)),
+                                     ControllerListStageSig>);
     }
 
     SECTION("controller exposes only controller-level types") {

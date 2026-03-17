@@ -9,7 +9,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <goggles_filter_chain.hpp>
+#include <goggles/filter_chain/filter_controls.hpp>
+#include <goggles/filter_chain/scale_mode.hpp>
 #include <optional>
 #include <util/config.hpp>
 #include <util/external_image.hpp>
@@ -116,11 +117,13 @@ public:
     [[nodiscard]] auto get_prechain_resolution() const -> vk::Extent2D;
     void set_prechain_resolution(uint32_t width, uint32_t height);
 
-    [[nodiscard]] auto list_filter_controls() const -> std::vector<FilterControlDescriptor>;
-    [[nodiscard]] auto list_filter_controls(FilterControlStage stage) const
-        -> std::vector<FilterControlDescriptor>;
-    [[nodiscard]] auto set_filter_control_value(FilterControlId control_id, float value) -> bool;
-    [[nodiscard]] auto reset_filter_control_value(FilterControlId control_id) -> bool;
+    [[nodiscard]] auto list_filter_controls() const
+        -> std::vector<goggles::fc::FilterControlDescriptor>;
+    [[nodiscard]] auto list_filter_controls(goggles::fc::FilterControlStage stage) const
+        -> std::vector<goggles::fc::FilterControlDescriptor>;
+    [[nodiscard]] auto set_filter_control_value(goggles::fc::FilterControlId control_id,
+                                                float value) -> bool;
+    [[nodiscard]] auto reset_filter_control_value(goggles::fc::FilterControlId control_id) -> bool;
     void reset_filter_controls();
 
     [[nodiscard]] auto get_captured_extent() const -> vk::Extent2D {

@@ -1,4 +1,0 @@
-shaders = 1
-shader0 = frame_counter_probe.slang
-filter_linear0 = false
-frame_count_mod0 = 4

@@ -15,3 +15,12 @@ leak:SDL_DBus_Init
 # exists to clean up EGL global state; eglTerminate() doesn't free everything.
 # Ref: https://github.com/libsdl-org/SDL/issues/10322
 leak:SDL_EGL_LoadLibrary
+
+# Slang compiler runtime
+# Slang 2025.23.2 leaves process-global worker/TLS state behind after
+# createGlobalSession(); LeakSanitizer reports these as leaks under ASan.
+# The public cleanup entrypoint `slang_shutdown()` currently double-frees the
+# same profiler state during process teardown in this environment, so suppress
+# the known global allocations instead.
+leak:slang_createGlobalSessionImpl
+leak:PerformanceProfilerFuncRAIIContext
