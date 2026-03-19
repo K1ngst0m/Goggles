@@ -10,7 +10,7 @@
 #include <util/runtime_metrics.hpp>
 #include <vector>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 /// @brief Identifies input events queued for dispatch on the compositor thread.
 enum class InputEventType : std::uint8_t { key, pointer_motion, pointer_button, pointer_axis };
@@ -121,4 +121,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace goggles::input
+} // namespace goggles::compositor

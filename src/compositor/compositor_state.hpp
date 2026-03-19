@@ -52,7 +52,7 @@ struct wlr_xwayland_surface;
 #include <util/queues.hpp>
 #include <util/unique_fd.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 using ::wl_display;
 using ::wl_event_loop;
@@ -293,4 +293,4 @@ struct CompositorServer::Impl {
     CompositorState state;
 };
 
-} // namespace goggles::input
+} // namespace goggles::compositor

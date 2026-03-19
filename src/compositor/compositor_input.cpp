@@ -17,7 +17,7 @@ extern "C" {
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 namespace {
 
@@ -456,4 +456,4 @@ void CompositorState::handle_pointer_axis_event(const InputEvent& event, uint32_
     wlr_seat_pointer_notify_frame(seat);
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor

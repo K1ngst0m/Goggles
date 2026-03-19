@@ -13,7 +13,7 @@ struct wlr_xwayland_surface;
 // NOLINTEND(readability-identifier-naming)
 }
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 struct CompositorState;
 struct LayerSurfaceHooks;
@@ -49,4 +49,4 @@ auto get_cursor_bounds(const CompositorState& state, const InputTarget& root_tar
 auto get_surface_local_coords(const CompositorState& state, const InputTarget& target)
     -> std::pair<double, double>;
 
-} // namespace goggles::input
+} // namespace goggles::compositor

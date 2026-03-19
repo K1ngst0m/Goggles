@@ -11,7 +11,7 @@ struct wlr_surface;
 
 #include <util/runtime_metrics.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 using ::wlr_surface;
 
@@ -67,4 +67,4 @@ struct RuntimeMetricsState {
     }
 };
 
-} // namespace goggles::input
+} // namespace goggles::compositor

@@ -27,7 +27,7 @@ extern "C" {
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 namespace {
 
@@ -320,4 +320,4 @@ void CompositorState::render_layer_surfaces(wlr_render_pass* pass, uint32_t targ
     }
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor

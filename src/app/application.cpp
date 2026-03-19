@@ -183,7 +183,7 @@ auto Application::init_compositor_server(const util::AppDirs& app_dirs) -> Resul
     if (!cursor_env_result) {
         GOGGLES_LOG_WARN("Cursor theme setup failed: {}", cursor_env_result.error().message);
     }
-    m_compositor_server = GOGGLES_MUST(input::CompositorServer::create());
+    m_compositor_server = GOGGLES_MUST(compositor::CompositorServer::create());
     GOGGLES_LOG_INFO("Compositor server: DISPLAY={} WAYLAND_DISPLAY={}",
                      m_compositor_server->x11_display(), m_compositor_server->wayland_display());
     set_target_fps(m_target_fps);
@@ -206,7 +206,7 @@ auto Application::init_compositor_server_headless(const util::AppDirs& app_dirs)
     if (!cursor_env_result) {
         GOGGLES_LOG_WARN("Cursor theme setup failed: {}", cursor_env_result.error().message);
     }
-    m_compositor_server = GOGGLES_MUST(input::CompositorServer::create());
+    m_compositor_server = GOGGLES_MUST(compositor::CompositorServer::create());
     GOGGLES_LOG_INFO("Compositor server (headless): DISPLAY={} WAYLAND_DISPLAY={}",
                      m_compositor_server->x11_display(), m_compositor_server->wayland_display());
     set_target_fps(m_target_fps);
@@ -494,7 +494,7 @@ void Application::sync_prechain_ui() {
     }
 }
 
-void Application::sync_surface_filters(std::vector<input::SurfaceInfo>& surfaces) {
+void Application::sync_surface_filters(std::vector<compositor::SurfaceInfo>& surfaces) {
     std::unordered_set<uint32_t> seen;
     seen.reserve(surfaces.size());
 
@@ -625,7 +625,7 @@ void Application::request_surface_resize(uint32_t surface_id, bool maximize) {
 
     surface_state.resize = desired;
     surface_state.has_resize_state = true;
-    input::SurfaceResizeInfo resize{};
+    compositor::SurfaceResizeInfo resize{};
     resize.width = desired.width;
     resize.height = desired.height;
     resize.maximized = desired.maximized;
@@ -633,7 +633,7 @@ void Application::request_surface_resize(uint32_t surface_id, bool maximize) {
 }
 
 void Application::update_surface_resize_for_surfaces(
-    const std::vector<input::SurfaceInfo>& surfaces) {
+    const std::vector<compositor::SurfaceInfo>& surfaces) {
     const bool global_enabled = compute_global_filter_chain_enabled();
     for (const auto& surface : surfaces) {
         const bool surface_enabled = is_surface_filter_enabled(surface.id);

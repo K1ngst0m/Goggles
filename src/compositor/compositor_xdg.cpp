@@ -12,7 +12,7 @@ extern "C" {
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 auto CompositorState::setup_xdg_shell() -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
@@ -349,4 +349,4 @@ void CompositorState::handle_xdg_surface_destroy(XdgToplevelHooks* hooks) {
     }
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor

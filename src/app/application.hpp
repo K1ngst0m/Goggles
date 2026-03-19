@@ -88,8 +88,8 @@ private:
     void update_cursor_visibility();
     void update_mouse_grab();
     void sync_prechain_ui();
-    void sync_surface_filters(std::vector<input::SurfaceInfo>& surfaces);
-    void update_surface_resize_for_surfaces(const std::vector<input::SurfaceInfo>& surfaces);
+    void sync_surface_filters(std::vector<compositor::SurfaceInfo>& surfaces);
+    void update_surface_resize_for_surfaces(const std::vector<compositor::SurfaceInfo>& surfaces);
     [[nodiscard]] auto compute_global_filter_chain_enabled() const -> bool;
     [[nodiscard]] auto compute_surface_filter_chain_enabled(uint32_t surface_id) const -> bool;
     struct StagePolicy {
@@ -105,7 +105,7 @@ private:
     bool m_sdl_initialized = false;
     std::unique_ptr<render::VulkanBackend> m_vulkan_backend;
     std::unique_ptr<ui::ImGuiLayer> m_imgui_layer;
-    std::unique_ptr<input::CompositorServer> m_compositor_server;
+    std::unique_ptr<compositor::CompositorServer> m_compositor_server;
     std::optional<util::ExternalImageFrame> m_surface_frame;
 
     struct SurfaceResizeState {

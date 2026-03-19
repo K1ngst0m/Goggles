@@ -35,7 +35,7 @@ extern "C" {
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 namespace {
 
@@ -401,4 +401,4 @@ void CompositorState::teardown() {
     wayland_socket_name.clear();
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor
