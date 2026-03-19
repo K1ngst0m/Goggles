@@ -63,7 +63,7 @@ auto main() -> int {
 
     setenv("XDG_RUNTIME_DIR", runtime_dir.c_str(), 1);
 
-    auto compositor_result = goggles::input::CompositorServer::create();
+    auto compositor_result = goggles::compositor::CompositorServer::create();
     if (!compositor_result) {
         std::fprintf(stderr, "[FAIL] CompositorServer::create failed: %s\n",
                      compositor_result.error().message.c_str());

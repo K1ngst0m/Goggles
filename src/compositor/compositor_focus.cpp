@@ -40,7 +40,7 @@ extern "C" {
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 namespace {
 
@@ -1078,4 +1078,4 @@ auto CompositorState::get_surfaces_snapshot() const -> std::vector<SurfaceInfo> 
     return result;
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor

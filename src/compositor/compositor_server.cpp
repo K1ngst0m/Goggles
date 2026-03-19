@@ -4,7 +4,7 @@
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 CompositorServer::CompositorServer() : m_impl(std::make_unique<Impl>()) {}
 
@@ -117,4 +117,4 @@ auto CompositorServer::get_runtime_metrics_snapshot() const
     return m_impl->state.get_runtime_metrics_snapshot();
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor

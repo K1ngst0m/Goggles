@@ -17,7 +17,7 @@ extern "C" {
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 namespace {
 
@@ -278,4 +278,4 @@ void CompositorState::render_cursor_overlay(wlr_render_pass* pass) const {
     wlr_render_pass_add_texture(pass, &options);
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor

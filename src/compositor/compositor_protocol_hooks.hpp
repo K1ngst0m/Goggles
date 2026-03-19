@@ -14,7 +14,7 @@ struct wlr_xwayland_surface;
 // NOLINTEND(readability-identifier-naming)
 }
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 struct CompositorState;
 
@@ -109,4 +109,4 @@ inline void detach_listener(wl_listener& listener) {
     wl_list_init(&listener.link);
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor

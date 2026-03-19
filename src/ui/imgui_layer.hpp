@@ -19,7 +19,7 @@ namespace goggles::util {
 struct AppDirs;
 }
 
-namespace goggles::input {
+namespace goggles::compositor {
 struct SurfaceInfo;
 }
 
@@ -170,7 +170,7 @@ public:
     [[nodiscard]] auto is_globally_visible() const -> bool { return m_global_visible; }
 
     /// @brief Updates the displayed surface list.
-    void set_surfaces(std::vector<input::SurfaceInfo> surfaces);
+    void set_surfaces(std::vector<compositor::SurfaceInfo> surfaces);
     /// @brief Sets the callback invoked when a surface is selected.
     void set_surface_select_callback(SurfaceSelectCallback callback);
     /// @brief Sets the callback invoked when a surface filter toggle changes.
@@ -217,7 +217,7 @@ private:
     SurfaceSelectCallback m_on_surface_select;
     SurfaceFilterToggleCallback m_on_surface_filter_toggle;
     TargetFpsChangeCallback m_on_target_fps_change;
-    std::vector<input::SurfaceInfo> m_surfaces;
+    std::vector<compositor::SurfaceInfo> m_surfaces;
     util::CompositorRuntimeMetricsSnapshot m_runtime_metrics;
     uint32_t m_target_fps = 60;
     uint32_t m_last_capped_target_fps = 60;

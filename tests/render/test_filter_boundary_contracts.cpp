@@ -58,9 +58,9 @@ auto collect_app_ui_sources() -> std::vector<std::filesystem::path> {
     return files;
 }
 
-auto surface_token(std::uintptr_t value) -> goggles::input::wlr_surface* {
+auto surface_token(std::uintptr_t value) -> goggles::compositor::wlr_surface* {
     // NOLINTNEXTLINE(performance-no-int-to-ptr)
-    return reinterpret_cast<goggles::input::wlr_surface*>(value);
+    return reinterpret_cast<goggles::compositor::wlr_surface*>(value);
 }
 
 } // namespace
@@ -441,7 +441,7 @@ TEST_CASE("Filter chain standalone API boundary contract coverage",
 
 TEST_CASE("Runtime metrics keep root ownership while tracking the current capture surface",
           "[app_window][runtime_metrics_contract]") {
-    using RuntimeMetricsState = goggles::input::RuntimeMetricsState;
+    using RuntimeMetricsState = goggles::compositor::RuntimeMetricsState;
 
     RuntimeMetricsState metrics{};
     auto* game_root = surface_token(0x1000);

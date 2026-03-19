@@ -465,7 +465,7 @@ void ImGuiLayer::set_target_fps_change_callback(TargetFpsChangeCallback callback
     m_on_target_fps_change = std::move(callback);
 }
 
-void ImGuiLayer::set_surfaces(std::vector<input::SurfaceInfo> surfaces) {
+void ImGuiLayer::set_surfaces(std::vector<compositor::SurfaceInfo> surfaces) {
     m_surfaces = std::move(surfaces);
 }
 

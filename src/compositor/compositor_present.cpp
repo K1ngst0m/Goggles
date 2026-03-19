@@ -49,7 +49,7 @@ extern "C" {
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 namespace {
 
@@ -733,4 +733,4 @@ bool CompositorState::render_surface_to_frame(const InputTarget& target) {
     return true;
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor

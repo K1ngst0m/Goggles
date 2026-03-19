@@ -24,7 +24,7 @@ extern "C" {
 #include <util/logging.hpp>
 #include <util/profiling.hpp>
 
-namespace goggles::input {
+namespace goggles::compositor {
 
 namespace {
 
@@ -424,4 +424,4 @@ void CompositorState::handle_xwayland_surface_destroy(wlr_xwayland_surface* xsur
     auto_focus_next_surface();
 }
 
-} // namespace goggles::input
+} // namespace goggles::compositor
