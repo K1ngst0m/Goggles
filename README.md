@@ -1,6 +1,7 @@
 # Goggles
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/goggles-dev/Goggles)
+[![gitcgr](https://gitcgr.com/badge/goggles-dev/goggles.svg)](https://gitcgr.com/goggles-dev/goggles)
 
 A real-time shader post-processing tool that runs target apps inside a nested compositor and applies shader effects.
 
