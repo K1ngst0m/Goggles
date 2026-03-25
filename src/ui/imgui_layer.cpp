@@ -400,15 +400,16 @@ void ImGuiLayer::set_parameters(std::vector<ParameterState> params) {
     m_state.parameters = std::move(params);
 }
 
-void ImGuiLayer::set_parameter_change_callback(ParameterChangeCallback callback) {
+void ImGuiLayer::set_parameter_change_callback(
+    std::function<void(goggles::fc::FilterControlId, float)> callback) {
     m_on_parameter_change = std::move(callback);
 }
 
-void ImGuiLayer::set_parameter_reset_callback(ParameterResetCallback callback) {
+void ImGuiLayer::set_parameter_reset_callback(std::function<void()> callback) {
     m_on_parameter_reset = std::move(callback);
 }
 
-void ImGuiLayer::set_prechain_change_callback(PreChainChangeCallback callback) {
+void ImGuiLayer::set_prechain_change_callback(std::function<void(uint32_t, uint32_t)> callback) {
     m_on_prechain_change = std::move(callback);
 }
 
@@ -442,11 +443,13 @@ void ImGuiLayer::set_prechain_parameters(std::vector<goggles::fc::FilterControlD
     m_state.prechain.pass_parameters = std::move(params);
 }
 
-void ImGuiLayer::set_prechain_parameter_callback(PreChainParameterCallback callback) {
+void ImGuiLayer::set_prechain_parameter_callback(
+    std::function<void(goggles::fc::FilterControlId, float)> callback) {
     m_on_prechain_parameter = std::move(callback);
 }
 
-void ImGuiLayer::set_prechain_scale_mode_callback(PreChainScaleModeCallback callback) {
+void ImGuiLayer::set_prechain_scale_mode_callback(
+    std::function<void(ScaleMode, uint32_t)> callback) {
     m_on_prechain_scale_mode = std::move(callback);
 }
 
@@ -461,7 +464,7 @@ void ImGuiLayer::set_target_fps(uint32_t target_fps) {
     }
 }
 
-void ImGuiLayer::set_target_fps_change_callback(TargetFpsChangeCallback callback) {
+void ImGuiLayer::set_target_fps_change_callback(std::function<void(uint32_t)> callback) {
     m_on_target_fps_change = std::move(callback);
 }
 
@@ -469,11 +472,11 @@ void ImGuiLayer::set_surfaces(std::vector<compositor::SurfaceInfo> surfaces) {
     m_surfaces = std::move(surfaces);
 }
 
-void ImGuiLayer::set_surface_select_callback(SurfaceSelectCallback callback) {
+void ImGuiLayer::set_surface_select_callback(std::function<void(uint32_t)> callback) {
     m_on_surface_select = std::move(callback);
 }
 
-void ImGuiLayer::set_surface_filter_toggle_callback(SurfaceFilterToggleCallback callback) {
+void ImGuiLayer::set_surface_filter_toggle_callback(std::function<void(uint32_t, bool)> callback) {
     m_on_surface_filter_toggle = std::move(callback);
 }
 

@@ -84,12 +84,6 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
     static_assert(std::is_same_v<decltype(&FCC::set_filter_control_value), SetSig>);
     static_assert(std::is_same_v<decltype(&FCC::reset_filter_control_value), ResetSig>);
 
-    static_assert(std::is_same_v<goggles::ui::ParameterChangeCallback,
-                                 std::function<void(FilterControlId, float)>>);
-    static_assert(std::is_same_v<goggles::ui::PreChainParameterCallback,
-                                 std::function<void(FilterControlId, float)>>);
-    static_assert(
-        std::is_same_v<goggles::ui::TargetFpsChangeCallback, std::function<void(uint32_t)>>);
     static_assert(std::is_same_v<decltype(goggles::ui::ParameterState{}.descriptor),
                                  FilterControlDescriptor>);
     static_assert(std::is_same_v<decltype(goggles::ui::PreChainState{}.pass_parameters),

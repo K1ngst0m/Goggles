@@ -79,17 +79,6 @@ struct ShaderControlState {
     PreChainState prechain;
 };
 
-using ParameterChangeCallback =
-    std::function<void(goggles::fc::FilterControlId control_id, float value)>;
-using ParameterResetCallback = std::function<void()>;
-using PreChainChangeCallback = std::function<void(uint32_t width, uint32_t height)>;
-using PreChainParameterCallback =
-    std::function<void(goggles::fc::FilterControlId control_id, float value)>;
-using PreChainScaleModeCallback = std::function<void(ScaleMode mode, uint32_t integer_scale)>;
-using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
-using SurfaceFilterToggleCallback = std::function<void(uint32_t surface_id, bool enabled)>;
-using TargetFpsChangeCallback = std::function<void(uint32_t target_fps)>;
-
 class ImGuiLayer {
 public:
     [[nodiscard]] static auto create(SDL_Window* window, const ImGuiConfig& config,
@@ -113,16 +102,18 @@ public:
     void set_current_preset(const std::filesystem::path& path);
     void set_parameters(std::vector<ParameterState> params);
 
-    void set_parameter_change_callback(ParameterChangeCallback callback);
-    void set_parameter_reset_callback(ParameterResetCallback callback);
-    void set_prechain_change_callback(PreChainChangeCallback callback);
+    void set_parameter_change_callback(
+        std::function<void(goggles::fc::FilterControlId, float)> callback);
+    void set_parameter_reset_callback(std::function<void()> callback);
+    void set_prechain_change_callback(std::function<void(uint32_t, uint32_t)> callback);
     void set_prechain_state(vk::Extent2D resolution, ScaleMode scale_mode, uint32_t integer_scale);
     void set_prechain_parameters(std::vector<goggles::fc::FilterControlDescriptor> params);
-    void set_prechain_parameter_callback(PreChainParameterCallback callback);
-    void set_prechain_scale_mode_callback(PreChainScaleModeCallback callback);
+    void set_prechain_parameter_callback(
+        std::function<void(goggles::fc::FilterControlId, float)> callback);
+    void set_prechain_scale_mode_callback(std::function<void(ScaleMode, uint32_t)> callback);
     void set_runtime_metrics(util::CompositorRuntimeMetricsSnapshot metrics);
     void set_target_fps(uint32_t target_fps);
-    void set_target_fps_change_callback(TargetFpsChangeCallback callback);
+    void set_target_fps_change_callback(std::function<void(uint32_t)> callback);
 
     [[nodiscard]] auto state() -> ShaderControlState& { return m_state; }
     [[nodiscard]] auto state() const -> const ShaderControlState& { return m_state; }
@@ -133,8 +124,8 @@ public:
     [[nodiscard]] auto is_globally_visible() const -> bool { return m_global_visible; }
 
     void set_surfaces(std::vector<compositor::SurfaceInfo> surfaces);
-    void set_surface_select_callback(SurfaceSelectCallback callback);
-    void set_surface_filter_toggle_callback(SurfaceFilterToggleCallback callback);
+    void set_surface_select_callback(std::function<void(uint32_t)> callback);
+    void set_surface_filter_toggle_callback(std::function<void(uint32_t, bool)> callback);
 
     void rebuild_for_format(vk::Format new_format);
 
@@ -168,14 +159,14 @@ private:
 
     ShaderControlState m_state;
     PresetTreeNode m_preset_tree;
-    ParameterChangeCallback m_on_parameter_change;
-    ParameterResetCallback m_on_parameter_reset;
-    PreChainChangeCallback m_on_prechain_change;
-    PreChainParameterCallback m_on_prechain_parameter;
-    PreChainScaleModeCallback m_on_prechain_scale_mode;
-    SurfaceSelectCallback m_on_surface_select;
-    SurfaceFilterToggleCallback m_on_surface_filter_toggle;
-    TargetFpsChangeCallback m_on_target_fps_change;
+    std::function<void(goggles::fc::FilterControlId, float)> m_on_parameter_change;
+    std::function<void()> m_on_parameter_reset;
+    std::function<void(uint32_t, uint32_t)> m_on_prechain_change;
+    std::function<void(goggles::fc::FilterControlId, float)> m_on_prechain_parameter;
+    std::function<void(ScaleMode, uint32_t)> m_on_prechain_scale_mode;
+    std::function<void(uint32_t)> m_on_surface_select;
+    std::function<void(uint32_t, bool)> m_on_surface_filter_toggle;
+    std::function<void(uint32_t)> m_on_target_fps_change;
     std::vector<compositor::SurfaceInfo> m_surfaces;
     util::CompositorRuntimeMetricsSnapshot m_runtime_metrics;
     uint32_t m_target_fps = 60;
