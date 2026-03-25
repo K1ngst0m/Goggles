@@ -57,31 +57,24 @@ namespace goggles::compositor {
 using ::wl_display;
 using ::wl_event_loop;
 using ::wl_event_source;
-using ::wl_listener;
 using ::wlr_allocator;
 using ::wlr_backend;
 using ::wlr_buffer;
 using ::wlr_compositor;
-using ::wlr_layer_shell_v1;
 using ::wlr_linux_drm_syncobj_manager_v1;
 using ::wlr_output;
 using ::wlr_output_layout;
-using ::wlr_pointer_constraint_v1;
 using ::wlr_pointer_constraints_v1;
 using ::wlr_relative_pointer_manager_v1;
 using ::wlr_render_pass;
 using ::wlr_renderer;
 using ::wlr_seat;
-using ::wlr_surface;
 using ::wlr_swapchain;
 using ::wlr_texture;
 using ::wlr_xcursor;
 using ::wlr_xcursor_theme;
-using ::wlr_xdg_popup;
 using ::wlr_xdg_shell;
-using ::wlr_xdg_toplevel;
 using ::wlr_xwayland;
-using ::wlr_xwayland_surface;
 
 struct SurfaceResizeRequest {
     uint32_t surface_id = 0;
