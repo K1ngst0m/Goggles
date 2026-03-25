@@ -45,13 +45,34 @@ extern "C" {
 }
 
 #include <goggles/profiling.hpp>
-#include <util/drm_format.hpp>
 #include <util/drm_fourcc.hpp>
 #include <util/logging.hpp>
+#include <vulkan/vulkan.hpp>
 
 namespace goggles::compositor {
 
 namespace {
+
+vk::Format drm_to_vk_format(uint32_t drm_format) {
+    switch (drm_format) {
+    case util::DRM_FORMAT_ARGB8888:
+    case util::DRM_FORMAT_XRGB8888:
+        return vk::Format::eB8G8R8A8Unorm;
+    case util::DRM_FORMAT_ABGR8888:
+    case util::DRM_FORMAT_XBGR8888:
+        return vk::Format::eR8G8B8A8Unorm;
+    case util::DRM_FORMAT_ARGB2101010:
+    case util::DRM_FORMAT_XRGB2101010:
+        return vk::Format::eA2R10G10B10UnormPack32;
+    case util::DRM_FORMAT_ABGR2101010:
+    case util::DRM_FORMAT_XBGR2101010:
+        return vk::Format::eA2B10G10R10UnormPack32;
+    case util::DRM_FORMAT_RGB565:
+        return vk::Format::eR5G6B5UnormPack16;
+    default:
+        return vk::Format::eUndefined;
+    }
+}
 
 using SteadyClock = std::chrono::steady_clock;
 
@@ -693,7 +714,7 @@ bool CompositorState::render_surface_to_frame(const InputTarget& target) {
     frame.image.height = static_cast<uint32_t>(attribs.height);
     frame.image.stride = attribs.stride[0];
     frame.image.offset = attribs.offset[0];
-    frame.image.format = util::drm_to_vk_format(attribs.format);
+    frame.image.format = drm_to_vk_format(attribs.format);
     frame.image.modifier = attribs.modifier;
     frame.image.handle = std::move(dup_fd);
     frame.frame_number = ++presented_frame_number;
