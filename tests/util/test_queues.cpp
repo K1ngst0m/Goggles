@@ -7,20 +7,27 @@
 using namespace goggles::util;
 
 TEST_CASE("SPSCQueue construction and basic properties", "[queues]") {
-    SECTION("Construct with power-of-2 capacity") {
+    SECTION("Construct with valid capacity") {
         SPSCQueue<int> queue(8);
         REQUIRE(queue.capacity() == 8);
         REQUIRE(queue.size() == 0);
     }
 
-    SECTION("Construct with non-power-of-2 capacity throws") {
-        REQUIRE_THROWS_AS(SPSCQueue<int>(7), std::invalid_argument);
-        REQUIRE_THROWS_AS(SPSCQueue<int>(10), std::invalid_argument);
+    SECTION("Non-power-of-2 capacity is accepted") {
+        SPSCQueue<int> queue(7);
+        REQUIRE(queue.capacity() == 7);
+
+        SPSCQueue<int> queue2(10);
+        REQUIRE(queue2.capacity() == 10);
     }
 
     SECTION("Minimum capacity of 1 works") {
         SPSCQueue<int> queue(1);
         REQUIRE(queue.capacity() == 1);
+    }
+
+    SECTION("Zero capacity is rejected") {
+        REQUIRE_THROWS_AS(SPSCQueue<int>(0), std::invalid_argument);
     }
 }
 
@@ -158,10 +165,6 @@ TEST_CASE("SPSCQueue FIFO ordering", "[queues]") {
 }
 
 TEST_CASE("SPSCQueue edge cases and boundary conditions", "[queues]") {
-    SECTION("Zero capacity is rejected") {
-        REQUIRE_THROWS_AS(SPSCQueue<int>(0), std::invalid_argument);
-    }
-
     SECTION("Capacity 1 handles full/empty correctly") {
         SPSCQueue<int> queue(1);
 
