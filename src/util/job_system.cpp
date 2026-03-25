@@ -1,7 +1,6 @@
 #include "job_system.hpp"
 
-#include "profiling.hpp"
-
+#include <goggles/profiling.hpp>
 #include <thread>
 
 namespace goggles::util {

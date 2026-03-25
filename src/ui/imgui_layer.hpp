@@ -3,11 +3,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <goggles/error.hpp>
 #include <goggles/filter_chain/filter_controls.hpp>
 #include <map>
 #include <string>
 #include <util/config.hpp>
-#include <util/error.hpp>
 #include <util/runtime_metrics.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>

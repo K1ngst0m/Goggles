@@ -1,8 +1,7 @@
 #pragma once
 
-#include "error.hpp"
-
 #include <filesystem>
+#include <goggles/error.hpp>
 
 namespace goggles {
 struct Config;

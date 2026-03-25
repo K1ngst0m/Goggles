@@ -7,7 +7,7 @@ target_link_libraries(stb_image_write_test_impl PRIVATE stb_image)
 add_library(image_compare STATIC image_compare.cpp)
 target_include_directories(image_compare PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(image_compare PUBLIC
-    nonstd::expected-lite
+    goggles_core
 )
 target_link_libraries(image_compare PRIVATE
     stb_image

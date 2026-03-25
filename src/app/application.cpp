@@ -6,6 +6,7 @@
 #include <compositor/compositor_server.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <goggles/profiling.hpp>
 #include <poll.h>
 #include <ranges>
 #include <render/backend/vulkan_backend.hpp>
@@ -21,7 +22,6 @@
 #include <util/drm_fourcc.hpp>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
-#include <util/profiling.hpp>
 #include <utility>
 #include <vector>
 

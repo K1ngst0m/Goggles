@@ -1,9 +1,8 @@
 #pragma once
 
-#include "util/error.hpp"
-
 #include <cstdint>
 #include <filesystem>
+#include <goggles/error.hpp>
 #include <optional>
 #include <string>
 #include <vector>

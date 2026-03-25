@@ -9,8 +9,8 @@ extern "C" {
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
+#include <goggles/profiling.hpp>
 #include <util/logging.hpp>
-#include <util/profiling.hpp>
 
 namespace goggles::compositor {
 

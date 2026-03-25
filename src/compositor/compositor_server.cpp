@@ -1,8 +1,8 @@
 #include "compositor_state.hpp"
 
+#include <goggles/profiling.hpp>
 #include <memory>
 #include <util/logging.hpp>
-#include <util/profiling.hpp>
 
 namespace goggles::compositor {
 

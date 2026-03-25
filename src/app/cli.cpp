@@ -1,7 +1,7 @@
 #include "app/cli.hpp"
 
 #include <CLI/CLI.hpp>
-#include <util/profiling.hpp>
+#include <goggles/profiling.hpp>
 
 namespace goggles::app {
 namespace {

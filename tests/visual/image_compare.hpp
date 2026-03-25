@@ -2,8 +2,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <goggles/error.hpp>
 #include <string>
-#include <util/error.hpp>
 #include <vector>
 
 namespace goggles::test {

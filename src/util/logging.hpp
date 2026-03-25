@@ -4,9 +4,8 @@
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 #endif
 
-#include "error.hpp"
-
 #include <filesystem>
+#include <goggles/error.hpp>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <string_view>

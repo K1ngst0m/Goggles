@@ -1,7 +1,6 @@
 #include "config.hpp"
 
-#include "profiling.hpp"
-
+#include <goggles/profiling.hpp>
 #include <toml.hpp>
 
 namespace goggles {
