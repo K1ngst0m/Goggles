@@ -10,6 +10,7 @@ target_include_directories(goggles_util_logging_obj PRIVATE
 )
 
 target_link_libraries(goggles_util_logging_obj PRIVATE
+    goggles_core
     spdlog::spdlog
 )
 
@@ -30,7 +31,7 @@ target_include_directories(goggles_util PUBLIC
 
 # Link dependencies (provided by Pixi)
 target_link_libraries(goggles_util PUBLIC
-    nonstd::expected-lite
+    goggles_core
     spdlog::spdlog
     toml11::toml11
     BS_thread_pool

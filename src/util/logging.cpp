@@ -1,9 +1,8 @@
 #include "logging.hpp"
 
-#include "profiling.hpp"
-
 #include <algorithm>
 #include <filesystem>
+#include <goggles/profiling.hpp>
 #include <memory>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>

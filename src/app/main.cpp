@@ -11,6 +11,8 @@
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <goggles/error.hpp>
+#include <goggles/profiling.hpp>
 #include <optional>
 #include <poll.h>
 #include <spawn.h>
@@ -21,10 +23,8 @@
 #include <thread>
 #include <unistd.h>
 #include <util/config.hpp>
-#include <util/error.hpp>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
-#include <util/profiling.hpp>
 #include <util/unique_fd.hpp>
 #include <vector>
 

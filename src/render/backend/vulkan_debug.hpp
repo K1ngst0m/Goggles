@@ -1,6 +1,6 @@
 #pragma once
 
-#include <util/error.hpp>
+#include <goggles/error.hpp>
 #include <vulkan/vulkan.hpp>
 
 namespace goggles::render {

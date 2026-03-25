@@ -6,12 +6,12 @@
 #include <cmath>
 #include <compositor/compositor_server.hpp>
 #include <filesystem>
+#include <goggles/profiling.hpp>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 #include <util/logging.hpp>
 #include <util/paths.hpp>
-#include <util/profiling.hpp>
 #include <utility>
 
 namespace goggles::ui {

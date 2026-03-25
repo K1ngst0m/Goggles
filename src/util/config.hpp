@@ -1,10 +1,10 @@
 #pragma once
 
-#include "error.hpp"
 #include "scale_mode.hpp"
 
 #include <cstdint>
 #include <filesystem>
+#include <goggles/error.hpp>
 #include <string>
 #include <string_view>
 

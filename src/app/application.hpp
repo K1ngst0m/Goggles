@@ -3,13 +3,13 @@
 #include <compositor/compositor_server.hpp>
 #include <cstdint>
 #include <filesystem>
+#include <goggles/error.hpp>
 #include <memory>
 #include <optional>
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
 #include <util/config.hpp>
-#include <util/error.hpp>
 #include <util/external_image.hpp>
 #include <util/paths.hpp>
 

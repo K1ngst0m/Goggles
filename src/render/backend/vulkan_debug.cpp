@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <goggles/profiling.hpp>
 #include <util/logging.hpp>
-#include <util/profiling.hpp>
 
 namespace goggles::render {
 

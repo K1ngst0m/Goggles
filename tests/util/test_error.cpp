@@ -1,6 +1,5 @@
-#include "util/error.hpp"
-
 #include <catch2/catch_test_macros.hpp>
+#include <goggles/error.hpp>
 #include <string>
 
 using namespace goggles;

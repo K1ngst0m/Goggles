@@ -2,10 +2,10 @@
 
 #include <SDL3/SDL_events.h>
 #include <cstdint>
+#include <goggles/error.hpp>
 #include <memory>
 #include <optional>
 #include <string>
-#include <util/error.hpp>
 #include <util/external_image.hpp>
 #include <util/runtime_metrics.hpp>
 #include <vector>

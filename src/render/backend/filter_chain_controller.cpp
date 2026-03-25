@@ -6,12 +6,12 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <goggles/profiling.hpp>
 #include <limits>
 #include <string>
 #include <string_view>
 #include <util/job_system.hpp>
 #include <util/logging.hpp>
-#include <util/profiling.hpp>
 #include <vector>
 
 namespace goggles::render::backend_internal {

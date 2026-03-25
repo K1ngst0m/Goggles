@@ -14,8 +14,8 @@ extern "C" {
 #include <xkbcommon/xkbcommon.h>
 }
 
+#include <goggles/profiling.hpp>
 #include <util/logging.hpp>
-#include <util/profiling.hpp>
 
 namespace goggles::compositor {
 

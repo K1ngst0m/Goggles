@@ -364,10 +364,8 @@ TEST_CASE("Filter chain standalone API boundary contract coverage",
     const auto canonical_vulkan_context_hpp =
         std::filesystem::path(GOGGLES_SOURCE_DIR) /
         "filter-chain/include/goggles/filter_chain/vulkan_context.hpp";
-    const auto canonical_error_hpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
-                                     "filter-chain/include/goggles/filter_chain/error.hpp";
-    const auto canonical_result_hpp = std::filesystem::path(GOGGLES_SOURCE_DIR) /
-                                      "filter-chain/include/goggles/filter_chain/result.hpp";
+    const auto canonical_error_hpp =
+        std::filesystem::path(GOGGLES_SOURCE_DIR) / "filter-chain/common/include/goggles/error.hpp";
     const auto canonical_scale_mode_hpp =
         std::filesystem::path(GOGGLES_SOURCE_DIR) /
         "filter-chain/include/goggles/filter_chain/scale_mode.hpp";
@@ -376,14 +374,12 @@ TEST_CASE("Filter chain standalone API boundary contract coverage",
     auto canonical_filter_controls_text = read_text_file(canonical_filter_controls_hpp);
     auto canonical_vulkan_context_text = read_text_file(canonical_vulkan_context_hpp);
     auto canonical_error_text = read_text_file(canonical_error_hpp);
-    auto canonical_result_text = read_text_file(canonical_result_hpp);
     auto canonical_scale_mode_text = read_text_file(canonical_scale_mode_hpp);
 
     REQUIRE(c_api_text.has_value());
     REQUIRE(canonical_filter_controls_text.has_value());
     REQUIRE(canonical_vulkan_context_text.has_value());
     REQUIRE(canonical_error_text.has_value());
-    REQUIRE(canonical_result_text.has_value());
     REQUIRE(canonical_scale_mode_text.has_value());
 
     REQUIRE(c_api_text->find("util/") == std::string::npos);
@@ -393,7 +389,6 @@ TEST_CASE("Filter chain standalone API boundary contract coverage",
     REQUIRE(canonical_filter_controls_text->find("util/") == std::string::npos);
     REQUIRE(canonical_vulkan_context_text->find("util/") == std::string::npos);
     REQUIRE(canonical_error_text->find("util/") == std::string::npos);
-    REQUIRE(canonical_result_text->find("util/") == std::string::npos);
     REQUIRE(canonical_scale_mode_text->find("util/") == std::string::npos);
 
     // Verify the standalone C API stage mask constants cover the expected bit values.

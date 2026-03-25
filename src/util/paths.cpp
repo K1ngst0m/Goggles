@@ -1,9 +1,9 @@
 #include "paths.hpp"
 
 #include "config.hpp"
-#include "profiling.hpp"
 
 #include <cstdlib>
+#include <goggles/profiling.hpp>
 #include <optional>
 #include <string>
 
