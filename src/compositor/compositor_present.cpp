@@ -265,11 +265,11 @@ auto CompositorState::initialize_present_output() -> Result<void> {
 auto CompositorServer::get_presented_frame(uint64_t after_frame_number) const
     -> std::optional<util::ExternalImageFrame> {
     GOGGLES_PROFILE_FUNCTION();
-    std::scoped_lock lock(m_impl->state.present_mutex);
-    if (!m_impl->state.presented_frame) {
+    std::scoped_lock lock(m_state->present_mutex);
+    if (!m_state->presented_frame) {
         return std::nullopt;
     }
-    const auto& stored = *m_impl->state.presented_frame;
+    const auto& stored = *m_state->presented_frame;
     if (stored.frame_number <= after_frame_number) {
         return std::nullopt;
     }

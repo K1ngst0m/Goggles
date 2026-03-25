@@ -41,6 +41,8 @@ struct InputEvent {
     bool horizontal;
 };
 
+struct CompositorState;
+
 /// @brief Runs a headless Wayland/XWayland compositor for input forwarding and surface capture.
 ///
 /// `start()` spawns a compositor thread. Input injection methods queue events for that thread.
@@ -87,8 +89,7 @@ public:
     void request_surface_resize(uint32_t surface_id, const SurfaceResizeInfo& resize);
 
 private:
-    struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    std::unique_ptr<CompositorState> m_state;
 };
 
 } // namespace goggles::compositor

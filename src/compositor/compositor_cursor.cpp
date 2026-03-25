@@ -86,7 +86,7 @@ auto fallback_cursor_pixels() -> std::vector<uint32_t> {
 } // namespace
 
 void CompositorServer::set_cursor_visible(bool visible) {
-    m_impl->state.set_cursor_visible(visible);
+    m_state->set_cursor_visible(visible);
 }
 
 auto CompositorState::setup_cursor_theme() -> Result<void> {

@@ -295,10 +295,10 @@ auto CompositorServer::forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> 
 
 auto CompositorServer::inject_event(const InputEvent& event) -> bool {
     GOGGLES_PROFILE_FUNCTION();
-    if (!m_impl->state.event_queue.try_push(event)) {
+    if (!m_state->event_queue.try_push(event)) {
         return false;
     }
-    return m_impl->state.wake_event_loop();
+    return m_state->wake_event_loop();
 }
 
 bool CompositorState::wake_event_loop() {

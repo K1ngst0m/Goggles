@@ -180,10 +180,10 @@ TEST_CASE("Filter chain boundary control contract coverage", "[filter_chain][bou
     const auto compositor_set_target_pos =
         compositor_server_text->find("void CompositorServer::set_target_fps(uint32_t target_fps)");
     const auto compositor_store_pos = compositor_server_text->find(
-        "m_impl->state.target_fps.store(target_fps, std::memory_order_release);",
+        "m_state->target_fps.store(target_fps, std::memory_order_release);",
         compositor_set_target_pos);
     const auto compositor_wake_pos =
-        compositor_server_text->find("m_impl->state.wake_event_loop();", compositor_store_pos);
+        compositor_server_text->find("m_state->wake_event_loop();", compositor_store_pos);
     REQUIRE(compositor_set_target_pos != std::string::npos);
     REQUIRE(compositor_store_pos != std::string::npos);
     REQUIRE(compositor_wake_pos != std::string::npos);

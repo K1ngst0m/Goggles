@@ -6,7 +6,7 @@
 
 namespace goggles::compositor {
 
-CompositorServer::CompositorServer() : m_impl(std::make_unique<Impl>()) {}
+CompositorServer::CompositorServer() : m_state(std::make_unique<CompositorState>()) {}
 
 CompositorServer::~CompositorServer() {
     stop();
@@ -27,7 +27,7 @@ auto CompositorServer::create() -> ResultPtr<CompositorServer> {
 
 auto CompositorServer::start() -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
-    auto& state = m_impl->state;
+    auto& state = *m_state;
     auto cleanup_on_error = [this](void*) { stop(); };
     std::unique_ptr<void, decltype(cleanup_on_error)> guard(this, cleanup_on_error);
 
@@ -92,29 +92,29 @@ auto CompositorServer::start() -> Result<void> {
 
 void CompositorServer::stop() {
     GOGGLES_PROFILE_FUNCTION();
-    m_impl->state.teardown();
+    m_state->teardown();
 }
 
 auto CompositorServer::x11_display() const -> std::string {
-    return m_impl->state.x11_display_name();
+    return m_state->x11_display_name();
 }
 
 auto CompositorServer::wayland_display() const -> std::string {
-    return m_impl->state.wayland_socket_name;
+    return m_state->wayland_socket_name;
 }
 
 auto CompositorServer::target_fps() const -> uint32_t {
-    return m_impl->state.target_fps.load(std::memory_order_acquire);
+    return m_state->target_fps.load(std::memory_order_acquire);
 }
 
 void CompositorServer::set_target_fps(uint32_t target_fps) {
-    m_impl->state.target_fps.store(target_fps, std::memory_order_release);
-    m_impl->state.wake_event_loop();
+    m_state->target_fps.store(target_fps, std::memory_order_release);
+    m_state->wake_event_loop();
 }
 
 auto CompositorServer::get_runtime_metrics_snapshot() const
     -> util::CompositorRuntimeMetricsSnapshot {
-    return m_impl->state.get_runtime_metrics_snapshot();
+    return m_state->get_runtime_metrics_snapshot();
 }
 
 } // namespace goggles::compositor

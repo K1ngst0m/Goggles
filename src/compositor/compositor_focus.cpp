@@ -111,21 +111,21 @@ void deactivate_previous_focus(CompositorState& state) {
 } // namespace
 
 auto CompositorServer::is_pointer_locked() const -> bool {
-    return m_impl->state.pointer_locked.load(std::memory_order_acquire);
+    return m_state->pointer_locked.load(std::memory_order_acquire);
 }
 
 auto CompositorServer::get_surfaces() const -> std::vector<SurfaceInfo> {
     GOGGLES_PROFILE_FUNCTION();
-    return m_impl->state.get_surfaces_snapshot();
+    return m_state->get_surfaces_snapshot();
 }
 
 void CompositorServer::set_input_target(uint32_t surface_id) {
-    m_impl->state.request_focus_target(surface_id);
+    m_state->request_focus_target(surface_id);
 }
 
 void CompositorServer::request_surface_resize(uint32_t surface_id,
                                               const SurfaceResizeInfo& resize) {
-    m_impl->state.request_surface_resize(surface_id, resize);
+    m_state->request_surface_resize(surface_id, resize);
 }
 
 void CompositorState::handle_focus_request() {
