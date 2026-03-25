@@ -289,8 +289,4 @@ struct CompositorState {
     void set_cursor_visible(bool visible);
 };
 
-struct CompositorServer::Impl {
-    CompositorState state;
-};
-
 } // namespace goggles::compositor
