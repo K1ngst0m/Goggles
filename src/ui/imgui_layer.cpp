@@ -164,8 +164,8 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config,
     rebuild_fonts(layer->m_font_path, layer->m_font_size_pixels, display_scale);
 
     if (!ImGui_ImplSDL3_InitForVulkan(window)) {
-        return make_result_ptr_error<ImGuiLayer>(ErrorCode::vulkan_init_failed,
-                                                 "ImGui_ImplSDL3_InitForVulkan failed");
+        return nonstd::make_unexpected(
+            Error{ErrorCode::vulkan_init_failed, "ImGui_ImplSDL3_InitForVulkan failed"});
     }
 
     std::array pool_sizes = {
@@ -192,8 +192,8 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config,
     if (pool_result != vk::Result::eSuccess) {
         ImGui_ImplSDL3_Shutdown();
         ImGui::DestroyContext();
-        return make_result_ptr_error<ImGuiLayer>(ErrorCode::vulkan_init_failed,
-                                                 "Failed to create ImGui descriptor pool");
+        return nonstd::make_unexpected(
+            Error{ErrorCode::vulkan_init_failed, "Failed to create ImGui descriptor pool"});
     }
     layer->m_descriptor_pool = pool;
 
@@ -219,8 +219,8 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config,
         config.device.destroyDescriptorPool(layer->m_descriptor_pool);
         ImGui_ImplSDL3_Shutdown();
         ImGui::DestroyContext();
-        return make_result_ptr_error<ImGuiLayer>(ErrorCode::vulkan_init_failed,
-                                                 "ImGui_ImplVulkan_Init failed");
+        return nonstd::make_unexpected(
+            Error{ErrorCode::vulkan_init_failed, "ImGui_ImplVulkan_Init failed"});
     }
 
     if (!ImGui_ImplVulkan_CreateFontsTexture()) {
@@ -229,7 +229,7 @@ auto ImGuiLayer::create(SDL_Window* window, const ImGuiConfig& config,
 
     layer->m_initialized = true;
     GOGGLES_LOG_INFO("ImGui layer initialized");
-    return make_result_ptr(std::move(layer));
+    return {std::move(layer)};
 }
 
 ImGuiLayer::~ImGuiLayer() {

@@ -14,7 +14,6 @@
 
 namespace goggles::render::backend_internal {
 
-/// @brief Backend-side filter coordination state owning the full filter-chain object graph.
 struct FilterChainController {
     struct ControlOverride {
         goggles::fc::FilterControlId control_id = 0;
@@ -110,8 +109,6 @@ struct FilterChainController {
     [[nodiscard]] auto reset_filter_control_value(goggles::fc::FilterControlId control_id) -> bool;
     void reset_filter_controls();
 
-    /// @brief Owns the full goggles_fc_* object graph for one filter-chain instance.
-    /// Move-only: RAII members (Instance/Device/Program/Chain) provide this automatically.
     struct FilterChainSlot {
         goggles::filter_chain::Instance instance;
         goggles::filter_chain::Device device;

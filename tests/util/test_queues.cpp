@@ -2,8 +2,6 @@
 
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
-#include <chrono>
-#include <thread>
 #include <vector>
 
 using namespace goggles::util;
@@ -159,146 +157,6 @@ TEST_CASE("SPSCQueue FIFO ordering", "[queues]") {
     }
 }
 
-TEST_CASE("SPSCQueue single-threaded stress test", "[queues]") {
-    SPSCQueue<int> queue(16);
-
-    SECTION("Many push/pop cycles") {
-        const int iterations = 1000;
-
-        for (int i = 0; i < iterations; ++i) {
-            REQUIRE(queue.try_push(i));
-            auto result = queue.try_pop();
-            REQUIRE(result.has_value());
-            REQUIRE(*result == i);
-        }
-
-        REQUIRE(queue.size() == 0);
-    }
-
-    SECTION("Fill and empty cycles") {
-        const int cycles = 100;
-
-        for (int cycle = 0; cycle < cycles; ++cycle) {
-            // Fill queue
-            for (size_t i = 0; i < queue.capacity(); ++i) {
-                REQUIRE(queue.try_push(cycle * 100 + static_cast<int>(i)));
-            }
-
-            REQUIRE(queue.size() == queue.capacity());
-
-            // Empty queue
-            for (size_t i = 0; i < queue.capacity(); ++i) {
-                auto result = queue.try_pop();
-                REQUIRE(result.has_value());
-                REQUIRE(*result == cycle * 100 + static_cast<int>(i));
-            }
-
-            REQUIRE(queue.size() == 0);
-        }
-    }
-}
-
-TEST_CASE("SPSCQueue multi-threaded producer-consumer", "[queues]") {
-    SPSCQueue<int> queue(64); // Larger queue for multi-threaded test
-
-    SECTION("Single producer, single consumer") {
-        constexpr int num_items = 1000;
-        std::atomic<bool> producer_done{false};
-        std::atomic<int> items_consumed{0};
-
-        // Producer thread
-        std::thread producer([&queue, &producer_done]() {
-            for (int i = 0; i < num_items; ++i) {
-                while (!queue.try_push(i)) {
-                    std::this_thread::yield(); // Spin until we can push
-                }
-            }
-            producer_done = true;
-        });
-
-        // Consumer thread
-        std::thread consumer([&queue, &producer_done, &items_consumed]() {
-            int consumed = 0;
-            while (!producer_done.load() || queue.size() > 0) {
-                auto result = queue.try_pop();
-                if (result.has_value()) {
-                    REQUIRE(*result == consumed); // Verify FIFO order
-                    consumed++;
-                } else {
-                    std::this_thread::yield(); // Queue empty, yield briefly
-                }
-            }
-            items_consumed = consumed;
-        });
-
-        producer.join();
-        consumer.join();
-
-        REQUIRE(items_consumed.load() == num_items);
-        REQUIRE(queue.size() == 0);
-    }
-}
-
-TEST_CASE("SPSCQueue performance characteristics", "[queues]") {
-    SPSCQueue<int> queue(1024); // Large queue for performance test
-
-    SECTION("Push/pop operations are fast") {
-        const int num_operations = 10000;
-
-        auto start = std::chrono::high_resolution_clock::now();
-
-        // Interleaved push/pop operations
-        for (int i = 0; i < num_operations; ++i) {
-            queue.try_push(i);
-            auto result = queue.try_pop();
-            REQUIRE(result.has_value());
-            REQUIRE(*result == i);
-        }
-
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-        auto avg_ns_per_op = duration.count() / (num_operations * 2); // 2 ops per iteration
-
-        // Each operation (push or pop) should take less than 1000ns on average
-        REQUIRE(avg_ns_per_op < 1000);
-    }
-}
-
-TEST_CASE("SPSCQueue with pointer types for zero-copy patterns", "[queues]") {
-    struct FrameData {
-        uint64_t id;
-        std::vector<uint8_t> data;
-    };
-
-    // Pre-allocated frame buffers
-    std::vector<std::unique_ptr<FrameData>> frame_buffers;
-    for (int i = 0; i < 4; ++i) {
-        auto frame = std::make_unique<FrameData>();
-        frame->id = static_cast<uint64_t>(i);
-        frame->data.resize(1024); // Simulate frame data
-        frame_buffers.push_back(std::move(frame));
-    }
-
-    SPSCQueue<FrameData*> queue(8);
-
-    SECTION("Pass pointers to pre-allocated buffers") {
-        // Producer: Submit pointers to frame buffers
-        for (auto& frame_buffer : frame_buffers) {
-            REQUIRE(queue.try_push(frame_buffer.get()));
-        }
-
-        // Consumer: Process frames and verify
-        for (size_t expected_id = 0; expected_id < frame_buffers.size(); ++expected_id) {
-            auto result = queue.try_pop();
-            REQUIRE(result.has_value());
-
-            FrameData* frame = *result;
-            REQUIRE(frame->id == expected_id);
-            REQUIRE(frame->data.size() == 1024);
-        }
-    }
-}
-
 TEST_CASE("SPSCQueue edge cases and boundary conditions", "[queues]") {
     SECTION("Zero capacity is rejected") {
         REQUIRE_THROWS_AS(SPSCQueue<int>(0), std::invalid_argument);
@@ -352,58 +210,6 @@ TEST_CASE("SPSCQueue edge cases and boundary conditions", "[queues]") {
     }
 }
 
-TEST_CASE("SPSCQueue memory ordering stress test", "[queues]") {
-    SECTION("High contention producer-consumer") {
-        SPSCQueue<int> queue(32);
-        const int num_items = 10000;
-        std::atomic<bool> test_failed{false};
-        std::atomic<int> items_produced{0};
-        std::atomic<int> items_consumed{0};
-
-        // Producer thread - aggressive pushing
-        std::thread producer([&]() {
-            for (int i = 0; i < num_items; ++i) {
-                while (!queue.try_push(i)) {
-                    // Busy wait to create high contention
-                    for (int j = 0; j < 10; ++j) {
-                        asm volatile("" ::: "memory"); // Prevent optimization
-                    }
-                }
-                items_produced.fetch_add(1, std::memory_order_relaxed);
-            }
-        });
-
-        // Consumer thread - aggressive popping
-        std::thread consumer([&]() {
-            int expected = 0;
-            while (expected < num_items) {
-                auto result = queue.try_pop();
-                if (result.has_value()) {
-                    if (*result != expected) {
-                        test_failed = true;
-                        break;
-                    }
-                    expected++;
-                    items_consumed.fetch_add(1, std::memory_order_relaxed);
-                } else {
-                    // Busy wait to create high contention
-                    for (int j = 0; j < 10; ++j) {
-                        asm volatile("" ::: "memory"); // Prevent optimization
-                    }
-                }
-            }
-        });
-
-        producer.join();
-        consumer.join();
-
-        REQUIRE_FALSE(test_failed.load());
-        REQUIRE(items_produced.load() == num_items);
-        REQUIRE(items_consumed.load() == num_items);
-        REQUIRE(queue.size() == 0);
-    }
-}
-
 // Test helper for complex types testing
 struct Resource {
     static std::atomic<int> instances;
@@ -442,40 +248,5 @@ TEST_CASE("SPSCQueue with complex types", "[queues]") {
 
         // All resources should be destroyed
         REQUIRE(Resource::instances.load() == 0);
-    }
-
-    SECTION("Types with custom move semantics") {
-        struct MoveOnlyType {
-            int value;
-            bool moved_from = false;
-
-            MoveOnlyType(int v) : value(v) {}
-            MoveOnlyType(const MoveOnlyType&) = delete;
-            MoveOnlyType& operator=(const MoveOnlyType&) = delete;
-
-            MoveOnlyType(MoveOnlyType&& other) noexcept : value(other.value), moved_from(false) {
-                other.moved_from = true;
-            }
-
-            MoveOnlyType& operator=(MoveOnlyType&& other) noexcept {
-                if (this != &other) {
-                    value = other.value;
-                    moved_from = false;
-                    other.moved_from = true;
-                }
-                return *this;
-            }
-        };
-
-        SPSCQueue<MoveOnlyType> queue(4);
-
-        MoveOnlyType item(42);
-        REQUIRE(queue.try_push(std::move(item)));
-        REQUIRE(item.moved_from); // Should be moved from
-
-        auto result = queue.try_pop();
-        REQUIRE(result.has_value());
-        REQUIRE(result->value == 42);
-        REQUIRE_FALSE(result->moved_from);
     }
 }

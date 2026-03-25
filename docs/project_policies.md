@@ -1,8 +1,8 @@
 # Goggles Project Development Policies
 
-**Version:** 1.2  
-**Status:** Active  
-**Last Updated:** 2026-03-09
+**Version:** 1.3
+**Status:** Active
+**Last Updated:** 2026-03-25
 
 This document is the authoritative, normative policy for the Goggles codebase.
 
@@ -129,9 +129,21 @@ Valid levels are: `trace`, `debug`, `info`, `warn`, `error`, `critical`.
 
 ### 5.4 Public API docstrings
 
-- Public/exported declarations SHOULD use Doxygen line comments (`///` / `///<`).
-- `@brief` SHOULD be 1-2 sentences, active voice, verb-first.
-- `@param` and `@return` SHOULD describe behavior/constraints, not restate types.
+Doxygen `///` comments MUST be used when the declaration alone is insufficient:
+- Macros (no type signature to infer from).
+- Thread safety or cross-thread contracts.
+- Ownership transfer semantics.
+- Preconditions, postconditions, or invariants not expressible in the type system.
+- Non-obvious error conditions or edge-case return values.
+- Side effects not obvious from the name.
+
+Doxygen `///` comments MUST NOT be used when the declaration is self-documenting:
+- Trivial getters, setters, and callback-registration methods with descriptive names.
+- `@param` that restates the parameter name and type.
+- `@return` that restates `Result<T>` as "success or error."
+- Mechanically repeated template comments across similar declarations.
+
+When a doc comment contains one useful clause in otherwise redundant text, keep only the useful clause.
 
 ---
 
@@ -302,14 +314,19 @@ Before opening/merging significant code changes, contributors SHOULD run relevan
 
 ## 12. Changelog
 
-### 12.1 v1.1 -> v1.2
+### 12.1 v1.2 -> v1.3
+
+- Replaced permissive SHOULD guidance in section 5.4 with explicit MUST/MUST NOT rules for Doxygen docstrings.
+- Stripped redundant `///` comments from public headers to align with the updated policy.
+
+### 12.3 v1.1 -> v1.2
 
 - Removed policy text that is now directly gated by Semgrep (`using namespace` in headers, raw `new`/`delete`, banned Vulkan RAII wrappers, render-path thread bans, std-stream/`printf` logging bans).
 - Moved identifier naming specifics to the repository `clang-tidy` configuration and kept only the high-level policy contract plus scoped-override allowance.
 - Expanded Semgrep logging coverage to include `printf` so the removed overlap remains CI-gated.
 - Updated enforcement tags and matrix to call out Semgrep-owned policy checks explicitly.
 
-### 12.2 v1.0 -> v1.1
+### 12.4 v1.0 -> v1.1
 
 - Rewrote document to RFC-style normative format.
 - Added explicit precedence and exception process.

@@ -88,18 +88,18 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     auto context_result =
         backend_internal::VulkanContext::create(window, enable_validation, settings.gpu_selector);
     if (!context_result) {
-        return make_result_ptr_error<VulkanBackend>(context_result.error().code,
-                                                    context_result.error().message,
-                                                    context_result.error().location);
+        return nonstd::make_unexpected(Error{context_result.error().code,
+                                             context_result.error().message,
+                                             context_result.error().location});
     }
     backend->m_vulkan_context = std::move(context_result.value());
 
     int width = 0;
     int height = 0;
     if (!SDL_GetWindowSizeInPixels(window, &width, &height)) {
-        return make_result_ptr_error<VulkanBackend>(ErrorCode::unknown_error,
-                                                    "SDL_GetWindowSizeInPixels failed: " +
-                                                        std::string(SDL_GetError()));
+        return nonstd::make_unexpected(
+            Error{ErrorCode::unknown_error,
+                  "SDL_GetWindowSizeInPixels failed: " + std::string(SDL_GetError())});
     }
 
     GOGGLES_TRY(backend->m_render_output.create_swapchain(
@@ -111,7 +111,7 @@ auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
     GOGGLES_TRY(backend->init_filter_chain());
 
     GOGGLES_LOG_INFO("Vulkan backend initialized: {}x{}", width, height);
-    return make_result_ptr(std::move(backend));
+    return {std::move(backend)};
 }
 
 auto VulkanBackend::create_headless(bool enable_validation, const std::filesystem::path& cache_dir,
@@ -124,9 +124,9 @@ auto VulkanBackend::create_headless(bool enable_validation, const std::filesyste
     auto context_result =
         backend_internal::VulkanContext::create_headless(enable_validation, settings.gpu_selector);
     if (!context_result) {
-        return make_result_ptr_error<VulkanBackend>(context_result.error().code,
-                                                    context_result.error().message,
-                                                    context_result.error().location);
+        return nonstd::make_unexpected(Error{context_result.error().code,
+                                             context_result.error().message,
+                                             context_result.error().location});
     }
     backend->m_vulkan_context = std::move(context_result.value());
 
@@ -140,7 +140,7 @@ auto VulkanBackend::create_headless(bool enable_validation, const std::filesyste
     GOGGLES_LOG_INFO("Vulkan headless backend initialized: {}x{}",
                      backend->m_render_output.offscreen_extent.width,
                      backend->m_render_output.offscreen_extent.height);
-    return make_result_ptr(std::move(backend));
+    return {std::move(backend)};
 }
 
 void VulkanBackend::shutdown() {

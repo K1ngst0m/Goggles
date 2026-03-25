@@ -34,7 +34,6 @@ class Application {
 public:
     [[nodiscard]] static auto create(const Config& config, const util::AppDirs& app_dirs)
         -> ResultPtr<Application>;
-    /// @brief Creates a headless Application without SDL window or ImGui.
     [[nodiscard]] static auto create_headless(const Config& config, const util::AppDirs& app_dirs)
         -> ResultPtr<Application>;
 
@@ -54,7 +53,6 @@ public:
         int signal_fd;
         pid_t child_pid;
     };
-    /// @brief Runs the headless frame capture loop.
     [[nodiscard]] auto run_headless(const HeadlessRunContext& ctx) -> Result<void>;
     void process_event();
     void tick_frame();

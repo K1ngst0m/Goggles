@@ -16,7 +16,6 @@
 
 namespace goggles::render {
 
-/// @brief Settings controlling viewport scaling and pacing.
 struct RenderSettings {
     ScaleMode scale_mode = ScaleMode::stretch;
     uint32_t integer_scale = 0;
@@ -31,16 +30,12 @@ struct FilterChainStagePolicy {
     bool effect_stage_enabled = true;
 };
 
-/// @brief Vulkan renderer for presenting captured frames.
 class VulkanBackend {
 public:
-    /// @brief Creates a Vulkan backend bound to an SDL window.
-    /// @return A backend or an error.
     [[nodiscard]] static auto create(SDL_Window* window, bool enable_validation = false,
                                      const std::filesystem::path& cache_dir = {},
                                      const RenderSettings& settings = {})
         -> ResultPtr<VulkanBackend>;
-    /// @brief Creates a headless Vulkan backend without a window or swapchain.
     [[nodiscard]] static auto create_headless(bool enable_validation = false,
                                               const std::filesystem::path& cache_dir = {},
                                               const RenderSettings& settings = {})
@@ -53,12 +48,9 @@ public:
     VulkanBackend(VulkanBackend&&) = delete;
     VulkanBackend& operator=(VulkanBackend&&) = delete;
 
-    /// @brief Releases GPU resources and stops background work.
     void shutdown();
 
-    /// @brief Loads a shader preset from disk (async rebuild).
     void load_shader_preset(const std::filesystem::path& preset_path);
-    /// @brief Reloads the current preset immediately.
     [[nodiscard]] auto reload_shader_preset(const std::filesystem::path& preset_path)
         -> Result<void>;
     [[nodiscard]] auto current_preset_path() const -> const std::filesystem::path& {
@@ -68,24 +60,15 @@ public:
     void set_filter_chain_policy(const FilterChainStagePolicy& policy);
 
     using UiRenderCallback = std::function<void(vk::CommandBuffer, vk::ImageView, vk::Extent2D)>;
-    /// @brief Renders a captured frame or clears the swapchain when no frame is provided.
     [[nodiscard]] auto render(const util::ExternalImageFrame* frame,
                               const UiRenderCallback& ui_callback = nullptr) -> Result<void>;
-    /// @brief Reads back the offscreen image and writes it as PNG.
     [[nodiscard]] auto readback_to_png(const std::filesystem::path& output) -> Result<void>;
 
     [[nodiscard]] auto needs_resize() const -> bool { return m_render_output.needs_resize; }
 
-    /// @brief Maps a source image format to a swapchain format.
-    /// @param source_format Source image format to map.
-    /// @return Swapchain format for presenting the source format.
     [[nodiscard]] static auto get_matching_swapchain_format(vk::Format source_format) -> vk::Format;
 
-    /// @brief Recreates swapchain resources for the given size and optional source format.
-    /// @param width Swapchain width in pixels.
-    /// @param height Swapchain height in pixels.
-    /// @param source_format Source image format or vk::Format::eUndefined for resize-only.
-    /// @return Success or an error.
+    /// `source_format = eUndefined` means resize-only (keep current format).
     [[nodiscard]] auto recreate_swapchain(uint32_t width, uint32_t height,
                                           vk::Format source_format = vk::Format::eUndefined)
         -> Result<void>;

@@ -5,13 +5,11 @@
 using namespace goggles;
 
 TEST_CASE("ErrorCode enum values are correct", "[error]") {
-    REQUIRE(static_cast<int>(ErrorCode::ok) == 0);
-    REQUIRE(ErrorCode::file_not_found != ErrorCode::ok);
+    REQUIRE(ErrorCode::file_not_found != ErrorCode::vulkan_init_failed);
     REQUIRE(ErrorCode::vulkan_init_failed != ErrorCode::parse_error);
 }
 
 TEST_CASE("error_code_name returns correct strings", "[error]") {
-    REQUIRE(std::string(error_code_name(ErrorCode::ok)) == "ok");
     REQUIRE(std::string(error_code_name(ErrorCode::file_not_found)) == "file_not_found");
     REQUIRE(std::string(error_code_name(ErrorCode::vulkan_init_failed)) == "vulkan_init_failed");
     REQUIRE(std::string(error_code_name(ErrorCode::shader_compile_failed)) ==

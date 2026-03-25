@@ -12,7 +12,6 @@ struct SDL_Window;
 
 namespace goggles::render::backend_internal {
 
-/// @brief Backend-owned Vulkan root state for the future subsystem split.
 struct VulkanContext {
     VulkanContext() = default;
     ~VulkanContext() = default;

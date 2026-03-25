@@ -225,7 +225,7 @@ auto Application::create(const Config& config, const util::AppDirs& app_dirs)
     GOGGLES_MUST(app->init_shader_system(config, app_dirs));
     GOGGLES_MUST(app->init_compositor_server(app_dirs));
 
-    return make_result_ptr(std::move(app));
+    return {std::move(app)};
 }
 
 auto Application::create_headless(const Config& config, const util::AppDirs& app_dirs)
@@ -249,7 +249,7 @@ auto Application::create_headless(const Config& config, const util::AppDirs& app
 
     GOGGLES_MUST(app->init_compositor_server_headless(app_dirs));
 
-    return make_result_ptr(std::move(app));
+    return {std::move(app)};
 }
 
 Application::~Application() {

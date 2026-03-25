@@ -12,20 +12,11 @@
 
 namespace goggles {
 
-/// @brief Initializes the global logger.
-/// @param app_name Application name used in log formatting.
 void initialize_logger(std::string_view app_name = "goggles");
-/// @brief Returns the global logger instance.
 [[nodiscard]] auto get_logger() -> std::shared_ptr<spdlog::logger>;
-/// @brief Sets the global logger verbosity level.
-/// @param level New verbosity threshold.
 void set_log_level(spdlog::level::level_enum level);
-/// @brief Enables or disables timestamps in log output.
-/// @param enabled True to include timestamps in formatted log lines.
 void set_log_timestamp_enabled(bool enabled);
-/// @brief Enables file logging to the provided path, replacing any previous file sink.
-/// @param path Target file path. Empty path disables file logging.
-/// @return Success or error when the file sink cannot be created.
+/// Empty path disables file logging; replaces any previous file sink.
 [[nodiscard]] auto set_log_file_path(const std::filesystem::path& path) -> Result<void>;
 
 } // namespace goggles

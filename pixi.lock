@@ -2692,7 +2692,7 @@ packages:
     target_platform: linux-64
   depends:
   - wayland
-  - wayland >=1.25.0,<2.0a0
+  - wayland >=1.24.0,<2.0a0
   - libxkbcommon
   - libxkbcommon >=1.13.1,<2.0a0
   - pixman

@@ -10,7 +10,6 @@
 
 namespace goggles {
 
-/// @brief Parsed application configuration.
 struct Config {
     struct Paths {
         std::string resource_dir;
@@ -43,20 +42,10 @@ struct Config {
     } logging;
 };
 
-/// @brief Loads a configuration file from disk.
-/// @param path Path to a TOML configuration file.
-/// @return Parsed configuration or an error.
 [[nodiscard]] auto load_config(const std::filesystem::path& path) -> Result<Config>;
-
-/// @brief Returns a default configuration.
 [[nodiscard]] auto default_config() -> Config;
 
-/// @brief Resolves `logging.file` into an effective filesystem path.
-/// @param logging_file Raw `[logging].file` value from config.
-/// @param config_path Path of the config file that provided `logging_file`.
-/// @return Empty path when `logging_file` is empty; otherwise absolute path as-is or a relative
-/// path
-///         resolved against `config_path.parent_path()`.
+/// Relative paths resolve against `config_path.parent_path()`; empty returns empty.
 [[nodiscard]] auto resolve_logging_file_path(std::string_view logging_file,
                                              const std::filesystem::path& config_path)
     -> std::filesystem::path;

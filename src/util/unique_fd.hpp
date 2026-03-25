@@ -32,8 +32,6 @@ public:
         return *this;
     }
 
-    /// @brief Duplicates `fd` and returns an owning wrapper.
-    /// @param fd Descriptor to duplicate.
     /// @return Empty wrapper if `fd < 0` or `dup()` fails.
     [[nodiscard]] static UniqueFd dup_from(int fd) {
         if (fd < 0) {
@@ -42,7 +40,6 @@ public:
         return UniqueFd{::dup(fd)};
     }
 
-    /// @brief Duplicates this descriptor.
     /// @return Empty wrapper if invalid or `dup()` fails.
     [[nodiscard]] UniqueFd dup() const {
         if (m_fd < 0) {
@@ -51,11 +48,8 @@ public:
         return UniqueFd{::dup(m_fd)};
     }
 
-    /// @brief Returns the raw descriptor, or `-1` if invalid.
     [[nodiscard]] int get() const { return m_fd; }
-    /// @brief Releases ownership and returns the raw descriptor.
     int release() { return std::exchange(m_fd, -1); }
-    /// @brief Returns true if the descriptor is valid.
     [[nodiscard]] bool valid() const { return m_fd >= 0; }
     explicit operator bool() const { return valid(); }
 

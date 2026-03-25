@@ -12,10 +12,8 @@
 
 namespace goggles::compositor {
 
-/// @brief Identifies input events queued for dispatch on the compositor thread.
 enum class InputEventType : std::uint8_t { key, pointer_motion, pointer_button, pointer_axis };
 
-/// @brief Metadata for a connected surface.
 struct SurfaceInfo {
     uint32_t id;
     std::string title;
@@ -27,14 +25,13 @@ struct SurfaceInfo {
     bool filter_chain_enabled = false;
 };
 
-/// @brief Resize parameters for a surface.
 struct SurfaceResizeInfo {
     uint32_t width = 0;
     uint32_t height = 0;
     bool maximized = false;
 };
 
-/// @brief Normalized input event for compositor injection.
+/// Normalized from SDL events into compositor-native units.
 struct InputEvent {
     InputEventType type;
     uint32_t code;
@@ -57,63 +54,36 @@ public:
     CompositorServer(CompositorServer&&) = delete;
     CompositorServer& operator=(CompositorServer&&) = delete;
 
-    /// @brief Creates and starts a compositor server.
-    /// @return A ready compositor server or an error.
     [[nodiscard]] static auto create() -> ResultPtr<CompositorServer>;
-    /// @brief Starts the compositor thread and binds a Wayland socket.
-    /// @return Success or an error.
     [[nodiscard]] auto start() -> Result<void>;
-    /// @brief Stops the compositor thread and releases Wayland/XWayland resources.
     void stop();
-    /// @brief Returns the X11 display name, or an empty string if unavailable.
     [[nodiscard]] auto x11_display() const -> std::string;
-    /// @brief Returns the Wayland socket name, or an empty string if not started.
     [[nodiscard]] auto wayland_display() const -> std::string;
-    /// @brief Returns the current effective compositor pacing target.
     [[nodiscard]] auto target_fps() const -> uint32_t;
-    /// @brief Updates the effective compositor pacing target.
     void set_target_fps(uint32_t target_fps);
 
-    /// @brief Forwards an SDL keyboard event.
-    /// @param event SDL keyboard event.
-    /// @return Success. The event may be dropped if the internal queue is full.
+    /// Events may be silently dropped if the internal queue is full.
     [[nodiscard]] auto forward_key(const SDL_KeyboardEvent& event) -> Result<void>;
-    /// @brief Forwards an SDL mouse button event.
-    /// @param event SDL mouse button event.
-    /// @return Success. The event may be dropped if the internal queue is full.
+    /// Events may be silently dropped if the internal queue is full.
     [[nodiscard]] auto forward_mouse_button(const SDL_MouseButtonEvent& event) -> Result<void>;
-    /// @brief Forwards an SDL mouse motion event.
-    /// @param event SDL mouse motion event.
-    /// @return Success. The event may be dropped if the internal queue is full.
+    /// Events may be silently dropped if the internal queue is full.
     [[nodiscard]] auto forward_mouse_motion(const SDL_MouseMotionEvent& event) -> Result<void>;
-    /// @brief Forwards an SDL mouse wheel event.
-    /// @param event SDL mouse wheel event.
-    /// @return Success. The event may be dropped if the internal queue is full.
+    /// Events may be silently dropped if the internal queue is full.
     [[nodiscard]] auto forward_mouse_wheel(const SDL_MouseWheelEvent& event) -> Result<void>;
 
-    /// @brief Queues an input event for the focused surface.
-    /// @param event The input event to queue.
     /// @return True if the event was queued and the compositor was notified.
     [[nodiscard]] auto inject_event(const InputEvent& event) -> bool;
-    /// @brief Returns true if pointer is currently locked (not confined) by target app.
+    /// Locked (not confined) by the target app's pointer lock request.
     [[nodiscard]] auto is_pointer_locked() const -> bool;
-    /// @brief Sets whether the compositor cursor is rendered.
     void set_cursor_visible(bool visible);
 
-    /// @brief Returns the latest compositor-presented frame (DMA-BUF), if available.
-    /// @param after_frame_number Return a frame only if newer than this number.
     [[nodiscard]] auto get_presented_frame(uint64_t after_frame_number) const
         -> std::optional<util::ExternalImageFrame>;
-    /// @brief Returns the latest compositor-provided gameplay metrics snapshot.
     [[nodiscard]] auto get_runtime_metrics_snapshot() const
         -> util::CompositorRuntimeMetricsSnapshot;
 
-    /// @brief Returns a snapshot of all connected surfaces.
     [[nodiscard]] auto get_surfaces() const -> std::vector<SurfaceInfo>;
-    /// @brief Requests focus for a surface by ID.
-    /// @details Automatic focus behavior remains active.
     void set_input_target(uint32_t surface_id);
-    /// @brief Requests a compositor resize for a surface (maximize-style when enabled).
     void request_surface_resize(uint32_t surface_id, const SurfaceResizeInfo& resize);
 
 private:

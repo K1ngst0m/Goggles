@@ -18,11 +18,11 @@ auto CompositorServer::create() -> ResultPtr<CompositorServer> {
 
     auto start_result = server->start();
     if (!start_result) {
-        return make_result_ptr_error<CompositorServer>(start_result.error().code,
-                                                       start_result.error().message);
+        return nonstd::make_unexpected(
+            Error{start_result.error().code, start_result.error().message});
     }
 
-    return make_result_ptr(std::move(server));
+    return {std::move(server)};
 }
 
 auto CompositorServer::start() -> Result<void> {

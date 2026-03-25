@@ -7,7 +7,6 @@
 
 namespace goggles {
 
-/// @brief How the output image scales to the target rectangle.
 enum class ScaleMode : std::uint8_t {
     fit,
     fill,
@@ -16,9 +15,6 @@ enum class ScaleMode : std::uint8_t {
     dynamic,
 };
 
-/// @brief Returns the config string for a `ScaleMode` value.
-/// @param mode Scale mode value.
-/// @return Stable string identifier.
 [[nodiscard]] constexpr auto to_string(ScaleMode mode) -> const char* {
     switch (mode) {
     case ScaleMode::fit:

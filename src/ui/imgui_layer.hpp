@@ -25,13 +25,11 @@ struct SurfaceInfo;
 
 namespace goggles::ui {
 
-/// @brief Preset catalog tree node (directory or preset file).
 struct PresetTreeNode {
     std::map<std::string, PresetTreeNode> children;
     int preset_index = -1; // -1 for directories, >= 0 for preset files
 };
 
-/// @brief Vulkan objects required to initialize ImGui rendering.
 struct ImGuiConfig {
     vk::Instance instance;
     vk::PhysicalDevice physical_device;
@@ -42,13 +40,11 @@ struct ImGuiConfig {
     uint32_t image_count;
 };
 
-/// @brief UI state for a single shader parameter.
 struct ParameterState {
     goggles::fc::FilterControlDescriptor descriptor;
     float current_value;
 };
 
-/// @brief Predefined resolution profiles for pre-chain downsampling.
 enum class ResolutionProfile : std::uint8_t {
     disabled = 0, // Pre-chain disabled (pass-through)
     p240 = 1,     // NES, SNES, Genesis, N64, PS1, Saturn
@@ -60,7 +56,6 @@ enum class ResolutionProfile : std::uint8_t {
     custom = 7,   // User-defined resolution
 };
 
-/// @brief UI state for pre-chain pipeline configuration.
 struct PreChainState {
     ScaleMode scale_mode = ScaleMode::stretch;
     uint32_t integer_scale = 0;
@@ -71,7 +66,6 @@ struct PreChainState {
     std::vector<goggles::fc::FilterControlDescriptor> pass_parameters;
 };
 
-/// @brief Aggregate UI state for shader controls.
 struct ShaderControlState {
     std::filesystem::path current_preset;
     std::vector<std::filesystem::path> preset_catalog;
@@ -96,14 +90,8 @@ using SurfaceSelectCallback = std::function<void(uint32_t surface_id)>;
 using SurfaceFilterToggleCallback = std::function<void(uint32_t surface_id, bool enabled)>;
 using TargetFpsChangeCallback = std::function<void(uint32_t target_fps)>;
 
-/// @brief ImGui overlay layer for shader control and debug widgets.
 class ImGuiLayer {
 public:
-    /// @brief Creates an ImGui overlay for `window`.
-    /// @param window SDL window receiving input events.
-    /// @param config Vulkan objects needed for ImGui rendering.
-    /// @param app_dirs Resolved app directories for ini/font and preset discovery.
-    /// @return An ImGui layer or an error.
     [[nodiscard]] static auto create(SDL_Window* window, const ImGuiConfig& config,
                                      const util::AppDirs& app_dirs) -> ResultPtr<ImGuiLayer>;
 
@@ -114,69 +102,40 @@ public:
     ImGuiLayer(ImGuiLayer&&) = delete;
     ImGuiLayer& operator=(ImGuiLayer&&) = delete;
 
-    /// @brief Releases ImGui and Vulkan resources owned by this layer.
     void shutdown();
 
-    /// @brief Feeds an SDL event into ImGui input handling.
     void process_event(const SDL_Event& event);
-    /// @brief Begins a new ImGui frame.
     void begin_frame();
-    /// @brief Ends the frame and updates internal UI state.
     void end_frame();
-    /// @brief Records ImGui draw data into `cmd`.
-    /// @param cmd Command buffer in recording state.
-    /// @param target_view Swapchain image view to render into.
-    /// @param extent Target extent in pixels.
     void record(vk::CommandBuffer cmd, vk::ImageView target_view, vk::Extent2D extent);
 
-    /// @brief Sets the list of preset files shown in the UI.
     void set_preset_catalog(std::vector<std::filesystem::path> presets);
-    /// @brief Updates the currently selected preset path.
     void set_current_preset(const std::filesystem::path& path);
-    /// @brief Updates displayed parameter values.
     void set_parameters(std::vector<ParameterState> params);
 
-    /// @brief Sets a callback invoked when a parameter is changed by the UI.
     void set_parameter_change_callback(ParameterChangeCallback callback);
-    /// @brief Sets a callback invoked when parameters should be reset.
     void set_parameter_reset_callback(ParameterResetCallback callback);
-    /// @brief Sets a callback invoked when pre-chain resolution is changed.
     void set_prechain_change_callback(PreChainChangeCallback callback);
-    /// @brief Initializes pre-chain UI state from backend values.
     void set_prechain_state(vk::Extent2D resolution, ScaleMode scale_mode, uint32_t integer_scale);
-    /// @brief Updates pre-chain pass parameters for UI display.
     void set_prechain_parameters(std::vector<goggles::fc::FilterControlDescriptor> params);
-    /// @brief Sets a callback invoked when a pre-chain pass parameter is changed.
     void set_prechain_parameter_callback(PreChainParameterCallback callback);
-    /// @brief Sets a callback invoked when the pre-chain scale mode changes.
     void set_prechain_scale_mode_callback(PreChainScaleModeCallback callback);
-    /// @brief Updates compositor-provided runtime metrics shown in the performance panel.
     void set_runtime_metrics(util::CompositorRuntimeMetricsSnapshot metrics);
-    /// @brief Updates the effective session pacing target shown in the Application window.
     void set_target_fps(uint32_t target_fps);
-    /// @brief Sets the callback invoked when the runtime pacing target changes.
     void set_target_fps_change_callback(TargetFpsChangeCallback callback);
 
-    /// @brief Returns mutable UI state (owned by this layer).
     [[nodiscard]] auto state() -> ShaderControlState& { return m_state; }
-    /// @brief Returns UI state (owned by this layer).
     [[nodiscard]] auto state() const -> const ShaderControlState& { return m_state; }
-    /// @brief Returns true if ImGui wants exclusive keyboard input.
     [[nodiscard]] auto wants_capture_keyboard() const -> bool;
-    /// @brief Returns true if ImGui wants exclusive mouse input.
     [[nodiscard]] auto wants_capture_mouse() const -> bool;
 
     void toggle_global_visibility() { m_global_visible = !m_global_visible; }
     [[nodiscard]] auto is_globally_visible() const -> bool { return m_global_visible; }
 
-    /// @brief Updates the displayed surface list.
     void set_surfaces(std::vector<compositor::SurfaceInfo> surfaces);
-    /// @brief Sets the callback invoked when a surface is selected.
     void set_surface_select_callback(SurfaceSelectCallback callback);
-    /// @brief Sets the callback invoked when a surface filter toggle changes.
     void set_surface_filter_toggle_callback(SurfaceFilterToggleCallback callback);
 
-    /// @brief Rebuilds ImGui resources after a swapchain format change.
     void rebuild_for_format(vk::Format new_format);
 
 private:
