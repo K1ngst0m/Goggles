@@ -71,9 +71,7 @@ void VulkanBackend::initialize_settings(const RenderSettings& settings) {
     m_integer_scale = settings.integer_scale;
     update_target_fps(settings.target_fps);
     m_filter_chain_controller.set_prechain_resolution(
-        backend_internal::FilterChainController::PrechainResolutionConfig{
-            .requested_resolution = vk::Extent2D{settings.source_width, settings.source_height},
-        });
+        vk::Extent2D{settings.source_width, settings.source_height});
 }
 
 auto VulkanBackend::create(SDL_Window* window, bool enable_validation,
@@ -237,7 +235,7 @@ auto VulkanBackend::is_srgb_format(vk::Format format) -> bool {
 auto VulkanBackend::init_filter_chain() -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    return m_filter_chain_controller.recreate_filter_chain(make_filter_chain_build_config());
+    return m_filter_chain_controller.recreate_filter_chain(make_device_info(), make_chain_config());
 }
 
 void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path) {
@@ -245,11 +243,8 @@ void VulkanBackend::load_shader_preset(const std::filesystem::path& preset_path)
 }
 
 void VulkanBackend::set_prechain_resolution(uint32_t width, uint32_t height) {
-    m_filter_chain_controller.set_prechain_resolution(
-        backend_internal::FilterChainController::PrechainResolutionConfig{
-            .requested_resolution = vk::Extent2D{width, height},
-        },
-        [this]() { wait_all_frames(); });
+    m_filter_chain_controller.set_prechain_resolution(vk::Extent2D{width, height},
+                                                      [this]() { wait_all_frames(); });
 }
 
 auto VulkanBackend::record_render_commands(vk::CommandBuffer cmd, uint32_t image_index,
@@ -559,8 +554,8 @@ auto VulkanBackend::reload_shader_preset(const std::filesystem::path& preset_pat
         return make_error<void>(ErrorCode::vulkan_init_failed, "Backend not initialized");
     }
 
-    return m_filter_chain_controller.reload_shader_preset(preset_path,
-                                                          make_filter_chain_build_config());
+    return m_filter_chain_controller.reload_shader_preset(preset_path, make_device_info(),
+                                                          make_chain_config());
 }
 
 void VulkanBackend::set_filter_chain_policy(const FilterChainStagePolicy& policy) {
@@ -568,26 +563,24 @@ void VulkanBackend::set_filter_chain_policy(const FilterChainStagePolicy& policy
                                                [this]() { wait_all_frames(); });
 }
 
-auto VulkanBackend::make_filter_chain_build_config() const
-    -> backend_internal::FilterChainController::AdapterBuildConfig {
-    return backend_internal::FilterChainController::AdapterBuildConfig{
-        .device_info =
-            backend_internal::FilterChainController::VulkanDeviceInfo{
-                .physical_device = m_vulkan_context.physical_device,
-                .device = m_vulkan_context.device,
-                .graphics_queue = m_vulkan_context.graphics_queue,
-                .graphics_queue_family_index = m_vulkan_context.graphics_queue_family,
-                .cache_dir = m_cache_dir.string(),
-            },
-        .chain_config =
-            backend_internal::FilterChainController::ChainConfig{
-                .target_format = static_cast<VkFormat>(m_render_output.swapchain_format),
-                .frames_in_flight = backend_internal::RenderOutput::MAX_FRAMES_IN_FLIGHT,
-                .initial_prechain_width =
-                    m_filter_chain_controller.current_prechain_resolution().width,
-                .initial_prechain_height =
-                    m_filter_chain_controller.current_prechain_resolution().height,
-            },
+auto VulkanBackend::make_device_info() const
+    -> backend_internal::FilterChainController::VulkanDeviceInfo {
+    return {
+        .physical_device = m_vulkan_context.physical_device,
+        .device = m_vulkan_context.device,
+        .graphics_queue = m_vulkan_context.graphics_queue,
+        .graphics_queue_family_index = m_vulkan_context.graphics_queue_family,
+        .cache_dir = m_cache_dir.string(),
+    };
+}
+
+auto VulkanBackend::make_chain_config() const
+    -> backend_internal::FilterChainController::ChainConfig {
+    return {
+        .target_format = static_cast<VkFormat>(m_render_output.swapchain_format),
+        .frames_in_flight = backend_internal::RenderOutput::MAX_FRAMES_IN_FLIGHT,
+        .initial_prechain_width = m_filter_chain_controller.current_prechain_resolution().width,
+        .initial_prechain_height = m_filter_chain_controller.current_prechain_resolution().height,
     };
 }
 

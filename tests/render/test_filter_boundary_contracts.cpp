@@ -217,7 +217,8 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
     REQUIRE(backend_text.has_value());
     REQUIRE(controller_text.has_value());
     REQUIRE(render_output_text.has_value());
-    REQUIRE(backend_text->find("make_filter_chain_build_config()") != std::string::npos);
+    REQUIRE(backend_text->find("make_device_info()") != std::string::npos);
+    REQUIRE(backend_text->find("make_chain_config()") != std::string::npos);
 
     const auto check_swap_pos =
         controller_text->find("void FilterChainController::check_pending_chain_swap(");
@@ -269,9 +270,8 @@ TEST_CASE("Async swap and resize safety contract coverage", "[filter_chain][asyn
             std::string::npos);
     REQUIRE(controller_text->find("authoritative_control_overrides = snapshot_adapter_controls(") !=
             std::string::npos);
-    REQUIRE(controller_text->find("source_resolution = config.requested_resolution;") !=
-            std::string::npos);
-    REQUIRE(controller_text->find("active_slot.chain.set_prechain_resolution(&resolution)") !=
+    REQUIRE(controller_text->find("source_resolution = resolution;") != std::string::npos);
+    REQUIRE(controller_text->find("active_slot.chain.set_prechain_resolution(&fc_resolution)") !=
             std::string::npos);
     REQUIRE(controller_text->find("resolve_initial_prechain_resolution") == std::string::npos);
 
@@ -773,8 +773,9 @@ TEST_CASE("filter_chain controller uses standalone API boundary",
         REQUIRE(controller_prechain_pos != std::string::npos);
         REQUIRE(controller_handle_resize_pos != std::string::npos);
         // set_prechain_resolution uses set_prechain_resolution API, not resize
-        REQUIRE(controller_cpp_text->find("active_slot.chain.set_prechain_resolution(&resolution)",
-                                          controller_prechain_pos) != std::string::npos);
+        REQUIRE(
+            controller_cpp_text->find("active_slot.chain.set_prechain_resolution(&fc_resolution)",
+                                      controller_prechain_pos) != std::string::npos);
         // handle_resize uses chain.resize, not set_prechain_resolution
         REQUIRE(controller_cpp_text->find("active_slot.chain.resize(&extent)",
                                           controller_handle_resize_pos) != std::string::npos);

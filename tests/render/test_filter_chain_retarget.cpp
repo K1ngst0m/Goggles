@@ -172,10 +172,15 @@ auto find_filter_control(const std::vector<goggles::fc::FilterControlDescriptor>
     return nullptr;
 }
 
+struct TestBuildConfig {
+    goggles::render::backend_internal::FilterChainController::VulkanDeviceInfo device_info;
+    goggles::render::backend_internal::FilterChainController::ChainConfig chain_config;
+};
+
 auto make_adapter_build_config(const VulkanRuntimeFixture& fixture,
                                const std::filesystem::path& cache_dir,
                                VkFormat target_format = VK_FORMAT_B8G8R8A8_UNORM)
-    -> goggles::render::backend_internal::FilterChainController::AdapterBuildConfig {
+    -> TestBuildConfig {
     auto dev_info = fixture.device_info();
     dev_info.cache_dir = cache_dir.string();
     return {
@@ -195,7 +200,7 @@ void configure_controller_runtime(
     const std::filesystem::path& preset_path) {
     controller.preset_path = preset_path;
     controller.set_stage_policy(true, false);
-    controller.set_prechain_resolution({.requested_resolution = {2u, 3u}});
+    controller.set_prechain_resolution(vk::Extent2D{2u, 3u});
 
     const auto controls =
         controller.list_filter_controls(goggles::fc::FilterControlStage::prechain);
@@ -261,7 +266,8 @@ TEST_CASE("Controller retarget preserves active runtime without swap signaling",
     auto controller = goggles::render::backend_internal::FilterChainController{};
     auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
-    REQUIRE(controller.recreate_filter_chain(build_config).has_value());
+    REQUIRE(controller.recreate_filter_chain(build_config.device_info, build_config.chain_config)
+                .has_value());
     configure_controller_runtime(controller, preset_path);
 
     REQUIRE_FALSE(controller.consume_chain_swapped());
@@ -291,7 +297,8 @@ TEST_CASE("Controller retarget failure keeps the previous runtime usable",
     auto controller = goggles::render::backend_internal::FilterChainController{};
     auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
-    REQUIRE(controller.recreate_filter_chain(build_config).has_value());
+    REQUIRE(controller.recreate_filter_chain(build_config.device_info, build_config.chain_config)
+                .has_value());
     configure_controller_runtime(controller, preset_path);
 
     const auto invalid_retarget = controller.retarget_filter_chain(
@@ -324,10 +331,14 @@ TEST_CASE("Pending reload swaps only after activation and preserves authoritativ
     auto controller = goggles::render::backend_internal::FilterChainController{};
     auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
-    REQUIRE(controller.recreate_filter_chain(build_config).has_value());
+    REQUIRE(controller.recreate_filter_chain(build_config.device_info, build_config.chain_config)
+                .has_value());
     configure_controller_runtime(controller, preset_path);
 
-    REQUIRE(controller.reload_shader_preset(preset_path, build_config).has_value());
+    REQUIRE(
+        controller
+            .reload_shader_preset(preset_path, build_config.device_info, build_config.chain_config)
+            .has_value());
     wait_for_reload_start(controller);
     REQUIRE(controller.pending_chain_ready.load(std::memory_order_acquire));
     REQUIRE_FALSE(controller.consume_chain_swapped());
@@ -365,10 +376,14 @@ TEST_CASE("Explicit reload failure preserves the previous runtime",
     auto controller = goggles::render::backend_internal::FilterChainController{};
     auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
-    REQUIRE(controller.recreate_filter_chain(build_config).has_value());
+    REQUIRE(controller.recreate_filter_chain(build_config.device_info, build_config.chain_config)
+                .has_value());
     configure_controller_runtime(controller, preset_path);
 
-    REQUIRE(controller.reload_shader_preset(missing_preset_path, build_config).has_value());
+    REQUIRE(controller
+                .reload_shader_preset(missing_preset_path, build_config.device_info,
+                                      build_config.chain_config)
+                .has_value());
 
     using namespace std::chrono_literals;
     REQUIRE(controller.pending_load_future.valid());
@@ -409,9 +424,10 @@ TEST_CASE("Reload across different control surfaces skips stale restore warnings
     auto controller = goggles::render::backend_internal::FilterChainController{};
     auto build_config = make_adapter_build_config(fixture, cache_dir_guard.dir);
 
-    REQUIRE(controller.recreate_filter_chain(build_config).has_value());
+    REQUIRE(controller.recreate_filter_chain(build_config.device_info, build_config.chain_config)
+                .has_value());
     controller.set_stage_policy(true, true);
-    controller.set_prechain_resolution({.requested_resolution = {2u, 3u}});
+    controller.set_prechain_resolution(vk::Extent2D{2u, 3u});
     controller.load_shader_preset(preset_path);
 
     const auto prechain_controls_before =
@@ -422,7 +438,8 @@ TEST_CASE("Reload across different control surfaces skips stale restore warnings
     controller.authoritative_control_overrides.push_back(
         {.control_id = std::numeric_limits<goggles::fc::FilterControlId>::max(), .value = 1.0F});
 
-    REQUIRE(controller.reload_shader_preset({}, build_config).has_value());
+    REQUIRE(controller.reload_shader_preset({}, build_config.device_info, build_config.chain_config)
+                .has_value());
     wait_for_reload_start(controller);
     controller.check_pending_chain_swap([] {});
     REQUIRE(controller.consume_chain_swapped());
@@ -491,7 +508,7 @@ TEST_CASE("Structural live updates rebuild the active adapter contract",
         controller_text->find("FilterChainController::handle_resize(", prechain_update_pos);
     REQUIRE(prechain_update_pos != std::string::npos);
     REQUIRE(prechain_update_end != std::string::npos);
-    REQUIRE(controller_text->find("active_slot.chain.set_prechain_resolution(&resolution)",
+    REQUIRE(controller_text->find("active_slot.chain.set_prechain_resolution(&fc_resolution)",
                                   prechain_update_pos) != std::string::npos);
     // resize must NOT appear inside set_prechain_resolution (it belongs in handle_resize)
     const auto resize_call_pos =
@@ -500,11 +517,11 @@ TEST_CASE("Structural live updates rebuild the active adapter contract",
 
     // reload_shader_preset must propagate stage mask and prechain dimensions into the build config
     REQUIRE(controller_text->find(
-                "config.chain_config.initial_stage_mask =",
+                "chain_config.initial_stage_mask =",
                 controller_text->find("auto FilterChainController::reload_shader_preset(")) !=
             std::string::npos);
     REQUIRE(controller_text->find(
-                "config.chain_config.initial_prechain_width = source_resolution.width;",
+                "chain_config.initial_prechain_width = source_resolution.width;",
                 controller_text->find("auto FilterChainController::reload_shader_preset(")) !=
             std::string::npos);
 }

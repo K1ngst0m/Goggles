@@ -50,21 +50,13 @@ struct FilterChainController {
         uint32_t integer_scale = 1;
     };
 
-    struct AdapterBuildConfig {
-        VulkanDeviceInfo device_info;
-        ChainConfig chain_config;
-    };
-
     struct OutputTarget {
         vk::Format format = vk::Format::eUndefined;
         vk::Extent2D extent;
     };
 
-    struct PrechainResolutionConfig {
-        vk::Extent2D requested_resolution;
-    };
-
-    [[nodiscard]] auto recreate_filter_chain(const AdapterBuildConfig& config) -> Result<void>;
+    [[nodiscard]] auto recreate_filter_chain(const VulkanDeviceInfo& device_info,
+                                             ChainConfig chain_config) -> Result<void>;
     [[nodiscard]] auto retarget_filter_chain(const OutputTarget& output_target) -> Result<void>;
     void shutdown(const std::function<void()>& wait_for_gpu_idle);
 
@@ -72,7 +64,8 @@ struct FilterChainController {
         const std::filesystem::path& new_preset_path,
         const std::function<void()>& wait_for_safe_rebuild = std::function<void()>{});
     [[nodiscard]] auto reload_shader_preset(std::filesystem::path new_preset_path,
-                                            AdapterBuildConfig config) -> Result<void>;
+                                            const VulkanDeviceInfo& device_info,
+                                            ChainConfig chain_config) -> Result<void>;
 
     void advance_frame();
     void check_pending_chain_swap(const std::function<void()>& wait_all_frames);
@@ -82,7 +75,7 @@ struct FilterChainController {
     set_stage_policy(bool prechain_enabled, bool effect_stage_enabled,
                      const std::function<void()>& wait_for_safe_rebuild = std::function<void()>{});
     void set_prechain_resolution(
-        const PrechainResolutionConfig& config,
+        vk::Extent2D resolution,
         const std::function<void()>& wait_for_safe_rebuild = std::function<void()>{});
     [[nodiscard]] auto handle_resize(vk::Extent2D target_extent) -> Result<void>;
     [[nodiscard]] auto record(const RecordParams& record_params) -> Result<void>;

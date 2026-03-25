@@ -487,16 +487,17 @@ auto align_adapter_output(FilterChainController::FilterChainSlot& slot,
     return {};
 }
 
-auto create_and_load_slot(const FilterChainController::AdapterBuildConfig& config,
+auto create_and_load_slot(const FilterChainController::VulkanDeviceInfo& device_info,
+                          const FilterChainController::ChainConfig& chain_config,
                           const std::filesystem::path& preset_path)
     -> Result<FilterChainController::FilterChainSlot> {
     FilterChainController::FilterChainSlot new_slot;
-    GOGGLES_TRY(initialize_slot(new_slot, config.device_info));
+    GOGGLES_TRY(initialize_slot(new_slot, device_info));
 
     if (preset_path.empty()) {
-        GOGGLES_TRY(load_passthrough_into_slot(new_slot, config.chain_config));
+        GOGGLES_TRY(load_passthrough_into_slot(new_slot, chain_config));
     } else {
-        GOGGLES_TRY(load_preset_into_slot(new_slot, preset_path, config.chain_config));
+        GOGGLES_TRY(load_preset_into_slot(new_slot, preset_path, chain_config));
     }
 
     return std::move(new_slot);
@@ -559,18 +560,17 @@ void shutdown_retired_adapter_tracker(FilterChainController::RetiredAdapterTrack
 
 } // namespace
 
-auto FilterChainController::recreate_filter_chain(const AdapterBuildConfig& config)
-    -> Result<void> {
+auto FilterChainController::recreate_filter_chain(const VulkanDeviceInfo& device_info,
+                                                  ChainConfig chain_config) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
-    auto requested_config = config;
-    requested_config.chain_config.initial_stage_mask =
+    chain_config.initial_stage_mask =
         stage_mask_from_policy(prechain_policy_enabled, effect_stage_policy_enabled);
-    requested_config.chain_config.initial_prechain_width = source_resolution.width;
-    requested_config.chain_config.initial_prechain_height = source_resolution.height;
+    chain_config.initial_prechain_width = source_resolution.width;
+    chain_config.initial_prechain_height = source_resolution.height;
 
     authoritative_output_target = OutputTarget{
-        .format = static_cast<vk::Format>(requested_config.chain_config.target_format),
+        .format = static_cast<vk::Format>(chain_config.target_format),
         .extent = vk::Extent2D{},
     };
 
@@ -580,7 +580,7 @@ auto FilterChainController::recreate_filter_chain(const AdapterBuildConfig& conf
 
     shutdown_slot(active_slot);
 
-    auto slot_result = create_and_load_slot(requested_config, preset_path);
+    auto slot_result = create_and_load_slot(device_info, chain_config, preset_path);
     if (!slot_result) {
         return nonstd::make_unexpected(slot_result.error());
     }
@@ -705,7 +705,8 @@ void FilterChainController::load_shader_preset(const std::filesystem::path& new_
 }
 
 auto FilterChainController::reload_shader_preset(std::filesystem::path new_preset_path,
-                                                 AdapterBuildConfig config) -> Result<void> {
+                                                 const VulkanDeviceInfo& device_info,
+                                                 ChainConfig chain_config) -> Result<void> {
     GOGGLES_PROFILE_FUNCTION();
 
     if (pending_chain_ready.load(std::memory_order_acquire)) {
@@ -720,22 +721,23 @@ auto FilterChainController::reload_shader_preset(std::filesystem::path new_prese
     }
 
     pending_preset_path = new_preset_path;
-    config.chain_config.initial_stage_mask =
+    chain_config.initial_stage_mask =
         stage_mask_from_policy(prechain_policy_enabled, effect_stage_policy_enabled);
-    config.chain_config.initial_prechain_width = source_resolution.width;
-    config.chain_config.initial_prechain_height = source_resolution.height;
+    chain_config.initial_prechain_width = source_resolution.width;
+    chain_config.initial_prechain_height = source_resolution.height;
     const auto requested_output_target = authoritative_output_target;
     auto requested_controls = authoritative_control_overrides.empty()
                                   ? snapshot_adapter_controls(active_slot)
                                   : authoritative_control_overrides;
 
     pending_load_future = util::JobSystem::submit(
-        [this, build_config = std::move(config), requested_preset_path = std::move(new_preset_path),
-         requested_output_target,
+        [this, device_info, chain_config = std::move(chain_config),
+         requested_preset_path = std::move(new_preset_path), requested_output_target,
          requested_controls = std::move(requested_controls)]() -> Result<void> {
             GOGGLES_PROFILE_SCOPE("AsyncShaderLoad");
 
-            auto slot_result = create_and_load_slot(build_config, requested_preset_path);
+            auto slot_result =
+                create_and_load_slot(device_info, chain_config, requested_preset_path);
             if (!slot_result) {
                 GOGGLES_LOG_ERROR("Failed to create filter chain adapter");
                 return nonstd::make_unexpected(slot_result.error());
@@ -881,8 +883,8 @@ void FilterChainController::set_stage_policy(
 }
 
 void FilterChainController::set_prechain_resolution(
-    const PrechainResolutionConfig& config, const std::function<void()>& wait_for_safe_rebuild) {
-    if (source_resolution == config.requested_resolution) {
+    vk::Extent2D resolution, const std::function<void()>& wait_for_safe_rebuild) {
+    if (source_resolution == resolution) {
         return;
     }
 
@@ -890,13 +892,13 @@ void FilterChainController::set_prechain_resolution(
         wait_for_safe_rebuild();
     }
 
-    source_resolution = config.requested_resolution;
+    source_resolution = resolution;
     if (active_slot.chain) {
-        active_slot.prechain_width = config.requested_resolution.width;
-        active_slot.prechain_height = config.requested_resolution.height;
-        goggles_fc_extent_2d_t resolution{.width = config.requested_resolution.width,
-                                          .height = config.requested_resolution.height};
-        auto result = active_slot.chain.set_prechain_resolution(&resolution);
+        active_slot.prechain_width = resolution.width;
+        active_slot.prechain_height = resolution.height;
+        goggles_fc_extent_2d_t fc_resolution{.width = resolution.width,
+                                             .height = resolution.height};
+        auto result = active_slot.chain.set_prechain_resolution(&fc_resolution);
         if (!result) {
             GOGGLES_LOG_WARN("Failed to set prechain resolution: {}", result.error().message);
         }

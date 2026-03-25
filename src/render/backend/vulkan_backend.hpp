@@ -103,8 +103,10 @@ private:
     void update_target_fps(uint32_t target_fps) { m_render_output.set_target_fps(target_fps); }
 
     [[nodiscard]] auto init_filter_chain() -> Result<void>;
-    [[nodiscard]] auto make_filter_chain_build_config() const
-        -> backend_internal::FilterChainController::AdapterBuildConfig;
+    [[nodiscard]] auto make_device_info() const
+        -> backend_internal::FilterChainController::VulkanDeviceInfo;
+    [[nodiscard]] auto make_chain_config() const
+        -> backend_internal::FilterChainController::ChainConfig;
 
     [[nodiscard]] auto record_render_commands(vk::CommandBuffer cmd, uint32_t image_index,
                                               const UiRenderCallback& ui_callback = nullptr)
